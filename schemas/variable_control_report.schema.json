@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/variable_control_report.schema.json",
+  "title": "Variable Control Report",
+  "description": "Output of variable-control-auditor (hard gate). Verifies that between any condition and its baseline ONLY the studied variable changes (no two-variable confound), that frozen params stay frozen, and that no leakage flag is set. verdict is derived from violations, never set by hand.",
+  "type": "object",
+  "required": ["verdict", "violations"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+    "violations": {"type": "array", "items": {"type": "string"}},
+    "n_confounded_conditions": {"type": "integer", "minimum": 0, "default": 0},
+    "checked_invariants": {"type": "array", "items": {"type": "string"}, "default": []}
+  },
+  "allOf": [
+    {
+      "if": {"required": ["violations"], "properties": {"violations": {"minItems": 1}}},
+      "then": {"properties": {"verdict": {"const": "BLOCK"}}}
+    }
+  ]
+}

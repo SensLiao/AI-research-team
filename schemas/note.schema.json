@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/note.schema.json",
+  "title": "Note",
+  "description": "Generic stage note artifact — the default small payload a stage can emit before its specialized artifact schema exists. Useful for the M0 dry-run and for lightweight stages.",
+  "type": "object",
+  "required": ["title"],
+  "additionalProperties": false,
+  "properties": {
+    "title": {"type": "string", "minLength": 1},
+    "body": {"type": "string", "default": ""},
+    "refs": {"type": "array", "items": {"type": "string"}, "default": []}
+  }
+}

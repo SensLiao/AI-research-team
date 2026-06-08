@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/patch_plan.schema.json",
+  "title": "Patch Plan",
+  "description": "EXECUTE-stage artifact. Output of patch-planner. Describes a set of scoped file-level changes to implement (or fix) a code feature, bug, or experiment variant. A draft plan — each change is scoped to a file/path. Real implementation follows in implementation_record.",
+  "type": "object",
+  "required": ["status", "changes"],
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["draft", "approved", "superseded"],
+      "description": "Lifecycle state of this plan. Fresh output of patch-planner is always 'draft'."
+    },
+    "title": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Short human-readable title for this patch."
+    },
+    "rationale": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Why this patch is needed (context for the implementer)."
+    },
+    "from_protocol_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional reference to the protocol_spec or experiment_matrix that prompted this patch."
+    },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered list of file-scoped changes. At least one required.",
+      "items": {
+        "type": "object",
+        "required": ["path", "change_type", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Relative file path scoping this change."
+          },
+          "change_type": {
+            "type": "string",
+            "enum": ["create", "modify", "delete"],
+            "description": "What kind of change is planned for this file."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable description of what changes and why."
+          },
+          "snippet": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Optional representative code snippet or pseudocode."
+          },
+          "risk_note": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Any risk or side-effect the implementer should know."
+          }
+        }
+      }
+    },
+    "review_notes": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Any reviewer comments (populated when status becomes approved/superseded)."
+    }
+  }
+}

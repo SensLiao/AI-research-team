@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/source_quality_report.schema.json",
+  "title": "Source Quality Report",
+  "description": "DISCOVER-stage typed artifact. Output of source-quality-ranker. Ranks gathered sources by venue tier, methodological rigor, and recency. Derived from rank_sources.py; peer-reviewed venues always rank above preprints for the same recency.",
+  "type": "object",
+  "required": ["ranked_sources", "ranking_rationale"],
+  "additionalProperties": false,
+  "properties": {
+    "ranked_sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["source_ref", "rank", "tier", "rigor_score"],
+        "additionalProperties": false,
+        "properties": {
+          "source_ref": {"type": "string", "minLength": 1, "description": "ID or ref from the evidence_table"},
+          "rank": {"type": "integer", "minimum": 1, "description": "1-based rank; 1 = highest quality"},
+          "tier": {
+            "type": "string",
+            "enum": ["peer-reviewed", "preprint", "workshop", "technical-report", "blog", "other"],
+            "description": "venue tier"
+          },
+          "rigor_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "composite score in [0,1] used by rank_sources.py to order sources"
+          },
+          "year": {"type": ["integer", "null"], "default": null},
+          "venue": {"type": ["string", "null"], "default": null},
+          "rank_notes": {"type": "string", "default": ""}
+        }
+      }
+    },
+    "ranking_rationale": {
+      "type": "string",
+      "minLength": 1,
+      "description": "brief prose describing which tier/rigor/recency factors dominated the ranking"
+    },
+    "n_sources_ranked": {"type": ["integer", "null"], "minimum": 0, "default": null}
+  }
+}

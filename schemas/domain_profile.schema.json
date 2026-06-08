@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/domain_profile.schema.json",
+  "title": "Domain Profile",
+  "description": "Pluggable per-project domain profile. ALL domain-specific invariants live HERE, never hardcoded in the control plane or agents. The system is AI/CS-research-general; a profile specializes it (cv-medical-segmentation, nlp-text-classification, rl, tabular, speech, ...). Director lock: medical imaging is just one profile, not the target.",
+  "type": "object",
+  "required": ["profile_id", "display_name", "split_policy", "metrics", "hard_invariants"],
+  "additionalProperties": false,
+  "properties": {
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "kebab-case unique id, e.g. cv-medical-segmentation"
+    },
+    "display_name": {"type": "string", "minLength": 1},
+    "applies_to": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "keywords / subfields this profile fits"
+    },
+    "split_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_split_unit", "allowed_split_units", "forbidden_split_units"],
+      "properties": {
+        "default_split_unit": {
+          "type": "string",
+          "minLength": 1,
+          "description": "e.g. patient, document, episode, user, graph, sample"
+        },
+        "allowed_split_units": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "forbidden_split_units": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "units that would cause leakage, e.g. slice/patch for medical volumes, token for text"
+        },
+        "stratification_keys": {"type": "array", "items": {"type": "string"}, "default": []},
+        "external_test_recommended": {"type": "boolean", "default": false},
+        "freeze_test_before_training": {"type": "boolean", "default": true}
+      }
+    },
+    "leakage_checks": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "named checks the split / alignment auditors must run"
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "higher_is_better"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "higher_is_better": {"type": "boolean"},
+          "implementation_ref": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "canonical metric implementation, so all conditions compute it identically"
+          },
+          "valid_range": {
+            "type": ["array", "null"],
+            "default": null,
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": ["number", "null"]},
+            "description": "[min, max] sanity bounds (either end null = unbounded); result-sanity-checker BLOCKs a value outside this. null = no declared range (range check skipped for this metric)."
+          }
+        }
+      }
+    },
+    "leakage_delta": {
+      "type": "number",
+      "default": 0.5,
+      "description": "result-sanity-checker leakage-smell threshold: an improvement over baseline >= this (direction per higher_is_better) is implausibly good and BLOCKs. Domain-tunable; default 0.5."
+    },
+    "alignment_invariants": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "extra train/test/inference parity checks specific to this domain (consumed by train-test-alignment-auditor)"
+    },
+    "protocol_fields": {
+      "type": "object",
+      "default": {},
+      "description": "free-form domain protocol params (e.g. interactive-prompt config for seg, tokenization for NLP); structure is domain-defined"
+    },
+    "hard_invariants": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "description": "non-negotiable rules the gates enforce for this domain"
+    }
+  }
+}

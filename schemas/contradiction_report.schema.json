@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/contradiction_report.schema.json",
+  "title": "Contradiction Report",
+  "description": "DISCOVER-stage typed artifact. Output of contradiction-miner. Records pairs of claims that make opposing or numerically incompatible statements about the same phenomenon. Each conflict entry requires two claim_refs and a conflict kind.",
+  "type": "object",
+  "required": ["conflicts", "n_claims_checked"],
+  "additionalProperties": false,
+  "properties": {
+    "n_claims_checked": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "total number of claims examined in this mining pass"
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["conflict_id", "claim_ref_a", "claim_ref_b", "kind"],
+        "additionalProperties": false,
+        "properties": {
+          "conflict_id": {"type": "string", "minLength": 1},
+          "claim_ref_a": {"type": "string", "minLength": 1, "description": "claim_id of the first conflicting claim"},
+          "claim_ref_b": {"type": "string", "minLength": 1, "description": "claim_id of the second conflicting claim"},
+          "kind": {
+            "type": "string",
+            "enum": ["numerical-disagreement", "directional-flip", "scope-mismatch", "method-conflict", "other"],
+            "description": "type of contradiction"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "brief prose explaining why these claims conflict"
+          },
+          "resolution_status": {
+            "type": "string",
+            "enum": ["unresolved", "explained-by-scope", "explained-by-protocol", "resolved"],
+            "default": "unresolved"
+          }
+        }
+      }
+    },
+    "summary": {"type": "string", "default": ""}
+  }
+}

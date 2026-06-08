@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/triage_report.schema.json",
+  "title": "Triage Report",
+  "description": "EXECUTE-stage artifact. Output of failure-triager. Classifies a run failure by error class (derived deterministically from the stack trace by failure_triage.py) and records the raw trace plus a remediation hint. The error_class is machine-derived, never set by hand.",
+  "type": "object",
+  "required": ["condition_id", "error_class", "stack_trace_excerpt"],
+  "additionalProperties": false,
+  "properties": {
+    "condition_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The experiment condition that produced this failure."
+    },
+    "from_sandbox_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional reference to the sandbox_report that surfaced this failure."
+    },
+    "error_class": {
+      "type": "string",
+      "enum": [
+        "shape",
+        "oom",
+        "device_assert",
+        "nan_loss",
+        "import_error",
+        "file_not_found",
+        "timeout",
+        "permission",
+        "unknown"
+      ],
+      "description": "Machine-derived error class from failure_triage.classify_trace(). Never set by hand — must be the output of the deterministic classifier."
+    },
+    "stack_trace_excerpt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The raw stack trace or error output (or a representative excerpt) from the failed run."
+    },
+    "remediation_hint": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Suggested next debugging step based on the error_class."
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Any additional context from the failure-triager agent."
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/staleness_report.schema.json",
+  "title": "Staleness Report",
+  "description": "DISCOVER-stage typed artifact. Output of staleness-auditor. Assesses whether a source (paper, repo, dataset, benchmark) is current or has been superseded. The status field uses a controlled enum including SUPERSEDED. Derived mechanically by staleness.py from year + named successor.",
+  "type": "object",
+  "required": ["source_ref", "status", "age_years"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {"type": "string", "minLength": 1},
+    "status": {
+      "type": "string",
+      "enum": ["CURRENT", "AGING", "STALE", "SUPERSEDED", "UNKNOWN"],
+      "description": "SUPERSEDED means a named successor explicitly replaces this source"
+    },
+    "age_years": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "default": null,
+      "description": "years since publication/release relative to audit year"
+    },
+    "successor_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "ref of the work that supersedes this one (required when status=SUPERSEDED)"
+    },
+    "staleness_rationale": {
+      "type": "string",
+      "default": "",
+      "description": "brief explanation of why this source is considered stale/superseded/current"
+    },
+    "audit_year": {
+      "type": ["integer", "null"],
+      "default": null,
+      "description": "the year used as the reference point for staleness calculation"
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "SUPERSEDED"}}},
+      "then": {"required": ["successor_ref"], "properties": {"successor_ref": {"type": "string", "minLength": 1}}}
+    }
+  ]
+}

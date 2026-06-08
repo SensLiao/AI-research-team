@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/future_work_items.schema.json",
+  "title": "Future Work Items",
+  "description": "DISCOVER-stage artifact. Output of future-work-miner. Collects explicitly stated open problems and future-work directions extracted from paper_note artifacts. An empty items array is allowed (a clean paper may yield zero future-work statements). Every present item carries a non-empty, non-whitespace source_ref (anti-slop): an item with a missing/blank source_ref is schema-rejected.",
+  "type": "object",
+  "required": ["items"],
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "Extracted future-work items; each present item must carry a non-blank source_ref.",
+      "items": {
+        "type": "object",
+        "required": ["item_id", "statement", "source_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Short unique identifier, e.g. FW-001"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The stated open problem or future-work direction, verbatim or closely paraphrased from the source. Must contain a non-whitespace character."
+          },
+          "source_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The [[slug]] / paper_note id / path this item was mined from (anti-slop evidence pointer). Must be non-empty AND non-whitespace (a blank pointer is not evidence)."
+          },
+          "gap_hint": {
+            "type": "string",
+            "description": "Optional free-text hint for downstream gap classification."
+          },
+          "tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Optional topic tags."
+          }
+        }
+      }
+    }
+  }
+}

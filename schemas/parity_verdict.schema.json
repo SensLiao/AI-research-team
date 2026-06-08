@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/parity_verdict.schema.json",
+  "title": "Train/Test Parity Verdict",
+  "description": "EXECUTE-stage hard-gate artifact. Output of train-test-parity-verifier. Post-run, re-checks (via the same shared alignment logic) that the ACTUAL run pipeline still satisfies the train/test alignment contract — catching drift between the designed and the executed pipeline. verdict BLOCK halts. Derived mechanically from parity_checker.py.",
+  "type": "object",
+  "required": ["verdict", "violations"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+    "violations": {"type": "array", "items": {"type": "string"}},
+    "drift_checks": {"type": "array", "items": {"type": "string"}, "default": []},
+    "journal_ref": {"type": ["string", "null"], "default": null},
+    "alignment_ref": {"type": ["string", "null"], "default": null}
+  },
+  "allOf": [
+    {
+      "if": {"required": ["violations"], "properties": {"violations": {"minItems": 1}}},
+      "then": {"properties": {"verdict": {"const": "BLOCK"}}}
+    }
+  ]
+}

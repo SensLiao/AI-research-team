@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/panel_review.schema.json",
+  "title": "Panel Review",
+  "description": "VERIFY-stage producer artifact. Shared output schema for methodology-reviewer and domain-reviewer, discriminated by `lens`. Each finding requires a non-empty `anchor` (the specific claim/section cited), non-empty `evidence` (proof text), and a `severity` enum. A finding with severity BLOCK means this reviewer blocks synthesis unless explicitly rebutted.",
+  "type": "object",
+  "required": ["lens", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "lens": {
+      "type": "string",
+      "enum": ["methodology", "domain"],
+      "description": "discriminator: which reviewer perspective produced this review"
+    },
+    "findings": {
+      "type": "array",
+      "description": "list of review findings; may be empty if the reviewer finds no issues",
+      "items": {
+        "type": "object",
+        "required": ["anchor", "evidence", "severity"],
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string",
+            "minLength": 1,
+            "description": "non-empty citation of the specific claim, section, figure, or result this finding targets"
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "description": "non-empty explanation of why this is a finding; must cite specific text/numbers, not vague concerns"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["BLOCK", "WARN", "NOTE"],
+            "description": "BLOCK means synthesis is refused unless rebutted; WARN is addressable; NOTE is advisory"
+          },
+          "rebuttal_required": {
+            "type": "boolean",
+            "default": false,
+            "description": "true when severity is BLOCK and the synthesizer must document an explicit rebuttal"
+          },
+          "finding_id": {
+            "type": "string",
+            "default": "",
+            "description": "optional stable id for cross-referencing in synthesis and response simulation"
+          }
+        }
+      }
+    },
+    "overall_verdict": {
+      "type": "string",
+      "enum": ["PASS", "BLOCK"],
+      "description": "BLOCK if any finding has severity BLOCK; PASS otherwise. Must be consistent with findings."
+    },
+    "reviewer_notes": {
+      "type": "string",
+      "default": "",
+      "description": "optional free-form notes from the reviewer not captured in individual findings"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "findings": {
+            "contains": {
+              "properties": {"severity": {"const": "BLOCK"}},
+              "required": ["severity"]
+            }
+          }
+        },
+        "required": ["findings"]
+      },
+      "then": {
+        "properties": {"overall_verdict": {"const": "BLOCK"}},
+        "required": ["overall_verdict"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/failure_inventory.schema.json",
+  "title": "Failure Inventory",
+  "description": "ANALYZE-stage artifact. Output of failure-case-miner. A typed inventory of individual failure cases from results, each tagged with a failure type and supporting evidence. Requires at least one typed failure entry.",
+  "type": "object",
+  "required": ["condition_id", "failures"],
+  "additionalProperties": false,
+  "properties": {
+    "condition_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The condition or run this failure inventory covers"
+    },
+    "failures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Failure type label, e.g. false_positive, false_negative, boundary_error, connectivity_failure, shape_mismatch, outlier, oom, other"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable description of the failure case"
+          },
+          "case_ref": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Reference to the specific sample/case/image_id if known"
+          },
+          "metric_context": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Which metric was affected (e.g. Dice=0.12)"
+          },
+          "hypothesized_cause": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Speculated root cause of this failure (advisory, not verified)"
+          }
+        }
+      },
+      "description": "List of individual failure cases. minItems 1 ensures non-empty inventory."
+    },
+    "summary": {
+      "type": "string",
+      "default": "",
+      "description": "Optional overall summary of failure patterns"
+    }
+  }
+}

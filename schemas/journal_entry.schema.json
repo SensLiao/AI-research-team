@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/journal_entry.schema.json",
+  "title": "Experiment Journal Entry",
+  "description": "EXECUTE-stage artifact. Output of experiment-journaler. Records the provenance of one run (config/data/git/seed) AND the ACTUAL train/test pipeline facts that really ran, so train-test-parity-verifier can mechanically re-check that the alignment contract held post-run (catching designed-vs-executed drift).",
+  "type": "object",
+  "required": ["condition_id", "config_hash"],
+  "additionalProperties": false,
+  "properties": {
+    "condition_id": {"type": "string", "minLength": 1},
+    "from_run_record_ref": {"type": ["string", "null"], "default": null},
+    "from_preflight_ref": {"type": ["string", "null"], "default": null},
+    "config_hash": {"type": "string", "minLength": 1},
+    "data_hash": {"type": ["string", "null"], "default": null},
+    "git_sha": {"type": ["string", "null"], "default": null},
+    "seed": {"type": ["integer", "null"], "default": null},
+    "designed_train": {"type": "object", "default": {}, "description": "pipeline facts the DESIGN stage specified for train (same shape the alignment checker consumes); parity-verifier compares actual against this to catch designed-vs-executed drift"},
+    "designed_test": {"type": "object", "default": {}, "description": "pipeline facts the DESIGN stage specified for test/eval"},
+    "actual_train": {"type": "object", "default": {}, "description": "pipeline facts that ACTUALLY ran for train (same shape the alignment checker consumes)"},
+    "actual_test": {"type": "object", "default": {}, "description": "pipeline facts that ACTUALLY ran for test/eval"},
+    "metrics_snapshot": {"type": "object", "default": {}}
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/implementation_record.schema.json",
+  "title": "Implementation Record",
+  "description": "EXECUTE-stage artifact. Output of code-implementer. Records the code changes actually made in response to an approved patch_plan, including provenance, the files touched, and a summary of what changed. Must reference the originating patch_plan to prove nothing was implemented ad hoc.",
+  "type": "object",
+  "required": ["from_patch_plan_ref", "files_changed"],
+  "additionalProperties": false,
+  "properties": {
+    "from_patch_plan_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference (path or ID) to the patch_plan artifact that authorised this implementation. Required — proves the change is traceable."
+    },
+    "condition_id": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional experiment condition this implementation targets."
+    },
+    "summary": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Short human-readable summary of what was implemented."
+    },
+    "files_changed": {
+      "type": "array",
+      "minItems": 0,
+      "description": "List of files actually touched during implementation.",
+      "items": {
+        "type": "object",
+        "required": ["path", "change_type"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Relative file path that was changed."
+          },
+          "change_type": {
+            "type": "string",
+            "enum": ["created", "modified", "deleted"],
+            "description": "What actually happened to this file."
+          },
+          "lines_added": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "default": null
+          },
+          "lines_removed": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "default": null
+          },
+          "notes": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Any important implementation note for this file."
+          }
+        }
+      }
+    },
+    "out_of_scope_writes_blocked": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if the scope-guard (scope_guard.py / permission-scope-guard.js) blocked at least one attempted write outside the agent's stage scope during this session."
+    },
+    "git_sha": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Git SHA of the commit capturing these changes, when available."
+    },
+    "caveats": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Any known limitations, deferred items, or follow-ups the implementer flagged."
+    }
+  }
+}

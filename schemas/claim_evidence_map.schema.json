@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/claim_evidence_map.schema.json",
+  "title": "Claim Evidence Map",
+  "description": "DISCOVER-stage typed artifact. Output of claim-evidence-linker. Maps each claim to the concrete evidence loci (table cell, figure, code block, dataset row) that support or refute it. Every mapping must have at least one non-empty locus — a claim with no locus cannot be citation-checked.",
+  "type": "object",
+  "required": ["mappings"],
+  "additionalProperties": false,
+  "properties": {
+    "mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_id", "loci"],
+        "additionalProperties": false,
+        "properties": {
+          "claim_id": {"type": "string", "minLength": 1, "description": "must match a claim_id from a claim_list"},
+          "loci": {
+            "type": "array",
+            "minItems": 1,
+            "description": "at least one locus is required — empty loci means the claim is unanchored",
+            "items": {
+              "type": "object",
+              "required": ["locus_id", "source_ref", "location", "supports_claim"],
+              "additionalProperties": false,
+              "properties": {
+                "locus_id": {"type": "string", "minLength": 1},
+                "source_ref": {"type": "string", "minLength": 1},
+                "location": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "human-readable location: e.g. 'Table 2 row 3', 'Figure 4', 'Section 3.2 para 1'"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["table", "figure", "text", "code", "dataset", "appendix", "other"],
+                  "default": "text"
+                },
+                "reported_result": {
+                  "type": ["string", "null"],
+                  "description": "The actual value or statement found at this locus. The claim-evidence-linker READS this to decide supports_claim for the locus (true = supports the claim, false = contradicts it). There is NO automatic numeric comparison: contradiction detection is the linker's explicit supports_claim decision, enforced deterministically by the gate. Always populate this for table cells, figures, and code comments so the linker can judge support correctly."
+                },
+                "supports_claim": {
+                  "type": "boolean",
+                  "description": "REQUIRED. The linker must explicitly decide per locus: true = this locus supports the claim; false = this locus contradicts the claim (reports the opposite). No default — omitting this field causes citation_checker.py to conservatively BLOCK (cannot verify the claim)."
+                }
+              }
+            }
+          },
+          "overall_support": {
+            "type": "string",
+            "enum": ["supported", "partial", "contradicted", "not-found"],
+            "default": "not-found"
+          }
+        }
+      }
+    }
+  }
+}

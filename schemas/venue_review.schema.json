@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/venue_review.schema.json",
+  "title": "Venue Review",
+  "description": "VERIFY-stage producer artifact. One persona's blind review of a manuscript against a specific venue's 7-dim rubric. This is a reviewer's evidentiary record only — it carries NO verdict, meets_bar, decision, status, or accept field. Reviewers never self-decide; only area-chair-synthesizer (calling venue_score.py) derives the readiness verdict. additionalProperties:false makes any self-decision field structurally impossible.",
+  "type": "object",
+  "required": [
+    "persona",
+    "venue_id",
+    "dimension_scores",
+    "reject_triggers_fired",
+    "overall",
+    "confidence",
+    "evidence_ref"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "persona": {
+      "type": "string",
+      "enum": ["methodology", "domain", "adversarial"],
+      "description": "Which reviewer persona produced this review."
+    },
+    "venue_id": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "The venue this review is calibrated to (e.g. NeurIPS-2025, MICCAI-2025)."
+    },
+    "dimension_scores": {
+      "type": "object",
+      "description": "Per-dimension scores (D1..D7). Each present key maps to a score + evidence. Keys not applicable to the venue/paper_type may be omitted.",
+      "additionalProperties": false,
+      "properties": {
+        "D1": {"$ref": "#/$defs/dim_score"},
+        "D2": {"$ref": "#/$defs/dim_score"},
+        "D3": {"$ref": "#/$defs/dim_score"},
+        "D4": {"$ref": "#/$defs/dim_score"},
+        "D5": {"$ref": "#/$defs/dim_score"},
+        "D6": {"$ref": "#/$defs/dim_score"},
+        "D7": {"$ref": "#/$defs/dim_score"}
+      }
+    },
+    "reject_triggers_fired": {
+      "type": "array",
+      "description": "List of reject-triggers that fired during this review. Empty if none fired.",
+      "items": {
+        "type": "object",
+        "required": ["trigger_id", "dimension", "locus", "required_fix"],
+        "additionalProperties": false,
+        "properties": {
+          "trigger_id": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Stable trigger identifier (e.g. RT-D4-BASELINE, RT-D1-OVERCLAIM)."
+          },
+          "dimension": {
+            "type": "string",
+            "enum": ["D1", "D2", "D3", "D4", "D5", "D6", "D7"],
+            "description": "The dimension this trigger maps to."
+          },
+          "locus": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Specific location in the manuscript where the trigger fires (section/figure/table reference)."
+          },
+          "required_fix": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Concrete change needed to resolve this trigger."
+          }
+        }
+      }
+    },
+    "overall": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Overall recommendation mapped to the venue's own scale (e.g. 'Weak Accept', 'Reject', 'Strong Accept')."
+    },
+    "confidence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Reviewer confidence: 5=every claim checked, 1=uncertainty high. Low confidence votes are down-weighted by area-chair-synthesizer."
+    },
+    "evidence_ref": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Anti-slop guard: at least one evidence pointer (file path, artifact id, section ref) is required.",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "minimal_fix": {
+      "type": "string",
+      "description": "Optional: the smallest change set that would make this review's reject triggers resolvable."
+    }
+  },
+  "$defs": {
+    "dim_score": {
+      "type": "object",
+      "required": ["score", "evidence_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "description": "1=poor, 2=fair, 3=good, 4=excellent (NeurIPS 1-4 scale)."
+        },
+        "evidence_ref": {
+          "type": "array",
+          "minItems": 1,
+          "description": "At least one pointer (file:line, [[slug]], metrics path) justifying the score.",
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional per-dimension notes."
+        }
+      }
+    }
+  }
+}

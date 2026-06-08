@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/run_manifest.schema.json",
+  "title": "Run Manifest",
+  "description": "Single source of truth for one run (runs/<id>/manifest.yaml). Written ONLY by the orchestrator/state-tracker (single-writer). On resume, this file + the ledger are the only authoritative inputs; prior-session chat memory is non-authoritative.",
+  "type": "object",
+  "required": ["schema_version", "run_id", "status", "created_at", "updated_at", "mode", "entry_stage", "next_step", "completed_work"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {
+      "type": "string",
+      "enum": ["running", "awaiting_director", "awaiting_resume", "interrupted", "promoting", "done", "parked", "failed"]
+    },
+    "created_at": {"type": "string", "minLength": 1},
+    "updated_at": {"type": "string", "minLength": 1},
+    "mode": {"type": "string", "minLength": 1},
+    "entry_stage": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]},
+    "domain_profile_ref": {"type": ["string", "null"], "default": null},
+    "next_step": {
+      "type": ["object", "null"],
+      "description": "What to do next; null when status=done",
+      "additionalProperties": false,
+      "required": ["stage", "action", "agent_subset"],
+      "properties": {
+        "stage": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]},
+        "action": {"type": "string", "minLength": 1},
+        "agent_subset": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "last_boundary_hash": {"type": ["string", "null"], "description": "hash-chain head at the last clean boundary = resume handle"},
+    "completed_work": {
+      "type": "array",
+      "description": "Replay-skip map: one entry per finished stage with artifact path+sha (sha match => skip; drift => re-run that step only)",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage", "state", "artifacts", "idempotency_key"],
+        "properties": {
+          "stage": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]},
+          "state": {"type": "string", "enum": ["pending", "running", "done", "stale"]},
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "sha256"],
+              "properties": {
+                "path": {"type": "string", "minLength": 1},
+                "sha256": {"type": "string", "minLength": 8}
+              }
+            }
+          },
+          "idempotency_key": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "pending_gates": {"type": "array", "items": {"type": "string"}, "default": []},
+    "promotion_targets": {"type": "array", "items": {"type": "string"}, "default": []}
+  }
+}

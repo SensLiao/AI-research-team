@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/agent_run_log.schema.json",
+  "title": "Agent Run Log",
+  "description": "Observability record for one agent invocation. Constitution: a complex agent team that is not observable is not controllable. One line per agent run.",
+  "type": "object",
+  "required": ["agent_name", "task_id", "started_at"],
+  "additionalProperties": false,
+  "properties": {
+    "agent_name": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1},
+    "stage": {"type": ["string", "null"], "default": null},
+    "model": {"type": ["string", "null"], "default": null, "description": "Resolved model tier the run's lead agent ran on after model_policy was applied (opus|sonnet|none); null when the lead agent is unbuilt/unrecorded"},
+    "input_artifact_hashes": {"type": "array", "items": {"type": "string"}, "default": []},
+    "output_artifact_hash": {"type": ["string", "null"], "default": null},
+    "tool_calls": {"type": "integer", "minimum": 0, "default": 0},
+    "errors": {"type": "array", "items": {"type": "string"}, "default": []},
+    "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "default": null},
+    "started_at": {"type": "string", "minLength": 1},
+    "ended_at": {"type": ["string", "null"], "default": null},
+    "cost_tokens": {"type": ["integer", "null"], "minimum": 0, "default": null},
+    "human_overrides": {"type": "array", "items": {"type": "string"}, "default": []}
+  }
+}

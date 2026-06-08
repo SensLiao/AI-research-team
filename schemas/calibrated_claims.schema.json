@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/calibrated_claims.schema.json",
+  "title": "Calibrated Claims",
+  "description": "ANALYZE-stage artifact. Output of claim-strength-calibrator. Each calibrated claim carries a strength label and an optional caveat. strength is capped when delta < variance (derived by claim_calibration.py). Agents never self-cite as strong when variance overlaps the delta.",
+  "type": "object",
+  "required": ["calibrated"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Reference to the result_summary or claim_list this was calibrated from"
+    },
+    "calibrated": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["original_claim", "strength", "calibrated_claim"],
+        "additionalProperties": false,
+        "properties": {
+          "original_claim": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The original wording of the claim before calibration"
+          },
+          "metric": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Metric this claim refers to (null if claim is qualitative)"
+          },
+          "delta": {
+            "type": ["number", "null"],
+            "default": null,
+            "description": "Claimed numeric improvement over baseline"
+          },
+          "variance": {
+            "type": ["number", "null"],
+            "default": null,
+            "description": "1-sigma or half-CI estimate of variance/std around the delta"
+          },
+          "strength": {
+            "type": "string",
+            "enum": ["strong", "moderate", "marginal", "inconclusive"],
+            "description": "Calibrated strength label — capped to marginal/inconclusive when delta < variance"
+          },
+          "calibrated_claim": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The rewritten or confirmed claim text after calibration"
+          },
+          "caveat": {
+            "type": "string",
+            "default": "",
+            "description": "Optional caveat text explaining the calibration decision"
+          },
+          "downgraded": {
+            "type": "boolean",
+            "default": false,
+            "description": "True iff the claim strength was reduced from the original"
+          }
+        }
+      },
+      "description": "List of calibrated claims. minItems 1 ensures non-empty output."
+    }
+  }
+}

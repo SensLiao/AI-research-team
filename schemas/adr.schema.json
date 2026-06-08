@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/adr.schema.json",
+  "title": "Architecture/Decision Record (ADR)",
+  "description": "How a conflict or human approval is recorded. Constitution Rule 5: every human approval and every resolved agent conflict becomes an ADR (not a vibe). The conflict-resolver emits proposed ADRs; the director approves.",
+  "type": "object",
+  "required": ["decision_id", "question", "options", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "decision_id": {"type": "string", "pattern": "^ADR-[0-9]{4,}$"},
+    "question": {"type": "string", "minLength": 1},
+    "options": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 2},
+    "chosen_option": {"type": ["string", "null"], "default": null},
+    "reason": {"type": ["string", "null"], "default": null},
+    "evidence": {"type": "array", "items": {"type": "string"}, "default": []},
+    "status": {"type": "string", "enum": ["proposed", "approved", "rejected"]},
+    "approved_by": {"type": ["string", "null"], "default": null},
+    "approved_at": {"type": ["string", "null"], "default": null},
+    "downstream_locked_artifacts": {"type": "array", "items": {"type": "string"}, "default": []}
+  }
+}

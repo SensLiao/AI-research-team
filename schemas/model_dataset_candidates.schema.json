@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/model_dataset_candidates.schema.json",
+  "title": "Model/Dataset Candidates",
+  "description": "Output of model-dataset-scout. Candidate models and datasets for a task, each by reference with fit notes / license / modality. A shortlist to evaluate, not a decision.",
+  "type": "object",
+  "required": ["task", "candidates"],
+  "additionalProperties": false,
+  "properties": {
+    "task": {"type": "string", "minLength": 1},
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "name", "ref"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {"type": "string", "enum": ["model", "dataset"]},
+          "name": {"type": "string", "minLength": 1},
+          "ref": {"type": "string", "minLength": 1},
+          "modality": {"type": "string"},
+          "license": {"type": ["string", "null"], "default": null},
+          "fit_notes": {"type": "string"}
+        }
+      }
+    },
+    "n_models": {"type": ["integer", "null"], "minimum": 0, "default": null},
+    "n_datasets": {"type": ["integer", "null"], "minimum": 0, "default": null}
+  }
+}

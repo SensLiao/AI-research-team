@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/white_space_map.schema.json",
+  "title": "White Space Map",
+  "description": "DISCOVER-stage artifact. Output of white-space-mapper. Maps under-explored regions in the surveyed landscape. Only regions that ARE holes are emitted as items — a fully covered landscape yields an empty regions array. Each region carries hole:true so it is a direct classify_gap signal that maps to (coverage_gap, WHITESPACE). Never emit hole:false regions (they are not gaps). Every present item carries at least one non-blank evidence_ref (anti-slop).",
+  "type": "object",
+  "required": ["regions"],
+  "additionalProperties": false,
+  "properties": {
+    "regions": {
+      "type": "array",
+      "description": "Under-explored regions (holes) in the literature landscape. Only emit a region when it IS a hole (hole:true). An empty array means the landscape has no identifiable white space.",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "region", "hole", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "gap_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Short unique identifier, e.g. WS-001."
+          },
+          "region": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Description of the under-explored area. Non-blank required."
+          },
+          "hole": {
+            "type": "boolean",
+            "const": true,
+            "description": "Always true for an emitted region — signals classify_gap rule 4 (coverage_gap / WHITESPACE). Structurally const:true so a hole:false region (which would match no classify_gap rule and raise) can never be emitted; a covered landscape yields an empty regions array instead."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "description": "Evidence pointers grounding this region (anti-slop). At least one required; each must be non-blank."
+          },
+          "density": {
+            "type": "string",
+            "description": "Optional descriptor of coverage density around this region (e.g. 'sparse', 'absent')."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional clarifying notes."
+          }
+        }
+      }
+    }
+  }
+}

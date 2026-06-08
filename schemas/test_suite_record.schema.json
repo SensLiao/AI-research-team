@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/test_suite_record.schema.json",
+  "title": "Test Suite Record",
+  "description": "EXECUTE-stage artifact. Output of unit-test-writer. Records the unit tests written for a given implementation, listing the test targets and the generated test file paths. At least one test target (loader/prompt/metric/loss) is required — an empty suite is not a valid deliverable.",
+  "type": "object",
+  "required": ["test_targets", "test_files"],
+  "additionalProperties": false,
+  "properties": {
+    "from_implementation_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional reference to the implementation_record this test suite covers."
+    },
+    "test_targets": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The logical targets covered by this test suite (e.g. loader, prompt, metric, loss). At least one required.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "test_files": {
+      "type": "array",
+      "minItems": 0,
+      "description": "Paths to the test files written (relative to project root).",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Relative path to the test file."
+          },
+          "n_tests": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "default": null,
+            "description": "Number of test functions in this file."
+          },
+          "covers": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Which test_targets this file exercises."
+          }
+        }
+      }
+    },
+    "coverage_pct": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 100,
+      "default": null,
+      "description": "Measured code coverage percentage, if available. Null until externally run."
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Any known gaps, edge cases deferred, or follow-up tests planned."
+    }
+  }
+}

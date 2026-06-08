@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/evidence_verdict.schema.json",
+  "title": "Evidence Verdict",
+  "description": "Output of evidence-verifier (hard gate). Two-tier discipline (deterministic -> LLM -> refuse). BLOCK means the evidence base is too thin or unsaturated to support a release-grade conclusion. verdict is derived from the checks by the deterministic checker, never set by vibe.",
+  "type": "object",
+  "required": ["verdict", "reasons"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+    "reasons": {"type": "array", "items": {"type": "string"}},
+    "tier": {"type": "string", "enum": ["deterministic", "llm", "refuse"], "default": "deterministic"},
+    "n_sources": {"type": "integer", "minimum": 0, "default": 0},
+    "n_strong": {"type": "integer", "minimum": 0, "default": 0},
+    "saturation_reached": {"type": "boolean", "default": false},
+    "checked_invariants": {"type": "array", "items": {"type": "string"}, "default": []}
+  }
+}

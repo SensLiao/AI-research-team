@@ -1,0 +1,28 @@
+# Domain profile: generic AI/ML research (domain-neutral baseline).
+# Validates against schemas/domain_profile.schema.json (payload).
+# This is the fallback when no specialized profile is selected.
+profile_id: ai-generic
+display_name: "Generic AI/ML research (domain-neutral baseline)"
+applies_to:
+  - machine-learning
+  - deep-learning
+  - ai-research
+split_policy:
+  default_split_unit: sample
+  allowed_split_units: ["sample", "group"]
+  forbidden_split_units: []
+  stratification_keys: ["label"]
+  external_test_recommended: false
+  freeze_test_before_training: true
+leakage_checks:
+  - train_test_id_disjoint
+leakage_delta: 0.5
+metrics:
+  - {name: accuracy, higher_is_better: true, valid_range: [0.0, 1.0]}
+alignment_invariants:
+  - "identical preprocessing across compared methods unless preprocessing is the studied variable"
+  - "identical evaluation protocol across compared methods"
+hard_invariants:
+  - "test set frozen before training"
+  - "all compared methods use identical preprocessing unless preprocessing is the studied variable"
+  - "all pretrained weights explicitly declared"

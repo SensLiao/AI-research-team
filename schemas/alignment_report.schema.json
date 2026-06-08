@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/alignment_report.schema.json",
+  "title": "Train/Test/Inference Alignment Report",
+  "description": "Output of train-test-alignment-auditor (the '对齐人'). A hard gate: verdict BLOCK means train/test/inference are not aligned and the comparison would be invalid. Domain-specific extra invariants come from the active profile.",
+  "type": "object",
+  "required": ["verdict", "violations"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+    "violations": {"type": "array", "items": {"type": "string"}},
+    "checked_invariants": {"type": "array", "items": {"type": "string"}, "default": []},
+    "train_ref": {"type": ["string", "null"], "default": null},
+    "test_ref": {"type": ["string", "null"], "default": null}
+  },
+  "allOf": [
+    {
+      "if": {"required": ["violations"], "properties": {"violations": {"minItems": 1}}},
+      "then": {"properties": {"verdict": {"const": "BLOCK"}}}
+    }
+  ]
+}

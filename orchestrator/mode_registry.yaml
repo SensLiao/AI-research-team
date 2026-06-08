@@ -1,0 +1,114 @@
+# mode -> which agents activate + entry stage + gate level + budget.
+# A task activates a SMALL subset, not the whole roster. gate_level director_signoff means the
+# entry stage's hard gates MUST be in agent_subset (router enforces; auto/record_only are low-risk).
+modes:
+  check_run:
+    entry_stage: EXECUTE
+    agent_subset: [monitor]
+    gate_level: auto
+    budget: {max_agent_hops: 2}
+  ingest_paper:
+    entry_stage: DISCOVER
+    agent_subset: [literature-ingest]
+    gate_level: record_only
+    budget: {max_agent_hops: 1}
+  evidence_review:
+    entry_stage: DISCOVER
+    stage_path: [DISCOVER, REPORT]   # discovery + evidence gate, then reply; experiment stages forward-skipped
+    agent_subset: [lit-scout, evidence-verifier, citation-integrity-auditor]   # citation-integrity now a DISCOVER hard gate
+    gate_level: director_signoff
+    budget: {max_agent_hops: 3}
+  gap_scan:
+    entry_stage: DISCOVER
+    agent_subset: [future-work-miner, weakness-spotter, gap-classifier]
+    gate_level: record_only
+    budget: {max_agent_hops: 3}
+  design_experiment:
+    entry_stage: DESIGN
+    agent_subset: [rq-architect, experiment-planner, dataset-split-planner, data-protocol-designer,
+                   config-unifier, method-integration-planner, baseline-fairness-planner,
+                   variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor,
+                   decision-surfacer]
+    gate_level: director_signoff
+    budget: {max_agent_hops: 4}
+  design_experiment_minimal:
+    entry_stage: DESIGN
+    stage_path: [DESIGN, REPORT]     # V1 minimal: plan + both DESIGN hard gates, then reply (no execute/analyze yet)
+    agent_subset: [experiment-planner, protocol-compiler, variable-control-auditor, train-test-alignment-auditor,
+                   metric-implementation-auditor]
+    gate_level: director_signoff     # keeps all three DESIGN hard gates mandatory (router guardrail 1)
+    budget: {max_agent_hops: 4}
+  verify_result:
+    entry_stage: VERIFY
+    agent_subset: [review-configurator, methodology-reviewer, domain-reviewer, adversarial-reviewer,
+                   scientific-critic, review-synthesizer]
+    gate_level: director_signoff
+    budget: {max_agent_hops: 3}
+  full_new_direction:
+    entry_stage: DISCOVER
+    agent_subset: [lit-scout, model-dataset-scout, evidence-verifier, citation-integrity-auditor, gap-classifier]
+    gate_level: director_signoff
+    budget: {max_agent_hops: 6}
+  full_rigor_minimal:
+    entry_stage: DESIGN
+    stage_path: [DESIGN, EXECUTE, ANALYZE, VERIFY, REPORT]   # M2-a spine slice: the full tail with execution+analysis depth
+    agent_subset: [experiment-planner, protocol-compiler, variable-control-auditor, train-test-alignment-auditor,
+                   metric-implementation-auditor, trainset-builder, testset-builder, preflight-checker, ablation-runner,
+                   experiment-journaler, train-test-parity-verifier, result-analyzer, result-sanity-checker, adversarial-reviewer]
+    gate_level: director_signoff     # keeps all DESIGN hard gates mandatory (router guardrail 1); EXECUTE+ANALYZE gates live in-stage
+    budget: {max_agent_hops: 6}
+  # --- M2 breadth modes ---
+  evidence_deep:
+    entry_stage: DISCOVER
+    stage_path: [DISCOVER, REPORT]   # evidence-depth sub-team: discover + both DISCOVER gates, then reply
+    agent_subset: [lit-scout, source-quality-ranker, claim-extractor, claim-evidence-linker, contradiction-miner,
+                   dataset-card-builder, staleness-auditor, citation-integrity-auditor, landscape-mapper, evidence-verifier]
+    gate_level: director_signoff     # both DISCOVER hard gates (evidence-verifier + citation-integrity-auditor) mandatory
+    budget: {max_agent_hops: 6}
+  m2_accept:
+    entry_stage: DESIGN
+    stage_path: [DESIGN, EXECUTE, ANALYZE, VERIFY, REPORT]   # M2 breadth acceptance: spine tail + the new DESIGN gate live
+    agent_subset: [experiment-planner, protocol-compiler, variable-control-auditor, train-test-alignment-auditor,
+                   metric-implementation-auditor, trainset-builder, testset-builder, preflight-checker, ablation-runner,
+                   experiment-journaler, train-test-parity-verifier, result-analyzer, result-sanity-checker, adversarial-reviewer]
+    gate_level: director_signoff     # every DESIGN hard gate (incl. metric-implementation-auditor) mandatory
+    budget: {max_agent_hops: 8}
+  # --- M3-a (new-direction / freedom-layer spine) ---
+  new_direction:
+    entry_stage: DISCOVER
+    stage_path: [DISCOVER, IDEATE, REPORT]   # gap-hunting -> ideate -> idea_backlog (the ranked MENU) -> director reviews at the IDEATE gate
+    agent_subset: [future-work-miner, gap-classifier, novelty-scorer, evidence-verifier, citation-integrity-auditor,
+                   hypothesis-generator, feasibility-reranker]
+    gate_level: director_signoff     # a new direction commits GPU+writing time (high-stakes): both DISCOVER hard gates (evidence-verifier + citation-integrity-auditor) fire so ideation is grounded in VERIFIED evidence (router guardrail 1). The director gate fires at each stage; the IDEATE boundary IS the /idea-bet review (a reject = "none of these — pivot"). idea_backlog has NO self-bet field (structural); the chosen bet is recorded by the human /idea-bet slash as an adr. Downstream experiment rigor (DESIGN..VERIFY hard gates) fires only AFTER a bet.
+    budget: {max_agent_hops: 6}
+  # --- M3-c (gap-hunting breadth) — the differentiation engine, focused scan ---
+  gap_breadth:
+    entry_stage: DISCOVER
+    agent_subset: [future-work-miner, weakness-spotter, white-space-mapper, cross-domain-transfer-scout,
+                   contrarian-angle-generator, gap-classifier, novelty-scorer]
+    gate_level: record_only          # a focused gap-hunt scan (cheap, no commitment): all 5 hunters -> classify (7-type) -> novelty (SCORE-ONLY, never a cut). Each hunter's items ARE classify_gap signals; novelty drops none.
+    budget: {max_agent_hops: 4}
+  # --- M3-f (IDEATE-ring completion) — the full ring as a focused mode ---
+  ideate_ring:
+    entry_stage: IDEATE
+    agent_subset: [hypothesis-generator, idea-tournament-ranker, idea-evolver, feasibility-reranker]
+    gate_level: record_only          # the full ring hypothesis_set -> idea_tournament (pairwise, not score-mean) -> evolved_ideas (parent-provenance) -> idea_backlog (the ranked MENU). Still no self-bet; the bet is the human /idea-bet.
+    budget: {max_agent_hops: 4}
+  # --- M3-b (EXECUTE menus) — variable-touch ⛔ fires behind each menu ---
+  debug_failed_run:
+    entry_stage: EXECUTE
+    agent_subset: [failure-triager, auto-debugger, variable-touch-guard, preflight-checker, train-test-parity-verifier]
+    gate_level: director_signoff     # a debug patch leads to a RE-RUN: all 3 EXECUTE gates fire (router guardrail 1). variable-touch-guard ⛔ BLOCKs a patch that edits a studied/frozen variable (constitution: menus may fix bugs, never change variables); preflight + parity gate the re-run.
+    budget: {max_agent_hops: 4}
+  tree_explore:
+    entry_stage: EXECUTE
+    agent_subset: [experiment-tree-explorer, variable-touch-guard, preflight-checker, train-test-parity-verifier]
+    gate_level: director_signoff     # a bounded tree of next-runs within the CONTROLLED space; variable-touch-guard ⛔ BLOCKs a branch that changes a studied variable; depth/width capped by budget; preflight + parity gate each re-run.
+    budget: {max_agent_hops: 4}
+  # --- M3-d (VR-1 venue-targeted peer-review) — VERIFY-entry, reuses the M2 panel + venue agents ---
+  venue_readiness:
+    entry_stage: VERIFY
+    agent_subset: [venue-selector, venue-review-configurator, venue-reviewer-persona, area-chair-synthesizer,
+                   adversarial-reviewer, scientific-critic]
+    gate_level: director_signoff     # "is this good enough for venue X" — the VERIFY hard gate (adversarial-reviewer) fires (router guardrail 1); reviewers never self-decide (venue_review has no verdict field) and never write (no Write tool); the area-chair verdict is DERIVED by venue_score.py; venue choice (/venue-pick) and publish (/venue-decide) are human gates.
+    budget: {max_agent_hops: 6}

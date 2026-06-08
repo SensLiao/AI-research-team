@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/metric_impl_report.schema.json",
+  "title": "Metric Implementation Report",
+  "description": "DESIGN-stage hard-gate artifact. Output of metric-implementation-auditor. Derived mechanically from compare_metric_impls.py; verdict BLOCK halts the stage. BLOCKs when two conditions use a different metric impl_ref/spacing/postprocess, OR a metric declared in the profile is missing from a condition. Profile-driven: canonical impl_ref comes from the domain profile.",
+  "type": "object",
+  "required": ["verdict", "violations"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+    "violations": {"type": "array", "items": {"type": "string"}},
+    "checked_metrics": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Metric names that were checked"
+    },
+    "missing_metrics": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Metrics declared in the profile but absent from at least one condition"
+    },
+    "impl_mismatches": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Conditions or metrics where impl_ref/spacing/postprocess diverged"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["violations"],
+        "properties": {"violations": {"minItems": 1}}
+      },
+      "then": {
+        "properties": {"verdict": {"const": "BLOCK"}}
+      }
+    }
+  ]
+}

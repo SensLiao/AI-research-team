@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/baseline_audit_report.schema.json",
+  "title": "Baseline Audit Report",
+  "description": "ANALYZE-stage artifact. Output of baseline-comparison-auditor. Compares data/budget/metric/postprocess conditions between baseline and method conditions. Asymmetry flags are derived mechanically by baseline_audit.py; never hand-set.",
+  "type": "object",
+  "required": ["asymmetry_flags", "conditions_compared", "clean"],
+  "additionalProperties": false,
+  "properties": {
+    "conditions_compared": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1},
+      "description": "List of condition_ids compared (must include at least one baseline and one method)"
+    },
+    "asymmetry_flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["condition_pair", "dimension", "baseline_value", "method_value"],
+        "additionalProperties": false,
+        "properties": {
+          "condition_pair": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": "string", "minLength": 1},
+            "description": "[baseline_condition_id, method_condition_id]"
+          },
+          "dimension": {
+            "type": "string",
+            "enum": ["data", "budget", "metric", "postprocess"],
+            "description": "Which comparison dimension has an asymmetry"
+          },
+          "baseline_value": {
+            "type": ["string", "null"],
+            "description": "Declared value for the baseline condition on this dimension"
+          },
+          "method_value": {
+            "type": ["string", "null"],
+            "description": "Declared value for the method condition on this dimension"
+          },
+          "detail": {
+            "type": "string",
+            "default": "",
+            "description": "Human-readable explanation of the asymmetry"
+          }
+        }
+      },
+      "default": [],
+      "description": "Each entry is an asymmetry found between a baseline and method condition"
+    },
+    "clean": {
+      "type": "boolean",
+      "description": "True iff asymmetry_flags is empty — derived from the flags, not set by hand"
+    },
+    "notes": {
+      "type": "string",
+      "default": "",
+      "description": "Optional free-text notes from the auditor"
+    }
+  }
+}

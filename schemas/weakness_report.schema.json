@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/weakness_report.schema.json",
+  "title": "Weakness Report",
+  "description": "DISCOVER-stage artifact. Output of weakness-spotter. Enumerates methodological weaknesses found in the surveyed literature. Each weakness item carries a locus (where the weakness is) and an opportunity (the opening it creates), so the item is a direct classify_gap signal that maps to (methodological_gap, WEAK_LOCUS). An empty weaknesses array is allowed (the surveyed work may have no identifiable weaknesses). Every present item carries at least one non-blank evidence_ref (anti-slop): an item with no real evidence is schema-rejected.",
+  "type": "object",
+  "required": ["weaknesses"],
+  "additionalProperties": false,
+  "properties": {
+    "weaknesses": {
+      "type": "array",
+      "description": "Identified methodological weaknesses; each carries locus + opportunity so classify_gap can consume it directly.",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "locus", "opportunity", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "gap_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Short unique identifier, e.g. WK-001."
+          },
+          "locus": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Where the weakness is — a paper or claim reference (the methodological weak point). Non-blank required."
+          },
+          "opportunity": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The opening the weakness creates for new research. Non-blank required."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "description": "Evidence pointers (source_refs / paper_note ids) grounding this weakness (anti-slop). At least one required; each must be non-blank."
+          },
+          "severity": {
+            "type": "string",
+            "description": "Optional severity label (e.g. 'major', 'minor')."
+          },
+          "source_ref": {
+            "type": "string",
+            "description": "Optional direct source reference for this weakness."
+          }
+        }
+      }
+    }
+  }
+}

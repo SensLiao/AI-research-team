@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/power_audit_report.schema.json",
+  "title": "Power Audit Report",
+  "description": "DESIGN-stage advisory artifact. Output of statistics-power-auditor. Assesses whether the experiment has sufficient statistical power (seeds, sample size) relative to profile-declared minimums. Advisory verdict: sufficient true/false, derived from n_seeds vs profile min_seeds. Director-ADR override per decision D.",
+  "type": "object",
+  "required": ["sufficient", "n_seeds_declared"],
+  "additionalProperties": false,
+  "properties": {
+    "sufficient": {
+      "type": "boolean",
+      "description": "Advisory verdict: true = declared n_seeds >= profile minimum; false = insufficient power"
+    },
+    "n_seeds_declared": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of seeds declared in the experiment config"
+    },
+    "min_seeds_required": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "default": null,
+      "description": "Minimum seeds from profile hard_invariants or min_seeds field. null = profile does not declare a minimum (advisory-only, no threshold to check)."
+    },
+    "power_concerns": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Human-readable advisory concerns about statistical power (e.g. n=1 is insufficient for variance estimation)"
+    },
+    "adr_override_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "ADR id if director explicitly approved running with insufficient power (decision D override)"
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "default": null
+    }
+  }
+}

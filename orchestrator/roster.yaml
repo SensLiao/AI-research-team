@@ -1,0 +1,97 @@
+# Known agent roster (the complete-form names). graph.yaml allowed_agents and mode_registry
+# agent_subset must be subsets of this. Building an agent = writing its spec under agents/;
+# listing it here only declares the name is known to the FSM. Status tiers live in the blueprint.
+agents:
+  control:
+    - research-orchestrator
+    - state-tracker
+    - artifact-contract-enforcer
+    - permission-scope-guard
+    - budget-and-stop-controller
+    - conflict-resolver
+  discover:
+    - lit-scout
+    - model-dataset-scout
+    - evidence-verifier
+    - repo-code-verifier
+    - literature-ingest
+    - source-quality-ranker
+    - claim-extractor
+    - claim-evidence-linker
+    - contradiction-miner
+    - dataset-card-builder
+    - staleness-auditor
+    - citation-integrity-auditor
+    - landscape-mapper
+    - monitor
+  gap_hunting:
+    - future-work-miner
+    - weakness-spotter
+    - white-space-mapper
+    - cross-domain-transfer-scout
+    - contrarian-angle-generator
+    - gap-classifier
+    - novelty-scorer
+  ideate:
+    - hypothesis-generator
+    - idea-tournament-ranker
+    - idea-evolver
+    - feasibility-reranker
+  design:
+    - rq-architect
+    - experiment-planner
+    - protocol-compiler
+    - dataset-split-planner
+    - data-protocol-designer
+    - config-unifier
+    - method-integration-planner
+    - baseline-fairness-planner
+    - variable-control-auditor
+    - train-test-alignment-auditor
+    - metric-implementation-auditor
+    - statistics-power-auditor
+    - decision-surfacer
+  execute:
+    - patch-planner
+    - code-implementer
+    - unit-test-writer
+    - trainset-builder
+    - testset-builder
+    - preflight-checker
+    - ablation-runner
+    - experiment-journaler
+    - train-test-parity-verifier
+    - sandbox-runner
+    - failure-triager
+    - repro-runner
+    - auto-debugger
+    - experiment-tree-explorer
+    - variable-touch-guard
+  analyze:
+    - result-analyzer
+    - result-sanity-checker
+    - baseline-comparison-auditor
+    - variance-analyzer
+    - fairness-auditor
+    - compliance-auditor
+    - goal-alignment-checker
+    - failure-case-miner
+    - figure-generator
+    - visualization-auditor
+    - claim-strength-calibrator
+    - figure-vlm-critic
+  verify:
+    - review-configurator
+    - methodology-reviewer
+    - domain-reviewer
+    - adversarial-reviewer
+    - scientific-critic
+    - review-synthesizer
+    - synthesis-writer
+    - contribution-ledger-builder
+    - threats-to-validity-writer
+    - review-response-simulator
+    - venue-review-configurator
+    - venue-selector
+    - venue-reviewer-persona
+    - area-chair-synthesizer

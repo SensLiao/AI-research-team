@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/debug_session.schema.json",
+  "title": "Debug Session",
+  "description": "EXECUTE-stage artifact. Output of auto-debugger. Proposes a bug-fix patch for a failed run, lists every variable the patch would touch, and provides evidence for the debugging decision. The variable-touch-guard reads touched_variables to decide BLOCK/PASS — the debugger never claims a fix is safe.",
+  "type": "object",
+  "required": ["session_id", "failed_run_ref", "proposed_patch", "touched_variables", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Unique identifier for this debug session."
+    },
+    "failed_run_ref": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Reference to the failed run_record or triage_report that triggered this session."
+    },
+    "proposed_patch": {
+      "type": "object",
+      "required": ["summary"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Human-readable description of the proposed fix."
+        },
+        "files": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Optional list of files the patch touches."
+        },
+        "diff_hint": {
+          "type": "string",
+          "description": "Optional diff hint or pseudocode for the patch."
+        }
+      }
+    },
+    "touched_variables": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      },
+      "description": "Explicit list of experiment variables (from the experiment_matrix) this patch would touch. The variable-touch-guard reads this list. A patch touching no variables emits an empty array."
+    },
+    "evidence_ref": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      },
+      "description": "Evidence references (triage_report, run_record, log excerpt) supporting the diagnosis. Anti-slop: at least one non-empty reference required."
+    },
+    "root_cause": {
+      "type": "string",
+      "description": "Optional root-cause hypothesis (prose, not a machine field)."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional extra context."
+    }
+  }
+}

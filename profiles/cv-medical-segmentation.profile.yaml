@@ -1,0 +1,55 @@
+# Domain profile: 3D medical image segmentation (ONE example domain — NOT the system's target).
+# The system is AI/CS-research-general; this profile just specializes it for the director's PhD domain.
+# Validates against schemas/domain_profile.schema.json (payload).
+profile_id: cv-medical-segmentation
+display_name: "3D medical image segmentation (incl. fine tubular anatomy, interactive, foundation-vs-scratch)"
+applies_to:
+  - medical-imaging
+  - 3d-segmentation
+  - tubular-anatomy
+  - interactive-segmentation
+  - foundation-model-benchmark
+split_policy:
+  default_split_unit: patient
+  allowed_split_units: ["patient", "case"]
+  forbidden_split_units: ["slice", "patch", "image"]
+  stratification_keys: ["anatomy_region", "pathology_status", "scanner_site"]
+  external_test_recommended: true
+  freeze_test_before_training: true
+leakage_checks:
+  - patient_id_disjoint
+  - volume_id_disjoint
+  - derived_patch_disjoint
+leakage_delta: 0.5
+metrics:
+  - {name: Dice, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: IoU, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: HD95, higher_is_better: false, valid_range: [0.0, null]}
+  - {name: clDice, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: centerline_continuity, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: topology_break_count, higher_is_better: false, valid_range: [0.0, null]}
+  - {name: small_structure_recall, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: false_disconnection_rate, higher_is_better: false, valid_range: [0.0, 1.0]}
+alignment_invariants:
+  - "train_spacing == test_spacing"
+  - "test augmentation disabled"
+  - "inference threshold identical across compared methods"
+  - "sliding-window config identical across compared methods"
+  - "prompt construction identical across compared interactive methods"
+  - "metrics computed on identical postprocessed spacing"
+  - "mixed-precision setting identical across compared methods"
+protocol_fields:
+  interactive:
+    prompt_types: ["point", "box", "scribble"]
+    click_generation_rule: "center-of-largest-error-region"
+    positive_negative_handling: "both"
+    inference_time_correction_loop: true
+  from_scratch_baseline:
+    must_grep_clean: ["load_state_dict", "pretrained", "encoder checkpoint"]
+    dim_priority: "3D"
+hard_invariants:
+  - "all splits must be patient-level or case-level"
+  - "test set frozen before training; no test augmentation"
+  - "all compared methods identical preprocessing unless explicitly studied"
+  - "all metrics on same postprocessed spacing"
+  - "foundation/pretrained weights explicitly declared; from-scratch baselines grep-clean for pretrained loads"

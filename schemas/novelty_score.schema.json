@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/novelty_score.schema.json",
+  "title": "Novelty Score",
+  "description": "DISCOVER-stage artifact. Output of novelty-scorer. Assigns a novelty score and a feasibility signal to every classified gap — SCORE-ONLY, never a cut or verdict. An empty scores array is allowed (zero gaps in). derived_from MAY be empty: a genuinely zero-signal gap is novelty 0.0 and MUST stay representable (forcing derived_from non-empty would make the schema a de-facto novelty cut, which is forbidden). Every present score still carries a non-blank evidence_ref[] (anti-slop). No pass/verdict/include/cut/selected field exists: novelty is advisory, never a gate.",
+  "type": "object",
+  "required": ["scores"],
+  "additionalProperties": false,
+  "properties": {
+    "scores": {
+      "type": "array",
+      "description": "One score entry per input gap. Every gap receives a score; none are dropped or filtered.",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "novelty", "feasibility_signal", "derived_from", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "gap_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The gap_id this score corresponds to (links to gap_classification output)."
+          },
+          "novelty": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Novelty score in [0, 1]. Higher = more novel relative to the surveyed landscape. ADVISORY ONLY — never a gate or cut. A zero-signal gap is legitimately 0.0."
+          },
+          "feasibility_signal": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Feasibility signal in [0, 1]. Derived deterministically from signal presence; advisory, not a gate."
+          },
+          "derived_from": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "description": "The named provenance signals aggregated to produce this score, e.g. future_work, white_space_present, contrarian_angle. MAY be empty (a zero-signal gap is novelty 0.0); when present each item must be non-blank (no fabricated empty-string slop)."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "description": "Evidence pointers (gap_ids / source_refs) grounding this score (anti-slop). At least one required; each must be non-blank."
+          }
+        }
+      }
+    }
+  }
+}

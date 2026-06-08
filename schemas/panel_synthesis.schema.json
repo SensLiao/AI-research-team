@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/panel_synthesis.schema.json",
+  "title": "Panel Synthesis",
+  "description": "VERIFY-stage gate-ish artifact. Output of review-synthesizer. Structured reconciliation of all panel_reviews and the critic_memo into a single verdict. check_synthesis_coverage.py refuses emission if any reviewer BLOCK is unaddressed or any critic block_flag is undocumented. Verdict APPROVE only when all blocks cleared; BLOCK otherwise.",
+  "type": "object",
+  "required": ["verdict", "violations", "addressed_blocks", "unaddressed_blocks", "open_critic_flags"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["APPROVE", "BLOCK"],
+      "description": "APPROVE only when all reviewer BLOCKs are addressed and all critic block_flags documented; BLOCK otherwise"
+    },
+    "violations": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "list of coverage violations that caused BLOCK verdict; empty iff APPROVE"
+    },
+    "addressed_blocks": {
+      "type": "array",
+      "description": "reviewer BLOCK findings and critic block_flags that have been explicitly rebutted or resolved",
+      "items": {
+        "type": "object",
+        "required": ["block_source", "rebuttal"],
+        "additionalProperties": false,
+        "properties": {
+          "block_source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "id or description of the original block (finding_id or flag_text)"
+          },
+          "rebuttal": {
+            "type": "string",
+            "minLength": 1,
+            "description": "explicit rebuttal argument; must cite evidence"
+          }
+        }
+      }
+    },
+    "unaddressed_blocks": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "reviewer BLOCK findings or critic block_flags present in panel but not rebutted; must be empty for APPROVE"
+    },
+    "open_critic_flags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "critic block_flags not yet resolved; must be empty for APPROVE"
+    },
+    "overall_summary": {
+      "type": "string",
+      "default": "",
+      "description": "optional prose summary of the synthesis (feeds synthesis-writer)"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["violations"],
+        "properties": {"violations": {"minItems": 1}}
+      },
+      "then": {
+        "properties": {"verdict": {"const": "BLOCK"}}
+      }
+    },
+    {
+      "if": {
+        "required": ["verdict"],
+        "properties": {"verdict": {"const": "APPROVE"}}
+      },
+      "then": {
+        "properties": {
+          "unaddressed_blocks": {"maxItems": 0},
+          "open_critic_flags": {"maxItems": 0}
+        },
+        "required": ["unaddressed_blocks", "open_critic_flags"]
+      }
+    }
+  ]
+}

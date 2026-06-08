@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/review_report.schema.json",
+  "title": "Review Report",
+  "description": "VERIFY-stage exit artifact. Output of adversarial-reviewer (hard gate, no Write). Runs five refutation checks (leakage / fairness / eval-frame / provenance / overclaim). verdict APPROVE-FREEZE only if all five pass with evidence; otherwise BLOCK. Defaults to BLOCK under uncertainty. The reviewer issues a verdict; the human executes any freeze.",
+  "type": "object",
+  "required": ["verdict", "checks"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["APPROVE-FREEZE", "BLOCK"]},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["leakage", "fairness", "eval_frame", "provenance", "overclaim"],
+      "properties": {
+        "leakage": {"$ref": "#/$defs/check"},
+        "fairness": {"$ref": "#/$defs/check"},
+        "eval_frame": {"$ref": "#/$defs/check"},
+        "provenance": {"$ref": "#/$defs/check"},
+        "overclaim": {"$ref": "#/$defs/check"}
+      }
+    },
+    "blocking_reasons": {"type": "array", "items": {"type": "string"}, "default": []},
+    "default_block_applied": {"type": "boolean", "default": false}
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass"],
+      "properties": {
+        "pass": {"type": "boolean"},
+        "evidence": {"type": "string"}
+      }
+    }
+  }
+}

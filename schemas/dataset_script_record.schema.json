@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/dataset_script_record.schema.json",
+  "title": "Dataset Script Record",
+  "description": "EXECUTE-stage artifact. Output of trainset-builder / testset-builder. Carries the REAL runnable dataset-construction script (code, not prose) plus the declared expected data hash and the split's freeze/augmentation policy. For split=test the schema STRUCTURALLY forbids augmentation and requires frozen=true (test-set immutability); preflight-checker re-verifies it as a hard gate.",
+  "type": "object",
+  "required": ["split", "script", "from_protocol_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "split": {"type": "string", "enum": ["train", "test"]},
+    "script": {"type": "string", "minLength": 1, "description": "the real runnable construction script (code), emitted as an artifact"},
+    "from_protocol_ref": {"type": "string", "minLength": 1},
+    "data_hash_expected": {"type": ["string", "null"], "default": null, "description": "declared expected data hash; preflight BLOCKs if absent before a run"},
+    "augmentation_enabled": {"type": "boolean", "default": false},
+    "frozen": {"type": "boolean", "default": false}
+  },
+  "allOf": [
+    {
+      "if": {"required": ["split"], "properties": {"split": {"const": "test"}}},
+      "then": {
+        "required": ["augmentation_enabled", "frozen"],
+        "properties": {"augmentation_enabled": {"const": false}, "frozen": {"const": true}}
+      }
+    }
+  ]
+}

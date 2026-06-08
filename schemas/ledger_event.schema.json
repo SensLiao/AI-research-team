@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/ledger_event.schema.json",
+  "title": "Ledger Event",
+  "description": "One append-only line in a run's hash-chained ledger (runs/<id>/ledger.jsonl). Tamper-evident: hash = chain_hash(prev_hash, {seq,ts,event_type,payload}). The first event has prev_hash=null.",
+  "type": "object",
+  "required": ["seq", "ts", "event_type", "payload", "prev_hash", "hash"],
+  "additionalProperties": false,
+  "properties": {
+    "seq": {"type": "integer", "minimum": 0, "description": "0-based monotonic sequence number"},
+    "ts": {"type": "string", "minLength": 1, "description": "ISO-8601 UTC timestamp supplied by the caller (deterministic, never auto-now in tests)"},
+    "event_type": {
+      "type": "string",
+      "enum": ["run_started", "stage_started", "step_done", "boundary", "resume", "gate_pending", "gate_resolved", "promote"],
+      "description": "boundary = clean checkpoint (resumable); stage_started without a following boundary = crashed mid-stage"
+    },
+    "payload": {"type": "object", "description": "event-type-specific body"},
+    "prev_hash": {"type": ["string", "null"], "description": "hash of the previous event; null for seq 0"},
+    "hash": {"type": "string", "minLength": 8, "description": "chain_hash(prev_hash, {seq,ts,event_type,payload})"}
+  }
+}

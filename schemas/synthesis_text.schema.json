@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/synthesis_text.schema.json",
+  "title": "Synthesis Text",
+  "description": "VERIFY-stage producer artifact. Output of synthesis-writer. Human-readable prose rendering of the panel_synthesis verdict, written for the director/record. check_synthesis_fidelity.py checks that the prose verdict is consistent with the structured panel_synthesis verdict (prose 'no concerns' vs structured BLOCK is flagged).",
+  "type": "object",
+  "required": ["structured_verdict", "prose_verdict_word", "body"],
+  "additionalProperties": false,
+  "properties": {
+    "structured_verdict": {
+      "type": "string",
+      "enum": ["APPROVE", "BLOCK"],
+      "description": "copied verbatim from the panel_synthesis verdict; fidelity checker compares this against prose_verdict_word"
+    },
+    "prose_verdict_word": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the verdict as written in the prose (e.g. 'approve', 'block', 'concerns', 'no issues'); fidelity checker flags mismatch with structured_verdict"
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "description": "full prose synthesis text written for the director; must accurately reflect all addressed and unaddressed blocks"
+    },
+    "addressed_blocks_summary": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "brief prose summaries of each addressed block (optional but recommended for traceability)"
+    },
+    "remaining_concerns": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "prose list of any remaining BLOCK/WARN items, to be consistent with unaddressed_blocks in panel_synthesis"
+    },
+    "from_synthesis_ref": {
+      "type": "string",
+      "default": "",
+      "description": "reference to the panel_synthesis artifact this text derives from"
+    }
+  }
+}

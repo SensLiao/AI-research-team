@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/variance_report.schema.json",
+  "title": "Variance Report",
+  "description": "ANALYZE-stage artifact. Output of variance-analyzer. Checks that the number of seeds meets the threshold declared in the domain profile (or a conservative default) before treating variance estimates as reliable. seed_count_insufficient is derived mechanically by variance_audit.py.",
+  "type": "object",
+  "required": ["n_seeds", "seed_count_insufficient", "per_metric_variance"],
+  "additionalProperties": false,
+  "properties": {
+    "condition_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The condition_id this variance report covers (null means across-all)"
+    },
+    "n_seeds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of distinct seed runs observed for this condition"
+    },
+    "min_seeds_required": {
+      "type": ["integer", "null"],
+      "default": null,
+      "description": "Threshold from domain profile or built-in default; null = default applied"
+    },
+    "seed_count_insufficient": {
+      "type": "boolean",
+      "description": "True iff n_seeds < min_seeds_required — derived, never hand-set"
+    },
+    "per_metric_variance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["metric", "mean", "std"],
+        "additionalProperties": false,
+        "properties": {
+          "metric": {"type": "string", "minLength": 1},
+          "mean": {"type": ["number", "null"]},
+          "std": {"type": ["number", "null"]},
+          "values": {
+            "type": "array",
+            "items": {"type": "number"},
+            "default": [],
+            "description": "Raw per-seed values"
+          }
+        }
+      },
+      "default": [],
+      "description": "Per-metric mean and std across seeds; empty if no metric data available"
+    },
+    "stability_label": {
+      "type": "string",
+      "enum": ["stable", "unstable", "insufficient_data"],
+      "description": "Human-readable stability assessment; derived from seed count and variance magnitude"
+    }
+  }
+}

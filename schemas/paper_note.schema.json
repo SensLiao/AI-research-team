@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_note.schema.json",
+  "title": "Paper Note",
+  "description": "Output of literature-ingest. A selected paper distilled into a typed, citable note (summary + atomic claims + methods/datasets/metrics), by reference. Ingestion produces draft knowledge only — it never freezes.",
+  "type": "object",
+  "required": ["title", "source_ref", "summary", "claims"],
+  "additionalProperties": false,
+  "properties": {
+    "title": {"type": "string", "minLength": 1},
+    "source_ref": {"type": "string", "minLength": 1},
+    "year": {"type": ["integer", "null"], "default": null},
+    "venue": {"type": ["string", "null"], "default": null},
+    "summary": {"type": "string", "minLength": 1},
+    "claims": {"type": "array", "items": {"type": "string"}},
+    "methods": {"type": "array", "items": {"type": "string"}, "default": []},
+    "datasets": {"type": "array", "items": {"type": "string"}, "default": []},
+    "metrics": {"type": "array", "items": {"type": "string"}, "default": []}
+  }
+}
