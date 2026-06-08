@@ -116,6 +116,7 @@ PAYLOAD_SCHEMAS = {
     "evolved_ideas": "evolved_ideas.schema.json",              # idea-evolver (parent-provenance)
     # --- M3.5 (the M⇄D seam — recall read side + promote write side) ---
     "recall_note": "recall_note.schema.json",                  # recall.py / RECALL exit (by-reference, never inlines D)
+    "promotion_candidate": "promotion_candidate.schema.json",  # UNTRUSTED gate input (trust boundary; no path chars)
     "promotion_record": "promotion_record.schema.json",        # promote.py / promote-to-vault gate (re-derived, never self-claim)
 }
 

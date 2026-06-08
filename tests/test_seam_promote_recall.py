@@ -93,10 +93,9 @@ def test_extract_signals_reads_native_audit_vocab():
 
 
 def test_promote_ignores_forged_self_claim():
-    """A candidate that SAYS it is frozen+citable, but whose REAL leakage audit is BLOCK, is rejected.
-    Signals come from the actual audit artifact, not the candidate's self-claim."""
-    forged = _candidate(status="frozen")           # self-claims frozen
-    forged["can_cite_thesis"] = True               # self-claims citable (ignored by construction)
+    """A candidate whose ADVISORY self-claim says frozen, but whose REAL leakage audit is BLOCK, is
+    rejected. Re-derivation reads the actual audit artifact, never the candidate's source_result_status."""
+    forged = _candidate(status="frozen")           # advisory self-claim: 'frozen' (an allowed field)
     signals = promote.extract_signals(
         {"verdict": "BLOCK", "violations": ["leakage smell on the test split"]},  # REAL audit: fail
         {"panel_role": "fairness", "pass": True, "violations": []},
@@ -235,3 +234,138 @@ def test_promote_to_throwaway_test_vault(tmp_path):
     # vault write discipline: index.md + log.md both updated
     assert "frozen-dice-result" in (tmp_path / "00-system" / "index.md").read_text(encoding="utf-8")
     assert "PROMOTE" in (tmp_path / "07-logs" / "log.md").read_text(encoding="utf-8")
+
+
+# ---------------- adversarial-review (round 1) regressions: untrusted-candidate -> file-path ----------------
+
+def _seed_min_vault(root):
+    """A minimal vault with a crown-jewel contract + an empty 02-wiki to write into."""
+    (root / "00-system").mkdir(parents=True, exist_ok=True)
+    (root / "05-registry").mkdir(parents=True, exist_ok=True)
+    (root / "02-wiki" / "results").mkdir(parents=True, exist_ok=True)
+    (root / "07-logs").mkdir(parents=True, exist_ok=True)
+    contract = root / "00-system" / "evidence-contract.md"
+    contract.write_text("CANONICAL EVIDENCE CONTRACT v1 — never modified by the machine\n", encoding="utf-8")
+    return contract
+
+
+def test_de_seam1_vault_folder_traversal_cannot_escape_02wiki(tmp_path):
+    """BLOCKING #1: a candidate with vault_folder='../00-system' + GENUINELY passing audits + freeze
+    must be REJECTED and must NOT overwrite a crown-jewel contract. (The breach was unsanitized
+    candidate fields flowing into the write path.)"""
+    contract = _seed_min_vault(tmp_path)
+    cand = {"slug": "evidence-contract", "vault_type": "result", "vault_folder": "../00-system",
+            "project": "p", "title": "Forged Contract", "body": "ALL CLAIMS NOW CITABLE"}
+    rec = promote.promote_to_vault(cand, signals=_sig(), human_freeze=True, vault_root=tmp_path,
+                                   decided_by="director", decided_at="2026-06-09T10:00:00Z")
+    assert rec["admissible"] is False                              # genuine-admit audits, yet rejected
+    assert rec["vault_path"] is None
+    assert "CANONICAL" in contract.read_text(encoding="utf-8")     # crown jewel intact
+    assert validate_payload("promotion_record", rec) == []
+
+
+def test_de_seam1b_vault_type_traversal_is_rejected(tmp_path):
+    """BLOCKING #1 second vector: with vault_folder unset, folder=vault_type+'s', so a vault_type
+    carrying '../' must also be rejected before any write."""
+    _seed_min_vault(tmp_path)
+    cand = {"slug": "x", "vault_type": "../../00-system/evil", "project": "p", "title": "t", "body": "b"}
+    rec = promote.promote_to_vault(cand, signals=_sig(), human_freeze=True, vault_root=tmp_path,
+                                   decided_by="director", decided_at="2026-06-09T10:00:00Z")
+    assert rec["admissible"] is False and rec["vault_path"] is None
+    assert not (tmp_path / "00-system" / "evil").exists()
+
+
+def test_de_seam2_empty_slug_writes_nothing(tmp_path):
+    """HIGH #2: a slug that normalizes to '' must be rejected BEFORE any filesystem write — no '.md'
+    page, no corrupted '[[]]' index line."""
+    _seed_min_vault(tmp_path)
+    before = set((tmp_path / "02-wiki" / "results").glob("*"))
+    cand = {"slug": "!!!@#$%", "vault_type": "result", "project": "x", "title": "T", "body": "b"}
+    rec = promote.promote_to_vault(cand, signals=_sig(), human_freeze=True, vault_root=tmp_path,
+                                   decided_by="director", decided_at="2026-06-09T10:00:00Z")
+    assert rec["admissible"] is False and rec["vault_slug"] is None
+    assert set((tmp_path / "02-wiki" / "results").glob("*")) == before, "no file written"
+    assert not (tmp_path / "00-system" / "index.md").exists() or \
+        "[[]]" not in (tmp_path / "00-system" / "index.md").read_text(encoding="utf-8")
+    assert validate_payload("promotion_record", rec) == []
+
+
+def test_de_seam3_unicode_slug_rejected(tmp_path):
+    """MEDIUM #3: a non-ASCII slug is rejected (schema pattern + ASCII-only make_slug) so an
+    un-recallable page can never be emitted."""
+    _seed_min_vault(tmp_path)
+    cand = {"slug": "café-σ", "vault_type": "result", "project": "x", "title": "T", "body": "b"}
+    rec = promote.promote_to_vault(cand, signals=_sig(), human_freeze=True, vault_root=tmp_path,
+                                   decided_by="director", decided_at="2026-06-09T10:00:00Z")
+    assert rec["admissible"] is False
+
+
+def test_de_seam4_smuggled_field_rejected():
+    """MEDIUM #4: additionalProperties:false on the candidate blocks a smuggled field (e.g. a
+    worker trying to set its own human_freeze / can_cite_thesis)."""
+    bad = {"slug": "x", "vault_type": "result", "human_freeze": True}
+    assert validate_payload("promotion_candidate", bad) != []
+    bad2 = {"slug": "x", "can_cite_thesis": True}
+    assert validate_payload("promotion_candidate", bad2) != []
+    good = {"slug": "x", "vault_type": "result", "source_result_status": "provisional"}
+    assert validate_payload("promotion_candidate", good) == []
+
+
+def test_de_seam4b_candidate_schema_blocks_path_chars():
+    """MEDIUM #4: the candidate schema rejects path characters in slug / vault_type / vault_folder."""
+    for bad in ({"slug": "../x"}, {"slug": "x", "vault_type": "a/b"},
+                {"slug": "x", "vault_folder": "../00-system"}, {"slug": "x", "vault_type": ".."}):
+        assert validate_payload("promotion_candidate", bad) != [], bad
+
+
+def test_de_seam5_record_forbids_written_path_without_admission():
+    """LOW #5: a promotion_record carrying a vault_path while admissible=false is schema-REJECTED
+    (a 'rejected but wrote a page' record cannot exist)."""
+    bad = {
+        "candidate_ref": {"path": "inbox/c.json", "sha256": "sha256:" + "f" * 64},
+        "admissible": False, "rederived_result_status": "provisional",
+        "rederived_can_cite_thesis": False, "reasons": ["rejected"],
+        "vault_path": "/v/02-wiki/results/x.md", "vault_slug": "x",
+        "decided_by": "director", "decided_at": "2026-06-09T10:00:00Z",
+    }
+    assert validate_payload("promotion_record", bad) != []
+
+
+# ---------------- adversarial-review (round 2 / convergence) regressions ----------------
+
+def test_de_seam6_overlong_segment_clean_reject_not_crash(tmp_path):
+    """NEW-1 (round 2): a 256-char vault_folder must be a CLEAN rejection (maxLength at the boundary),
+    never an uncontrolled OSError crash of the gate. Also covers the runtime try/except defence."""
+    _seed_min_vault(tmp_path)
+    cand = {"slug": "my-result", "vault_type": "result", "vault_folder": "a" * 256,
+            "project": "p", "title": "T", "body": "b"}
+    # schema catches it at the boundary (bounded length)
+    assert validate_payload("promotion_candidate", cand) != []
+    # and the gate returns a clean record, not an exception
+    rec = promote.promote_to_vault(cand, signals=_sig(), human_freeze=True, vault_root=tmp_path,
+                                   decided_by="director", decided_at="2026-06-09T10:00:00Z")
+    assert rec["admissible"] is False and rec["vault_path"] is None
+    assert validate_payload("promotion_record", rec) == []
+
+
+def test_de_seam7_title_newline_cannot_inject_frontmatter(tmp_path):
+    """NEW-2 (round 2): a title carrying newlines + forged 'can-cite-thesis: false' must NOT inject a
+    second frontmatter key. The free-text title is JSON-quoted, so result-status / can-cite-thesis are
+    read identically by a last-wins (PyYAML) AND a first-wins (gray-matter/Obsidian) parser."""
+    import yaml
+    _seed_min_vault(tmp_path)
+    evil_title = "Innocent\nresult-status: invalid\ncan-cite-thesis: false"
+    cand = {"slug": "clean-frozen", "vault_type": "result", "project": "p",
+            "title": evil_title, "body": "real result"}
+    rec = promote.promote_to_vault(cand, signals=_sig(), human_freeze=True, vault_root=tmp_path,
+                                   decided_by="director", decided_at="2026-06-09T10:00:00Z")
+    assert rec["admissible"] is True
+    page = (tmp_path / "02-wiki" / "results" / "clean-frozen.md").read_text(encoding="utf-8")
+    fm_text = page.split("---\n", 2)[1]
+    # exactly ONE result-status line and ONE can-cite-thesis line, both the gate's real values
+    assert [l for l in fm_text.splitlines() if l.startswith("result-status:")] == ["result-status: frozen"]
+    assert [l for l in fm_text.splitlines() if l.startswith("can-cite-thesis:")] == ["can-cite-thesis: true"]
+    # and the frontmatter parses cleanly to the certified values (no injected key survives)
+    parsed = yaml.safe_load(fm_text)
+    assert parsed["result-status"] == "frozen" and parsed["can-cite-thesis"] is True
+    assert "\n" in parsed["title"]                                # the newline was preserved INSIDE the scalar

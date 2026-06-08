@@ -52,7 +52,8 @@
     "vault_slug": {
       "type": ["string", "null"],
       "default": null,
-      "description": "The lowercase-kebab slug written (admitted), else null."
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "The lowercase-kebab slug written (admitted), else null. Pattern enforces a recall-able kebab slug (applies only when a string)."
     },
     "decided_by": {
       "type": "string",
@@ -95,6 +96,15 @@
       },
       "then": {
         "properties": {"admissible": {"const": false}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"vault_path": {"type": "string"}},
+        "required": ["vault_path"]
+      },
+      "then": {
+        "properties": {"admissible": {"const": true}}
       }
     }
   ]

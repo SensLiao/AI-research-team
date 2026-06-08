@@ -70,7 +70,7 @@ def recall(query: str, *, vault_root) -> dict:
 
     for slug in _index_slugs(vault_root):
         slug_toks = set(slug.split("-"))
-        shared = [t for t in toks if t in slug_toks or t in slug]
+        shared = [t for t in toks if t in slug_toks]   # whole-token match only (no substring false-positives)
         if not shared:
             if closest is None:
                 closest = {"slug": slug, "differs": "no shared topic token with the query"}
