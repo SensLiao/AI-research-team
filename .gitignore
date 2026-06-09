@@ -4,6 +4,19 @@
 # Ephemeral run-store (blueprint §10): runs are throwaway, crash-safe, gitignored.
 runs/
 
+# Secrets — NEVER commit real credentials. Only .env.example (placeholders) is tracked.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*_rsa
+*_ed25519
+id_*
+credentials*
+secrets*
+*.secret
+
 # Python
 __pycache__/
 *.py[cod]
