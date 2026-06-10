@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/fulltext_qa_report.schema.json",
+  "title": "Fulltext QA Report",
+  "description": "DISCOVER-stage artifact (absorption wave 1; PaperQA2 wrapper). Output of tools/fulltext_qa.py: page-anchored answers over locally-supplied PDFs/markdown, plus deterministic Crossref retraction flags. HONESTY: when the optional paperqa dependency (or its index) is unavailable, available=false with a reason — the machine never fakes a fulltext answer. Contexts carry doc_ref + page + a SHORT excerpt (anchor, never inlined documents); the index cache is fenced into runs/, never the vault.",
+  "type": "object",
+  "required": ["question", "available"],
+  "additionalProperties": false,
+  "properties": {
+    "question": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "available": {"type": "boolean", "description": "false when the optional fulltext-QA engine could not run (missing dependency, no docs, engine error)."},
+    "reason": {"type": "string", "description": "Required (non-empty) when available=false: why the engine could not answer."},
+    "answer_summary": {"type": "string", "description": "The page-grounded answer synthesis. Empty when available=false."},
+    "contexts": {
+      "type": "array",
+      "description": "Page-anchored evidence contexts (the PaperQA2 absorption point: claim-evidence loci with page anchors).",
+      "items": {
+        "type": "object",
+        "required": ["doc_ref", "excerpt"],
+        "additionalProperties": false,
+        "properties": {
+          "doc_ref": {"type": "string", "minLength": 1, "description": "Resolvable doc reference (path under runs/ scratch, DOI, or arXiv id) — never vault content."},
+          "page": {"type": ["integer", "null"], "minimum": 1, "default": null},
+          "excerpt": {"type": "string", "minLength": 1, "maxLength": 500, "description": "Short verbatim anchor (<=500 chars), NOT an inlined document."},
+          "relevance": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "default": null}
+        }
+      }
+    },
+    "retraction_flags": {
+      "type": "array",
+      "description": "Deterministic Crossref retraction/concern check results for the consulted DOIs.",
+      "items": {
+        "type": "object",
+        "required": ["ref", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "enum": ["retracted", "concern", "ok", "unknown"]},
+          "detail": {"type": "string"}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"available": {"const": false}}, "required": ["available"]},
+      "then": {"required": ["reason"], "properties": {"reason": {"minLength": 1}}}
+    }
+  ]
+}

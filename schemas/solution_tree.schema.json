@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/solution_tree.schema.json",
+  "title": "Solution Tree",
+  "description": "EXECUTE-stage artifact (absorption wave 1; AIDE journal.py port). Output of tools/solution_tree.py for experiment-journaler / ablation-runner / tree_explore: experiment variants organized as a scored tree (node = variant artifact + parent + metric + buggy flag + draft/debug/improve action). The draft/debug/improve policy reads this tree to propose the NEXT bounded attempt. Node execution stays behind the director-supervised EXECUTE gate; until live GPU runs, metric comes from design-time auditor scores. best_node_id is DERIVED (highest non-buggy metric), never a self-award.",
+  "type": "object",
+  "required": ["nodes", "best_node_id", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["node_id", "parent_id", "action", "artifact_ref", "metric", "buggy"],
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "parent_id": {"type": ["string", "null"], "default": null, "description": "null for root drafts; otherwise an existing node_id (enforced by solution_tree.py)."},
+          "action": {"type": "string", "enum": ["draft", "debug", "improve"]},
+          "artifact_ref": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "The variant's artifact (experiment_matrix / patch_plan / run_record ref)."},
+          "metric": {"type": ["number", "null"], "default": null, "description": "Scored value (higher is better per the active profile metric); null = not yet scored."},
+          "buggy": {"type": "boolean", "description": "true when the variant failed / is known-broken (debug targets)."},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "best_node_id": {"type": ["string", "null"], "description": "DERIVED: node with the highest non-null metric among non-buggy nodes; null when nothing is scored yet."},
+    "evidence_ref": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "pattern": "\\S"}}
+  }
+}

@@ -95,3 +95,6 @@ agents:
     - venue-selector
     - venue-reviewer-persona
     - area-chair-synthesizer
+    # absorption wave 1 — ScholarPeer panel roles
+    - baseline-scout
+    - sub-domain-historian

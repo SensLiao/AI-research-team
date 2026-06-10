@@ -25,6 +25,7 @@ from pathlib import Path
 from . import spine
 from .artifacts import GateBlock
 from .modes import REGISTRY
+from ..tools.budget_tracker import BudgetExceeded
 
 DEFAULT_RUNS_DIR = "research_agent_teams/runs"
 
@@ -91,12 +92,31 @@ def cmd_run_dets(a) -> None:
     rd = _run_dir(a.runs_dir, a.run_id)
     ts = a.ts or _ts()
     mod = _mode_module(_mode_from_run(a.runs_dir, a.run_id))
+    # Absorption wave 1: a mode that exposes `run_dets_with_repair` carries the OpenScholar bounded
+    # revise loop — use it so a recoverable gate BLOCK feeds back to the worker instead of halting on
+    # the first failure. `--no-repair` forces the bare single-pass path (debugging / legacy parity).
+    repair = getattr(mod, "run_dets_with_repair", None)
     try:
-        paths, report = mod.run_dets(rd, a.stage, ts)
+        if repair is not None and not a.no_repair:
+            outcome = repair(rd, a.stage, ts)
+            if outcome[0] == "retry":
+                _emit({"run_id": a.run_id, "stage": a.stage, "retry": True, "repair_feedback": outcome[1],
+                       "note": "HARD GATE refused, but the bounded-repair budget allows another in-stage "
+                               "attempt. Re-dispatch THIS stage's worker with 'repair_feedback' appended to "
+                               "its prompt, then run-dets again. Stage NOT committed; do NOT escalate yet."})
+                return
+            paths, report = outcome[1]
+        else:
+            paths, report = mod.run_dets(rd, a.stage, ts)
     except GateBlock as gb:
         _emit({"run_id": a.run_id, "stage": a.stage, "halted": True, "gate": "BLOCK", "reason": str(gb),
-               "note": "HARD GATE refused — run halts here, stage NOT committed. Report the BLOCK to the director honestly."})
+               "note": "HARD GATE refused (repair budget exhausted if a repair loop ran) — run halts here, "
+                       "stage NOT committed. Report the BLOCK to the director honestly."})
         sys.exit(3)
+    except BudgetExceeded as be:
+        _emit({"run_id": a.run_id, "stage": a.stage, "halted": True, "budget_stop": True, "reason": str(be),
+               "note": "BUDGET cap reached (a budget stop is never 'repaired'). Run halts; report to the director."})
+        sys.exit(4)
     except FileNotFoundError as fe:
         _emit({"run_id": a.run_id, "stage": a.stage, "error": str(fe)})
         sys.exit(2)
@@ -109,6 +129,22 @@ def cmd_commit(a) -> None:
     ts = a.ts or _ts()
     stage_dir = Path(rd) / "evidence" / a.stage
     paths = sorted(str(p) for p in stage_dir.glob("*.artifact.json")) if stage_dir.exists() else []
+    # Defense-in-depth: never checkpoint a stage that contains a blocked hard-gate verdict. run-dets
+    # already halts (exit 3) on a BLOCK, but a stage's earlier approved artifacts are on disk by then;
+    # this stops a stray `commit` from glob-ing a half-done blocked stage into the tamper-evident ledger.
+    blocked = []
+    for p in paths:
+        try:
+            if json.loads(Path(p).read_text(encoding="utf-8")).get("status") == "blocked":
+                blocked.append(p)
+        except (OSError, ValueError):
+            continue
+    if blocked:
+        _emit({"run_id": a.run_id, "stage": a.stage, "halted": True, "gate": "BLOCK",
+               "reason": f"stage has blocked hard-gate verdict artifact(s): {blocked}",
+               "note": "a stage with a blocked verdict cannot be committed — run-dets refused it. "
+                       "Do NOT commit; report the BLOCK to the director or re-run via the repair loop."})
+        sys.exit(3)
     res = spine.commit_stage(rd, a.stage, paths, ts)
     res["paused_for_director"] = res["gate"] == "director_signoff"
     if res["paused_for_director"]:
@@ -172,6 +208,8 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("run-dets", parents=[common], help="run the deterministic producers/gates for a stage")
     r.add_argument("--run-id", required=True)
     r.add_argument("--stage", required=True)
+    r.add_argument("--no-repair", action="store_true",
+                   help="force the bare single-pass path (skip the bounded-repair revise loop)")
     r.set_defaults(func=cmd_run_dets)
 
     c = sub.add_parser("commit", parents=[common], help="scope-check + validate + checkpoint a stage")

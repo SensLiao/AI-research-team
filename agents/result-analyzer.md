@@ -39,6 +39,24 @@ payload = build_result_summary(findings=findings, caveats=caveats)
 
 The function — not you — assembles the payload and enforces the hard ceilings.
 
+## Second deliverable — experiment_feedback (absorption wave 1, RD-Agent pattern)
+
+After the `result_summary`, ALSO emit one `experiment_feedback` artifact
+(`runs/<run>/evidence/ANALYZE/experiment-feedback.artifact.json`) attributing the outcome to the
+layer the evidence points at — the science (`hypothesis`), the code (`implementation`), or the
+setup (`environment`); use `unknown` when the evidence is genuinely ambiguous:
+
+```python
+from research_agent_teams.tools.experiment_feedback import build_experiment_feedback
+payload = build_experiment_feedback(run_ref, outcome, attribution, summary, evidence_ref)
+```
+
+The builder derives `next_action_hint` (revise_hypothesis / fix_implementation / fix_environment /
+escalate / stop) from your attribution. This hint routes the bounded-repair loop and the next
+DESIGN refinement; it is advisory EVIDENCE — it never executes anything and never bypasses a gate.
+Attribution must be traceable to the artifacts in `evidence_ref` (triage reports, journal entries,
+metric deltas) — never a vibe.
+
 ## Hard ceiling — you NEVER self-freeze
 
 `status` is ALWAYS `"provisional"` and `can_cite_thesis` is ALWAYS `false`. These are const fields

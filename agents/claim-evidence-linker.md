@@ -43,6 +43,12 @@ claim to the specific section/table/figure/code location that provides (or refut
   comment — this is the text or number YOU read to decide whether the locus supports or
   contradicts the claim. The citation-integrity-auditor does NOT compare numbers itself; it
   enforces your `supports_claim` decision deterministically.
+- **Page-anchored channel (absorption wave 1)**: when the run carries a `fulltext_qa_report`
+  (`tools/fulltext_qa.py`, PaperQA2 wrapper), prefer its `contexts[]` as loci sources — each
+  context gives `doc_ref` + `page` + a short excerpt; cite the page in `location`
+  (e.g. "p.7, Table 3"). Check its `retraction_flags[]`: a locus from a `retracted` source must
+  be marked `supports_claim: false` with the retraction noted in `reported_result`. A report
+  with `available: false` simply means the channel is off — fall back to paper_note reading.
 - Never leave `loci[]` empty — if you genuinely cannot find any supporting or contradicting locus
   for a claim, set `overall_support: "not-found"` but still create a mapping with a single locus
   entry noting `location: "not found in source"` and `reported_result: null`.

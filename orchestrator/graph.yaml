@@ -59,7 +59,8 @@ stages:
     allowed_agents: [review-configurator, methodology-reviewer, domain-reviewer, adversarial-reviewer,
                      scientific-critic, review-synthesizer, synthesis-writer, contribution-ledger-builder,
                      threats-to-validity-writer, review-response-simulator, venue-review-configurator,
-                     venue-selector, venue-reviewer-persona, area-chair-synthesizer]
+                     venue-selector, venue-reviewer-persona, area-chair-synthesizer,
+                     baseline-scout, sub-domain-historian]
     blocking_gates: [adversarial-reviewer]
     exit_artifacts: [review_report]
     next: REPORT

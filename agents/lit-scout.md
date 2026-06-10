@@ -40,6 +40,14 @@ One `evidence_table` artifact written to
    extract the exact query and any seed references the domain profile or plan supplies.
 2. **Primary search** — query scholarly databases, arXiv, Semantic Scholar, GitHub, and
    domain-specific registries following the active domain profile's `search_scope`.
+   **Sanctioned live channel (absorption wave 1)**: the deterministic connector
+   `tools/paper_search.py` (arXiv + OpenAlex + Crossref + Semantic Scholar, free-first,
+   NO Sci-Hub). When operated, the recipe runs it as a pre-step and drops the results at
+   `runs/<run>/inbox/search-results.json` — read that bundle first; its `evidence_rows`
+   are schema-ready source rows (claim_support arrives "none"; grading them is YOUR job).
+   Recipe shape (Asta PaperFinder absorption): decompose the query into sub-questions →
+   search each → follow citations of the strong hits (`scholar_clients.get_references_s2`
+   / `get_citations_s2` via the connector) → judge relevance per row.
 3. **Snowball** — follow citations/references from strong sources until no new relevant
    entries surface (saturation criterion: two full snowball rounds with zero new relevant
    sources added).
@@ -70,4 +78,7 @@ One `evidence_table` artifact written to
 
 Emit the `evidence_table` artifact, state the source count and whether saturation was
 reached in one line, and return control. The **evidence-verifier hard gate** reads your
-artifact next and decides whether the DISCOVER stage may advance.
+artifact next and decides whether the DISCOVER stage may advance. Downstream, external
+refs you cite (DOI / arXiv / titles) are additionally existence-checked by the
+deterministic `tools/citation_existence.py` three-state gate helper — one more reason
+fabricating a source is structurally pointless.

@@ -118,6 +118,16 @@ PAYLOAD_SCHEMAS = {
     "recall_note": "recall_note.schema.json",                  # recall.py / RECALL exit (by-reference, never inlines D)
     "promotion_candidate": "promotion_candidate.schema.json",  # UNTRUSTED gate input (trust boundary; no path chars)
     "promotion_record": "promotion_record.schema.json",        # promote.py / promote-to-vault gate (re-derived, never self-claim)
+    # --- Absorption wave 1 (2026-06-10; see _design/research-agent-teams-absorption-wave1-build-contract.md) ---
+    "citation_existence_verdict": "citation_existence_verdict.schema.json",  # citation_existence.py (ARS three-state; live-existence gate helper)
+    "fulltext_qa_report": "fulltext_qa_report.schema.json",    # fulltext_qa.py (PaperQA2 wrapper; page-anchored, available:false-honest)
+    "experiment_feedback": "experiment_feedback.schema.json",  # experiment_feedback.py (RD-Agent failure attribution)
+    "solution_tree": "solution_tree.schema.json",              # solution_tree.py (AIDE journal: draft/debug/improve tree)
+    "elo_tournament": "elo_tournament.schema.json",            # elo_tournament.py (co-scientist Elo + Swiss; EVIDENCE, no chosen field)
+    "calibration_report": "calibration_report.schema.json",    # review_calibration.py (SPECS-lite planted-error recall)
+    "idea_grounding_report": "idea_grounding_report.schema.json",  # idea_grounding.py (ScholarEval-style; SCORE-ONLY)
+    "research_brief": "research_brief.schema.json",            # operate/modes/deep_research.py (open_deep_research recipe)
+    "invalidation_record": "invalidation_record.schema.json",  # contradiction-mining structured landing (Graphiti bi-temporal; via promote only)
 }
 
 _ENVELOPE_SCHEMA = "artifact_envelope.schema.json"

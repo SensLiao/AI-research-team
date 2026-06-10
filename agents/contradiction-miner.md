@@ -44,6 +44,17 @@ and record pairs of claims that make contradictory or numerically incompatible a
 Two claims are "about the same thing" (and thus comparable) when ≥2 of the following match:
 same dataset name, same metric name, same method/model name, same task formulation.
 
+## Inputs from the full-text channel (absorption wave 1)
+
+When the run carries a `fulltext_qa_report` (the `tools/fulltext_qa.py` PaperQA2 wrapper), use it
+as ADDITIONAL comparison material: its `contexts[]` give page-anchored excerpts (cite the page in
+your `description`), and its `retraction_flags[]` are hard signals — a claim resting solely on a
+`retracted` source is a conflict of kind `method-conflict` with the retraction notice as the
+opposing side. A report with `available: false` adds nothing; never treat its absence as evidence.
+When a contradiction you find invalidates a VAULT claim, also emit an `invalidation_record`
+artifact (claim_slug + invalidated_by_slug + edge_type refutes/supersedes + invalid_at + basis) —
+it reaches the vault only through /promote-to-vault; you never resolve or rewrite anything.
+
 ## You must NOT
 
 - resolve contradictions by deciding which source is right — that is for the reviewer panel

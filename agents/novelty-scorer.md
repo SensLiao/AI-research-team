@@ -44,7 +44,25 @@ director's bet just as much as high-novelty ones.  The tool enforces this; do no
    `reason_code` signal from each gap (FW_STATED→future_work, WEAK_LOCUS→weakness_opportunity, …), so a
    classified gap always has ≥1 provenance signal — without any prose on your part.  Extra cross-hunter
    signals you pass simply raise the novelty (more distinct signals → higher score).
+3b. **Retrieval grounding signal (absorption wave 1).** When the run carries a live search bundle
+   (`runs/<run>/inbox/search-results.json`, from the sanctioned `tools/paper_search.py` channel),
+   derive the grounding signal per gap with
+   `paper_search.no_semantic_neighbor_found(gap_query, records)` and pass it through the tool's
+   injection slot: `aggregate_novelty(gaps, signals={gap_id: ["no_semantic_neighbor_found"], ...})`
+   for exactly the gaps where the signal is True. This is the FIRST novelty signal grounded in
+   the live literature instead of vault-internal provenance — include the bundle path in your
+   `evidence_ref`. No bundle present = no signal; never fabricate it.
 4. Emit the `novelty_score` artifact.
+
+## Calibration caveat (hard, absorption wave 1)
+
+The blind-study evidence behind this design (Si/Yang/Hashimoto, arXiv 2409.04109; RINoBench):
+**a plausible-sounding rationale is NOT evidence the score is accurate**, and LLM-favored "novel"
+ideas are systematically LESS feasible than human-favored ones. Therefore: never let your prose
+justify a number the tool did not derive; treat your own confidence in a gap's novelty as
+uncalibrated; the feasibility_signal and the director's judgment — not your enthusiasm — carry
+the bet. The deterministic derivation (signal counting) exists precisely because rationale
+plausibility ≠ score accuracy.
 
 ## What the schema guarantees (do not contradict)
 

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/elo_tournament.schema.json",
+  "title": "Elo Tournament",
+  "description": "IDEATE-stage artifact (absorption wave 1; Google co-scientist Elo debate + Stanford AI-Researcher Swiss pattern). Output of tools/elo_tournament.py: deterministic Elo ratings computed over LLM pairwise simulated-debate judgments (the idea-tournament-ranker judges each matchup and records a rationale ref; the TOOL does the bookkeeping — ratings math is never an LLM call). Ratings are EVIDENCE for the /idea-bet menu. No selected/chosen/picked field: the director picks via the /idea-bet gate. winner MUST equal pair_a or pair_b (enforced by elo_tournament.py and tests).",
+  "type": "object",
+  "required": ["format", "rounds", "matchups", "ratings", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "format": {"type": "string", "enum": ["swiss", "round_robin"]},
+    "rounds": {"type": "integer", "minimum": 1},
+    "matchups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["round", "pair_a", "pair_b", "winner", "rationale_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "round": {"type": "integer", "minimum": 1},
+          "pair_a": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "pair_b": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "winner": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "idea_id of the judged winner — MUST equal pair_a or pair_b."},
+          "rationale_ref": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "Reference to the per-matchup debate rationale (bundle path / artifact ref) — every judgment is auditable."}
+        }
+      }
+    },
+    "ratings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["idea_id", "elo", "rank", "wins", "losses"],
+        "additionalProperties": false,
+        "properties": {
+          "idea_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "elo": {"type": "number"},
+          "rank": {"type": "integer", "minimum": 1, "description": "1 = highest Elo; contiguous 1..N; stable tiebreak by idea_id."},
+          "wins": {"type": "integer", "minimum": 0},
+          "losses": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "evidence_ref": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "pattern": "\\S"}}
+  }
+}

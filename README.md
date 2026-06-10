@@ -54,9 +54,10 @@ director's wired server). See `RESEARCH-SYSTEM-OVERVIEW.md` for the full by-the-
 - [x] **M3** — full 7-stage spine across all modes; **M3.5** — the M⇄D seam (recall by reference + promote-to-vault re-derivation), domain generality, two-repo git
 - [x] **operate layer** — one-button step-wise driver + CLI (new_direction wired); **execute layer** — gated GPU runner (plan/submit/status/pull)
 - [x] **governance / GPU / QC hardening (2026-06-10)** — director-veto recording + unresumable rejected runs; promote-gate entrypoint that self-derives from sha-verified audits + writes the ledger; always-on machine-root vault guard + the 4 gates installed as real `disable-model-invocation` commands; remote-exec injection / pull-fence / host-key fixes; 8 QC-tool correctness fixes. See `_design/remediation-2026-06-10-governance-gpu-qc-hardening.md`.
+- [x] **absorption wave 1 (2026-06-10)** — landscape-scan absorption of 18 verified external patterns, constitution intact: live scholarly retrieval (`tools/paper_search.py` + `scholar_clients` + three-state `citation_existence`, free-first, no Sci-Hub) · optional PaperQA2 wrapper + deterministic retraction check (`fulltext_qa`) · bounded in-stage repair (`operate/bounded_repair.py`, wires the dead `debug_retries` counter) + AIDE `solution_tree` + RD-Agent `experiment_feedback` · real pairwise-debate Elo/Swiss tournament (`idea_dedup` + `elo_tournament`) · SPECS-lite review calibration (`review_calibration`) + optional decorrelated OpenReviewer seat + 2 ScholarPeer VERIFY agents (baseline-scout / sub-domain-historian) · ScholarEval score-only `idea_grounding` + retrieval-grounded novelty signal · TEMPR 4-channel RRF recall rebuild · Graphiti bi-temporal claim/comparison fields + vault BITEMPORAL lint + `invalidation_record` · operate REGISTRY 1→4 modes (+ new `deep_research`, both dead budget counters live) · 5 adapted K-Dense method skills under `skills/`. See `_design/research-agent-teams-absorption-wave1-build-contract.md` + the build record.
 
 Run the self-tests (from the case-for-research dir):
 
 ```
-python -m pytest research_agent_teams/tests/ -q     # 1753 green
+python -m pytest research_agent_teams/tests/ -q     # 1753 green (pre-wave) → see build record for the wave-1 count
 ```

@@ -37,6 +37,11 @@ from research_agent_teams.tools.ablation_runner import build_run_record
 
 1. Read the approved `protocol_spec` from `runs/<run>/evidence/DESIGN/`.
 2. Read the active domain profile to confirm any domain-specific run constraints.
+   *(Absorption wave 1)* If a `solution_tree` artifact exists in EXECUTE evidence, also read it
+   and honor `next_action(tree)` (draft / debug / improve + target node) when ordering which
+   condition/variant to run next — the bounded AIDE policy; the experiment-journaler maintains
+   the tree, you only consume its proposal. Every run still respects the variable-touch-guard ⛔
+   and the director-supervised EXECUTE gate.
 3. For each condition in the ablation grid:
    - Resolve the config file/hash (`config_hash`) and, if available, the dataset
      hash (`data_hash`), the current git SHA (`git_sha`), and the random seed
