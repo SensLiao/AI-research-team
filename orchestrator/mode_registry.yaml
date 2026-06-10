@@ -41,8 +41,8 @@ modes:
   verify_result:
     entry_stage: VERIFY
     agent_subset: [review-configurator, methodology-reviewer, domain-reviewer, adversarial-reviewer,
-                   scientific-critic, review-synthesizer]
-    gate_level: director_signoff
+                   scientific-critic, review-synthesizer, baseline-scout, sub-domain-historian]
+    gate_level: director_signoff    # wave 1: +ScholarPeer seats (baseline-completeness + historical-context lenses)
     budget: {max_agent_hops: 3}
   full_new_direction:
     entry_stage: DISCOVER
@@ -105,10 +105,17 @@ modes:
     agent_subset: [experiment-tree-explorer, variable-touch-guard, preflight-checker, train-test-parity-verifier]
     gate_level: director_signoff     # a bounded tree of next-runs within the CONTROLLED space; variable-touch-guard ⛔ BLOCKs a branch that changes a studied variable; depth/width capped by budget; preflight + parity gate each re-run.
     budget: {max_agent_hops: 4}
+  # --- Absorption wave 1 (2026-06-10) — open_deep_research recipe; wires the dead budget counters live ---
+  deep_research:
+    entry_stage: DISCOVER
+    stage_path: [DISCOVER, REPORT]   # supervisor -> perspective-split researchers -> compressed brief, then reply
+    agent_subset: [lit-scout, source-quality-ranker, evidence-verifier, citation-integrity-auditor]
+    gate_level: director_signoff     # both DISCOVER hard gates fire (router guardrail 1); the brief feeds bets/designs downstream
+    budget: {max_agent_hops: 4, max_iterations_without_new_evidence: 3, max_fulltext_reads: 20, max_debug_retries_per_run: 3}
   # --- M3-d (VR-1 venue-targeted peer-review) — VERIFY-entry, reuses the M2 panel + venue agents ---
   venue_readiness:
     entry_stage: VERIFY
     agent_subset: [venue-selector, venue-review-configurator, venue-reviewer-persona, area-chair-synthesizer,
-                   adversarial-reviewer, scientific-critic]
+                   adversarial-reviewer, scientific-critic, baseline-scout, sub-domain-historian]
     gate_level: director_signoff     # "is this good enough for venue X" — the VERIFY hard gate (adversarial-reviewer) fires (router guardrail 1); reviewers never self-decide (venue_review has no verdict field) and never write (no Write tool); the area-chair verdict is DERIVED by venue_score.py; venue choice (/venue-pick) and publish (/venue-decide) are human gates.
     budget: {max_agent_hops: 6}

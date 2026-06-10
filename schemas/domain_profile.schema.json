@@ -89,6 +89,16 @@
       "default": {},
       "description": "free-form domain protocol params (e.g. interactive-prompt config for seg, tokenization for NLP); structure is domain-defined"
     },
+    "idea_grounding": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "description": "Absorption wave 1 (ScholarEval): per-domain ANNOTATION thresholds for tools/idea_grounding.py. Score-only discipline — these thresholds only mark below_threshold entries in the idea_grounding_report; they never cut an idea.",
+      "properties": {
+        "soundness_min": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+        "contribution_min": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.3}
+      }
+    },
     "hard_invariants": {
       "type": "array",
       "items": {"type": "string"},

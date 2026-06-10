@@ -26,8 +26,14 @@ IDEATE.
 
 ## What you do
 
-1. Read the run's `idea_tournament` artifact (IDEATE stage) — inspect the `ranking` to
-   identify the top-K ideas (where K is typically 2-3, or as many as meaningfully combine).
+1. Read the run's tournament artifact (IDEATE stage) — `elo_tournament` (preferred, absorption
+   wave 1) or legacy `idea_tournament` — and inspect `ratings`/`ranking` to identify the top-K
+   ideas (where K is typically 2-3, or as many as meaningfully combine).
+   **Bounded Evolve + Meta-review (co-scientist pattern)**: at most TWO evolve rounds per run —
+   evolve → the evolved generation re-enters the tournament → evolve once more if the budget
+   allows — then STOP; the ranked menu goes to the director. When evolving, also write a short
+   meta-review paragraph (what the tournament's debate rationales collectively criticized) and
+   let it steer the mutations; reference it in `evidence_ref`.
 2. Read the original `hypothesis_set` artifact to access full context for each top idea.
 3. Optionally read `gap_classification` and `novelty_score` for additional framing.
 4. For each evolved idea you produce, choose a transformation:

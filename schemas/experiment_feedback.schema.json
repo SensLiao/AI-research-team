@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/experiment_feedback.schema.json",
+  "title": "Experiment Feedback",
+  "description": "ANALYZE-stage artifact (absorption wave 1; RD-Agent feedback-routing pattern). Output of tools/experiment_feedback.py for result-analyzer: attributes an experiment outcome to hypothesis vs implementation vs environment so the NEXT design/repair attempt is routed at the right layer (revise the hypothesis vs fix the code vs fix the setup). EVIDENCE for the director and the bounded-repair loop — never a decision; chained ANALYZE->DESIGN refinement passes this by reference, keeping graph.yaml forward-only.",
+  "type": "object",
+  "required": ["run_ref", "outcome", "attribution", "summary", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "run_ref": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "The run/artifact this feedback is about (run_record or result_summary ref)."},
+    "hypothesis_ref": {"type": "string", "description": "Optional hypothesis/idea id this run was testing."},
+    "outcome": {"type": "string", "enum": ["improved", "regressed", "inconclusive", "failed"]},
+    "attribution": {"type": "string", "enum": ["hypothesis", "implementation", "environment", "unknown"], "description": "WHERE the outcome signal points: the science (hypothesis), the code (implementation), or the setup (environment)."},
+    "summary": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "next_action_hint": {"type": "string", "enum": ["revise_hypothesis", "fix_implementation", "fix_environment", "escalate", "stop"], "description": "Advisory routing hint for the bounded-repair loop / next design. NEVER auto-executed at a director gate."},
+    "metrics_delta": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "before": {"type": ["number", "null"], "default": null},
+          "after": {"type": ["number", "null"], "default": null}
+        }
+      }
+    },
+    "evidence_ref": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "pattern": "\\S"}, "description": "Anti-slop: the artifacts (result_summary / journal entries / triage) this attribution is derived from."}
+  }
+}

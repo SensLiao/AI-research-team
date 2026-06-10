@@ -136,8 +136,13 @@ def aggregate_novelty(
               - ``derived_from`` (list of str): named signals that distinguish this gap.
               - ``evidence_ref`` (list of str, minItems 1): anti-slop pointer.
               Any missing keys are handled gracefully (score still produced).
-        signals: Optional supplementary signals dict (reserved; currently unused — kept
-                 for future profile-level signal injection without signature breakage).
+        signals: Optional supplementary named signals per gap: ``{gap_id: [signal, ...]}``.
+                 Absorption wave 1 wires the live-retrieval grounding signal through here —
+                 ``paper_search.no_semantic_neighbor_found`` adds ``"no_semantic_neighbor_found"``
+                 for a gap whose search query surfaced no semantically-near title (a positive,
+                 retrieval-grounded novelty signal). Extra signals MERGE into the gap's
+                 provenance (order-preserving, de-duplicated); they never replace it and never
+                 cut anything. Default None keeps the pre-wave-1 behaviour byte-identical.
         profile: Optional domain profile (passed to _compute_feasibility).
 
     Returns:
@@ -149,6 +154,9 @@ def aggregate_novelty(
     for gap in gaps:
         gap_id: str = str(gap.get("gap_id", ""))
         derived_from: List[str] = _provenance(gap)   # explicit signals + reason_code bridge
+        for extra in (signals or {}).get(gap_id, []) or []:
+            if isinstance(extra, str) and extra.strip() and extra not in derived_from:
+                derived_from.append(extra)           # wave-1 injection point (e.g. retrieval grounding)
         evidence_ref: List[str] = list(gap.get("evidence_ref", []))
 
         novelty: float = _compute_novelty(derived_from)

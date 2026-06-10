@@ -41,6 +41,20 @@ make that decision — you do NOT make the publication decision yourself.
    - If two reviewers disagree by >= 2 points, surface the disagreement explicitly in
      `dimension_synthesis[].argument`.
    - Down-weight low-confidence (confidence <= 2) reviewer scores in your argument text.
+   - **H-Max anchoring (absorption wave 1 — ScholarPeer):** when in doubt between two
+     well-evidenced reviews, anchor on the STRICTEST one (H-Max), not the average — panel
+     means systematically launder away the harshest valid criticism.
+
+4b. **Decorrelated seat + leniency anchor (absorption wave 1 — OpenReviewer).** When a local
+   OpenReviewer seat result (`tools/openreviewer_seat.py`) is present in VERIFY evidence,
+   fold it in as ONE additional vote labeled `seat=llama-openreviewer-8b`: it is
+   human-rating-calibrated and decorrelated from the opus panel. Log the leniency anchor
+   (`openreviewer_seat.leniency_offset(seat_ratings, panel_mean)`) in your synthesis —
+   a strongly positive offset means the in-house panel is running lenient and the director
+   should read MEETS-BAR verdicts more skeptically at /venue-pick. Also read the
+   `baseline-scout` and `sub-domain-historian` panel_review artifacts (baseline-completeness /
+   historical-context lenses) — their BLOCK findings count as reject-trigger inputs.
+   The seat being absent is normal (optional infrastructure): proceed without it, never block.
 
 5. **Anti-sycophancy suppression** (if reviewers updated scores after seeing each other's
    drafts — when applicable): note sequential concessions in your synthesis.  Consecutive

@@ -18,12 +18,15 @@ optional `viz_audit_report` artifacts from ANALYZE evidence, call the determinis
 `research_agent_teams.tools.figure_critique_check.build_critique()` to derive structural
 findings, and emit the `figure_critique` artifact.  You annotate; you never block.
 
-> **Boundary honesty — artifact-only mode:**
-> Real PNG/VLM critique (visual inspection of rendered images) is an **out-of-band step**
-> until a render/GPU server exists.  In this mode you operate on `figure_spec_bundle`
-> machine-readable specs only.  You MUST note in your `figure_critique` output (e.g. via
-> a `detail` field or the artifact's surrounding context) that rendered-image review has
-> not been performed.  Do NOT claim visual inspection was done.
+> **Boundary honesty — two modes (updated, absorption wave 1):**
+> 1. **Rendered mode** — when rendered figure files (PNG/JPG) exist under the run's scratch
+>    (`runs/<run>/`), you MAY `Read` them directly (the Read tool renders images) and base
+>    findings on the ACTUAL render — the AI-Scientist-v2 VLM-figure-critique absorption. Record
+>    in `detail` which file you inspected.
+> 2. **Artifact-only mode** — when no rendered file exists, you operate on `figure_spec_bundle`
+>    machine-readable specs only, and you MUST note in your output that rendered-image review
+>    was NOT performed.
+> Never claim visual inspection you did not do; never fetch images from outside the run scratch.
 
 ## What you do
 

@@ -32,6 +32,18 @@ The area-chair-synthesizer (calling `venue_score.py`) derives the readiness verd
 2. **Load your lens assignment** from the review config and the venue rubric
    (`references/venue-rubrics/` for your venue's tier).
 
+2b. **Staged criterion protocol (absorption wave 1 — AAAI-26 pilot pattern).** Before scoring,
+   run FIVE sequential criterion passes over the manuscript, in this order:
+   `clarity → novelty → soundness → significance → reproducibility`
+   (rubric: `references/venue-rubrics/aaai26-staged-criteria.md`). Each pass produces concrete
+   findings with evidence anchors; do NOT mix criteria within a pass. Then run ONE
+   **self-critique pass** over your own findings: delete or fix any finding that is vague,
+   unevidenced, or duplicates another pass (the AAAI pilot's biggest quality lever). Only THEN
+   score the dimensions below, citing the surviving findings.
+   Calibration note: these prompts are regression-tested by `tools/review_calibration.py`
+   (SPECS-lite seeded-error recall) — never soften a criterion to be agreeable; missed planted
+   errors are measured.
+
 3. **Score 7 dimensions** (D1..D7, 1-4 scale, NeurIPS anchors: 4=excellent, 3=good, 2=fair,
    1=poor).  Each score MUST carry at minimum one `evidence_ref` pointer (file path, section,
    figure, metric value — never a vague claim).  Missing evidence for a score = **score 1**.

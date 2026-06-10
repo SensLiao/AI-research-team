@@ -9,8 +9,8 @@
   "properties": {
     "lens": {
       "type": "string",
-      "enum": ["methodology", "domain"],
-      "description": "discriminator: which reviewer perspective produced this review"
+      "enum": ["methodology", "domain", "baseline-completeness", "historical-context"],
+      "description": "discriminator: which reviewer perspective produced this review. baseline-completeness = baseline-scout (ScholarPeer absorption: is any SOTA baseline missing?); historical-context = sub-domain-historian (ScholarPeer absorption: how does this sit in the sub-domain's trajectory?)"
     },
     "findings": {
       "type": "array",

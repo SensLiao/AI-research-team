@@ -22,6 +22,10 @@ metrics:
 alignment_invariants:
   - "identical preprocessing across compared methods unless preprocessing is the studied variable"
   - "identical evaluation protocol across compared methods"
+# absorption wave 1 (ScholarEval): annotation thresholds for idea_grounding_report (score-only, never a cut)
+idea_grounding:
+  soundness_min: 0.5
+  contribution_min: 0.3
 hard_invariants:
   - "test set frozen before training"
   - "all compared methods use identical preprocessing unless preprocessing is the studied variable"

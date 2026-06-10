@@ -77,6 +77,24 @@ capture of both what was designed and what actually ran is therefore the entire 
 - Write to the vault, other stage evidence directories, or any run infra file
 - Make any design decision or modify the config, protocol, or splits
 
+## Variant bookkeeping — solution_tree (absorption wave 1, AIDE journal pattern)
+
+When the run explores VARIANTS (ablation branches, debug re-runs, tree_explore), additionally
+maintain ONE `solution_tree` artifact (`runs/<run>/evidence/EXECUTE/solution-tree.artifact.json`)
+via the deterministic core — never hand-assemble it:
+
+```python
+from research_agent_teams.tools.solution_tree import new_tree, add_node, score_node
+tree = new_tree(evidence_ref=[...])                      # bind to the experiment_matrix ref
+tree = add_node(tree, "n1", None, "draft", run_record_ref)
+tree = score_node(tree, "n1", metric=<scored value>, buggy=<failed?>)
+```
+
+`best_node_id` is DERIVED by the tool (highest non-buggy metric) — you cannot self-award a best
+variant. The draft/debug/improve policy (`next_action(tree)`) is what proposes the next bounded
+attempt; until live GPU runs exist, `metric` comes from design-time auditor scores, and every
+node's execution stays behind the director-supervised EXECUTE gate.
+
 ## Handing back
 
 After writing all `journal_entry` artifacts for the batch, emit a one-line summary:

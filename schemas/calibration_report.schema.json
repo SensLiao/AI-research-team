@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/calibration_report.schema.json",
+  "title": "Calibration Report",
+  "description": "VERIFY-stage harness artifact (absorption wave 1; AAAI-26 pilot + SPECS-lite pattern). Output of tools/review_calibration.py: known errors are seeded per criterion into a fixture paper, the review panel runs blind, and this report scores the panel's planted-error recall. The FIRST external ground truth for the machine's reviewer prompts — a regression test for every persona/model change. EVIDENCE only: a low recall flags prompts for revision, it never auto-rewrites anything.",
+  "type": "object",
+  "required": ["fixture_ref", "planted", "caught", "missed", "recall_overall", "recall_by_criterion", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "fixture_ref": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "The seeded fixture document (under tests/ or runs/ scratch — never the vault original)."},
+    "planted": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["error_id", "criterion", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "error_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "criterion": {"type": "string", "enum": ["clarity", "novelty", "soundness", "significance", "reproducibility"], "description": "The AAAI-26 five-criterion taxonomy."},
+          "description": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "caught": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["error_id", "by"],
+        "additionalProperties": false,
+        "properties": {
+          "error_id": {"type": "string", "minLength": 1},
+          "by": {"type": "string", "minLength": 1, "description": "Which reviewer seat caught it (persona label / openreviewer seat)."},
+          "review_ref": {"type": "string", "description": "The review artifact where the catch appears."}
+        }
+      }
+    },
+    "missed": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "error_ids no seat caught."},
+    "recall_overall": {"type": "number", "minimum": 0, "maximum": 1},
+    "recall_by_criterion": {
+      "type": "object",
+      "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1},
+      "description": "criterion -> planted-error recall for that criterion."
+    },
+    "leniency_anchor": {"type": ["number", "null"], "default": null, "description": "Optional mean-score offset vs the human-calibrated anchor seat (OpenReviewer leniency-bias anchor)."},
+    "evidence_ref": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "pattern": "\\S"}}
+  }
+}
