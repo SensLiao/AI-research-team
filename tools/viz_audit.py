@@ -34,7 +34,11 @@ def _is_truncated(declared_min: Optional[float], valid_min: Optional[float]) -> 
     Truncation is defined as declared_min > valid_min by more than a small epsilon,
     where valid_min is the domain-declared minimum for that metric.
     """
-    if declared_min is None or valid_min is None:
+    # Numeric guard: a non-numeric axis min ("auto" / "none" / a string) is not a truncation we can assert
+    # — return False instead of crashing this advisory producer on float("auto"). (bool is excluded too.)
+    if not isinstance(declared_min, (int, float)) or isinstance(declared_min, bool):
+        return False
+    if not isinstance(valid_min, (int, float)) or isinstance(valid_min, bool):
         return False
     # Truncated if the declared min is above the valid min (chart starts above the bottom)
     return float(declared_min) > float(valid_min)

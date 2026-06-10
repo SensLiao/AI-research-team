@@ -35,9 +35,11 @@ def check_review_independence(config: dict) -> List[str]:
     violations: List[str] = []
     lenses_list = config.get("lenses") or []
 
-    # 0. Require at least 2 distinct non-empty lenses for independence.
+    # 0. Require at least 2 distinct non-empty lenses for independence. Lens values are normalized
+    # (strip + casefold) so 'Methodology' / 'methodology' / 'methodology ' are ONE lens, not two — a single
+    # reviewer perspective re-typed with different case/whitespace cannot masquerade as two independent ones.
     distinct_nonempty_lenses = {
-        entry.get("lens", "").strip()
+        entry.get("lens", "").strip().lower()
         for entry in lenses_list
         if entry.get("lens", "").strip()
     }
@@ -48,18 +50,19 @@ def check_review_independence(config: dict) -> List[str]:
             "add a second reviewer with a different lens"
         )
 
-    # 1. Collect lens values and detect duplicates.
-    seen_lenses: dict[str, int] = {}  # lens -> first occurrence index
+    # 1. Collect lens values and detect duplicates (keyed on the normalized lens; original shown in the message).
+    seen_lenses: dict[str, int] = {}  # normalized lens -> first occurrence index
     for i, entry in enumerate(lenses_list):
         lens_val = entry.get("lens", "")
-        if lens_val in seen_lenses:
+        lens_key = lens_val.strip().lower()
+        if lens_key in seen_lenses:
             violations.append(
                 f"duplicate lens '{lens_val}' at index {i} "
-                f"(first seen at index {seen_lenses[lens_val]}); "
-                "each lens must appear at most once"
+                f"(first seen at index {seen_lenses[lens_key]}); "
+                "each lens must appear at most once (case / whitespace insensitive)"
             )
         else:
-            seen_lenses[lens_val] = i
+            seen_lenses[lens_key] = i
 
     # 2. Check for empty anchors.
     for i, entry in enumerate(lenses_list):

@@ -71,6 +71,27 @@ def test_scope_guard_noop_without_scope(tmp_path):
     assert proc.returncode == 0
 
 
+def test_scope_guard_blocks_vault_via_layout_discovery_without_env(tmp_path):
+    """③: a fenced write into the layout-discovered real vault is BLOCKED even with RAT_VAULT_ROOT UNSET.
+    The hook walks the two-repo layout to the sibling PhD-Research-OS, so the vault block no longer depends
+    on the optional env var being wired."""
+    import os
+    vault = ROOT / "AI agent database" / "PhD-Research-OS"
+    if not (vault / "00-system").is_dir():
+        pytest.skip("real PhD-Research-OS vault not present in this checkout")
+    env = {k: v for k, v in os.environ.items() if k != "RAT_VAULT_ROOT"}  # the optional env is ABSENT
+    env["RAT_RUN_ROOT"] = str(tmp_path / "runs")
+    env["RAT_RUN_ID"] = "r1"
+    env["RAT_STAGE"] = "DESIGN"
+    proc = subprocess.run(
+        [NODE, str(HOOKS / "permission-scope-guard.js")],
+        input=json.dumps({"tool_name": "Write",
+                          "tool_input": {"file_path": str(vault / "02-wiki" / "results" / "forged.md")}}),
+        text=True, capture_output=True, env=env,
+    )
+    assert proc.returncode == 2 and "vault" in proc.stderr
+
+
 # ---------- artifact-contract-enforcer.js ----------
 
 def _valid_artifact():

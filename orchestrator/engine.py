@@ -25,6 +25,7 @@ from research_agent_teams.tools.runstore import (
     create_run,
     prepare_resume,
     read_manifest,
+    record_gate,
     start_stage,
 )
 from research_agent_teams.tools.scope_guard import decide
@@ -98,10 +99,14 @@ def _drive(run_dir, task_frame, start_stage_name, agent_fn, gate_fn, ts, vault_r
         _validate_artifact_file(art_path)                   # VERIFY (contract)
         append_log(obs, {"agent_name": lead or "stub", "task_id": p["task_id"], "stage": stage,
                          "started_at": ts, "tool_calls": 1, "model": lead_model})  # observability
-        checkpoint_stage(run_dir, stage, [art_path], f"idem-{stage}", ts)     # RECORD (boundary)
-        if gate_level == "director_signoff":                # REVIEW (director gate)
-            if gate_fn(stage, task_frame) == "reject":
+        if gate_level == "director_signoff":                # REVIEW (director gate) — BEFORE the checkpoint
+            decision = gate_fn(stage, task_frame) or "approved"
+            record_gate(run_dir, stage, decision, ts)       # durable, tamper-evident signoff (the veto fix)
+            if str(decision).strip().lower() == "reject":
+                # vetoed: do NOT checkpoint — a rejected stage never becomes a clean boundary, and the run
+                # is now terminal (status=rejected), so a plain resume can no longer walk past the veto.
                 raise RuntimeError(f"director rejected at {stage}")
+        checkpoint_stage(run_dir, stage, [art_path], f"idem-{stage}", ts)     # RECORD (boundary; only if not rejected)
     return read_manifest(run_dir)
 
 

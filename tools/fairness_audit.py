@@ -59,8 +59,15 @@ def check_fairness(
         # No stratification declared in profile — skip check (no false BLOCK)
         return violations
 
-    findings = result_summary.get("findings") or []
-    records = run_records or []
+    # Defensive: malformed input must FAIL CLOSED, never crash this ANALYZE producer. A non-dict
+    # result_summary, or a non-list findings / run_records (e.g. {"findings": 42}, which the old
+    # `or []` left as a truthy int and `list(42)` then crashed), is treated as 'no per-stratum evidence'
+    # -> the declared keys are flagged unverifiable, not propagated as an uncaught TypeError.
+    if not isinstance(result_summary, dict):
+        result_summary = {}
+    findings = result_summary.get("findings")
+    findings = findings if isinstance(findings, list) else []
+    records = run_records if isinstance(run_records, list) else []
 
     # (a) Explicit stratum tags prove the run was stratified per-VALUE. Their presence
     # alone clears the fairness check — we do NOT require the key NAME to echo.

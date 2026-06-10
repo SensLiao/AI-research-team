@@ -39,7 +39,9 @@ def _check_truncated_axis(fig: dict) -> List[dict]:
 
     if figure_type in _TRUNCATION_SENSITIVE_TYPES and isinstance(y_axis, dict):
         y_min = y_axis.get("min")
-        if y_min is not None and float(y_min) != 0.0:
+        # Numeric guard: a non-numeric min ("auto"/"none"/str) is not a non-zero truncation we can assert
+        # — skip instead of crashing on float("auto"). (bool excluded so True/False isn't read as 1/0.)
+        if isinstance(y_min, (int, float)) and not isinstance(y_min, bool) and float(y_min) != 0.0:
             findings.append({
                 "figure_id": figure_id,
                 "finding_type": "truncated_axis",

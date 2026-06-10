@@ -38,11 +38,31 @@ Matching semantics:
 """
 from __future__ import annotations
 
+import re
 from typing import List
 
 # A rebuttal must contain at least this many non-whitespace characters to be considered
 # substantive.  A single punctuation mark (".", "x", "1 ") cannot clear a BLOCK.
 _MIN_REBUTTAL_LEN: int = 4
+
+
+def _tokenize(s: str) -> List[str]:
+    """Lowercase alphanumeric word tokens (drops punctuation). 'data-leakage.' -> ['data','leakage']."""
+    return [t for t in re.split(r"[^a-z0-9]+", (s or "").lower()) if t]
+
+
+def _flag_contained_in_source(flag_text: str, addr_src: str) -> bool:
+    """True iff the flag's tokens appear as a CONTIGUOUS run of WHOLE tokens inside addr_src.
+
+    Whole-token, not raw substring: a SHORT flag like 'leak' must NOT be cleared by an unrelated source
+    that merely contains it inside a longer word ('...leakage...'). The legitimate 'source ⊇ flag' case
+    (block_source = 'insufficient power: only 1 seed [resolved]') still matches as a contiguous token run.
+    """
+    ft, at = _tokenize(flag_text), _tokenize(addr_src)
+    if not ft:
+        return False
+    m = len(ft)
+    return any(at[i:i + m] == ft for i in range(len(at) - m + 1))
 
 
 def _collect_block_finding_ids(panel_reviews: List[dict]) -> List[str]:
@@ -113,16 +133,15 @@ def _reviewer_block_is_addressed(block_id: str, entries: List[tuple[str, str]]) 
 def _critic_flag_is_addressed(flag_text: str, entries: List[tuple[str, str]]) -> bool:
     """Return True iff flag_text is addressed by at least one substantive entry.
 
-    Matching rule (one-directional containment):
-      ``flag_text in addr_src``  — the stored block_source fully contains the flag text.
-    The reverse (``addr_src in flag_text``) is intentionally excluded: it would allow a
-    vacuous block_source such as "." to match any flag that contains a period.
-
+    Matching rule (exact, or WHOLE-TOKEN contiguous containment of the flag inside block_source):
+      - exact equality (the synthesizer copied the flag verbatim), OR
+      - the flag's tokens appear as a contiguous run of whole tokens inside block_source.
+    NOT a raw substring (that let a short flag 'leak' be falsely cleared by an unrelated 'leakage' mention),
+    and NOT the reverse addr-in-flag (that let a vacuous '.' clear any flag containing a period).
     Additionally, the matching entry must carry a substantive rebuttal.
     """
     for addr_src, rebuttal in entries:
-        # Exact membership first (most common path when the synthesizer copies the flag verbatim)
-        match = (flag_text == addr_src) or (flag_text in addr_src)
+        match = (flag_text == addr_src) or _flag_contained_in_source(flag_text, addr_src)
         if match and _is_substantive_rebuttal(rebuttal):
             return True
     return False

@@ -1,0 +1,23 @@
+# Enforce LF on all text. The machine runs on Windows but the ledger hash-chain (tools/ledger.py) and
+# artifact sha256 (tools/runstore.hash_file) assume stable byte content; a Windows checkout/commit that
+# silently rewrote LF->CRLF on a tracked file would change those bytes. Pin LF so a cross-platform clone
+# never mutates a committed file's hash. (The ephemeral run-store is gitignored, so its artifacts are
+# never git-normalized — this protects committed fixtures, schemas, and code.)
+* text=auto eol=lf
+
+*.py    text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.js    text eol=lf
+*.sh    text eol=lf
+*.txt   text eol=lf
+
+# Binary assets — never normalize
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.pdf   binary
+*.ico   binary

@@ -29,28 +29,34 @@ into the control plane or agents.
 
 ```
 research_agent_teams/
-├── schemas/      JSON-Schema artifact contracts (domain-agnostic)
-├── profiles/     pluggable domain profiles (cv-medical-segmentation, nlp-text-classification, ai-generic, ...)
-├── tools/        deterministic validators/hashers (the enforcement primitives)
+├── schemas/      JSON-Schema artifact contracts (domain-agnostic) — 86 schemas
+├── profiles/     pluggable domain profiles (cv-medical-segmentation, nlp-text-classification, ai-generic)
+├── tools/        deterministic validators/hashers/checkers — the enforcement primitives (incl. the promote_gate)
 ├── tests/        REAL pytest for every tool — no "passes" without terminal evidence
-├── agents/       (later) agent .md specs — the team roster
-├── orchestrator/ (later) FSM graph spec: PARSE→RECALL→WORK→VERIFY→RECORD→REVIEW→REPORT + mode registry
-└── runs/         (later) run-store: the team's runtime files (ephemeral, gitignored, outside the vault)
+├── agents/       agent .md specs — the team roster (1 orchestrator + worker role-specs)
+├── orchestrator/ FSM engine (engine.py) + graph spec + mode registry + routing resolver + model policy
+├── operate/      step-wise spine + CLI the orchestrator skill drives (begin / run-dets / commit / reject / status / menu)
+├── execute/      gated GPU-execution layer (plan offline; live submit/status/pull director-gated) — tested, NOT operated
+├── gates/        the 4 human gates (idea-bet / promote-to-vault / venue-pick / venue-decide) — disable-model-invocation
+├── hooks/        node PreToolUse guards (permission-scope-guard + artifact-contract-enforcer)
+└── runs/         run-store: runtime files (ephemeral, gitignored, outside the vault)
 ```
 
-## Build status (toward the complete form)
+## Build status (the complete form — DONE)
 
-- [x] Control plane · brick 1: artifact envelope + task_frame + domain_profile schemas, validator, canonical hasher + hash-chain, 3 example profiles, 21 real tests
-- [x] Control plane · brick 2: ledger (hash-chain) + run-store + checkpoint/resume + crash/tamper detection, 16 real tests (37 total green)
-- [x] Control plane · brick 3: FSM graph + mode registry + routing resolver + guardrails (15 tests)
-- [x] Control plane · brick 4: budget/stop controller + ADR schema + observability log (12 tests)
-- [x] Control plane · brick 5: permission-scope-guard + artifact-contract-enforcer (Python core + node-run .js hooks, 15 tests)
-- [x] Control plane · brick 6: spine engine + end-to-end DRY-RUN (crash/resume/scope, 3 tests)
-- [x] Control plane · brick H: foundation hardening (crash@every boundary, fuzz, parallel-no-collision, single-writer, 33 tests)
-- [x] **MILESTONE M0 reached** — control plane complete + proven + hardened (**115 tests green**)
-- [ ] operation-wiring: orchestrator SKILL.md + state-tracker.md + gate slash-skills + settings.json
-- [ ] core agents (V1 = 16) → then V2 → then specialized (M1 → M2 → M3)
+The control plane, the agent roster, the M⇄D seam, and the gated GPU-execute layer are **all built and
+self-tested**. M3 is the designed final form (there is no M4). Honest status: **tested, NOT operated** on
+real research — the GPU-execute layer emits the scripts but has never run a real job (it needs the
+director's wired server). See `RESEARCH-SYSTEM-OVERVIEW.md` for the full by-the-numbers status.
 
-Run tests: `python -m pytest research_agent_teams/tests -v` (115 green at M0).
+- [x] **M0** — control plane: schemas + validator + canonical hash-chain + ledger + run-store + checkpoint/resume + FSM + routing + budget + observability + permission-scope/contract hooks + spine engine + foundation hardening
+- [x] **M1–M2** — the agent roster (1 orchestrator + worker role-specs) + the deterministic checker tools behind every hard gate (breadth + depth modes)
+- [x] **M3** — full 7-stage spine across all modes; **M3.5** — the M⇄D seam (recall by reference + promote-to-vault re-derivation), domain generality, two-repo git
+- [x] **operate layer** — one-button step-wise driver + CLI (new_direction wired); **execute layer** — gated GPU runner (plan/submit/status/pull)
+- [x] **governance / GPU / QC hardening (2026-06-10)** — director-veto recording + unresumable rejected runs; promote-gate entrypoint that self-derives from sha-verified audits + writes the ledger; always-on machine-root vault guard + the 4 gates installed as real `disable-model-invocation` commands; remote-exec injection / pull-fence / host-key fixes; 8 QC-tool correctness fixes. See `_design/remediation-2026-06-10-governance-gpu-qc-hardening.md`.
 
-Run tests: `python -m pytest research_agent_teams/tests -v` (from the case-for-research dir).
+Run the self-tests (from the case-for-research dir):
+
+```
+python -m pytest research_agent_teams/tests/ -q     # 1753 green
+```

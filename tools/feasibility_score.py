@@ -157,10 +157,15 @@ def score_feasibility(
     d_score = _data_signal(raw_data)
     t_score = _time_signal(raw_time)
 
-    # Budget modulation: penalise compute-heavy ideas when a GPU ceiling exists.
+    # Budget modulation: penalise compute-heavy ideas when a GPU ceiling exists. Applies to a NUMERIC
+    # compute over the ceiling AND to a string "high"/"very high"/"extreme" — the natural way to flag an
+    # expensive plan. Previously the string form silently skipped the penalty (isinstance(..., (int,float))
+    # is False for "high"), so an infeasible "high"-compute plan scored as more feasible than it is.
     ceiling = _budget_compute_ceiling(budget)
-    if ceiling is not None and isinstance(raw_compute, (int, float)):
-        if float(raw_compute) > ceiling:
+    if ceiling is not None:
+        if isinstance(raw_compute, (int, float)) and not isinstance(raw_compute, bool) and float(raw_compute) > ceiling:
+            c_score = max(0.0, c_score - 0.2)
+        elif isinstance(raw_compute, str) and raw_compute.strip().lower() in ("high", "very high", "extreme"):
             c_score = max(0.0, c_score - 0.2)
 
     final_score = round((c_score + d_score + t_score) / 3.0, 4)
