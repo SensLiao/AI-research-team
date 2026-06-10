@@ -11,7 +11,19 @@
     "run_id": {"type": "string", "minLength": 1},
     "status": {
       "type": "string",
-      "enum": ["running", "awaiting_director", "awaiting_resume", "interrupted", "promoting", "done", "parked", "failed"]
+      "enum": ["running", "awaiting_director", "awaiting_resume", "interrupted", "promoting", "done", "parked", "failed", "rejected"]
+    },
+    "rejected": {
+      "type": ["object", "null"],
+      "default": null,
+      "description": "Set when the director vetoed a stage at a director_signoff gate. Terminal: prepare_resume refuses a rejected run. The veto is ALSO recorded as a hash-chained gate_resolved ledger event.",
+      "additionalProperties": false,
+      "required": ["stage", "decided_at"],
+      "properties": {
+        "stage": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]},
+        "reason": {"type": ["string", "null"], "default": null},
+        "decided_at": {"type": "string", "minLength": 1}
+      }
     },
     "created_at": {"type": "string", "minLength": 1},
     "updated_at": {"type": "string", "minLength": 1},

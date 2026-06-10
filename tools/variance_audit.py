@@ -51,10 +51,13 @@ DEFAULT_STABILITY_STD = 0.02
 def _canonical_seed(seed: Any) -> Any:
     """Normalize a seed value to a canonical type for distinct-seed dedup.
 
-    Coerce to int where coercible (so True/1 collapse, and "42"/42 collapse), else fall
-    back to str.  bool is intentionally treated via int(): int(True) == 1, so a record
-    with seed=True and one with seed=1 count as the SAME seed.
+    A FRACTIONAL float is preserved as itself — distinct float seeds 1.1 / 1.5 / 1.9 must stay distinct
+    (int() truncation collapsed them ALL to 1, so three real seeds counted as one and their variance was
+    computed over a single point => a falsely 'stable' result). Integer-valued floats (42.0) and numeric
+    strings ("42") still collapse with the int 42, and bool collapses via int(True)==1, as documented.
     """
+    if isinstance(seed, float) and not seed.is_integer():
+        return seed
     try:
         return int(seed)
     except (TypeError, ValueError):

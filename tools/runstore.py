@@ -130,10 +130,31 @@ def checkpoint_stage(run_dir, stage: str, artifact_paths: List, idempotency_key:
     return manifest
 
 
+def record_gate(run_dir, stage: str, decision: str, ts: str, reason: Optional[str] = None) -> dict:
+    """Record a director gate decision durably — the veto fix.
+
+    Appends a hash-chained `gate_resolved` event so EVERY director_signoff outcome (approved / modify /
+    reject) is on the tamper-evident permanent record; a reject can never be silently 'lost' from the
+    ledger. On REJECT the run becomes TERMINAL: status='rejected', next_step cleared, and `prepare_resume`
+    refuses it — so a plain 'continue' can no longer walk a vetoed run to completion. Approve/modify leave
+    the run running (the engine then checkpoints the stage as usual)."""
+    dec = (decision or "").strip().lower()
+    append_event(_ledger_path(run_dir), "gate_resolved",
+                 {"stage": stage, "decision": dec, "reason": reason}, ts)
+    manifest = read_manifest(run_dir)
+    manifest["updated_at"] = ts
+    if dec == "reject":
+        manifest["status"] = "rejected"
+        manifest["rejected"] = {"stage": stage, "reason": reason, "decided_at": ts}
+        manifest["next_step"] = None
+    _write_manifest(run_dir, manifest)
+    return manifest
+
+
 # ---------- resume ----------
 
 def classify_status(run_dir) -> str:
-    """One of: empty / tampered / inconsistent / clean_boundary / crashed_mid_stage / ready / awaiting / done / unknown."""
+    """One of: empty / tampered / inconsistent / rejected / clean_boundary / crashed_mid_stage / ready / awaiting / done / unknown."""
     events = read_events(_ledger_path(run_dir))
     if not events:
         return "empty"
@@ -143,6 +164,8 @@ def classify_status(run_dir) -> str:
     boundaries = [e for e in events if e["event_type"] == "boundary"]
     if boundaries and manifest.get("last_boundary_hash") != boundaries[-1]["hash"]:
         return "inconsistent"  # manifest anchor disagrees with ledger tip-of-boundaries
+    if manifest.get("status") == "rejected":
+        return "rejected"      # director vetoed a stage -> terminal, not resumable
     if manifest.get("status") == "done":
         return "done"
     et = events[-1]["event_type"]
@@ -163,6 +186,11 @@ def prepare_resume(run_dir, ts: str) -> dict:
         raise RuntimeError(f"cannot resume: ledger {status}")
     if status == "done":
         raise RuntimeError("cannot resume: run already done")
+    if status == "rejected":
+        rej = read_manifest(run_dir).get("rejected") or {}
+        raise RuntimeError(
+            f"cannot resume: run was REJECTED by the director at stage {rej.get('stage', '?')} "
+            "— a vetoed run is terminal and cannot be resumed (start a new run instead)")
 
     manifest = read_manifest(run_dir)
     events = read_events(_ledger_path(run_dir))

@@ -13,6 +13,7 @@
  * Fails OPEN on internal error (never bricks a session) but says so on stderr.
  */
 const path = require("path");
+const fs = require("fs");
 
 const WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
 const INFRA_FILES = new Set(["manifest.yaml", "ledger.jsonl", "LOCK"]);
@@ -22,6 +23,20 @@ function within(child, root) {
   let r = path.resolve(root);
   if (process.platform === "win32") { c = c.toLowerCase(); r = r.toLowerCase(); }
   return c === r || c.startsWith(r + path.sep);
+}
+
+function discoverVaultRoot() {
+  // Mirror of scope_guard.discover_vault_root: walk up from this hook to a parent holding
+  // `AI agent database/PhD-Research-OS/00-system`. Lets the vault block fire WITHOUT the optional
+  // RAT_VAULT_ROOT being set (the gap the audit flagged). Returns null in a bare tree.
+  let dir = __dirname;
+  while (true) {
+    const marker = path.join(dir, "AI agent database", "PhD-Research-OS", "00-system");
+    try { if (fs.statSync(marker).isDirectory()) return path.dirname(marker); } catch (e) {}
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
 }
 
 function decide(tool, target, scope) {
@@ -55,7 +70,8 @@ process.stdin.on("end", () => {
       runRoot: process.env.RAT_RUN_ROOT || "",
       runId,
       stage: process.env.RAT_STAGE || "",
-      vaultRoot: process.env.RAT_VAULT_ROOT || "",
+      // ③: env wins, else discover by layout — the vault block no longer depends on RAT_VAULT_ROOT being set.
+      vaultRoot: process.env.RAT_VAULT_ROOT || discoverVaultRoot() || "",
     };
     const [allowed, reason] = decide(tool, target, scope);
     if (!allowed) {

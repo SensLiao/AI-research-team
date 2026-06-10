@@ -32,7 +32,11 @@ _OOD_KEYWORDS = (
     "robust",
 )
 
-# Tags in condition ids / findings that indicate external/held-out/ood results
+# Tags in condition ids / findings that indicate external/held-out/ood results.
+# NOTE: "transfer" is intentionally NOT here. It is an OOD *claim* keyword (_OOD_KEYWORDS), so listing it
+# as an evidence tag let any condition merely NAMED "*transfer*" (even an internal baseline like
+# "transfer_time_ablation") self-satisfy the check — a generalization claim cleared by name coincidence.
+# Real OOD evidence must carry an unambiguous external/held-out/ood/domain-shift tag, not just the claim word.
 _OOD_CONDITION_TAGS = (
     "external",
     "ood",
@@ -40,7 +44,6 @@ _OOD_CONDITION_TAGS = (
     "heldout",
     "held_out",
     "out_of_distribution",
-    "transfer",
     "domain_shift",
 )
 
