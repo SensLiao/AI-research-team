@@ -1,6 +1,8 @@
 """Run-store: crash-safe stop/resume on top of the hash-chained ledger.
 
-A run lives in runs/<run_id>/ {manifest.yaml, ledger.jsonl, evidence/, inbox/}.
+A run lives in runs/<project>/<run_id>/ {manifest.yaml, ledger.jsonl, evidence/, inbox/} when it
+belongs to a research project, or flat runs/<run_id>/ (legacy / project-less). `run_dir_for` builds
+the path; `find_run_dir` locates an existing run in either layout by id.
 The manifest is the single source of truth (single-writer = orchestrator/state-tracker).
 Resume reads ONLY manifest + ledger; prior chat memory is non-authoritative.
 
@@ -69,18 +71,42 @@ def _write_manifest(run_dir, manifest: dict) -> None:
     atomic_write_text(_manifest_path(run_dir), yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True))
 
 
+# ---------- run layout (project-grouped or legacy flat) ----------
+
+def run_dir_for(runs_dir, run_id: str, project: Optional[str] = None) -> Path:
+    """The run's directory: runs/<project>/<run_id>/ when it belongs to a project, else flat."""
+    return (Path(runs_dir) / project / run_id) if project else (Path(runs_dir) / run_id)
+
+
+def find_run_dir(runs_dir, run_id: str) -> Path:
+    """Locate an EXISTING run by id in either layout. Flat wins (legacy precedence); then exactly
+    one runs/<project>/<run_id>/ match. Identified by its manifest.yaml (a real run always has one)."""
+    flat = Path(runs_dir) / run_id
+    if (flat / "manifest.yaml").is_file():
+        return flat
+    matches = sorted(p for p in Path(runs_dir).glob(f"*/{run_id}") if (p / "manifest.yaml").is_file())
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise FileNotFoundError(
+            f"run {run_id!r} not found under {runs_dir} (neither flat nor in any project group)")
+    raise RuntimeError(f"run id {run_id!r} is ambiguous across projects: {[str(m) for m in matches]}")
+
+
 # ---------- run lifecycle ----------
 
 def create_run(runs_dir, run_id: str, mode: str, entry_stage: str, ts: str,
                domain_profile_ref: Optional[str] = None,
-               first_agent_subset: Optional[List[str]] = None) -> dict:
-    run_dir = Path(runs_dir) / run_id
+               first_agent_subset: Optional[List[str]] = None,
+               project: Optional[str] = None) -> dict:
+    run_dir = run_dir_for(runs_dir, run_id, project)
     (run_dir / "evidence").mkdir(parents=True, exist_ok=True)
     (run_dir / "inbox").mkdir(parents=True, exist_ok=True)
     append_event(_ledger_path(run_dir), "run_started", {"mode": mode, "entry_stage": entry_stage}, ts)
     manifest = {
         "schema_version": "1.0.0",
         "run_id": run_id,
+        "project": project,
         "status": "running",
         "created_at": ts,
         "updated_at": ts,

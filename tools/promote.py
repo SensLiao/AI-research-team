@@ -23,6 +23,7 @@ import re
 from pathlib import Path
 from typing import List, Optional
 
+from research_agent_teams.tools.projects import REGISTRY_REL, has_registry, load_registered_projects
 from research_agent_teams.tools.validate_artifact import validate_payload
 
 # a safe single path segment: lowercase-kebab, no slashes / dots / traversal
@@ -240,6 +241,22 @@ def promote_to_vault(candidate: dict, *, signals: dict, human_freeze: bool,
         return _build_record(candidate, _hard_reject("rejected: unsafe candidate — " + "; ".join(violations)),
                              vault_path=None, vault_slug=None, decided_by=decided_by, decided_at=decided_at,
                              candidate_path=candidate_path, candidate_sha=candidate_sha)
+
+    # 1.5) project discipline: when the vault HAS a project-registry FILE (the real vault always
+    # does), every promoted page must carry a REGISTERED project slug — no more 'unknown'-project
+    # knowledge. A registry that exists but parses to zero rows fails CLOSED (rejects everything)
+    # rather than silently disabling the gate. Only a bare test vault WITHOUT the file skips this.
+    if has_registry(vault_root):
+        registered_projects = load_registered_projects(vault_root)
+        cand_project = candidate.get("project")
+        if cand_project not in registered_projects:
+            return _build_record(
+                candidate,
+                _hard_reject(f"rejected: project {cand_project!r} is not a registered slug in "
+                             f"{REGISTRY_REL} (known: {sorted(registered_projects)}) — every promoted "
+                             "page must belong to a registered project"),
+                vault_path=None, vault_slug=None, decided_by=decided_by, decided_at=decided_at,
+                candidate_path=candidate_path, candidate_sha=candidate_sha)
 
     # 2) re-derive from the REAL referenced audits (never a self-claim)
     decision = rederive(

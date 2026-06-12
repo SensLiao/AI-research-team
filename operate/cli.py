@@ -1,7 +1,9 @@
 """Operate CLI — the interface the research-orchestrator skill calls to drive a one-button run.
 
 The skill's loop for `new_direction` (run from the project root):
-    begin --mode new_direction --request "..."        -> run_id (+ DISCOVER worker spec)
+    begin --mode new_direction --project <slug> --request "..."   -> run_id (+ DISCOVER worker spec)
+                                                         (--project = a registered research project;
+                                                          the run lives in runs/<project>/<run_id>/)
     [spawn the printed LLM worker -> it writes inbox/<STAGE>.bundle.json]
     run-dets --run-id <id> --stage DISCOVER           -> runs the 2 hard gates + classify + novelty
                                                          (exit 3 + "gate":"BLOCK" if a gate refuses)
@@ -25,9 +27,13 @@ from pathlib import Path
 from . import spine
 from .artifacts import GateBlock
 from .modes import REGISTRY
+from ..tools import projects as projects_tool
 from ..tools.budget_tracker import BudgetExceeded
+from ..tools.runstore import find_run_dir
+from ..tools.scope_guard import discover_vault_root
 
 DEFAULT_RUNS_DIR = "research_agent_teams/runs"
+DEFAULT_PROJECTS_DIR = "research_agent_teams/projects"
 
 
 def _ts() -> str:
@@ -35,7 +41,12 @@ def _ts() -> str:
 
 
 def _run_dir(runs_dir: str, run_id: str) -> str:
-    return str(Path(runs_dir) / run_id)
+    """Locate the run in either layout (runs/<project>/<run_id>/ or legacy flat). Clean exit if absent."""
+    try:
+        return str(find_run_dir(runs_dir, run_id))
+    except (FileNotFoundError, RuntimeError) as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
 
 
 def _emit(obj) -> None:
@@ -65,14 +76,29 @@ def cmd_begin(a) -> None:
     mode = a.mode
     run_id = a.run_id or f"{mode}-{_ts().replace(':', '').replace('-', '')}"
     ts = a.ts or _ts()
-    plan = spine.begin(a.runs_dir, run_id, a.request, mode, ts,
-                       domain_profile_ref=a.profile, model_policy=a.model_policy)
     mod = _mode_module(mode)
+    # Every run belongs to a registered research project (no more unowned experiments). The vault's
+    # project-registry is the single source of truth; the run-store groups by runs/<project>/<run_id>/.
+    # Validation vault = the SAME chain the worker prompts use (explicit --vault, else the discovered
+    # two-repo layout, else the mode's DEFAULT_VAULT) — so the registry check can never be skipped
+    # just because layout discovery failed while a default vault is still in play.
+    vault_for_check = a.vault or discover_vault_root() or getattr(mod, "DEFAULT_VAULT", None)
+    try:
+        check = projects_tool.require_project(a.project, vault_for_check)
+    except ValueError as exc:
+        _emit({"error": str(exc),
+               "note": "begin requires a registered --project (see 05-registry/project-registry.md in "
+                       "the vault; the director adds the row — the machine never writes the registry)"})
+        sys.exit(2)
+    projects_tool.ensure_workspace(a.projects_dir, a.project)   # the project's durable resource room
+    plan = spine.begin(a.runs_dir, run_id, a.request, mode, ts,
+                       domain_profile_ref=a.profile, model_policy=a.model_policy, project=a.project)
     first = plan["stages"][0]
     vault = a.vault or getattr(mod, "DEFAULT_VAULT", None)
     worker = (mod.llm_step(plan["run_dir"], first, a.request, vault=vault, model_policy=a.model_policy)
               if hasattr(mod, "llm_step") else None)
-    _emit({"run_id": run_id, "run_dir": plan["run_dir"], "mode": mode, "stages": plan["stages"],
+    _emit({"run_id": run_id, "run_dir": plan["run_dir"], "mode": mode, "project": a.project,
+           "project_check": check, "stages": plan["stages"],
            "gate_level": plan["gate_level"], "first_stage": first, "next_worker": worker})
 
 
@@ -167,6 +193,34 @@ def cmd_status(a) -> None:
     _emit(spine.status(_run_dir(a.runs_dir, a.run_id)))
 
 
+def cmd_project_init(a) -> None:
+    try:
+        check = projects_tool.require_project(a.project, a.vault or discover_vault_root())
+    except ValueError as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
+    ws = projects_tool.ensure_workspace(a.projects_dir, a.project)
+    _emit({"project": a.project, "project_check": check, **ws})
+
+
+def cmd_project_list(a) -> None:
+    rows = projects_tool.list_projects(a.projects_dir, a.runs_dir,
+                                       a.vault if a.vault is not None else discover_vault_root())
+    _emit({"projects": rows})
+
+
+def cmd_project_delete(a) -> None:
+    """Director-facing deletion: one command removes a project's whole machine-side footprint
+    (workspace + all its runs). Typed --confirm <slug> required; the vault is never touched."""
+    try:
+        res = projects_tool.delete_project(a.projects_dir, a.runs_dir, a.project,
+                                           confirm=a.confirm, vault_root=a.vault)
+    except (ValueError, PermissionError) as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
+    _emit(res)
+
+
 def cmd_menu(a) -> None:
     mod = _mode_module(_mode_from_run(a.runs_dir, a.run_id))
     rows = mod.menu(_run_dir(a.runs_dir, a.run_id)) if hasattr(mod, "menu") else []
@@ -190,12 +244,17 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("begin", parents=[common], help="PARSE + create a run; print the first worker to spawn")
     b.add_argument("--mode", default="new_direction")
     b.add_argument("--request", required=True)
+    b.add_argument("--project", required=True,
+                   help="the registered research project this run belongs to (lowercase-kebab slug from "
+                        "the vault's 05-registry/project-registry.md); groups the run under "
+                        "runs/<project>/<run_id>/ and creates projects/<project>/ on first use")
     b.add_argument("--run-id", default=None)
     b.add_argument("--profile", default=None, help="domain_profile_ref (pointer, recorded for provenance)")
     b.add_argument("--model-policy", default="max_quality", choices=["default", "max_quality"],
                    help="governed research runs default to max_quality (all-opus) per director lock "
                         "2026-06-09 ('优化到最好'); pass --model-policy default for a cheaper run")
     b.add_argument("--vault", default=None, help="vault root (defaults to the mode's DEFAULT_VAULT)")
+    b.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
     b.set_defaults(func=cmd_begin)
 
     w = sub.add_parser("worker", parents=[common], help="print the LLM worker spec to spawn for a stage")
@@ -231,6 +290,28 @@ def build_parser() -> argparse.ArgumentParser:
     m = sub.add_parser("menu", parents=[common], help="print the ranked idea_backlog (the /idea-bet menu)")
     m.add_argument("--run-id", required=True)
     m.set_defaults(func=cmd_menu)
+
+    pi = sub.add_parser("project-init", parents=[common],
+                        help="validate a registered project + create its projects/<slug>/ workspace")
+    pi.add_argument("--project", required=True)
+    pi.add_argument("--vault", default=None, help="vault root for registry validation (default: discovered)")
+    pi.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    pi.set_defaults(func=cmd_project_init)
+
+    pls = sub.add_parser("project-list", parents=[common],
+                         help="overview of all projects the machine knows (registry + workspaces + runs)")
+    pls.add_argument("--vault", default=None)
+    pls.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    pls.set_defaults(func=cmd_project_list)
+
+    pd = sub.add_parser("project-delete", parents=[common],
+                        help="DELETE a project's machine-side footprint (workspace + all its runs); "
+                             "typed --confirm <slug> required; the vault is never touched")
+    pd.add_argument("--project", required=True)
+    pd.add_argument("--confirm", required=True, help="must equal the project slug (typed confirmation)")
+    pd.add_argument("--vault", default=None)
+    pd.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    pd.set_defaults(func=cmd_project_delete)
     return p
 
 

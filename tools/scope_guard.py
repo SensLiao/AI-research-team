@@ -7,6 +7,8 @@ It may NOT:
   - run Bash (a command string cannot be proven safe -> fail closed)
   - write the run infra files (manifest.yaml / ledger.jsonl / LOCK -> single-writer = orchestrator)
   - write the vault directly (knowledge enters only via the human promotion gate)
+  - write the project workspace (projects/<slug>/ is operator-managed: results land there via the
+    execute layer's pull / the operate layer, never via a fenced agent)
   - write another run / another stage
 Paths outside every governed tree are a NO-OP (allowed) so the guard never bricks unrelated work.
 
@@ -17,7 +19,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
 INFRA_FILES = {"manifest.yaml", "ledger.jsonl", "LOCK"}
@@ -47,6 +49,9 @@ def _compute_layout_vault() -> Optional[str]:
 # Computed ONCE (the layout is static); only the env override is re-read per call (cheap, never stale).
 _LAYOUT_VAULT = _compute_layout_vault()
 
+# The machine's own per-project workspace root (research_agent_teams/projects/) — static by layout.
+_LAYOUT_PROJECTS = str(Path(__file__).resolve().parents[1] / "projects")
+
 
 def discover_vault_root() -> Optional[str]:
     """The vault's absolute path for the always-on machine-root guard. `RAT_VAULT_ROOT` wins (lets the
@@ -56,6 +61,13 @@ def discover_vault_root() -> Optional[str]:
     if env:
         return env
     return _LAYOUT_VAULT
+
+
+def discover_projects_root() -> str:
+    """The project-workspace root for the fenced-agent guard. `RAT_PROJECTS_ROOT` wins (tests / a
+    relocated workspace); otherwise the machine's own layout (research_agent_teams/projects/)."""
+    env = (os.environ.get("RAT_PROJECTS_ROOT") or "").strip()
+    return env or _LAYOUT_PROJECTS
 
 
 def decide(tool: str, target_path, scope: dict) -> Tuple[bool, str]:
@@ -75,6 +87,13 @@ def decide(tool: str, target_path, scope: dict) -> Tuple[bool, str]:
     effective_vault = scope.get("vault_root") or discover_vault_root()
     if effective_vault and _within(target_path, effective_vault):
         return False, "blocked: cannot write the vault directly (promote via the human gate)"
+
+    # PROJECT-WORKSPACE GUARD: projects/<slug>/ is the operator-managed durable resource room.
+    # Results land there via the execute layer's pull / the operate layer — never via a fenced agent
+    # (which would smuggle unvalidated output into a project's durable resources).
+    effective_projects = scope.get("projects_root") or discover_projects_root()
+    if effective_projects and _within(target_path, effective_projects):
+        return False, "blocked: the project workspace is operator-managed (fenced agents write only their run scope)"
 
     run_dir = Path(scope["run_root"]) / scope["run_id"]
 

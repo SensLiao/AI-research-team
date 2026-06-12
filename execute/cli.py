@@ -26,7 +26,8 @@ def _emit(obj) -> None:
 def _job(a) -> JobSpec:
     return JobSpec(run_id=a.run_id, script=getattr(a, "script", "") or "",
                    args=getattr(a, "args", "") or "", gpus=getattr(a, "gpus", "") or "",
-                   local_script=getattr(a, "local_script", None))
+                   local_script=getattr(a, "local_script", None),
+                   project=getattr(a, "project", "") or "")
 
 
 def cmd_plan(a) -> None:
@@ -48,6 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
     import argparse as _a
     common = _a.ArgumentParser(add_help=False)
     common.add_argument("--run-id", required=True)
+    common.add_argument("--project", default="",
+                        help="the run's research project (lowercase-kebab); groups the remote dir as "
+                             "<workdir>/<project>/<run_id> and the pulled results as "
+                             "<results>/<project>/<run_id>/pulled")
     common.add_argument("--env", default="research_agent_teams/.env")
 
     p = argparse.ArgumentParser(prog="python -m research_agent_teams.execute", allow_abbrev=False,

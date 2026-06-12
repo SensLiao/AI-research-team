@@ -25,7 +25,12 @@
       "maxLength": 50,
       "description": "Optional explicit 02-wiki subfolder. A single safe, bounded-length path segment (defaults to vault_type+'s'). Cannot escape 02-wiki/."
     },
-    "project": {"type": "string"},
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 50,
+      "description": "The registered research project this knowledge belongs to (lowercase-kebab slug from the vault's 05-registry/project-registry.md). When the vault has a project registry, the gate REJECTS a candidate whose project is not registered — promoted pages never carry an unknown project."
+    },
     "title": {"type": "string"},
     "body": {"type": "string"},
     "source_result_status": {

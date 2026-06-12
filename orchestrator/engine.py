@@ -23,9 +23,11 @@ from research_agent_teams.tools.runstore import (
     STAGES,
     checkpoint_stage,
     create_run,
+    find_run_dir,
     prepare_resume,
     read_manifest,
     record_gate,
+    run_dir_for,
     start_stage,
 )
 from research_agent_teams.tools.scope_guard import decide
@@ -112,23 +114,25 @@ def _drive(run_dir, task_frame, start_stage_name, agent_fn, gate_fn, ts, vault_r
 
 def run_task(runs_dir, run_id, request, mode, ts, agent_fn, gate_fn,
              domain_profile_ref: Optional[str] = None, vault_root: Optional[str] = None,
-             budget_override: Optional[dict] = None, model_policy: str = "default") -> dict:
+             budget_override: Optional[dict] = None, model_policy: str = "default",
+             project: Optional[str] = None) -> dict:
     tf = resolve_task(request, mode, run_id, ts, domain_profile_ref=domain_profile_ref,
-                      model_policy=model_policy)  # PARSE
+                      model_policy=model_policy, project=project)  # PARSE
     if budget_override is not None:
         tf["payload"]["budget"] = budget_override
     rerrs = validate_routing(tf)
     if rerrs:
         raise ValueError(f"routing rejected: {rerrs}")
     entry = tf["payload"]["entry_stage"]
-    create_run(runs_dir, run_id, mode, entry, ts, domain_profile_ref, tf["payload"]["agent_subset"])
-    run_dir = Path(runs_dir) / run_id
+    create_run(runs_dir, run_id, mode, entry, ts, domain_profile_ref, tf["payload"]["agent_subset"],
+               project=project)
+    run_dir = run_dir_for(runs_dir, run_id, project)
     (run_dir / "task_frame.artifact.json").write_text(json.dumps(tf), encoding="utf-8")  # orchestrator-written
     return _drive(run_dir, tf, entry, agent_fn, gate_fn, ts, vault_root)
 
 
 def resume_task(runs_dir, run_id, ts, agent_fn, gate_fn, vault_root: Optional[str] = None) -> dict:
-    run_dir = Path(runs_dir) / run_id
+    run_dir = find_run_dir(runs_dir, run_id)                # either layout: flat or runs/<project>/<id>
     tf = json.loads((run_dir / "task_frame.artifact.json").read_text(encoding="utf-8"))
     res = prepare_resume(run_dir, ts)                       # detect + guard + log resume
     return _drive(run_dir, tf, res["resume_stage"], agent_fn, gate_fn, ts, vault_root)

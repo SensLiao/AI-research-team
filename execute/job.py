@@ -26,6 +26,8 @@ from typing import Optional
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _SCRIPT_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_./-]*$")
 _GPUS_RE = re.compile(r"^[0-9]+(,[0-9]+)*$")
+# project slugs are lowercase-kebab (a strict subset of _RUN_ID_RE) — safe as a remote path segment
+_PROJECT_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
 @dataclass(frozen=True)
@@ -35,12 +37,16 @@ class JobSpec:
     args: str = ""              # extra CLI args appended to the python invocation
     gpus: str = ""              # CUDA_VISIBLE_DEVICES value (e.g. "0"); empty = inherit
     local_script: Optional[str] = None  # local path to upload as `script` (set at submit time)
+    project: str = ""           # the run's research project; groups the remote dir <workdir>/<project>/<run_id>
 
     def __post_init__(self):
         if not _RUN_ID_RE.match(self.run_id or ""):
             raise ValueError(
                 f"unsafe run_id {self.run_id!r}: must match {_RUN_ID_RE.pattern} — no spaces, shell "
                 "metacharacters, or path/tmux separators (run_id is a remote path segment AND a tmux name)")
+        if self.project and not _PROJECT_RE.match(self.project):
+            raise ValueError(
+                f"unsafe project {self.project!r}: must be lowercase-kebab (project is a remote path segment)")
         if (not _SCRIPT_RE.match(self.script or "")) or (".." in self.script) or self.script.startswith("/"):
             raise ValueError(
                 f"unsafe script {self.script!r}: must be a relative filename (no '..', no leading '/', "
@@ -54,8 +60,10 @@ class JobSpec:
 
 
 def remote_run_dir(cfg, job: JobSpec) -> str:
-    """The run's own directory on the server, under the workdir (etiquette: never outside workdir)."""
-    return f"{cfg.workdir.rstrip('/')}/{job.run_id}"
+    """The run's own directory on the server, under the workdir (etiquette: never outside workdir).
+    With a project, runs group as <workdir>/<project>/<run_id> — mirroring the local run-store."""
+    base = cfg.workdir.rstrip("/")
+    return f"{base}/{job.project}/{job.run_id}" if job.project else f"{base}/{job.run_id}"
 
 
 def assert_in_workdir(cfg, remote_path: str) -> None:
