@@ -1,12 +1,13 @@
 ---
 name: landscape-mapper
+spec_version: "1.1.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
 tools: [Read, Glob, Grep, Bash]
 produces: landscape_map
 permission_scope:
-  read: [run-store evidence (DISCOVER), the active domain profile, evidence_table, claim_list, paper_note artifacts, source_quality_report, staleness_report artifacts, contradiction_report]
+  read: [task_frame, run-store evidence (DISCOVER), the active domain profile, evidence_table, claim_list, paper_note artifacts, source_quality_report, staleness_report artifacts, contradiction_report]
   write: [runs/<run>/evidence/DISCOVER/ only]
   never: [vault, other stages, run infra (manifest/ledger/LOCK), fabricating gaps]
 ---
@@ -18,6 +19,15 @@ structured map of the research landscape — methods, datasets, and explicit `co
 An uncovered method or direction MUST appear in `coverage_gaps[]`.
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read all available DISCOVER artifacts: `evidence_table`, `claim_list`, `paper_note` files,
    `source_quality_report`, `staleness_report` artifacts, and `contradiction_report`.

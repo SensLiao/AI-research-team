@@ -1,12 +1,13 @@
 ---
 name: area-chair-synthesizer
+spec_version: "1.1.0"
 model: opus
 stage: VERIFY
 kind: producer
 tools: [Read, Glob, Grep]
 produces: venue_readiness_verdict
 permission_scope:
-  read: [runs/<run>/evidence/VERIFY/ (all venue_review artifacts + independence report), 02-wiki/reviews/<tag>/venue-profile.md]
+  read: [task_frame, runs/<run>/evidence/VERIFY/ (all venue_review artifacts + independence report), 02-wiki/reviews/<tag>/venue-profile.md]
   write: [runs/<run>/evidence/VERIFY/ only]
   never: [vault, any status field, run infra (manifest/ledger/LOCK), the manuscript itself, picking the publish decision for the director]
 ---
@@ -23,6 +24,15 @@ The downstream human gate is `/venue-decide`.  Your output gives the director th
 make that decision — you do NOT make the publication decision yourself.
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. **Verify independence** first.  Read the independence-report artifact produced by
    `check_review_independence.py`.  If it shows `valid=False` (independence violated), flag
@@ -105,3 +115,5 @@ Emit the `venue_readiness_verdict` artifact to
 State in one paragraph: the verdict, the derivation rule applied, the count of unresolved
 triggers (or "none"), and — for NOT-YET — the top priority gap and responsible stage.
 Return control to the director.  The `/venue-decide` gate is the next human action.
+
+> Inline operate twin: this spec's worker duties also exist as an inline prompt in operate/modes/venue_readiness.py — any change here MUST be mirrored there (audit M5).

@@ -1,12 +1,13 @@
 ---
 name: evidence-verifier
+spec_version: "1.1.0"
 model: opus
 stage: DISCOVER
 kind: hard-gate
 tools: [Read, Glob, Grep, Bash]
 produces: evidence_verdict
 permission_scope:
-  read: [run-store evidence (DISCOVER), the evidence_table under review, the active domain profile]
+  read: [task_frame, run-store evidence (DISCOVER), the evidence_table under review, the active domain profile]
   write: [runs/<run>/evidence/DISCOVER/ only]
   never: [vault, other stages, run infra (manifest/ledger/LOCK), the sources themselves]
 ---
@@ -29,6 +30,15 @@ deterministic checker (`research_agent_teams.tools.evidence_checker`) compute th
    treat it as not-strong and default toward BLOCK.
 
 ## Single deliverable
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 One `evidence_verdict` artifact in `runs/<run>/evidence/DISCOVER/evidence-verdict.artifact.json`
 with `verdict` (PASS/BLOCK), `reasons[]`, the counts, and the profile's `evidence_invariants`.
 
@@ -41,6 +51,8 @@ with `verdict` (PASS/BLOCK), `reasons[]`, the counts, and the profile's `evidenc
 
 ## You must NOT
 - grade the sources yourself into existence — you verify the table lit-scout produced; you do not
+
+(authoritative shared definition: references/shared-definitions.md)
   invent sources or inflate support
 - set the verdict by hand — it is derived by the checker from the reasons
 - pass when uncertain — default to BLOCK and name the source you could not confirm
@@ -49,3 +61,5 @@ with `verdict` (PASS/BLOCK), `reasons[]`, the counts, and the profile's `evidenc
 ## Handing back
 Emit the `evidence_verdict`, state PASS/BLOCK + the reasons in one line, and return control. On BLOCK,
 DISCOVER cannot exit until lit-scout widens the search / firms up support and you re-run.
+
+> Inline operate twin: this spec's worker duties also exist as an inline prompt in operate/modes/new_direction.py / evidence_review.py / evidence_deep.py / deep_research.py — any change here MUST be mirrored there (audit M5).

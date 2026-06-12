@@ -32,6 +32,7 @@ from ..tools.runstore import (
     checkpoint_stage,
     classify_status,
     create_run,
+    pin_task_frame,
     read_manifest,
     record_gate,
     run_dir_for,
@@ -45,11 +46,15 @@ def _task_frame(run_dir) -> dict:
 
 
 def begin(runs_dir, run_id, request, mode, ts, domain_profile_ref: Optional[str] = None,
-          model_policy: str = "default", project: Optional[str] = None) -> dict:
+          model_policy: str = "default", project: Optional[str] = None,
+          north_star: Optional[dict] = None) -> dict:
     """PARSE + create the run. Writes the only orchestrator-owned file (task_frame). Returns the run plan.
-    With a `project`, the run lives in runs/<project>/<run_id>/ (the per-project grouping)."""
+    With a `project`, the run lives in runs/<project>/<run_id>/ (the per-project grouping).
+    `north_star` ({statement, in_scope, out_of_scope}) pins the run's immutable direction contract;
+    absent, the verbatim request becomes the statement. The frame's sha256 is anchored into the
+    hash-chained ledger (task_frame_pinned) so the direction cannot be silently rewritten."""
     tf = resolve_task(request, mode, run_id, ts, domain_profile_ref=domain_profile_ref,
-                      model_policy=model_policy, project=project)
+                      model_policy=model_policy, project=project, north_star=north_star)
     rerrs = validate_routing(tf)
     if rerrs:
         raise ValueError(f"routing rejected: {rerrs}")
@@ -58,9 +63,11 @@ def begin(runs_dir, run_id, request, mode, ts, domain_profile_ref: Optional[str]
                project=project)
     run_dir = run_dir_for(runs_dir, run_id, project)
     (run_dir / "task_frame.artifact.json").write_text(json.dumps(tf), encoding="utf-8")
+    pin_task_frame(run_dir, ts)
     p = tf["payload"]
     return {"run_id": run_id, "run_dir": str(run_dir), "mode": mode, "project": project,
             "stages": _resolve_path(tf), "gate_level": p["gate_level"],
+            "north_star": p.get("north_star"),
             "agent_subset": p["agent_subset"], "budget": p["budget"]}
 
 

@@ -1,12 +1,13 @@
 ---
 name: model-dataset-scout
+spec_version: "1.1.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
 tools: [Read, Glob, Grep, Bash]
 produces: model_dataset_candidates
 permission_scope:
-  read: [run-store evidence (DISCOVER), the active domain profile, the research database by reference]
+  read: [task_frame, run-store evidence (DISCOVER), the active domain profile, the research database by reference]
   write: [runs/<run>/evidence/DISCOVER/ only]
   never: [vault, other stages, run infra (manifest/ledger/LOCK), fabricating candidates]
 ---
@@ -28,6 +29,15 @@ One `model_dataset_candidates` artifact written to
 - `n_models` / `n_datasets` — derived counts (computed by the builder, not by hand)
 
 ## What you do (gather references, then call the builder)
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read the active domain profile and the run's task_frame to understand the task, modality,
    and any preferred or excluded models/datasets the profile lists.

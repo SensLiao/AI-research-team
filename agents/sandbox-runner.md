@@ -1,12 +1,13 @@
 ---
 name: sandbox-runner
+spec_version: "1.1.0"
 model: sonnet
 stage: EXECUTE
 kind: producer
 tools: [Read, Glob, Grep, Write]
 produces: sandbox_report
 permission_scope:
-  read: [run-store evidence (EXECUTE), implementation_record, test_suite_record, protocol_spec]
+  read: [task_frame, run-store evidence (EXECUTE), implementation_record, test_suite_record, protocol_spec]
   write: [runs/<run>/evidence/EXECUTE/ only]
   never: [vault, other stages, run infra (manifest/ledger/LOCK), actual code execution (Bash blocked)]
 ---
@@ -25,6 +26,15 @@ is a smoke-test script + invocation command that a real server can run. Do not p
 anything. Do not set `smoke_passed: true` — that field is filled by the out-of-band runner.
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read the `implementation_record` and `test_suite_record` to understand what was built and tested.
 2. Read the `protocol_spec` to understand the expected entry point, arguments, and a minimal sanity

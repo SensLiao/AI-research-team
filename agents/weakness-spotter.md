@@ -1,5 +1,6 @@
 ---
 name: weakness-spotter
+spec_version: "1.1.0"
 model: opus
 stage: DISCOVER
 kind: producer
@@ -18,6 +19,15 @@ every substantive methodological weakness in the surveyed work — places where 
 is shallow, flawed, or under-powered enough that a new approach could exploit the opening.
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read all `paper_note` and `evidence_table` artifacts in `runs/<run>/evidence/DISCOVER/`.
 2. Read `landscape_map` if present (it gives you the surveyed space to scope your search).

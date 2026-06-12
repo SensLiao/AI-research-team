@@ -19,11 +19,66 @@
           "value": {"type": "number"},
           "condition_id": {"type": "string", "minLength": 1},
           "baseline_value": {"type": ["number", "null"], "default": null},
-          "delta": {"type": ["number", "null"], "default": null}
+          "delta": {"type": ["number", "null"], "default": null},
+          "baseline_condition_id": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "OPTIONAL. condition_id of the baseline this finding is paired against. When set AND per-seed vectors exist for both this finding's condition and this baseline (in stats_test.enrich_result_summary), a paired significance test is run. Identifies the per-seed baseline vector; baseline_value alone (a scalar) is NOT enough to pair."
+          },
+          "p_value": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1,
+            "default": null,
+            "description": "OPTIONAL. Two-sided paired-permutation p-value vs the baseline condition, computed only when paired per-seed data exists. Absent/null when no per-seed data — never fabricated from a delta."
+          },
+          "ci_low": {
+            "type": ["number", "null"],
+            "default": null,
+            "description": "OPTIONAL. Lower bound of the percentile-bootstrap CI for this finding's value (per-seed). Paired with ci_high."
+          },
+          "ci_high": {
+            "type": ["number", "null"],
+            "default": null,
+            "description": "OPTIONAL. Upper bound of the percentile-bootstrap CI for this finding's value (per-seed)."
+          },
+          "n_seeds": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "default": null,
+            "description": "OPTIONAL. Number of paired seeds the significance test and CI were computed over."
+          },
+          "significant_after_correction": {
+            "type": ["boolean", "null"],
+            "default": null,
+            "description": "OPTIONAL. Whether this finding is significant at alpha AFTER Holm-Bonferroni correction across all tested findings in this result_summary."
+          },
+          "stats_method": {
+            "type": ["string", "null"],
+            "enum": ["exact_permutation", "mc_permutation", null],
+            "default": null,
+            "description": "OPTIONAL. Which permutation method produced p_value: exact (n<=12, all 2^n sign flips) or seeded Monte Carlo."
+          }
         }
       }
     },
     "caveats": {"type": "array", "items": {"type": "string"}, "default": []},
-    "can_cite_thesis": {"type": "boolean", "const": false}
+    "can_cite_thesis": {"type": "boolean", "const": false},
+    "stats": {
+      "type": "object",
+      "description": "OPTIONAL. Significance-testing summary attached by stats_test.enrich_result_summary. Absent on summaries built without per-seed enrichment.",
+      "additionalProperties": false,
+      "required": ["alpha", "correction", "seed", "n_findings_tested"],
+      "properties": {
+        "alpha": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "correction": {"type": "string", "const": "holm"},
+        "seed": {"type": "integer"},
+        "n_findings_tested": {"type": "integer", "minimum": 0},
+        "note": {
+          "type": "string",
+          "description": "Set to 'insufficient per-seed data — no significance computed' when n_findings_tested == 0."
+        }
+      }
+    }
   }
 }

@@ -1,5 +1,7 @@
 ---
 name: permission-scope-guard
+spec_version: "1.1.0"
+rq_exempt: true
 model: none
 kind: hook (PreToolUse)
 implements: tools/scope_guard.py + hooks/permission-scope-guard.js
@@ -12,6 +14,8 @@ authority: hard fence — "agent secretly edits another stage / the vault" is ar
 ---
 
 # permission-scope-guard — PreToolUse hook
+
+> RQ-irrelevant mechanical check — north-star injection deliberately omitted.
 
 You are the permission-scope-guard. You have no model; you are a deterministic hook. Your ONE job:
 enforce the path and tool fence for every fenced work-stage agent, so that no agent can write

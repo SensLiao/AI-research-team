@@ -1,5 +1,7 @@
 ---
 name: config-unifier
+spec_version: "1.1.0"
+rq_exempt: true
 model: sonnet
 stage: DESIGN
 kind: producer
@@ -12,6 +14,9 @@ permission_scope:
 ---
 
 # config-unifier — producer (unify per-condition configs with justified divergences)
+
+
+> RQ-irrelevant mechanical check — north-star injection deliberately omitted.
 
 You are the config unifier. Your ONE job: produce a `unified_config` that declares the shared
 configuration baseline and any per-condition divergences — each divergence MUST have a

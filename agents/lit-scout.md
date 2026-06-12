@@ -1,5 +1,6 @@
 ---
 name: lit-scout
+spec_version: "1.1.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
@@ -7,6 +8,7 @@ tools: [Read, Glob, Grep, Bash]
 produces: evidence_table
 permission_scope:
   read:
+    - task_frame
     - run-store evidence (DISCOVER)
     - the active domain profile
     - the research database by reference
@@ -36,6 +38,15 @@ One `evidence_table` artifact written to
 
 ## What you do
 
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
+
 1. **Read the task frame** (`runs/<run>/evidence/DISCOVER/task-frame.artifact.json`) to
    extract the exact query and any seed references the domain profile or plan supplies.
 2. **Primary search** — query scholarly databases, arXiv, Semantic Scholar, GitHub, and
@@ -54,6 +65,8 @@ One `evidence_table` artifact written to
 4. **Grade each source** by `claim_support` (strong / moderate / weak / none) against the
    query — assign based on direct relevance to the research claim, not general quality.
 5. **Carry sources by reference** — store DOI / arXiv id / URL / `[[slug]]+sha` in `ref`.
+
+(authoritative shared definition: references/shared-definitions.md)
    Never inline full text, abstracts, or content into the artifact.
 6. **Call the deterministic core**:
    ```python
@@ -82,3 +95,5 @@ artifact next and decides whether the DISCOVER stage may advance. Downstream, ex
 refs you cite (DOI / arXiv / titles) are additionally existence-checked by the
 deterministic `tools/citation_existence.py` three-state gate helper — one more reason
 fabricating a source is structurally pointless.
+
+> Inline operate twin: this spec's worker duties also exist as an inline prompt in operate/modes/new_direction.py / evidence_review.py / evidence_deep.py / deep_research.py — any change here MUST be mirrored there (audit M5).

@@ -24,6 +24,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from . import _shared
 from ..artifacts import GateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
 from ...tools.citation_checker import build_report
@@ -37,6 +38,8 @@ DISCOVER_WORKER_PROMPT = """You are the DISCOVER worker of the evidence_review m
 VERIFIED evidence picture for this request:
 
     REQUEST: {request}
+
+{north_star}
 
 Sources you read (by reference, never inlined):
   1. The vault at `{vault}/02-wiki/` — glob the relevant clusters, read the most relevant pages \
@@ -72,15 +75,24 @@ def _worker_model(model_policy: str) -> str:
     return "opus" if model_policy == "max_quality" else "sonnet"
 
 
+def pre_search(run_dir: str, request: str, ts: str, transport=None,
+               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8) -> str:
+    """Live-retrieval pre-step (audit M1 — now exposed on every evidence mode)."""
+    return _shared.pre_search(run_dir, request, ts, transport=transport,
+                              sources=sources, limit_per_source=limit_per_source)
+
+
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
              model_policy: str = "max_quality") -> Optional[dict]:
-    """The LLM worker to dispatch for a stage (None = stage is purely deterministic)."""
+    """The LLM worker to dispatch for a stage (None = stage is purely deterministic).
+    The prompt carries the run's NORTH STAR block (audit A2)."""
     if stage == "DISCOVER":
         out = f"{run_dir}/inbox/DISCOVER.bundle.json"
         return {"label": "evidence-review-worker", "model": _worker_model(model_policy),
                 "output": out,
                 "prompt": DISCOVER_WORKER_PROMPT.format(request=request, vault=vault,
-                                                        run_dir=run_dir, out=out)}
+                                                        run_dir=run_dir, out=out,
+                                                        north_star=_shared.north_star_block(run_dir))}
     return None  # REPORT is deterministic
 
 
@@ -98,24 +110,36 @@ def _budget(run_dir) -> dict:
 
 
 def _discover_dets(run_dir, ts, b) -> tuple:
+    _shared.require_bundle_keys(b, ("evidence_table", "claim_list", "claim_evidence_map"),
+                                stage="DISCOVER", mode="evidence_review")
     paths = []
     et = build_evidence_table(b["evidence_table"]["query"], b["evidence_table"]["sources"],
                               b["evidence_table"].get("saturation_reached", False))
+    texts = [str(et.get("query") or "")]
+    texts += [str(s.get("title") or "") for s in (et.get("sources") or [])]
+    texts += [str(c.get("text") or "") for c in (b["claim_list"].get("claims") or [])]
+    dpath, _ = _shared.run_drift_gate(run_dir, "DISCOVER", ts, texts)        # NORTH-STAR gate (H2)
+    paths.append(dpath)
     ev = build_verdict(et)                                                   # HARD GATE 1
     paths.append(write_artifact(run_dir, "DISCOVER", "evidence-verdict.artifact.json",
                                 "evidence_verdict", "evidence-verifier", ev, ts,
                                 "blocked" if ev["verdict"] == "BLOCK" else "approved"))
     if ev["verdict"] == "BLOCK":
         raise GateBlock(f"evidence gate BLOCK: {ev['reasons']}")
-    cv = build_report(b["claim_list"], b["claim_evidence_map"])              # HARD GATE 2
+    cv = build_report(b["claim_list"], b["claim_evidence_map"],              # HARD GATE 2 (W2 fix:
+                      resolvable_refs=_shared.resolvable_refs(et))           #  loci must cite table sources)
     paths.append(write_artifact(run_dir, "DISCOVER", "citation-verdict.artifact.json",
                                 "citation_integrity_verdict", "citation-integrity-auditor", cv, ts,
                                 "blocked" if cv["verdict"] == "BLOCK" else "approved"))
     if cv["verdict"] == "BLOCK":
         raise GateBlock(f"citation gate BLOCK: {cv['violations']}")
+    epath, ex = _shared.run_existence_gate(run_dir, "DISCOVER", ts,          # HARD GATE 3 (H4: live
+                                           _shared.external_refs(et, b["claim_evidence_map"]))  # existence)
+    paths.append(epath)
     paths.append(write_artifact(run_dir, "DISCOVER", "evidence-table.artifact.json",
                                 "evidence_table", "lit-scout", et, ts))      # the DISCOVER exit artifact
     return paths, {"evidence_gate": ev["verdict"], "citation_gate": cv["verdict"],
+                   "existence_gate": ex["verdict"], "existence_warnings": len(ex["warnings"]),
                    "n_sources": et["n_sources"]}
 
 

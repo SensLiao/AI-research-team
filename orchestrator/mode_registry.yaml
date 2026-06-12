@@ -14,6 +14,7 @@ modes:
     budget: {max_agent_hops: 1}
   evidence_review:
     entry_stage: DISCOVER
+    operated: true   # wired in operate/modes/REGISTRY (audit B1/B3; wiring test enforces the mirror)
     stage_path: [DISCOVER, REPORT]   # discovery + evidence gate, then reply; experiment stages forward-skipped
     agent_subset: [lit-scout, evidence-verifier, citation-integrity-auditor]   # citation-integrity now a DISCOVER hard gate
     gate_level: director_signoff
@@ -51,6 +52,7 @@ modes:
     budget: {max_agent_hops: 6}
   full_rigor_minimal:
     entry_stage: DESIGN
+    operated: true   # wired in operate/modes/REGISTRY (audit B1/B3; wiring test enforces the mirror)
     stage_path: [DESIGN, EXECUTE, ANALYZE, VERIFY, REPORT]   # M2-a spine slice: the full tail with execution+analysis depth
     agent_subset: [experiment-planner, protocol-compiler, variable-control-auditor, train-test-alignment-auditor,
                    metric-implementation-auditor, trainset-builder, testset-builder, preflight-checker, ablation-runner,
@@ -60,6 +62,7 @@ modes:
   # --- M2 breadth modes ---
   evidence_deep:
     entry_stage: DISCOVER
+    operated: true   # wired in operate/modes/REGISTRY (audit B1/B3; wiring test enforces the mirror)
     stage_path: [DISCOVER, REPORT]   # evidence-depth sub-team: discover + both DISCOVER gates, then reply
     agent_subset: [lit-scout, source-quality-ranker, claim-extractor, claim-evidence-linker, contradiction-miner,
                    dataset-card-builder, staleness-auditor, citation-integrity-auditor, landscape-mapper, evidence-verifier]
@@ -76,6 +79,7 @@ modes:
   # --- M3-a (new-direction / freedom-layer spine) ---
   new_direction:
     entry_stage: DISCOVER
+    operated: true   # wired in operate/modes/REGISTRY (audit B1/B3; wiring test enforces the mirror)
     stage_path: [DISCOVER, IDEATE, REPORT]   # gap-hunting -> ideate -> idea_backlog (the ranked MENU) -> director reviews at the IDEATE gate
     agent_subset: [future-work-miner, gap-classifier, novelty-scorer, evidence-verifier, citation-integrity-auditor,
                    hypothesis-generator, feasibility-reranker]
@@ -84,6 +88,8 @@ modes:
   # --- M3-c (gap-hunting breadth) — the differentiation engine, focused scan ---
   gap_breadth:
     entry_stage: DISCOVER
+    operated: true   # wired in operate/modes/REGISTRY (audit B1/B3; wiring test enforces the mirror)
+    stage_path: [DISCOVER, REPORT]   # a focused scan replies after DISCOVER; experiment stages forward-skipped (audit B3 wiring)
     agent_subset: [future-work-miner, weakness-spotter, white-space-mapper, cross-domain-transfer-scout,
                    contrarian-angle-generator, gap-classifier, novelty-scorer]
     gate_level: record_only          # a focused gap-hunt scan (cheap, no commitment): all 5 hunters -> classify (7-type) -> novelty (SCORE-ONLY, never a cut). Each hunter's items ARE classify_gap signals; novelty drops none.
@@ -91,6 +97,7 @@ modes:
   # --- M3-f (IDEATE-ring completion) — the full ring as a focused mode ---
   ideate_ring:
     entry_stage: IDEATE
+    stage_path: [IDEATE, REPORT]     # the ring replies after IDEATE; experiment stages forward-skipped
     agent_subset: [hypothesis-generator, idea-tournament-ranker, idea-evolver, feasibility-reranker]
     gate_level: record_only          # the full ring hypothesis_set -> idea_tournament (pairwise, not score-mean) -> evolved_ideas (parent-provenance) -> idea_backlog (the ranked MENU). Still no self-bet; the bet is the human /idea-bet.
     budget: {max_agent_hops: 4}
@@ -108,6 +115,7 @@ modes:
   # --- Absorption wave 1 (2026-06-10) — open_deep_research recipe; wires the dead budget counters live ---
   deep_research:
     entry_stage: DISCOVER
+    operated: true   # wired in operate/modes/REGISTRY (audit B1/B3; wiring test enforces the mirror)
     stage_path: [DISCOVER, REPORT]   # supervisor -> perspective-split researchers -> compressed brief, then reply
     agent_subset: [lit-scout, source-quality-ranker, evidence-verifier, citation-integrity-auditor]
     gate_level: director_signoff     # both DISCOVER hard gates fire (router guardrail 1); the brief feeds bets/designs downstream
@@ -115,6 +123,7 @@ modes:
   # --- M3-d (VR-1 venue-targeted peer-review) — VERIFY-entry, reuses the M2 panel + venue agents ---
   venue_readiness:
     entry_stage: VERIFY
+    operated: true   # wired in operate/modes/REGISTRY (audit B1/B3; wiring test enforces the mirror)
     agent_subset: [venue-selector, venue-review-configurator, venue-reviewer-persona, area-chair-synthesizer,
                    adversarial-reviewer, scientific-critic, baseline-scout, sub-domain-historian]
     gate_level: director_signoff     # "is this good enough for venue X" — the VERIFY hard gate (adversarial-reviewer) fires (router guardrail 1); reviewers never self-decide (venue_review has no verdict field) and never write (no Write tool); the area-chair verdict is DERIVED by venue_score.py; venue choice (/venue-pick) and publish (/venue-decide) are human gates.

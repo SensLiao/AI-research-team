@@ -5,6 +5,10 @@ never a cut or filter.  This enforces the novelty-paradox guard from the contrac
 every input gap receives a score and NONE are dropped, regardless of how low the
 novelty estimate is.
 
+Honesty note: the novelty score derives from worker-reported signals (and optional retrieval
+grounding), NOT an objective measurement of the literature — treat it as a ranking aid, never as
+ground truth. A high score is "few signals say this is covered", not "this is provably novel".
+
 Design principles:
   - novelty is derived from the NUMBER of distinct named signals in ``derived_from``
     relative to a soft ceiling, producing a value in [0, 1].

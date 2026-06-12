@@ -1,5 +1,7 @@
 ---
 name: review-configurator
+spec_version: "1.1.0"
+rq_exempt: true
 model: opus
 stage: VERIFY
 kind: producer
@@ -12,6 +14,9 @@ permission_scope:
 ---
 
 # review-configurator — producer (configure the review panel before reviewers begin)
+
+
+> RQ-irrelevant mechanical check — north-star injection deliberately omitted.
 
 You are the review-configurator. Your ONE job: draft and validate a `review_config` that defines
 which lens reviewers will examine the work, what independence anchor each reviewer owns, and the

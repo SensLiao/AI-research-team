@@ -17,7 +17,8 @@ from research_agent_teams.tools.validate_artifact import validate_artifact
 
 def resolve_task(request_text: str, mode: str, run_id: str, ts: str,
                  registry: Optional[dict] = None, domain_profile_ref: Optional[str] = None,
-                 model_policy: str = "default", project: Optional[str] = None) -> dict:
+                 model_policy: str = "default", project: Optional[str] = None,
+                 north_star: Optional[dict] = None) -> dict:
     registry = registry if registry is not None else load_mode_registry()
     modes = registry.get("modes", {})
     if mode not in modes:
@@ -27,10 +28,22 @@ def resolve_task(request_text: str, mode: str, run_id: str, ts: str,
     if project is not None and not PROJECT_SLUG_RE.match(project):
         raise ValueError(f"invalid project slug {project!r}: must be lowercase-kebab")
     spec = modes[mode]
+    # The run's immutable direction contract (audit H2). The director may supply a sharper
+    # statement + in/out-of-scope lists; absent that, the verbatim request IS the north star.
+    ns = dict(north_star) if north_star else {}
+    ns_statement = str(ns.get("statement") or "").strip() or request_text
+    if not (ns_statement or "").strip():
+        raise ValueError("north_star requires a non-empty statement (or a non-empty request_text)")
+    resolved_north_star = {
+        "statement": ns_statement,
+        "in_scope": [str(x) for x in (ns.get("in_scope") or []) if str(x).strip()],
+        "out_of_scope": [str(x) for x in (ns.get("out_of_scope") or []) if str(x).strip()],
+    }
     payload = {
         "task_id": run_id,
         "mode": mode,
         "request_text": request_text,
+        "north_star": resolved_north_star,
         "entry_stage": spec["entry_stage"],
         "agent_subset": list(spec["agent_subset"]),
         "gate_level": spec["gate_level"],
