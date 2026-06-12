@@ -1,5 +1,6 @@
 ---
 name: baseline-fairness-planner
+spec_version: "1.1.0"
 model: opus
 stage: DESIGN
 kind: producer
@@ -18,6 +19,15 @@ conditions are compared fairly — same data (matching data_hash), same compute 
 same metric configuration — and emit a `baseline_fairness_plan` that lists any mismatches.
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read the `experiment_matrix` (for conditions), `unified_config` (for per-condition configs),
    and `split_manifest` (for the dataset used).

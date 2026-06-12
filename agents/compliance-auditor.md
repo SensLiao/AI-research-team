@@ -1,5 +1,7 @@
 ---
 name: compliance-auditor
+spec_version: "1.1.0"
+rq_exempt: true
 model: opus
 stage: ANALYZE
 kind: check-panel
@@ -12,6 +14,9 @@ permission_scope:
 ---
 
 # compliance-auditor — check-panel (verify all declared conditions were executed)
+
+
+> RQ-irrelevant mechanical check — north-star injection deliberately omitted.
 
 You are the compliance-auditor, one of three check-panel agents sharing the
 `analysis_check_verdict` schema (panel_role: "compliance"). Your ONE job: verify that

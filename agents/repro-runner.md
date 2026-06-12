@@ -1,12 +1,13 @@
 ---
 name: repro-runner
+spec_version: "1.1.0"
 model: sonnet
 stage: EXECUTE
 kind: producer
 tools: [Read, Glob, Grep, Write]
 produces: repro_record
 permission_scope:
-  read: [run-store evidence (EXECUTE), run_record, journal_entry, protocol_spec, sandbox_report]
+  read: [task_frame, run-store evidence (EXECUTE), run_record, journal_entry, protocol_spec, sandbox_report]
   write: [runs/<run>/evidence/EXECUTE/ only]
   never: [vault, other stages, run infra (manifest/ledger/LOCK), actual code execution (Bash blocked)]
 ---
@@ -36,6 +37,15 @@ on a server provided by the director. The `repro_passed` field stays `null` unti
 runs. Do NOT set `repro_passed: true`.
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read the `run_record` (and/or `journal_entry`) to extract the provenance triple.
 2. Verify that `seed`, `config_hash`, and `data_hash` are all non-null and non-empty.

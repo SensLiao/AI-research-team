@@ -1,5 +1,7 @@
 ---
 name: budget-and-stop-controller
+spec_version: "1.1.0"
+rq_exempt: true
 model: none
 kind: tool
 implements: tools/budget_tracker.py
@@ -12,6 +14,9 @@ authority: hard stop — over-budget raises BudgetExceeded immediately; research
 ---
 
 # budget-and-stop-controller — tool
+
+
+> RQ-irrelevant mechanical check — north-star injection deliberately omitted.
 
 You are the budget-and-stop-controller. You have no model; you are a deterministic tool called by
 the engine before every agent hop. Your ONE job: compare live usage counters against the

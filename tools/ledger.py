@@ -12,15 +12,48 @@ Tamper model:
 from __future__ import annotations
 
 import json
+import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, List, Optional
 
 from research_agent_teams.tools.hash_artifact import canonical_json, chain_hash
 
 EVENT_TYPES = {
-    "run_started", "stage_started", "step_done", "boundary",
+    "run_started", "task_frame_pinned", "stage_started", "step_done", "boundary",
     "resume", "gate_pending", "gate_resolved", "promote",
 }
+
+
+@contextmanager
+def _ledger_lock(ledger_path):
+    """OS-level exclusive lock on a sidecar file for the read-seq-append critical section.
+
+    Audit M13: the documented single-writer constraint (orchestrator only) is now also enforced —
+    two processes appending concurrently would both read the same prev_hash and fork the chain.
+    Windows uses msvcrt.locking, POSIX uses fcntl.flock; both block until the lock is free. The
+    sidecar `<ledger>.lock` is transient bookkeeping, never part of the tamper-evident record."""
+    lock_path = str(ledger_path) + ".lock"
+    fh = open(lock_path, "a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    finally:
+        fh.close()
 
 
 def read_events(ledger_path) -> List[dict]:
@@ -40,16 +73,25 @@ def _core(seq: int, ts: str, event_type: str, payload: Any) -> dict:
 
 
 def append_event(ledger_path, event_type: str, payload: dict, ts: str) -> dict:
-    """Append one event, computing seq + hash-chain from existing events. Returns the event."""
+    """Append one event, computing seq + hash-chain from existing events. Returns the event.
+
+    Audit M4: the existing chain is verified BEFORE every append — tampering now fails loud at the
+    next write instead of waiting for a resume/status check. Audit M13: the read-seq-append section
+    runs under an OS file lock so concurrent writers cannot silently fork the chain."""
     if event_type not in EVENT_TYPES:
         raise ValueError(f"unknown event_type '{event_type}'")
-    events = read_events(ledger_path)
-    seq = len(events)
-    prev_hash: Optional[str] = events[-1]["hash"] if events else None
-    core = _core(seq, ts, event_type, payload)
-    event = {**core, "prev_hash": prev_hash, "hash": chain_hash(prev_hash, core)}
-    with open(ledger_path, "a", encoding="utf-8") as fh:
-        fh.write(canonical_json(event) + "\n")
+    with _ledger_lock(ledger_path):
+        events = read_events(ledger_path)
+        errors = verify_chain(events)
+        if errors:
+            raise ValueError(
+                f"refusing to append to a corrupted ledger ({ledger_path}): {errors[:3]}")
+        seq = len(events)
+        prev_hash: Optional[str] = events[-1]["hash"] if events else None
+        core = _core(seq, ts, event_type, payload)
+        event = {**core, "prev_hash": prev_hash, "hash": chain_hash(prev_hash, core)}
+        with open(ledger_path, "a", encoding="utf-8") as fh:
+            fh.write(canonical_json(event) + "\n")
     return event
 
 

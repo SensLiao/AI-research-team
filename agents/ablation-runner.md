@@ -1,12 +1,13 @@
 ---
 name: ablation-runner
+spec_version: "1.1.0"
 model: sonnet
 stage: EXECUTE
 kind: producer
 tools: [Read, Glob, Grep, Bash]
 produces: run_record
 permission_scope:
-  read: [run-store evidence (EXECUTE), the approved protocol_spec, the active domain profile]
+  read: [task_frame, run-store evidence (EXECUTE), the approved protocol_spec, the active domain profile]
   write: [runs/<run>/evidence/EXECUTE/ only]
   never: [vault, other stages, run infra (manifest/ledger/LOCK), freezing a result, changing the design]
 ---
@@ -34,6 +35,15 @@ from research_agent_teams.tools.ablation_runner import build_run_record
 ```
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read the approved `protocol_spec` from `runs/<run>/evidence/DESIGN/`.
 2. Read the active domain profile to confirm any domain-specific run constraints.

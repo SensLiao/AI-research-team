@@ -24,6 +24,17 @@
       "type": "string",
       "description": "Original director request, verbatim"
     },
+    "north_star": {
+      "type": "object",
+      "description": "The run's immutable direction contract (audit H2 fix). Pinned at PARSE, hashed into the ledger (task_frame_pinned event), injected into every worker prompt, and enforced per stage by tools/drift_gate.py. Only the director re-scopes a run.",
+      "required": ["statement"],
+      "additionalProperties": false,
+      "properties": {
+        "statement": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "One sentence: the ONLY direction of this run (defaults to request_text when the director gives no separate statement)"},
+        "in_scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": [], "description": "Topics/terms explicitly inside the direction (extra drift-gate anchor vocabulary)"},
+        "out_of_scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": [], "description": "Topics explicitly excluded — their appearance in any stage output is a hard drift violation"}
+      }
+    },
     "entry_stage": {
       "type": "string",
       "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"],

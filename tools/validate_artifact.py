@@ -128,6 +128,8 @@ PAYLOAD_SCHEMAS = {
     "idea_grounding_report": "idea_grounding_report.schema.json",  # idea_grounding.py (ScholarEval-style; SCORE-ONLY)
     "research_brief": "research_brief.schema.json",            # operate/modes/deep_research.py (open_deep_research recipe)
     "invalidation_record": "invalidation_record.schema.json",  # contradiction-mining structured landing (Graphiti bi-temporal; via promote only)
+    # --- Audit waves A-D (2026-06-13; see _design/review/ai-capability-audit-2026-06-12.md §6) ---
+    "preregistration": "preregistration.schema.json",          # tools/prereg.py (C3: analysis contract frozen at DESIGN, deviation-checked at ANALYZE)
 }
 
 _ENVELOPE_SCHEMA = "artifact_envelope.schema.json"

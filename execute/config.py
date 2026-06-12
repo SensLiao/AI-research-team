@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class ServerConfig:
     host: str
     port: int
@@ -27,6 +27,15 @@ class ServerConfig:
     known_hosts: str          # ⑥ path to a known_hosts file for SSH host-key verification (RAT_SERVER_KNOWN_HOSTS)
     has_password: bool        # booleans only — never the secret itself
     has_ssh_key: bool
+
+    def __repr__(self) -> str:
+        """Custom repr (dataclass default disabled) so a stray repr()/log line / traceback NEVER spills
+        operational identifiers. The default dataclass repr exposes user / workdir / known_hosts; those
+        are not secrets, but they are unnecessary in a debug print and tighten the blast radius if a
+        config object lands in a log. Only host / port / the resolved auth MODE are shown — the
+        password/key values are never on the object in the first place (read from os.environ at connect)."""
+        auth = "password" if self.has_password else ("ssh_key" if self.has_ssh_key else "none")
+        return f"ServerConfig(host={self.host!r}, port={self.port}, auth={auth})"
 
 
 def _load_dotenv(env_path) -> None:

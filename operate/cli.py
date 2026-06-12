@@ -23,6 +23,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from . import spine
 from .artifacts import GateBlock
@@ -72,6 +73,13 @@ def _policy_from_run(runs_dir: str, run_id: str) -> str:
     return tf["payload"].get("model_policy", "max_quality")
 
 
+def _north_star_from_args(a) -> dict:
+    """The run's direction contract from the CLI flags (statement defaults to the request)."""
+    split = lambda s: [x.strip() for x in (s or "").split(",") if x.strip()]  # noqa: E731
+    return {"statement": (a.north_star or "").strip() or a.request,
+            "in_scope": split(a.in_scope), "out_of_scope": split(a.out_of_scope)}
+
+
 def cmd_begin(a) -> None:
     mode = a.mode
     run_id = a.run_id or f"{mode}-{_ts().replace(':', '').replace('-', '')}"
@@ -92,26 +100,75 @@ def cmd_begin(a) -> None:
         sys.exit(2)
     projects_tool.ensure_workspace(a.projects_dir, a.project)   # the project's durable resource room
     plan = spine.begin(a.runs_dir, run_id, a.request, mode, ts,
-                       domain_profile_ref=a.profile, model_policy=a.model_policy, project=a.project)
+                       domain_profile_ref=a.profile, model_policy=a.model_policy, project=a.project,
+                       north_star=_north_star_from_args(a))
     first = plan["stages"][0]
     vault = a.vault or getattr(mod, "DEFAULT_VAULT", None)
     worker = (mod.llm_step(plan["run_dir"], first, a.request, vault=vault, model_policy=a.model_policy)
               if hasattr(mod, "llm_step") else None)
-    _emit({"run_id": run_id, "run_dir": plan["run_dir"], "mode": mode, "project": a.project,
-           "project_check": check, "stages": plan["stages"],
-           "gate_level": plan["gate_level"], "first_stage": first, "next_worker": worker})
+    out = {"run_id": run_id, "run_dir": plan["run_dir"], "mode": mode, "project": a.project,
+           "project_check": check, "stages": plan["stages"], "north_star": plan.get("north_star"),
+           "gate_level": plan["gate_level"], "first_stage": first, "next_worker": worker}
+    if hasattr(mod, "pre_search"):
+        out["pre_search_note"] = ("RECOMMENDED next: `pre-search --run-id " + run_id + "` — grounds "
+                                  "novelty/evidence in live literature BEFORE spawning the worker "
+                                  "(skipping it degrades honestly to vault-only)")
+    _emit(out)
+
+
+def _pinned_request(runs_dir: str, run_id: str, override: Optional[str]) -> str:
+    """The run's request comes from the PINNED task_frame (audit A1 — no CLI side-channel).
+
+    A caller-supplied --request must MATCH the pinned one; a mismatch is refused so a later
+    command can never quietly re-aim a run (only the director re-scopes, via a new run)."""
+    tf = json.loads((Path(_run_dir(runs_dir, run_id)) / "task_frame.artifact.json").read_text(encoding="utf-8"))
+    pinned = tf["payload"].get("request_text") or ""
+    if override is not None and override.strip() and override.strip() != pinned.strip():
+        _emit({"error": "request mismatch with the pinned task_frame — a run's direction is "
+                        "immutable after begin (start a new run to pivot)",
+               "pinned_request": pinned, "supplied_request": override})
+        sys.exit(2)
+    return pinned
 
 
 def cmd_worker(a) -> None:
     mode = _mode_from_run(a.runs_dir, a.run_id)
     mod = _mode_module(mode)
     vault = a.vault or getattr(mod, "DEFAULT_VAULT", None)
-    worker = mod.llm_step(_run_dir(a.runs_dir, a.run_id), a.stage, a.request, vault=vault,
+    request = _pinned_request(a.runs_dir, a.run_id, a.request)
+    worker = mod.llm_step(_run_dir(a.runs_dir, a.run_id), a.stage, request, vault=vault,
                           model_policy=_policy_from_run(a.runs_dir, a.run_id))
+    multi = bool(worker) and "workers" in worker
     _emit({"run_id": a.run_id, "stage": a.stage, "worker": worker,
            "note": ("no LLM worker for this stage (deterministic-only) — go straight to run-dets"
                     if not worker else
-                    "spawn this sub-agent (model + prompt); it writes the bundle to 'output'; then run-dets")})
+                    ("spawn EVERY sub-agent in 'workers' (see the panel note for ordering); each "
+                     "writes its own bundle; then run-dets" if multi else
+                     "spawn this sub-agent (model + prompt); it writes the bundle to 'output'; then run-dets"))})
+
+
+def cmd_pre_search(a) -> None:
+    """The sanctioned live-retrieval pre-step (audit H5/M1 — now a first-class CLI step).
+
+    Loads the gitignored .env first so the optional RAT_S2_API_KEY quota applies; a dead network
+    degrades honestly to an empty bundle with source_errors recorded."""
+    from ..execute.config import _load_dotenv
+    _load_dotenv("research_agent_teams/.env")
+    rd = _run_dir(a.runs_dir, a.run_id)
+    ts = a.ts or _ts()
+    mod = _mode_module(_mode_from_run(a.runs_dir, a.run_id))
+    request = _pinned_request(a.runs_dir, a.run_id, a.request)
+    fn = getattr(mod, "pre_search", None)
+    if fn is None:
+        _emit({"run_id": a.run_id, "error": f"mode {_mode_from_run(a.runs_dir, a.run_id)!r} has no pre_search step"})
+        sys.exit(2)
+    bundle_path = fn(rd, request, ts)
+    bundle = json.loads(Path(bundle_path).read_text(encoding="utf-8"))
+    _emit({"run_id": a.run_id, "bundle": bundle_path,
+           "n_records": len(bundle.get("records") or []),
+           "source_errors": bundle.get("source_errors") or {},
+           "note": "live-retrieval bundle written; the DISCOVER worker reads it by reference. "
+                   "Zero records + source_errors = offline degrade (honest, vault-only run)."})
 
 
 def cmd_run_dets(a) -> None:
@@ -228,7 +285,11 @@ def cmd_menu(a) -> None:
     if rows:
         print("\n=== /idea-bet MENU (the director chooses; the machine never self-bets) ===", file=sys.stderr)
         for r in rows:
-            print(f"  #{r['rank']}  {r['idea_id']}  (feasibility {r['score']})  {r['summary']}", file=sys.stderr)
+            elo = f"  elo#{r['elo_rank']}({r['elo']})" if r.get("elo_rank") else ""
+            print(f"  #{r['rank']}  {r['idea_id']}  (feasibility {r['score']}){elo}  {r['summary']}",
+                  file=sys.stderr)
+            for cv in (r.get("caveats") or []):
+                print(f"        ⚠ {cv}", file=sys.stderr)
         print("  PIVOT: bet on none of these — re-scope the direction", file=sys.stderr)
 
 
@@ -253,6 +314,14 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--model-policy", default="max_quality", choices=["default", "max_quality"],
                    help="governed research runs default to max_quality (all-opus) per director lock "
                         "2026-06-09 ('优化到最好'); pass --model-policy default for a cheaper run")
+    b.add_argument("--north-star", default=None,
+                   help="the run's ONE-sentence direction contract (defaults to the request verbatim); "
+                        "pinned immutably + hash-chained; every stage is drift-gated against it")
+    b.add_argument("--in-scope", default=None,
+                   help="comma-separated topics explicitly INSIDE the direction (extra drift anchors)")
+    b.add_argument("--out-of-scope", default=None,
+                   help="comma-separated topics explicitly EXCLUDED — their appearance in any stage "
+                        "output is a hard drift BLOCK")
     b.add_argument("--vault", default=None, help="vault root (defaults to the mode's DEFAULT_VAULT)")
     b.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
     b.set_defaults(func=cmd_begin)
@@ -260,9 +329,18 @@ def build_parser() -> argparse.ArgumentParser:
     w = sub.add_parser("worker", parents=[common], help="print the LLM worker spec to spawn for a stage")
     w.add_argument("--run-id", required=True)
     w.add_argument("--stage", required=True)
-    w.add_argument("--request", required=True)
+    w.add_argument("--request", default=None,
+                   help="optional — the request is read from the PINNED task_frame; a supplied value "
+                        "must match it (a mismatch is refused: runs cannot be re-aimed mid-flight)")
     w.add_argument("--vault", default=None)
     w.set_defaults(func=cmd_worker)
+
+    ps = sub.add_parser("pre-search", parents=[common],
+                        help="run the sanctioned live-retrieval pre-step (drops inbox/search-results.json; "
+                             "grounds novelty/evidence in real literature — recommended after begin)")
+    ps.add_argument("--run-id", required=True)
+    ps.add_argument("--request", default=None, help="optional; must match the pinned task_frame request")
+    ps.set_defaults(func=cmd_pre_search)
 
     r = sub.add_parser("run-dets", parents=[common], help="run the deterministic producers/gates for a stage")
     r.add_argument("--run-id", required=True)

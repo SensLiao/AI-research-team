@@ -1,5 +1,6 @@
 ---
 name: data-protocol-designer
+spec_version: "1.1.0"
 model: sonnet
 stage: DESIGN
 kind: producer
@@ -18,6 +19,15 @@ postprocessing steps for this experiment's data pipeline, and emit a `data_proto
 that makes the data handling fully reproducible.
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read the active domain profile's `alignment_invariants` and `hard_invariants` to understand
    what must remain identical across conditions (e.g. spacing, augmentation disabled at test time).

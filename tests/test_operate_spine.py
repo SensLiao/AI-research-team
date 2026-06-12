@@ -62,6 +62,11 @@ _IDEAS = [
      "evidence_ref": ["IH1", "GAP-2"], "from_hypothesis_ref": "IH1",
      "feasibility": {"compute": "low", "data": "available", "time": "short"}},
 ]
+# Audit B3: the IDEATE bundle now carries the worker's pairwise tournament judgments (every
+# unordered pair of its ideas) + optional evolved ideas — the dets validate + Elo-rate them.
+_TOURNAMENT = [{"round": 1, "pair_a": "IDEA-1", "pair_b": "IDEA-2", "winner": "IDEA-2",
+                "rationale": "the benchmark idea is cheaper and unblocks the ablation idea"}]
+_EVOLVED: list = []
 
 
 def _stage_bundle(run_dir, stage, payload):
@@ -83,7 +88,8 @@ def _drive_discover(run_dir):
 
 
 def _drive_ideate(run_dir):
-    _stage_bundle(run_dir, "IDEATE", {"hypotheses": _HYPOTHESES, "ideas": _IDEAS})
+    _stage_bundle(run_dir, "IDEATE", {"hypotheses": _HYPOTHESES, "ideas": _IDEAS,
+                                      "tournament": _TOURNAMENT, "evolved": _EVOLVED})
     spine.open_stage(run_dir, "IDEATE", TS)
     paths, rep = new_direction.run_dets(run_dir, "IDEATE", TS)
     return spine.commit_stage(run_dir, "IDEATE", paths, TS), rep
@@ -99,7 +105,8 @@ def _drive_report(run_dir):
 
 def test_operate_new_direction_runs_end_to_end(tmp_path):
     runs = tmp_path / "runs"
-    plan = spine.begin(str(runs), "op1", "find a direction worth betting on", "new_direction", TS)
+    plan = spine.begin(str(runs), "op1", "find a promptable segmentation direction worth betting on",
+                       "new_direction", TS)
     rd = plan["run_dir"]
     assert plan["stages"] == ["DISCOVER", "IDEATE", "REPORT"]
 
@@ -124,7 +131,8 @@ def test_operate_new_direction_runs_end_to_end(tmp_path):
 
 def test_operate_thin_evidence_blocks_and_never_ideates(tmp_path):
     runs = tmp_path / "runs"
-    plan = spine.begin(str(runs), "op2", "ideate on thin evidence", "new_direction", TS)
+    plan = spine.begin(str(runs), "op2", "ideate on thin promptable segmentation evidence",
+                       "new_direction", TS)
     rd = plan["run_dir"]
     _stage_bundle(rd, "DISCOVER", _discover_bundle("thin"))
     spine.open_stage(rd, "DISCOVER", TS)
@@ -141,7 +149,7 @@ def test_operate_thin_evidence_blocks_and_never_ideates(tmp_path):
 
 def test_operate_menu_ranked_by_feasibility_and_no_self_bet(tmp_path):
     runs = tmp_path / "runs"
-    plan = spine.begin(str(runs), "op3", "rank directions", "new_direction", TS)
+    plan = spine.begin(str(runs), "op3", "rank promptable segmentation directions", "new_direction", TS)
     rd = plan["run_dir"]
     _stage_bundle(rd, "DISCOVER", _discover_bundle("clean"))
     _drive_discover(rd)
@@ -160,7 +168,8 @@ def test_operate_menu_ranked_by_feasibility_and_no_self_bet(tmp_path):
 
 def test_operate_ledger_hash_chain_intact(tmp_path):
     runs = tmp_path / "runs"
-    plan = spine.begin(str(runs), "op4", "menu then human bet", "new_direction", TS)
+    plan = spine.begin(str(runs), "op4", "menu the promptable segmentation directions for a human bet",
+                       "new_direction", TS)
     rd = plan["run_dir"]
     _stage_bundle(rd, "DISCOVER", _discover_bundle("clean"))
     _drive_discover(rd)

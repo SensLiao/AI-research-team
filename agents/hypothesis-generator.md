@@ -1,5 +1,6 @@
 ---
 name: hypothesis-generator
+spec_version: "1.1.0"
 model: opus
 stage: IDEATE
 kind: producer
@@ -23,6 +24,14 @@ every hypothesis must have a non-empty `falsifiable_prediction`, ≥1 `evidence_
 
 ## What you do
 
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 1. Read the run's `task_frame` (for the research question, domain context, and budget).
 2. Read the active domain profile (for domain-specific constraints and priorities).
 3. Read the `gap_classification` artifact (from DISCOVER) — each gap carries a `gap_type`,
@@ -38,6 +47,9 @@ every hypothesis must have a non-empty `falsifiable_prediction`, ≥1 `evidence_
      needed to test this hypothesis.
    - Set `evidence_ref` to the gap_id(s) and/or source refs this hypothesis is answering —
      this is the structural anti-slop binding; without it the schema rejects the hypothesis.
+
+(authoritative shared definition: references/shared-definitions.md)
+
    - Optionally set `source_gap_ref` to the primary gap_id.
    - Note any logical `depends_on` dependencies between hypotheses.
 6. Assign short IDs (IH1, IH2, …).
@@ -62,3 +74,5 @@ Emit the `hypothesis_set` artifact to
 State the number of gaps processed and hypotheses produced in one line, then return control.
 If any gap's falsifiability is uncertain, flag it in `notes` rather than silently weakening
 the `falsifiable_prediction`.
+
+> Inline operate twin: this spec's worker duties also exist as an inline prompt in operate/modes/new_direction.py — any change here MUST be mirrored there (audit M5).

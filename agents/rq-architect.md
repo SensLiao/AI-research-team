@@ -1,5 +1,6 @@
 ---
 name: rq-architect
+spec_version: "1.1.0"
 model: opus
 stage: DESIGN
 kind: producer
@@ -18,6 +19,15 @@ and decompose it into a chain of testable hypotheses, each with a concrete falsi
 and a list of evidence types needed to test it.
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read the run's `task_frame` (for the research question and domain context) and the active
    domain profile (for domain-specific constraints and metrics).

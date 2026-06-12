@@ -1,12 +1,13 @@
 ---
 name: review-synthesizer
+spec_version: "1.1.0"
 model: opus
 stage: VERIFY
 kind: auditor
 tools: [Read, Glob, Grep, Bash]
 produces: panel_synthesis
 permission_scope:
-  read: [run-store evidence (VERIFY), panel_reviews (methodology + domain), critic_memo, review_config, result_summary]
+  read: [task_frame, run-store evidence (VERIFY), panel_reviews (methodology + domain), critic_memo, review_config, result_summary]
   write: [runs/<run>/evidence/VERIFY/ only]
   never: [vault, other stages, run infra (manifest/ledger/LOCK), setting verdict by hand, editing reviewer findings]
 ---
@@ -19,6 +20,15 @@ yourself — to verify that no BLOCK finding or critic block_flag is unaddressed
 is NOT emitted if the coverage check finds violations.
 
 ## What you do (gather, attempt rebuttal, call checker, emit)
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read both `panel_review` artifacts and the `critic_memo`.
 2. For each reviewer BLOCK finding and each critic `block_flag`, either:

@@ -11,8 +11,8 @@
     "ts": {"type": "string", "minLength": 1, "description": "ISO-8601 UTC timestamp supplied by the caller (deterministic, never auto-now in tests)"},
     "event_type": {
       "type": "string",
-      "enum": ["run_started", "stage_started", "step_done", "boundary", "resume", "gate_pending", "gate_resolved", "promote"],
-      "description": "boundary = clean checkpoint (resumable); stage_started without a following boundary = crashed mid-stage"
+      "enum": ["run_started", "task_frame_pinned", "stage_started", "step_done", "boundary", "resume", "gate_pending", "gate_resolved", "promote"],
+      "description": "boundary = clean checkpoint (resumable); stage_started without a following boundary = crashed mid-stage; task_frame_pinned anchors the run's north-star/task_frame sha256 into the chain (audit H2.3 — the direction contract is tamper-evident too)"
     },
     "payload": {"type": "object", "description": "event-type-specific body"},
     "prev_hash": {"type": ["string", "null"], "description": "hash of the previous event; null for seq 0"},

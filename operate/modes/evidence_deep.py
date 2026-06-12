@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from . import _shared
 from ..artifacts import GateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
 from ...tools.citation_checker import build_report
@@ -34,6 +35,8 @@ DISCOVER_WORKER_PROMPT = """You are the DISCOVER worker of the evidence_deep mod
 DEEP evidence picture — claims, anchored loci, and CONTRADICTIONS — for this request:
 
     REQUEST: {request}
+
+{north_star}
 
 Sources (by reference, never inlined): the vault at `{vault}/02-wiki/` (real `[[slug]]` only); \
 plus `{run_dir}/inbox/search-results.json` if present (sanctioned live-retrieval bundle); plus \
@@ -75,6 +78,13 @@ def _worker_model(model_policy: str) -> str:
     return "opus" if model_policy == "max_quality" else "sonnet"
 
 
+def pre_search(run_dir: str, request: str, ts: str, transport=None,
+               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8) -> str:
+    """Live-retrieval pre-step (audit M1 — now exposed on every evidence mode)."""
+    return _shared.pre_search(run_dir, request, ts, transport=transport,
+                              sources=sources, limit_per_source=limit_per_source)
+
+
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
              model_policy: str = "max_quality") -> Optional[dict]:
     if stage == "DISCOVER":
@@ -82,7 +92,8 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
         return {"label": "evidence-deep-worker", "model": _worker_model(model_policy),
                 "output": out,
                 "prompt": DISCOVER_WORKER_PROMPT.format(request=request, vault=vault,
-                                                        run_dir=run_dir, out=out)}
+                                                        run_dir=run_dir, out=out,
+                                                        north_star=_shared.north_star_block(run_dir))}
     return None
 
 
@@ -100,21 +111,32 @@ def _budget(run_dir) -> dict:
 
 
 def _discover_dets(run_dir, ts, b) -> tuple:
+    _shared.require_bundle_keys(b, ("evidence_table", "claim_list", "claim_evidence_map"),
+                                stage="DISCOVER", mode="evidence_deep")
     paths = []
     et = build_evidence_table(b["evidence_table"]["query"], b["evidence_table"]["sources"],
                               b["evidence_table"].get("saturation_reached", False))
+    texts = [str(et.get("query") or "")]
+    texts += [str(c.get("text") or "") for c in (b["claim_list"].get("claims") or [])]
+    texts += [str((b.get("contradictions") or {}).get("summary") or "")]
+    dpath, _ = _shared.run_drift_gate(run_dir, "DISCOVER", ts, texts)        # NORTH-STAR gate (H2)
+    paths.append(dpath)
     ev = build_verdict(et)                                                   # HARD GATE 1
     paths.append(write_artifact(run_dir, "DISCOVER", "evidence-verdict.artifact.json",
                                 "evidence_verdict", "evidence-verifier", ev, ts,
                                 "blocked" if ev["verdict"] == "BLOCK" else "approved"))
     if ev["verdict"] == "BLOCK":
         raise GateBlock(f"evidence gate BLOCK: {ev['reasons']}")
-    cv = build_report(b["claim_list"], b["claim_evidence_map"])              # HARD GATE 2
+    cv = build_report(b["claim_list"], b["claim_evidence_map"],              # HARD GATE 2 (W2 fix)
+                      resolvable_refs=_shared.resolvable_refs(et))
     paths.append(write_artifact(run_dir, "DISCOVER", "citation-verdict.artifact.json",
                                 "citation_integrity_verdict", "citation-integrity-auditor", cv, ts,
                                 "blocked" if cv["verdict"] == "BLOCK" else "approved"))
     if cv["verdict"] == "BLOCK":
         raise GateBlock(f"citation gate BLOCK: {cv['violations']}")
+    epath, ex = _shared.run_existence_gate(run_dir, "DISCOVER", ts,          # HARD GATE 3 (H4)
+                                           _shared.external_refs(et, b["claim_evidence_map"]))
+    paths.append(epath)
     paths.append(write_artifact(run_dir, "DISCOVER", "evidence-table.artifact.json",
                                 "evidence_table", "lit-scout", et, ts))
     contradictions = b.get("contradictions") or {"n_claims_checked": 0, "conflicts": [], "summary": ""}
@@ -133,6 +155,7 @@ def _discover_dets(run_dir, ts, b) -> tuple:
                                     status="draft"))  # a PROPOSAL: only /promote-to-vault lands it
         n_props += 1
     return paths, {"evidence_gate": ev["verdict"], "citation_gate": cv["verdict"],
+                   "existence_gate": ex["verdict"], "existence_warnings": len(ex["warnings"]),
                    "n_conflicts": len(contradictions.get("conflicts") or []),
                    "n_invalidation_proposals": n_props}
 

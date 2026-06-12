@@ -26,13 +26,13 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from . import _shared
 from ..artifacts import GateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
 from ...tools.budget_tracker import assert_within
 from ...tools.citation_checker import build_report
 from ...tools.evidence_checker import build_verdict
 from ...tools.evidence_scout import build_evidence_table
-from ...tools.paper_search import search, write_search_bundle
 
 STAGES = ["DISCOVER", "REPORT"]
 DEFAULT_VAULT = "AI agent database/PhD-Research-OS"
@@ -41,6 +41,8 @@ DISCOVER_WORKER_PROMPT = """You are the SUPERVISOR of a deep_research run (open_
 recipe: scope -> perspective-split researchers -> per-researcher compression -> merge) for:
 
     TOPIC: {request}
+
+{north_star}
 
 PROTOCOL:
   1. SCOPE: decompose the topic into 3-4 PERSPECTIVES (research angles that genuinely differ — \
@@ -92,12 +94,10 @@ def pre_search(run_dir: str, request: str, ts: str, transport=None,
                sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8) -> str:
     """Deterministic live-retrieval pre-step: drop inbox/search-results.json for the worker.
     A dead network degrades to an empty-records bundle with source_errors recorded — the run
-    proceeds vault-only and the brief's coverage is honestly thinner; nothing is fabricated."""
-    try:
-        res = search(request, sources=sources, limit_per_source=limit_per_source, transport=transport)
-    except Exception as e:  # total failure (e.g. bad query) -> recorded, never invented
-        res = {"query": request, "records": [], "source_errors": {"all": str(e)}}
-    return write_search_bundle(run_dir, request, res, ts)
+    proceeds vault-only and the brief's coverage is honestly thinner; nothing is fabricated.
+    (Now the shared implementation every DISCOVER-entry recipe uses — audit M1.)"""
+    return _shared.pre_search(run_dir, request, ts, transport=transport,
+                              sources=sources, limit_per_source=limit_per_source)
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
@@ -107,7 +107,8 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
         return {"label": "deep-research-supervisor", "model": _worker_model(model_policy),
                 "output": out,
                 "prompt": DISCOVER_WORKER_PROMPT.format(request=request, vault=vault,
-                                                        run_dir=run_dir, out=out)}
+                                                        run_dir=run_dir, out=out,
+                                                        north_star=_shared.north_star_block(run_dir))}
     return None
 
 
@@ -125,6 +126,9 @@ def _budget(run_dir) -> dict:
 
 
 def _discover_dets(run_dir, ts, b) -> tuple:
+    _shared.require_bundle_keys(
+        b, ("research_brief", "usage", "evidence_table", "claim_list", "claim_evidence_map"),
+        stage="DISCOVER", mode="deep_research")
     # Budget gate FIRST (the previously-dead counters, now live): the worker's honest usage
     # counts are enforced deterministically; exceeding them halts the stage as BudgetExceeded
     # (a budget stop is NOT a quality gate — the repair loop deliberately does not catch it).
@@ -145,24 +149,35 @@ def _discover_dets(run_dir, ts, b) -> tuple:
     paths = []
     et = build_evidence_table(b["evidence_table"]["query"], b["evidence_table"]["sources"],
                               b["evidence_table"].get("saturation_reached", False))
+    brief = b["research_brief"]
+    texts = [str(et.get("query") or "")]
+    texts += [str(p.get("angle") or "") for p in (brief.get("perspectives") or [])]
+    texts += [str(f.get("summary") or "") for f in (brief.get("findings") or [])]
+    texts += [str(c.get("text") or "") for c in (b["claim_list"].get("claims") or [])]
+    dpath, _ = _shared.run_drift_gate(run_dir, "DISCOVER", ts, texts)        # NORTH-STAR gate (H2)
+    paths.append(dpath)
     ev = build_verdict(et)                                                   # HARD GATE 1
     paths.append(write_artifact(run_dir, "DISCOVER", "evidence-verdict.artifact.json",
                                 "evidence_verdict", "evidence-verifier", ev, ts,
                                 "blocked" if ev["verdict"] == "BLOCK" else "approved"))
     if ev["verdict"] == "BLOCK":
         raise GateBlock(f"evidence gate BLOCK: {ev['reasons']}")
-    cv = build_report(b["claim_list"], b["claim_evidence_map"])              # HARD GATE 2
+    cv = build_report(b["claim_list"], b["claim_evidence_map"],              # HARD GATE 2 (W2 fix)
+                      resolvable_refs=_shared.resolvable_refs(et))
     paths.append(write_artifact(run_dir, "DISCOVER", "citation-verdict.artifact.json",
                                 "citation_integrity_verdict", "citation-integrity-auditor", cv, ts,
                                 "blocked" if cv["verdict"] == "BLOCK" else "approved"))
     if cv["verdict"] == "BLOCK":
         raise GateBlock(f"citation gate BLOCK: {cv['violations']}")
+    epath, ex = _shared.run_existence_gate(run_dir, "DISCOVER", ts,          # HARD GATE 3 (H4)
+                                           _shared.external_refs(et, b["claim_evidence_map"]))
+    paths.append(epath)
     paths.append(write_artifact(run_dir, "DISCOVER", "research-brief.artifact.json",
                                 "research_brief", "lit-scout", b["research_brief"], ts))
     paths.append(write_artifact(run_dir, "DISCOVER", "evidence-table.artifact.json",
                                 "evidence_table", "lit-scout", et, ts))
-    brief = b["research_brief"]
     return paths, {"evidence_gate": ev["verdict"], "citation_gate": cv["verdict"],
+                   "existence_gate": ex["verdict"], "existence_warnings": len(ex["warnings"]),
                    "n_perspectives": len(brief.get("perspectives") or []),
                    "iterations_used": brief.get("iterations_used", 0),
                    "saturation_reached": brief.get("saturation_reached", False)}

@@ -1,5 +1,7 @@
 ---
 name: monitor
+spec_version: "1.1.0"
+rq_exempt: true
 model: sonnet
 stage: EXECUTE
 kind: producer
@@ -12,6 +14,9 @@ permission_scope:
 ---
 
 # monitor — producer (advisory run-health monitoring)
+
+
+> RQ-irrelevant mechanical check — north-star injection deliberately omitted.
 
 You are the monitor.  Your ONE job: read available `run_record` and `run_manifest`
 artifacts from the run-store, call the deterministic tool

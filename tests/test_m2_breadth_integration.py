@@ -135,13 +135,15 @@ def test_every_breadth_agent_produces_a_registered_type():
 
 def test_breadth_runtime_model_tiers_match_the_plan():
     # §9 default-mode tiers: the depth layer is judgment-heavy (auditors/gates/reviewers = opus).
+    # synthesis-writer joined the opus tier 2026-06-13 (audit M7): it renders the director-facing
+    # final verdict prose — a softened BLOCK narrative is a high-cost failure, so judgment tier.
     expected_opus = {
         "rq-architect", "baseline-fairness-planner", "metric-implementation-auditor", "statistics-power-auditor",
         "source-quality-ranker", "contradiction-miner", "staleness-auditor", "citation-integrity-auditor",
         "baseline-comparison-auditor", "variance-analyzer", "fairness-auditor", "compliance-auditor",
         "goal-alignment-checker", "visualization-auditor", "claim-strength-calibrator",
         "review-configurator", "methodology-reviewer", "domain-reviewer", "scientific-critic",
-        "review-synthesizer", "threats-to-validity-writer", "review-response-simulator",
+        "review-synthesizer", "synthesis-writer", "threats-to-validity-writer", "review-response-simulator",
     }
     for name in BREADTH_AGENTS:
         fm = _frontmatter(AGENTS_DIR / f"{name}.md")

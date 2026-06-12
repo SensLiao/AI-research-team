@@ -55,6 +55,33 @@ def test_config_holds_no_secret_and_summary_redacts(fake_env):
     assert summ["host"] == "fake.lab.example.edu" and summ["user"] == "tester"
 
 
+def test_repr_omits_operational_identifiers(fake_env, monkeypatch):
+    """ServerConfig.__repr__ (L2 hygiene) shows only host/port/auth — never user / workdir / known_hosts
+    values — so a stray repr / log line / traceback frame cannot spill them."""
+    monkeypatch.setenv("RAT_SERVER_KNOWN_HOSTS", "/home/tester/.ssh/known_hosts")
+    cfg = config.load_config(fake_env)
+    r = repr(cfg)
+    # the auth MODE is shown, host/port are shown
+    assert r == "ServerConfig(host='fake.lab.example.edu', port=22, auth=password)"
+    # the identifiers that the default dataclass repr WOULD have leaked are absent
+    assert "tester" not in r                      # user value
+    assert "/mnt/HDD4/tester/research-runs" not in r   # workdir value
+    assert "known_hosts" not in r and "/home/tester/.ssh" not in r  # known_hosts value
+    # and the secret was never on the object anyway
+    assert "SECRET-do-not-leak" not in r
+
+
+def test_repr_reflects_ssh_key_and_none_auth_modes(fake_env, monkeypatch):
+    """The auth mode in repr tracks the resolved credential: ssh_key when only a key is set, none when
+    neither — proving the mode is derived, not hardcoded."""
+    monkeypatch.delenv("RAT_SERVER_PASSWORD", raising=False)
+    monkeypatch.setenv("RAT_SERVER_SSH_KEY", "/home/tester/.ssh/id_ed25519")
+    assert repr(config.load_config(fake_env)).endswith("auth=ssh_key)")
+
+    monkeypatch.delenv("RAT_SERVER_SSH_KEY", raising=False)
+    assert repr(config.load_config(fake_env)).endswith("auth=none)")
+
+
 def test_job_script_encodes_runbook_footguns(fake_env):
     cfg = config.load_config(fake_env)
     js = build_job_script(cfg, JobSpec(run_id="exp-1", script="train.py", args="--epochs 5", gpus="0"))

@@ -206,7 +206,53 @@ def _supports_note(slug: str, query_tokens: List[str], channel_ranks: Dict[str, 
     return "channels: " + "; ".join(parts) if parts else "fused match"
 
 
+# ---------- pure: per-page parse (cacheable) ----------
+
+def _parse_page(slug: str, text: str) -> dict:
+    """Build the immutable-by-convention page record from a slug + its raw text. Pure: same
+    (slug, text) -> equal dict. The returned sets/dicts are only ever READ downstream (channel
+    helpers build fresh sets for intersections), so the cached object is safe to share across calls."""
+    toks = _doc_tokens(text)
+    tf: Dict[str, int] = {}
+    for t in toks:
+        tf[t] = tf.get(t, 0) + 1
+    ym = _YEAR_KEY.search(text)
+    heading = _HEADING.search(text)
+    return {"slug": slug, "text": text, "tokens": toks, "token_set": set(toks),
+            "tf": tf, "links": set(_WIKILINK.findall(text)) - {slug},
+            "year": int(ym.group(1)) if ym else None,
+            "heading": heading.group(1) if heading else "",
+            "sha": _sha256_text(text)}
+
+
 # ---------- I/O ----------
+
+# Module-level page cache (M11): resolved-path-str -> (mtime_ns, size, parsed page dict). A page is
+# re-parsed ONLY when its (mtime_ns, size) changes; an unchanged page is served from the cache without
+# touching the disk. The parse is pure and the cached dict is read-only downstream, so caching is
+# byte-transparent — recall()'s output is identical with or without a cache hit. `clear_page_cache()`
+# resets it (tests / a forced cold read). Keyed by the resolved absolute path so two vaults never collide.
+_PAGE_CACHE: Dict[str, Tuple[int, int, dict]] = {}
+
+
+def clear_page_cache() -> None:
+    """Drop every cached page (test hook / force a cold re-read)."""
+    _PAGE_CACHE.clear()
+
+
+def _load_page_cached(path: Path, slug: str) -> dict:
+    """Return the parsed page for `path`, reading+parsing only on a cold/stale cache entry.
+    Cache validity key is (mtime_ns, size); a content edit changes both (size) or at least mtime."""
+    key = str(path.resolve())
+    st = path.stat()
+    sig = (st.st_mtime_ns, st.st_size)
+    hit = _PAGE_CACHE.get(key)
+    if hit is not None and (hit[0], hit[1]) == sig:
+        return hit[2]
+    page = _parse_page(slug, path.read_text(encoding="utf-8"))
+    _PAGE_CACHE[key] = (sig[0], sig[1], page)
+    return page
+
 
 def _load_pages(vault_root: Path) -> List[dict]:
     pages = []
@@ -214,18 +260,7 @@ def _load_pages(vault_root: Path) -> List[dict]:
         path = _resolve_page(vault_root, slug)
         if path is None:
             continue
-        text = path.read_text(encoding="utf-8")
-        toks = _doc_tokens(text)
-        tf: Dict[str, int] = {}
-        for t in toks:
-            tf[t] = tf.get(t, 0) + 1
-        ym = _YEAR_KEY.search(text)
-        heading = _HEADING.search(text)
-        pages.append({"slug": slug, "text": text, "tokens": toks, "token_set": set(toks),
-                      "tf": tf, "links": set(_WIKILINK.findall(text)) - {slug},
-                      "year": int(ym.group(1)) if ym else None,
-                      "heading": heading.group(1) if heading else "",
-                      "sha": _sha256_text(text)})
+        pages.append(_load_page_cached(path, slug))
     return pages
 
 

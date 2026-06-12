@@ -1,8 +1,12 @@
 """Tests for the result-analyzer deterministic core."""
 from __future__ import annotations
 
-from research_agent_teams.tools.result_analyzer import build_result_summary
-from research_agent_teams.tools.validate_artifact import validate_against
+from research_agent_teams.operate.artifacts import envelope
+from research_agent_teams.tools.result_analyzer import (
+    build_result_summary,
+    build_result_summary_with_stats,
+)
+from research_agent_teams.tools.validate_artifact import validate_against, validate_artifact
 
 
 # ---------------------------------------------------------------------------
@@ -89,3 +93,72 @@ def test_caveats_default_to_empty_list():
     """Omitting caveats → caveats defaults to []."""
     payload = build_result_summary([FINDING_NO_BASELINE])
     assert payload["caveats"] == []
+
+
+# ---------------------------------------------------------------------------
+# H6: build_result_summary_with_stats wrapper (significance enrichment)
+# ---------------------------------------------------------------------------
+
+TS = "2026-06-12T12:00:00Z"
+
+
+def test_build_with_stats_is_additive_base_fields_unchanged():
+    """The wrapper preserves every field plain build_result_summary produces; only ADDS stats."""
+    findings = [{
+        "metric": "dice", "value": 0.85, "condition_id": "cond-A",
+        "baseline_value": 0.70, "baseline_condition_id": "baseline",
+    }]
+    per_seed = {
+        "cond-A": {"dice": [0.84, 0.86, 0.85, 0.87]},
+        "baseline": {"dice": [0.70, 0.71, 0.69, 0.70]},
+    }
+    base = build_result_summary(findings, caveats=["c"])
+    enriched = build_result_summary_with_stats(findings, per_seed, seed=2024, caveats=["c"])
+
+    # Hard ceilings untouched.
+    assert enriched["status"] == "provisional"
+    assert enriched["can_cite_thesis"] is False
+    assert enriched["caveats"] == ["c"]
+    # Base finding fields are preserved exactly.
+    bf, ef = base["findings"][0], enriched["findings"][0]
+    for k in ("metric", "value", "condition_id", "baseline_value", "delta",
+              "baseline_condition_id"):
+        assert ef[k] == bf[k]
+    # And the new stats fields are present on top.
+    assert "p_value" in ef and "stats" in enriched
+
+
+def test_build_with_stats_validates_as_artifact():
+    findings = [{
+        "metric": "dice", "value": 0.85, "condition_id": "cond-A",
+        "baseline_value": 0.70, "baseline_condition_id": "baseline",
+    }]
+    per_seed = {
+        "cond-A": {"dice": [0.84, 0.86, 0.85, 0.87]},
+        "baseline": {"dice": [0.70, 0.71, 0.69, 0.70]},
+    }
+    payload = build_result_summary_with_stats(findings, per_seed, seed=1)
+    assert validate_against("result_summary.schema.json", payload) == []
+    art = envelope("result_summary", "result-analyzer", payload, TS)
+    assert validate_artifact(art) == []
+
+
+def test_build_with_stats_no_per_seed_data_notes_insufficient():
+    """No per-seed data → wrapper still valid, with an explicit 'no significance' note."""
+    payload = build_result_summary_with_stats(
+        [FINDING_WITH_BASELINE], per_seed={}, seed=0
+    )
+    assert payload["stats"]["n_findings_tested"] == 0
+    assert payload["stats"]["note"] == "insufficient per-seed data — no significance computed"
+    assert "p_value" not in payload["findings"][0]
+    assert validate_against("result_summary.schema.json", payload) == []
+
+
+def test_baseline_condition_id_passes_through_build_result_summary():
+    """The plain builder carries baseline_condition_id through when supplied (and stays valid)."""
+    payload = build_result_summary([{
+        "metric": "dice", "value": 0.8, "condition_id": "c1",
+        "baseline_value": 0.7, "baseline_condition_id": "base",
+    }])
+    assert payload["findings"][0]["baseline_condition_id"] == "base"
+    assert validate_against("result_summary.schema.json", payload) == []

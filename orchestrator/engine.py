@@ -24,6 +24,7 @@ from research_agent_teams.tools.runstore import (
     checkpoint_stage,
     create_run,
     find_run_dir,
+    pin_task_frame,
     prepare_resume,
     read_manifest,
     record_gate,
@@ -115,9 +116,9 @@ def _drive(run_dir, task_frame, start_stage_name, agent_fn, gate_fn, ts, vault_r
 def run_task(runs_dir, run_id, request, mode, ts, agent_fn, gate_fn,
              domain_profile_ref: Optional[str] = None, vault_root: Optional[str] = None,
              budget_override: Optional[dict] = None, model_policy: str = "default",
-             project: Optional[str] = None) -> dict:
+             project: Optional[str] = None, north_star: Optional[dict] = None) -> dict:
     tf = resolve_task(request, mode, run_id, ts, domain_profile_ref=domain_profile_ref,
-                      model_policy=model_policy, project=project)  # PARSE
+                      model_policy=model_policy, project=project, north_star=north_star)  # PARSE
     if budget_override is not None:
         tf["payload"]["budget"] = budget_override
     rerrs = validate_routing(tf)
@@ -128,6 +129,7 @@ def run_task(runs_dir, run_id, request, mode, ts, agent_fn, gate_fn,
                project=project)
     run_dir = run_dir_for(runs_dir, run_id, project)
     (run_dir / "task_frame.artifact.json").write_text(json.dumps(tf), encoding="utf-8")  # orchestrator-written
+    pin_task_frame(run_dir, ts)  # the direction contract enters the hash chain (audit H2.3)
     return _drive(run_dir, tf, entry, agent_fn, gate_fn, ts, vault_root)
 
 

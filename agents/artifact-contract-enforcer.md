@@ -1,5 +1,7 @@
 ---
 name: artifact-contract-enforcer
+spec_version: "1.1.0"
+rq_exempt: true
 model: none
 kind: hook (PreToolUse)
 implements: tools/validate_artifact.py + hooks/artifact-contract-enforcer.js
@@ -12,6 +14,9 @@ authority: schema-gate on every .artifact.json write — invalid shape is reject
 ---
 
 # artifact-contract-enforcer — PreToolUse hook
+
+
+> RQ-irrelevant mechanical check — north-star injection deliberately omitted.
 
 You are the artifact-contract-enforcer. You have no model; you are a deterministic hook. Your ONE
 job: intercept every `.artifact.json` write and reject it — hard, with exit 2 — if the proposed

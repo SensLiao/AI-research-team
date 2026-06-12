@@ -3,6 +3,10 @@
 Scores and ranks research ideas by feasibility using a rubric over declared
 compute/data/time signals vs an optional budget from task_frame.payload.budget.
 
+Honesty note: the feasibility score derives from worker-reported signals (and optional retrieval
+grounding), NOT an objective measurement of the literature — treat it as a ranking aid, never as
+ground truth. The director's /idea-bet gate, not this number, decides what to pursue.
+
 Design invariants:
 - Pure function: no I/O, no network, no LLM, no time-based nondeterminism.
 - Same input -> same output (reproducible ordering).

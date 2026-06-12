@@ -11,13 +11,41 @@
  * Active scope comes from env (set by the orchestrator when it dispatches a fenced agent):
  *   RAT_RUN_ROOT, RAT_RUN_ID, RAT_STAGE, RAT_VAULT_ROOT (optional), RAT_PROJECTS_ROOT (optional)
  * If RAT_RUN_ID is unset -> NO-OP (not operating a fenced agent). Contract: exit 2 = BLOCK, 0 = ALLOW.
- * Fails OPEN on internal error (never bricks a session) but says so on stderr.
+ *
+ * Governance fail-closed (audit Wave D): the old catch block failed OPEN unconditionally ("never brick
+ * a session"). But a write that targets the VAULT (path contains "phd-research-os") or single-writer
+ * run INFRA (basename ledger.jsonl / manifest.yaml) is on a GOVERNANCE path — there, internal error
+ * MUST fail CLOSED (exit 2): a transiently-failing guard must not become an open door into the crown
+ * jewels. Everything else stays fail-OPEN (exit 0 + stderr warning) so an unrelated parse hiccup never
+ * bricks a session; a completely unparseable payload also stays fail-OPEN.
  */
 const path = require("path");
 const fs = require("fs");
 
 const WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
 const INFRA_FILES = new Set(["manifest.yaml", "ledger.jsonl", "LOCK"]);
+// Governance-path markers for the fail-closed catch: the vault dir name + single-writer run-infra files.
+// LOCK is intentionally NOT here — it is a transient lockfile, not a tamper-evident governance artifact,
+// so a parse failure over it should not hard-block (the in-band decide() still blocks LOCK on the happy path).
+const GOVERNANCE_INFRA = new Set(["ledger.jsonl", "manifest.yaml"]);
+const VAULT_MARKER = "phd-research-os";
+
+function extractTarget(raw) {
+  // Best-effort target-path extraction usable from the catch block, where decide()'s scope is unavailable.
+  // Returns the raw file_path/notebook_path string, or null if the payload cannot yield one.
+  const input = JSON.parse(raw || "{}");
+  const ti = input.tool_input || {};
+  return ti.file_path || ti.notebook_path || null;
+}
+
+function isGovernancePath(target) {
+  // Normalize case-insensitively + slash-agnostically (Windows path.sep is "\\"; payloads may carry "/").
+  if (!target) return false;
+  const norm = String(target).toLowerCase().replace(/\\/g, "/");
+  if (norm.includes(VAULT_MARKER)) return true;
+  const base = norm.split("/").pop();
+  return GOVERNANCE_INFRA.has(base);
+}
 
 function within(child, root) {
   let c = path.resolve(child);
@@ -71,6 +99,10 @@ process.stdin.on("end", () => {
   try {
     const runId = process.env.RAT_RUN_ID;
     if (!runId) process.exit(0); // not operating a fenced agent -> NO-OP
+    // Test-only fault injection to exercise the governance fail-closed catch deterministically; production
+    // never sets RAT_GUARD_FORCE_FAULT. Thrown AFTER `raw` is fully received so the catch can still recover
+    // the target path from the (valid) payload via extractTarget(raw).
+    if (process.env.RAT_GUARD_FORCE_FAULT) throw new Error("forced internal fault (test)");
     const input = JSON.parse(raw || "{}");
     const tool = input.tool_name || "";
     const ti = input.tool_input || {};
@@ -90,7 +122,16 @@ process.stdin.on("end", () => {
     }
     process.exit(0);
   } catch (e) {
-    console.error(`[permission-scope-guard] internal error, failing OPEN: ${e.message}`);
+    // Governance fail-closed: if we can still recover a target path AND it is on a governance path
+    // (vault or single-writer run-infra), BLOCK — a flaky guard must never become an open door into
+    // the crown jewels. Otherwise fail OPEN (never brick an unrelated session).
+    let target = null;
+    try { target = extractTarget(raw); } catch (_) { /* payload unparseable -> target stays null */ }
+    if (isGovernancePath(target)) {
+      console.error(`[permission-scope-guard] internal error on a GOVERNANCE path, failing CLOSED (BLOCK): ${e.message} -> ${target}`);
+      process.exit(2);
+    }
+    console.error(`[permission-scope-guard] internal error, failing OPEN (non-governance): ${e.message}`);
     process.exit(0);
   }
 });

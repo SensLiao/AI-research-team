@@ -152,6 +152,32 @@ def test_profile_missing_required_field_fails():
     assert validate_profile_dict(broken) != []
 
 
+def test_ai_generic_profile_is_thickened_and_valid():
+    """L3 thicken: the generic baseline now carries real metrics / leakage checks / alignment invariants
+    (not the old 1/1/2 stub), and still conforms to the SAME schema — proving the baseline has teeth
+    without any domain term leaking in."""
+    body = _load_profile("ai-generic.profile.yaml")
+    assert validate_profile_dict(body) == []
+
+    metric_names = {m["name"] for m in body["metrics"]}
+    assert {"accuracy", "f1", "auroc"} <= metric_names
+    for m in body["metrics"]:                                  # every generic metric is range-bounded [0,1]
+        assert m["valid_range"] == [0.0, 1.0]
+
+    leakage = set(body["leakage_checks"])
+    assert {"train_test_id_disjoint", "data_contamination", "split_unit_integrity"} <= leakage
+
+    invariants = " ".join(body["alignment_invariants"]).lower()
+    for marker in ("tokenizer", "eval_protocol_parity", "seed_disjointness",
+                   "llm_judge_bias_note", "human_eval_iaa"):
+        assert marker in invariants, f"missing alignment invariant marker: {marker}"
+
+    # domain-general: no medical / vision / NLP-specific term leaked into the generic baseline
+    blob = yaml.safe_dump(body).lower()
+    for banned in ("dice", "patient", "spacing", "lesion", "tumor", "voxel", "slice", "ct ", "mri"):
+        assert banned not in blob, f"domain-specific term '{banned.strip()}' leaked into ai-generic"
+
+
 # ---------- gate verdict integrity (verdict is derived, never hand-set) ----------
 
 GATE_VERDICT_SCHEMAS = [

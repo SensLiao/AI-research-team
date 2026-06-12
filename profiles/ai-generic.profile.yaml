@@ -1,6 +1,8 @@
 # Domain profile: generic AI/ML research (domain-neutral baseline).
 # Validates against schemas/domain_profile.schema.json (payload).
-# This is the fallback when no specialized profile is selected.
+# This is the fallback when no specialized profile is selected. Everything here is deliberately
+# DOMAIN-GENERAL — no medical / vision / NLP-specific term. A specialized profile (cv-medical-segmentation,
+# a future nlp-* or rl-*) overrides these; this baseline just gives the gates real teeth even with no profile.
 profile_id: ai-generic
 display_name: "Generic AI/ML research (domain-neutral baseline)"
 applies_to:
@@ -9,24 +11,49 @@ applies_to:
   - ai-research
 split_policy:
   default_split_unit: sample
-  allowed_split_units: ["sample", "group"]
+  # Generic units a study might legitimately split on. A specialized profile narrows / forbids these.
+  allowed_split_units: ["sample", "group", "subject", "session", "source"]
+  # No unit is universally leakage-causing in the abstract, so the generic baseline forbids none and
+  # leaves it to split_unit_integrity (below) + a specialized profile to forbid domain-specific units.
   forbidden_split_units: []
   stratification_keys: ["label"]
   external_test_recommended: false
   freeze_test_before_training: true
 leakage_checks:
+  # The grouping/id key used to split must not place the same entity on both sides of the split.
   - train_test_id_disjoint
+  # Test examples (or near-duplicates) must not appear in the training corpus / pretraining data — the
+  # generic data-contamination check: n-gram overlap + exact-match / near-duplicate detection of test
+  # items against the training set (critical for any model trained on large/scraped corpora).
+  - data_contamination
+  # The declared split UNIT is actually the unit that was held out (e.g. a per-sample split must not
+  # secretly share a higher-level entity across the boundary); guards against a unit/grouping mismatch.
+  - split_unit_integrity
 leakage_delta: 0.5
 metrics:
+  # Generic classification/scoring metrics, all bounded [0,1]. A specialized profile adds its own
+  # (Dice/HD95/BLEU/...); these three are the domain-neutral defaults the sanity checker can range-check.
   - {name: accuracy, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: f1, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: auroc, higher_is_better: true, valid_range: [0.0, 1.0]}
 alignment_invariants:
-  - "identical preprocessing across compared methods unless preprocessing is the studied variable"
-  - "identical evaluation protocol across compared methods"
+  # Identical input pipeline across compared methods unless the pipeline IS the studied variable.
+  - "identical preprocessing AND identical tokenizer / feature-extraction across compared methods unless that pipeline is the studied variable (preprocessing/tokenizer parity)"
+  # Same evaluation protocol: same test set, same metric implementation, same decision threshold / decoding.
+  - "identical evaluation protocol across compared methods — same test set, same metric implementation, same decision threshold / decoding settings (eval_protocol_parity)"
+  # Train and test seeds / random partitions must not overlap; report seeds and use disjoint ones.
+  - "training and evaluation use disjoint random seeds / partitions, and seeds are reported (seed_disjointness)"
+  # LLM-as-judge is order- and identity-biased: counter it with positional swaps + more than one judge.
+  - "any LLM-as-judge evaluation must mitigate bias — randomize/​swap candidate order bidirectionally AND use more than one judge (or a human cross-check); report agreement (llm_judge_bias_note)"
+  # Human evaluation must report inter-annotator agreement so reader can gauge label reliability.
+  - "any human evaluation reports inter-annotator agreement (e.g. Cohen's/Fleiss' kappa or Krippendorff's alpha) over multiple independent annotators (human_eval_iaa)"
 # absorption wave 1 (ScholarEval): annotation thresholds for idea_grounding_report (score-only, never a cut)
 idea_grounding:
   soundness_min: 0.5
   contribution_min: 0.3
 hard_invariants:
   - "test set frozen before training"
-  - "all compared methods use identical preprocessing unless preprocessing is the studied variable"
+  - "all compared methods use identical preprocessing and tokenizer/feature extraction unless that pipeline is the studied variable"
+  - "no test data (or near-duplicates) present in the training / pretraining corpus — data contamination checked"
   - "all pretrained weights explicitly declared"
+  - "evaluation protocol (test set, metric implementation, decision threshold/decoding) identical across compared methods"

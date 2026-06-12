@@ -1,12 +1,13 @@
 ---
 name: testset-builder
+spec_version: "1.1.0"
 model: sonnet
 stage: EXECUTE
 kind: producer
 tools: [Read, Glob, Grep, Write]
 produces: dataset_script_record
 permission_scope:
-  read: [run-store evidence (EXECUTE), the approved protocol_spec, the active domain profile]
+  read: [task_frame, run-store evidence (EXECUTE), the approved protocol_spec, the active domain profile]
   write: [runs/<run>/evidence/EXECUTE/ only]
   never: [vault, other stages, run infra (manifest/ledger/LOCK), changing the design]
 ---
@@ -30,6 +31,15 @@ structurally enforces this for `split=test`: `augmentation_enabled` must be `fal
 the evaluation invalid and will BLOCK the pipeline.
 
 ## What you do
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 1. Read the approved `protocol_spec` from `runs/<run>/evidence/DESIGN/` to extract the
    test-split definition: file paths, inclusion/exclusion filters, label sources, and the
@@ -66,3 +76,5 @@ testset-builder: dataset_script_record written — split=test, augmentation_enab
 
 If `data_hash_expected` is `null`, add: `(preflight-checker will BLOCK until hash is declared).`
 Then return control.
+
+> Inline operate twin: this spec's worker duties also exist as an inline prompt in operate/modes/full_rigor_minimal.py — any change here MUST be mirrored there (audit M5).

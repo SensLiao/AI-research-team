@@ -58,8 +58,11 @@ def _validate_written(paths):
 
 # ---------------- registry + router ----------------
 
-def test_registry_has_four_wired_modes():
-    assert set(REGISTRY) == {"new_direction", "evidence_review", "evidence_deep", "deep_research"}
+def test_registry_has_seven_wired_modes():
+    # wave 1 wired four; audit waves A-D (2026-06-13) wired gap_breadth + venue_readiness +
+    # full_rigor_minimal — the operated surface is now SEVEN (mirror-tested in test_operate_wiring).
+    assert set(REGISTRY) == {"new_direction", "evidence_review", "evidence_deep", "deep_research",
+                             "gap_breadth", "venue_readiness", "full_rigor_minimal"}
     for mod in REGISTRY.values():
         assert callable(mod.llm_step) and callable(mod.run_dets)
 
@@ -105,13 +108,15 @@ def test_evidence_review_repair_loop_feeds_back_then_escalates(tmp_path):
     assert ok[0] == "ok"
 
 
-def test_evidence_review_llm_step_shape():
-    spec = evidence_review.llm_step("runs/r1", "DISCOVER", "my question", model_policy="default")
+def test_evidence_review_llm_step_shape(tmp_path):
+    run_dir = str(_mk_run(tmp_path))   # llm_step reads the run's task_frame for the north-star block
+    spec = evidence_review.llm_step(run_dir, "DISCOVER", "my question", model_policy="default")
     assert spec["output"].endswith("inbox/DISCOVER.bundle.json")
     assert "my question" in spec["prompt"] and "REPAIR ATTEMPT" in spec["prompt"]
+    assert "NORTH STAR" in spec["prompt"]
     assert spec["model"] == "sonnet"
-    assert evidence_review.llm_step("runs/r1", "REPORT", "q") is None
-    assert evidence_review.llm_step("runs/r1", "DISCOVER", "q")["model"] == "opus"  # max_quality default
+    assert evidence_review.llm_step(run_dir, "REPORT", "q") is None
+    assert evidence_review.llm_step(run_dir, "DISCOVER", "q")["model"] == "opus"  # max_quality default
 
 
 # ---------------- evidence_deep ----------------

@@ -13,6 +13,7 @@ with no following `boundary` means the process died mid-stage -> roll back to th
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -123,6 +124,24 @@ def create_run(runs_dir, run_id: str, mode: str, entry_stage: str, ts: str,
     return manifest
 
 
+def pin_task_frame(run_dir, ts: str) -> dict:
+    """Anchor the run's direction contract into the hash chain (audit H2.3 fix).
+
+    The task_frame (the file that pins the north star) is the one orchestrator-written file that
+    previously sat OUTSIDE the tamper-evident record. This appends a `task_frame_pinned` event
+    carrying its sha256 + the north-star statement, so silently editing the run's direction after
+    PARSE breaks the chain check like any other tamper."""
+    tf_path = Path(run_dir) / "task_frame.artifact.json"
+    tf = json.loads(tf_path.read_text(encoding="utf-8"))
+    payload = tf.get("payload", {}) or {}
+    ns = payload.get("north_star") or {}
+    return append_event(_ledger_path(run_dir), "task_frame_pinned",
+                        {"task_frame_sha256": hash_file(tf_path),
+                         "mode": payload.get("mode"),
+                         "north_star_statement": ns.get("statement") or payload.get("request_text", "")},
+                        ts)
+
+
 def start_stage(run_dir, stage: str, ts: str, agent_subset: Optional[List[str]] = None) -> dict:
     append_event(_ledger_path(run_dir), "stage_started", {"stage": stage}, ts)
     manifest = read_manifest(run_dir)
@@ -199,6 +218,7 @@ def classify_status(run_dir) -> str:
         "boundary": "clean_boundary",
         "stage_started": "crashed_mid_stage",
         "run_started": "ready",
+        "task_frame_pinned": "ready",
         "resume": "ready",
         "gate_resolved": "ready",
         "gate_pending": "awaiting",

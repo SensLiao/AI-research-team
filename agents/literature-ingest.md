@@ -1,12 +1,13 @@
 ---
 name: literature-ingest
+spec_version: "1.1.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
 tools: [Read, Glob, Grep, Bash]
 produces: paper_note
 permission_scope:
-  read: [run-store evidence (DISCOVER), the selected paper by reference, the active domain profile]
+  read: [task_frame, run-store evidence (DISCOVER), the selected paper by reference, the active domain profile]
   write: [runs/<run>/evidence/DISCOVER/ only]
   never: [vault, other stages, run infra, freezing/promoting knowledge]
 ---
@@ -24,6 +25,15 @@ with `title`, `source_ref`, `summary`, `claims[]`, and the optional fields `year
 `methods[]`, `datasets[]`, `metrics[]`.
 
 ## What you do (gather facts, then call the assembler)
+
+## North-star discipline (run alignment)
+
+Before any work, read the run's `task_frame.artifact.json` — `payload.north_star` when present
+(else `payload.request_text`). That sentence is the ONLY direction of this run; its
+`in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
+if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
+notes field instead of silently following them. You never re-scope the run — only the director may.
+
 
 Read the selected paper (by reference — do not inline paragraphs) and the active domain profile,
 then extract these facts:
