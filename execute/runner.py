@@ -46,12 +46,18 @@ def _harden_host_key_verification(client, cfg) -> None:
 
 
 def _safe_pull_dest(results_pull_dir: str, run_id: str, into: Optional[str],
-                    vault_root: Optional[str] = None) -> Path:
+                    vault_root: Optional[str] = None, project: str = "") -> Path:
     """⑤ Resolve + FENCE the local landing dir for pulled results: it MUST stay inside results_pull_dir and
     MUST NEVER be inside the vault. A crafted `into` / run_id cannot redirect remote results into the crown
-    jewels (or anywhere outside the run-store). Pure + testable; no connection."""
+    jewels (or anywhere outside the run-store). With a project, the default landing dir mirrors the
+    run-store grouping: <results_pull_dir>/<project>/<run_id>/pulled. Pure + testable; no connection."""
     base = Path(results_pull_dir).resolve()
-    dest = Path(into).resolve() if into is not None else (base / run_id / "pulled").resolve()
+    if into is not None:
+        dest = Path(into).resolve()
+    elif project:
+        dest = (base / project / run_id / "pulled").resolve()
+    else:
+        dest = (base / run_id / "pulled").resolve()
     bs, ds = str(base), str(dest)
     if not (ds == bs or ds.startswith(bs + os.sep)):
         raise PermissionError(f"refused: pull destination {dest} escapes the results dir {base}")
@@ -73,6 +79,7 @@ def plan(job: JobSpec, env_path: str = "research_agent_teams/.env") -> dict:
     assert_in_workdir(cfg, rdir)
     return {
         "run_id": job.run_id,
+        "project": job.project or None,
         "server": redacted_summary(cfg),
         "remote_run_dir": rdir,
         "run_sh": build_job_script(cfg, job),
@@ -164,7 +171,7 @@ def pull(job: JobSpec, env_path: str = "research_agent_teams/.env", into: str = 
         rdir = remote_run_dir(cfg, job)
         # ⑤ fence the landing dir before any local write: a crafted `into`/run_id can never write the vault
         # or escape the run-store. (Raises PermissionError on violation — nothing is pulled.)
-        local = _safe_pull_dest(cfg.results_pull_dir, job.run_id, into)
+        local = _safe_pull_dest(cfg.results_pull_dir, job.run_id, into, project=job.project)
         local.mkdir(parents=True, exist_ok=True)
         sftp = client.open_sftp()
         pulled = []

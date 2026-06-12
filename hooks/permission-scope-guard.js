@@ -4,11 +4,12 @@
  *
  * Mirrors research_agent_teams/tools/scope_guard.py. A fenced agent may only write inside its own
  *   runs/<active_run>/evidence/<active_stage>/   or   runs/<active_run>/inbox/
- * and may NOT: run Bash, write run infra (manifest.yaml/ledger.jsonl/LOCK), write the vault, or
- * write another run/stage. Paths outside every governed tree are a NO-OP.
+ * and may NOT: run Bash, write run infra (manifest.yaml/ledger.jsonl/LOCK), write the vault, write
+ * the project workspace (projects/<slug>/ is operator-managed), or write another run/stage.
+ * Paths outside every governed tree are a NO-OP.
  *
  * Active scope comes from env (set by the orchestrator when it dispatches a fenced agent):
- *   RAT_RUN_ROOT, RAT_RUN_ID, RAT_STAGE, RAT_VAULT_ROOT (optional)
+ *   RAT_RUN_ROOT, RAT_RUN_ID, RAT_STAGE, RAT_VAULT_ROOT (optional), RAT_PROJECTS_ROOT (optional)
  * If RAT_RUN_ID is unset -> NO-OP (not operating a fenced agent). Contract: exit 2 = BLOCK, 0 = ALLOW.
  * Fails OPEN on internal error (never bricks a session) but says so on stderr.
  */
@@ -39,6 +40,12 @@ function discoverVaultRoot() {
   }
 }
 
+function discoverProjectsRoot() {
+  // Mirror of scope_guard.discover_projects_root: the machine's own per-project workspace root
+  // (research_agent_teams/projects/, sibling of hooks/). Operator-managed; fenced agents never write it.
+  return path.join(path.dirname(__dirname), "projects");
+}
+
 function decide(tool, target, scope) {
   if (tool === "Bash") return [false, "fenced agent: Bash is blocked (cannot prove command safety)"];
   if (!WRITE_TOOLS.has(tool)) return [true, "read-only tool, allowed"];
@@ -51,6 +58,8 @@ function decide(tool, target, scope) {
     return [true, "within agent's stage scope"];
   if (scope.vaultRoot && within(target, scope.vaultRoot))
     return [false, "blocked: cannot write the vault directly (promote via the human gate)"];
+  if (scope.projectsRoot && within(target, scope.projectsRoot))
+    return [false, "blocked: the project workspace is operator-managed (fenced agents write only their run scope)"];
   if (within(target, scope.runRoot))
     return [false, "blocked: outside this agent's stage scope (another run/stage)"];
   return [true, "non-governed path (no-op)"];
@@ -72,6 +81,7 @@ process.stdin.on("end", () => {
       stage: process.env.RAT_STAGE || "",
       // ③: env wins, else discover by layout — the vault block no longer depends on RAT_VAULT_ROOT being set.
       vaultRoot: process.env.RAT_VAULT_ROOT || discoverVaultRoot() || "",
+      projectsRoot: process.env.RAT_PROJECTS_ROOT || discoverProjectsRoot() || "",
     };
     const [allowed, reason] = decide(tool, target, scope);
     if (!allowed) {

@@ -181,7 +181,13 @@ def main(argv=None) -> int:
     p.add_argument("--ts", default=None)
     a = p.parse_args(argv)
 
-    run_dir = Path(a.runs_dir) / a.run_id
+    from research_agent_teams.tools.runstore import find_run_dir
+    try:
+        run_dir = find_run_dir(a.runs_dir, a.run_id)     # either layout: runs/<project>/<id> or flat
+    except FileNotFoundError:
+        run_dir = Path(a.runs_dir) / a.run_id            # ad-hoc promote without a run context
+    # NOTE: an AMBIGUOUS run id (same id in two project groups) raises RuntimeError and must
+    # surface — promoting against a guessed flat path would verify refs in the wrong directory.
     cand_path = Path(a.candidate)
     raw = cand_path.read_bytes()
     candidate = json.loads(raw.decode("utf-8"))

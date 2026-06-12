@@ -10,19 +10,22 @@ from typing import List, Optional
 
 from research_agent_teams.orchestrator.graph_spec import load_graph, load_mode_registry
 from research_agent_teams.orchestrator.model_policy import VALID_POLICIES
+from research_agent_teams.tools.projects import PROJECT_SLUG_RE
 from research_agent_teams.tools.runstore import STAGES
 from research_agent_teams.tools.validate_artifact import validate_artifact
 
 
 def resolve_task(request_text: str, mode: str, run_id: str, ts: str,
                  registry: Optional[dict] = None, domain_profile_ref: Optional[str] = None,
-                 model_policy: str = "default") -> dict:
+                 model_policy: str = "default", project: Optional[str] = None) -> dict:
     registry = registry if registry is not None else load_mode_registry()
     modes = registry.get("modes", {})
     if mode not in modes:
         raise ValueError(f"unknown mode '{mode}' (known: {sorted(modes)})")
     if model_policy not in VALID_POLICIES:
         raise ValueError(f"unknown model_policy '{model_policy}' (valid: {list(VALID_POLICIES)})")
+    if project is not None and not PROJECT_SLUG_RE.match(project):
+        raise ValueError(f"invalid project slug {project!r}: must be lowercase-kebab")
     spec = modes[mode]
     payload = {
         "task_id": run_id,
@@ -37,6 +40,8 @@ def resolve_task(request_text: str, mode: str, run_id: str, ts: str,
     }
     if spec.get("stage_path"):                       # a mode may declare its true forward-only shape
         payload["stage_path"] = list(spec["stage_path"])
+    if project is not None:                          # the run's research project (groups the run-store)
+        payload["project"] = project
     artifact = {
         "artifact_id": f"task_frame-{run_id}",
         "artifact_type": "task_frame",

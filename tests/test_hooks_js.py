@@ -59,6 +59,16 @@ def test_scope_guard_blocks_bash(tmp_path):
     assert rc == 2 and "Bash" in err
 
 
+def test_scope_guard_blocks_project_workspace(tmp_path):
+    # projects/<slug>/ is operator-managed — a fenced agent may never write it (mirror of scope_guard.py)
+    env = _scope_env(tmp_path)
+    env["RAT_PROJECTS_ROOT"] = str(tmp_path / "projects")
+    payload = {"tool_name": "Write",
+               "tool_input": {"file_path": f"{env['RAT_PROJECTS_ROOT']}/proj-a/results/x.json"}}
+    rc, err = _run_hook("permission-scope-guard.js", payload, env)
+    assert rc == 2 and "operator-managed" in err
+
+
 def test_scope_guard_noop_without_scope(tmp_path):
     # No RAT_RUN_ID in env -> not operating a fenced agent -> NO-OP allow.
     import os

@@ -34,6 +34,7 @@ from ..tools.runstore import (
     create_run,
     read_manifest,
     record_gate,
+    run_dir_for,
     start_stage,
 )
 from ..tools.scope_guard import decide, discover_vault_root
@@ -44,19 +45,21 @@ def _task_frame(run_dir) -> dict:
 
 
 def begin(runs_dir, run_id, request, mode, ts, domain_profile_ref: Optional[str] = None,
-          model_policy: str = "default") -> dict:
-    """PARSE + create the run. Writes the only orchestrator-owned file (task_frame). Returns the run plan."""
+          model_policy: str = "default", project: Optional[str] = None) -> dict:
+    """PARSE + create the run. Writes the only orchestrator-owned file (task_frame). Returns the run plan.
+    With a `project`, the run lives in runs/<project>/<run_id>/ (the per-project grouping)."""
     tf = resolve_task(request, mode, run_id, ts, domain_profile_ref=domain_profile_ref,
-                      model_policy=model_policy)
+                      model_policy=model_policy, project=project)
     rerrs = validate_routing(tf)
     if rerrs:
         raise ValueError(f"routing rejected: {rerrs}")
     entry = tf["payload"]["entry_stage"]
-    create_run(runs_dir, run_id, mode, entry, ts, domain_profile_ref, tf["payload"]["agent_subset"])
-    run_dir = Path(runs_dir) / run_id
+    create_run(runs_dir, run_id, mode, entry, ts, domain_profile_ref, tf["payload"]["agent_subset"],
+               project=project)
+    run_dir = run_dir_for(runs_dir, run_id, project)
     (run_dir / "task_frame.artifact.json").write_text(json.dumps(tf), encoding="utf-8")
     p = tf["payload"]
-    return {"run_id": run_id, "run_dir": str(run_dir), "mode": mode,
+    return {"run_id": run_id, "run_dir": str(run_dir), "mode": mode, "project": project,
             "stages": _resolve_path(tf), "gate_level": p["gate_level"],
             "agent_subset": p["agent_subset"], "budget": p["budget"]}
 

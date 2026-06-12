@@ -8,6 +8,13 @@
   "additionalProperties": false,
   "properties": {
     "task_id": {"type": "string", "minLength": 1},
+    "project": {
+      "type": ["string", "null"],
+      "default": null,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 50,
+      "description": "The research project (lowercase-kebab slug, registered in the vault's 05-registry/project-registry.md) this run belongs to. Groups the run under runs/<project>/<run_id>/. null = legacy flat layout (pre-project runs / isolated tests)."
+    },
     "mode": {
       "type": "string",
       "minLength": 1,

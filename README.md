@@ -39,7 +39,11 @@ research_agent_teams/
 ├── execute/      gated GPU-execution layer (plan offline; live submit/status/pull director-gated) — tested, NOT operated
 ├── gates/        the 4 human gates (idea-bet / promote-to-vault / venue-pick / venue-decide) — disable-model-invocation
 ├── hooks/        node PreToolUse guards (permission-scope-guard + artifact-contract-enforcer)
+├── projects/     per-project durable workspaces (results/scripts/figures/notes; gitignored) —
+│                 created by `operate project-init`, removed whole by `operate project-delete`
 └── runs/         run-store: runtime files (ephemeral, gitignored, outside the vault)
+                  layout: runs/<project>/<run_id>/ — every new run belongs to a registered project
+                  (single source of truth: the vault's 05-registry/project-registry.md)
 ```
 
 ## Build status (the complete form — DONE)

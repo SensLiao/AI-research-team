@@ -30,13 +30,36 @@ def test_execute_cli_plan_smoke(capsys, monkeypatch):
 
 # ----------------------------- operate CLI (begin / status / reject) -----------------------------
 
+REGISTRY_MD = """# Project Registry
+
+| project-slug | title | phase | supervisor | domain | status | started | hot.md | brief |
+|---|---|---|---|---|---|---|---|---|
+| op-proj | Smoke project | phd-chapter | (TBD) | testing | active | 2026-06 | hot.md | [[op-proj-brief]] |
+"""
+
+
+def _mk_vault_with_registry(tmp_path):
+    vault = tmp_path / "vault"
+    reg = vault / "05-registry"
+    reg.mkdir(parents=True, exist_ok=True)
+    (reg / "project-registry.md").write_text(REGISTRY_MD, encoding="utf-8")
+    return str(vault)
+
+
 def test_operate_cli_begin_status_reject_smoke(tmp_path, capsys):
     from research_agent_teams.operate import cli
     runs = str(tmp_path / "runs")
+    vault = _mk_vault_with_registry(tmp_path)
     cli.main(["begin", "--mode", "new_direction", "--request", "find a direction",
-              "--run-id", "op-smoke", "--runs-dir", runs, "--ts", TS])
+              "--run-id", "op-smoke", "--runs-dir", runs, "--ts", TS,
+              "--project", "op-proj", "--vault", vault,
+              "--projects-dir", str(tmp_path / "projects")])
     begin_out = json.loads(capsys.readouterr().out)
     assert begin_out["run_id"] == "op-smoke" and begin_out["stages"][0] == "DISCOVER"
+    assert begin_out["project"] == "op-proj"
+    # the run lives in the project-grouped layout and the workspace exists
+    assert (tmp_path / "runs" / "op-proj" / "op-smoke" / "manifest.yaml").is_file()
+    assert (tmp_path / "projects" / "op-proj" / "README.md").is_file()
 
     cli.main(["status", "--run-id", "op-smoke", "--runs-dir", runs, "--ts", TS])
     assert "run_status" in json.loads(capsys.readouterr().out)

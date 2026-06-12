@@ -9,6 +9,13 @@
   "properties": {
     "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
     "run_id": {"type": "string", "minLength": 1},
+    "project": {
+      "type": ["string", "null"],
+      "default": null,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 50,
+      "description": "The research project this run belongs to (runs/<project>/<run_id>/ layout). null = legacy flat run."
+    },
     "status": {
       "type": "string",
       "enum": ["running", "awaiting_director", "awaiting_resume", "interrupted", "promoting", "done", "parked", "failed", "rejected"]
