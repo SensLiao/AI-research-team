@@ -1,0 +1,72 @@
+# Domain profile: reinforcement learning (a CS-research domain — NOT the system's target).
+# Validates against schemas/domain_profile.schema.json (payload).
+#
+# RL's defining rigor problem is VARIANCE: returns across random seeds vary enormously, so a result from
+# few seeds (or a cherry-picked seed) is not a result. This profile forces many seeds + reported std/CI,
+# evaluation-environment parity, and a hard NO on tuning against the test/evaluation environment (a common
+# silent leak). Metrics are RL metrics (episodic return is unbounded; rates are [0,1]).
+profile_id: cs-rl
+display_name: "Reinforcement learning (policy learning, control, sample efficiency)"
+applies_to:
+  - reinforcement-learning
+  - deep-rl
+  - control
+  - continuous-control
+  - offline-rl
+  - multi-agent-rl
+split_policy:
+  # RL "splits" over independent training SEEDS / runs and over held-out evaluation environment instances
+  # (tasks / levels / maps). The unit is a full seeded run; a single episode is never the unit.
+  default_split_unit: seed_run
+  allowed_split_units: ["seed_run", "eval_env_instance", "task", "level"]
+  # Splitting per-episode / per-timestep / per-trajectory-segment shares the same policy + environment
+  # dynamics across the boundary and destroys the independence the variance estimate assumes.
+  forbidden_split_units: ["episode", "timestep", "trajectory_segment", "transition"]
+  stratification_keys: ["task", "difficulty", "env_seed_family"]
+  external_test_recommended: true
+  freeze_test_before_training: true
+leakage_checks:
+  # No hyperparameters / early-stopping / model selection tuned against the evaluation/test environment.
+  - no_tuning_on_eval_environment
+  # Evaluation env seeds / instances are disjoint from training env seeds / instances.
+  - eval_env_seeds_disjoint_from_train
+  # Reported seeds are independent runs (different RNG streams), not re-evaluations of one trained policy.
+  - seeds_are_independent_training_runs
+leakage_delta: 0.5
+metrics:
+  # RL metrics. Episodic return is task-dependent and unbounded (range left open). Normalized scores and
+  # rates are [0,1]. Sample efficiency (steps to a threshold) is lower-is-better and unbounded above.
+  - {name: episodic_return,             higher_is_better: true,  valid_range: [null, null]}
+  - {name: normalized_return,           higher_is_better: true,  valid_range: [0.0, 1.0]}
+  - {name: success_rate,                higher_is_better: true,  valid_range: [0.0, 1.0]}
+  - {name: sample_efficiency_steps,     higher_is_better: false, valid_range: [0.0, null]}
+  - {name: regret,                      higher_is_better: false, valid_range: [0.0, null]}
+  - {name: iqm_normalized_return,       higher_is_better: true,  valid_range: [0.0, 1.0]}
+alignment_invariants:
+  # Many seeds: report a sufficient number of independent seeds and the std / confidence interval (or IQM + stratified bootstrap CI).
+  - "report a sufficient number of independent random seeds (>= the field norm) and the std / confidence interval — point estimates from few seeds are not a result (seed_count_and_variance)"
+  # Identical evaluation environment, version, and protocol across compared methods (same env build, wrappers, episode budget, action repeat).
+  - "identical evaluation environment + version + protocol across compared methods — same env build, wrappers, episode budget, action repeat, observation/reward normalization (eval_env_parity)"
+  # Identical interaction / compute budget (environment steps or wall-clock) across compared methods unless budget is the studied variable.
+  - "identical interaction budget (environment steps) and/or compute budget across compared methods unless the budget IS the studied variable (budget_parity)"
+  # No test-env tuning: model selection and hyperparameters fixed before touching the evaluation environment.
+  - "hyperparameters and model selection are fixed before the evaluation environment is touched — NO tuning on the test environment (no_test_env_tuning)"
+  # Prefer robust aggregate statistics (IQM, performance profiles) over mean-only, given heavy-tailed seed variance.
+  - "aggregate performance with robust statistics (e.g. interquartile mean + stratified bootstrap CIs / performance profiles), not mean-only, given heavy-tailed seed variance (robust_aggregation)"
+idea_grounding:
+  soundness_min: 0.5
+  contribution_min: 0.3
+protocol_fields:
+  evaluation:
+    min_seeds: 5
+    report_variance: ["std", "confidence_interval"]
+    preferred_aggregate: "IQM + stratified bootstrap CI"
+    eval_episodes_per_seed: configurable
+    test_env_tuning_forbidden: true
+    budget_unit: "environment_steps"
+hard_invariants:
+  - "results report many independent seeds with std / confidence interval (or IQM + bootstrap CI) — a few-seed or single-seed point estimate is not a result"
+  - "identical evaluation environment, version, and protocol across compared methods (env build, wrappers, episode budget, action repeat, normalization)"
+  - "identical interaction / compute budget across compared methods unless the budget is the studied variable"
+  - "NO tuning on the evaluation / test environment — hyperparameters and model selection frozen before the eval env is touched"
+  - "evaluation environment seeds / instances are disjoint from training, and reported seeds are independent training runs"

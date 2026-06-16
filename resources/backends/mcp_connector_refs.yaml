@@ -1,0 +1,11 @@
+# Harness-provided MCP connectors as capability refs. No project-held secret — auth is handled by the
+# Claude Code harness (the connector is invoked through the harness, not by reading a key from .env).
+schema_version: 1
+connectors:
+  tool.exa:          {provider: exa,      kind: harness_mcp, capabilities: [web_search, web_fetch]}
+  tool.websearch:    {provider: harness,  kind: builtin,     capabilities: [web_search]}
+  tool.context7:     {provider: context7, kind: harness_mcp, capabilities: [docs_lookup]}
+  connector.notion:  {provider: notion,   kind: harness_mcp, scope: personal, capabilities: [notion_read, notion_write]}
+  connector.gmail:   {provider: google,   kind: harness_mcp, scope: personal, capabilities: [mail_read, mail_draft]}
+  connector.gdrive:  {provider: google,   kind: harness_mcp, scope: personal, capabilities: [drive_read]}
+  connector.vercel:  {provider: vercel,   kind: harness_mcp, scope: personal, capabilities: [deploy_read]}

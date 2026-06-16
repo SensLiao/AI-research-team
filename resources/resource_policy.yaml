@@ -1,0 +1,78 @@
+# Resource access policy — DEFAULT DENY + least privilege (NIST SP 800-53 AC-family spirit).
+#
+# A capability is usable by a project ONLY if a rule below matches (resource_ref, project, capability).
+# `project: "*"` = any project; an exact slug narrows it. No matching rule => denied (default-deny).
+# requires_human_approval => the resolver flags it + injection_mode becomes manual_copy_required; the
+# actual LIVE op still needs the director's out-of-band gate (e.g. RAT_EXECUTE_AUTHORIZED) downstream.
+schema_version: 1
+default:
+  access: deny
+  reason: "No implicit access to shared resources (default-deny)."
+rules:
+  - resource_ref: server.honor.gpu
+    project: "*"
+    allowed_capabilities: [query_status, pull_logs]   # submit_job NOT here -> needs explicit binding + approval
+    allowed_skills: [server-query]
+    max_lease_duration_seconds: 7200
+    requires_human_approval: true                      # any LIVE SSH to the director's server
+    log_level: full_redacted
+  - resource_ref: api.semantic_scholar
+    project: "*"
+    allowed_capabilities: [paper_search, citation_existence]
+    max_lease_duration_seconds: 3600
+    requires_human_approval: false
+    log_level: usage_only
+  - resource_ref: api.openalex_crossref
+    project: "*"
+    allowed_capabilities: [paper_search, citation_existence]
+    max_lease_duration_seconds: 3600
+    requires_human_approval: false
+    log_level: usage_only
+  - resource_ref: api.ollama_local
+    project: "*"
+    allowed_capabilities: [mock_review]
+    max_lease_duration_seconds: 3600
+    requires_human_approval: false
+    log_level: usage_only
+  - resource_ref: tool.exa
+    project: "*"
+    allowed_capabilities: [web_search, web_fetch]
+    max_lease_duration_seconds: 3600
+    requires_human_approval: false
+    log_level: usage_only
+  - resource_ref: tool.websearch
+    project: "*"
+    allowed_capabilities: [web_search]
+    max_lease_duration_seconds: 3600
+    requires_human_approval: false
+    log_level: usage_only
+  - resource_ref: tool.context7
+    project: "*"
+    allowed_capabilities: [docs_lookup]
+    max_lease_duration_seconds: 3600
+    requires_human_approval: false
+    log_level: usage_only
+  - resource_ref: connector.notion
+    project: "*"
+    allowed_capabilities: [notion_read]                # write is bind-only, not policy-default
+    max_lease_duration_seconds: 3600
+    requires_human_approval: true
+    log_level: usage_only
+  - resource_ref: connector.gmail
+    project: "*"
+    allowed_capabilities: [mail_read]
+    max_lease_duration_seconds: 3600
+    requires_human_approval: true
+    log_level: usage_only
+  - resource_ref: connector.gdrive
+    project: "*"
+    allowed_capabilities: [drive_read]
+    max_lease_duration_seconds: 3600
+    requires_human_approval: true
+    log_level: usage_only
+  - resource_ref: connector.vercel
+    project: "*"
+    allowed_capabilities: [deploy_read]
+    max_lease_duration_seconds: 3600
+    requires_human_approval: true
+    log_level: usage_only

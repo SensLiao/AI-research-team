@@ -1,0 +1,100 @@
+# Shared Resource Pool — metadata + secret REFERENCES only (NEVER values).
+#
+# Every `secret_ref` / `endpoint_ref` / `*_ref` value is the NAME of a gitignored
+# research_agent_teams/.env variable (CLAUDE.md §6). This file holds NO credential. A value is
+# resolved only at connect time by the execute/connect layer — never by the resource plane, never
+# echoed to chat / logs / artifacts. The loader (tools/resources.py) REJECTS any *_ref that is not a
+# bare UPPER_SNAKE env-var name, so a real secret pasted here fails loudly instead of leaking.
+schema_version: 1
+resources:
+  # --- hardware ---------------------------------------------------------------------------------
+  - resource_id: server.honor.gpu
+    type: hardware.ssh_server
+    display_name: "Honor-degree GPU server (2x RTX A6000, Ubuntu, tmux scheduler)"
+    scope: shared
+    owner: director
+    auth: password                       # matches reality (no pubkey today)
+    endpoint_ref: RAT_SERVER_HOST
+    port_ref: RAT_SERVER_PORT
+    remote_workdir_ref: RAT_REMOTE_WORKDIR
+    secret_refs:
+      host: RAT_SERVER_HOST
+      user: RAT_SERVER_USER
+      password: RAT_SERVER_PASSWORD
+    capabilities: [query_status, pull_logs, submit_job]   # submit_job = live execute (gated)
+    default_policy: least_privilege
+    status: available
+
+  # --- research APIs ----------------------------------------------------------------------------
+  - resource_id: api.semantic_scholar
+    type: api_key
+    display_name: "Semantic Scholar Academic Graph API"
+    scope: shared
+    secret_refs: {api_key: RAT_S2_API_KEY}
+    capabilities: [paper_search, citation_existence]
+    budget: {monthly_limit_usd: null}
+    status: available
+  - resource_id: api.openalex_crossref
+    type: polite_pool
+    display_name: "OpenAlex / Crossref (polite pool, identified by contact email)"
+    scope: shared
+    secret_refs: {contact_mail: RAT_CONTACT_MAIL}
+    capabilities: [paper_search, citation_existence]
+    status: available
+  - resource_id: api.ollama_local
+    type: local_service
+    display_name: "Local Ollama (decorrelated mock-review seat)"
+    scope: shared
+    endpoint_ref: RAT_OLLAMA_URL
+    secret_refs: {model: RAT_OPENREVIEWER_MODEL}
+    capabilities: [mock_review]
+    status: available
+
+  # --- harness web tools (provided by Claude Code; no project-held secret) -----------------------
+  - resource_id: tool.exa
+    type: harness_connector
+    display_name: "Exa web search + fetch (Claude Code MCP)"
+    scope: shared
+    capabilities: [web_search, web_fetch]
+    note: "provided by the Claude Code harness; no project-held secret"
+    status: available
+  - resource_id: tool.websearch
+    type: harness_connector
+    display_name: "Harness WebSearch"
+    scope: shared
+    capabilities: [web_search]
+    note: "provided by the Claude Code harness; no project-held secret"
+    status: available
+  - resource_id: tool.context7
+    type: harness_connector
+    display_name: "Context7 library-docs lookup (MCP)"
+    scope: shared
+    capabilities: [docs_lookup]
+    note: "provided by the Claude Code harness; no project-held secret"
+    status: available
+
+  # --- personal connectors (scope: personal — explicit per-project binding + approval) -----------
+  - resource_id: connector.notion
+    type: harness_connector
+    display_name: "Notion (MCP, personal)"
+    scope: personal
+    capabilities: [notion_read, notion_write]
+    status: available
+  - resource_id: connector.gmail
+    type: harness_connector
+    display_name: "Gmail (MCP, personal)"
+    scope: personal
+    capabilities: [mail_read, mail_draft]
+    status: available
+  - resource_id: connector.gdrive
+    type: harness_connector
+    display_name: "Google Drive (MCP, personal)"
+    scope: personal
+    capabilities: [drive_read]
+    status: available
+  - resource_id: connector.vercel
+    type: harness_connector
+    display_name: "Vercel (MCP, personal)"
+    scope: personal
+    capabilities: [deploy_read]
+    status: available

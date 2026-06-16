@@ -1,0 +1,75 @@
+# Domain profile: recommender systems / information retrieval (a CS-research domain — NOT the system's target).
+# Validates against schemas/domain_profile.schema.json (payload).
+#
+# The defining leakage risk here is TEMPORAL: a random split lets the model train on future interactions
+# and predict the past, which never happens at serving time and silently inflates ranking metrics. This
+# profile mandates a TIME-BASED split (train on past, evaluate on strictly-later interactions), guards
+# cold-start (users/items unseen in training), and watches popularity bias (a "good" recommender that just
+# re-ranks popular items). Metrics are ranking metrics, all bounded [0,1].
+profile_id: cs-recsys-ir
+display_name: "Recommender systems / information retrieval (ranking, retrieval, top-k)"
+applies_to:
+  - recommender-systems
+  - information-retrieval
+  - learning-to-rank
+  - collaborative-filtering
+  - sequential-recommendation
+  - search-ranking
+split_policy:
+  # The split unit is the user's interaction timeline, cut at a TIMESTAMP: everything before the cut is
+  # train, everything strictly after is test (leave-last-n / global temporal split). external_test and
+  # freeze-before-training are mandatory to prevent retraining on the evaluation window.
+  default_split_unit: user_timeline
+  allowed_split_units: ["user_timeline", "session", "time_window", "query"]
+  # A random per-interaction / per-rating split puts future events in train and past in test — the
+  # canonical recsys leak. Splitting per item likewise lets the same user's future leak across the boundary.
+  forbidden_split_units: ["interaction", "rating", "click", "item"]
+  stratification_keys: ["user_activity_level", "item_popularity_bucket", "time_period"]
+  external_test_recommended: true
+  freeze_test_before_training: true
+leakage_checks:
+  # THE central one: the split is time-ordered — no training interaction is dated at/after any test interaction for that user.
+  - temporal_split_no_future_in_train
+  # Cold-start accounting: report performance on users and items unseen during training separately.
+  - cold_start_user_and_item_reported
+  # Target leakage: the candidate/feature set at scoring time must not include the held-out future interaction or post-cut signals.
+  - no_future_features_or_target_in_candidates
+  # Popularity-bias / sampled-metric sanity: negative sampling for ranking must be disclosed and consistent across methods.
+  - negative_sampling_disclosed_and_consistent
+leakage_delta: 0.5
+metrics:
+  # Ranking / retrieval metrics, all bounded [0,1]. Top-k cutoffs (@k) are reported in protocol_fields.
+  - {name: ndcg_at_k,      higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: recall_at_k,    higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: precision_at_k, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: mrr,            higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: map_at_k,       higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: hit_rate_at_k,  higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: coverage,       higher_is_better: true, valid_range: [0.0, 1.0]}
+alignment_invariants:
+  # Time-based split parity: the same temporal cut and the same train/test windows across all compared methods.
+  - "identical temporal split across compared methods — same timestamp cut and same train / validation / test windows so no method sees the future (temporal_split_parity)"
+  # Identical candidate generation + the same @k cutoffs and the same metric implementation across methods.
+  - "identical candidate generation, identical top-k cutoffs (@k), and identical metric implementation across compared methods (ranking_protocol_parity)"
+  # Negative sampling for evaluation (if used) is identical and disclosed across methods — sampled metrics are not compared against full-ranking metrics.
+  - "evaluation negative-sampling (if any) is identical and disclosed across methods, and sampled metrics are never compared against full-ranking metrics (eval_sampling_parity)"
+  # Cold-start segments reported: performance on cold (unseen) users / items is reported, not hidden inside a warm-heavy average.
+  - "performance on cold-start users and items is reported separately, not averaged away into a warm-user-dominated number (cold_start_reporting)"
+  # Popularity bias surfaced: report a popularity-debiased or beyond-accuracy metric (coverage / novelty / tail recall) alongside accuracy.
+  - "popularity bias is surfaced — a coverage / novelty / long-tail metric is reported alongside accuracy so a popular-item re-ranker is not mistaken for a good recommender (popularity_bias_note)"
+idea_grounding:
+  soundness_min: 0.5
+  contribution_min: 0.3
+protocol_fields:
+  evaluation:
+    split: "global temporal cut (train on past, test on strictly-later interactions)"
+    k_cutoffs: [5, 10, 20]
+    negative_sampling: "disclosed + identical across methods (prefer full-ranking where feasible)"
+    report_cold_start: ["unseen_user", "unseen_item"]
+    beyond_accuracy: ["coverage", "novelty", "long_tail_recall"]
+hard_invariants:
+  - "the split is TEMPORAL — train on past interactions, evaluate on strictly-later interactions; no future interaction is in any method's training data (temporal leakage is THE central risk)"
+  - "test set frozen before training; no post-cut features or held-out targets leak into the scoring candidate set"
+  - "identical temporal cut, identical candidate generation, identical @k cutoffs, and identical metric implementation across compared methods"
+  - "evaluation negative-sampling (if any) is identical and disclosed; sampled metrics are not compared against full-ranking metrics"
+  - "cold-start (unseen user / item) performance is reported separately and a popularity-bias / beyond-accuracy metric is reported alongside accuracy"

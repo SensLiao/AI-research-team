@@ -1,0 +1,14 @@
+# SSH endpoint metadata (NO secrets). Auth material is in .env (RAT_SERVER_PASSWORD); read only at
+# connect time by execute/runner.py. Mirrors the Honor-degree server facts (read-only monitoring).
+schema_version: 1
+servers:
+  server.honor.gpu:
+    host_ref: RAT_SERVER_HOST
+    port_ref: RAT_SERVER_PORT
+    user_ref: RAT_SERVER_USER
+    auth: password
+    known_hosts_ref: RAT_SERVER_KNOWN_HOSTS
+    remote_workdir_ref: RAT_REMOTE_WORKDIR
+    scheduler: tmux                 # honor_cron tmux session (not Slurm/PBS)
+    read_only_monitor: true         # server-query never runs rm/kill/mv/sudo
+    daily_reports_subdir: daily_reports   # <remote_workdir>/daily_reports/{snapshots,training_events,eval_results,logs}

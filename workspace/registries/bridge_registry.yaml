@@ -1,0 +1,47 @@
+schema_version: 1
+# Stage-transition bridges — the 6 hand-offs between the 7 FSM stages. A bridge turns the producing
+# stage's committed artifacts into the consuming stage's inputs. Readiness = from_stage committed AND
+# to_stage is the run's pending next stage (execution_registry.bridge_readiness).
+bridges:
+  - bridge_id: discover_to_ideate
+    from_stage: DISCOVER
+    to_stage: IDEATE
+    purpose: "turn the evidence + gap map into ranked idea candidates"
+    consumes: [evidence_table, gap_map]
+    produces: [idea_backlog]
+    required_skills: [gap_classify]
+  - bridge_id: ideate_to_design
+    from_stage: IDEATE
+    to_stage: DESIGN
+    purpose: "turn the chosen idea (after the /idea-bet gate) into an experiment design brief"
+    consumes: [idea_backlog]
+    produces: [selected_idea]
+    required_skills: []
+  - bridge_id: design_to_execute
+    from_stage: DESIGN
+    to_stage: EXECUTE
+    purpose: "turn the experiment protocol + scripts into a runnable job plan"
+    consumes: [experiment_protocol, run_scripts]
+    produces: [run_plan]
+    required_skills: [experiment_matrix_builder]
+  - bridge_id: execute_to_analyze
+    from_stage: EXECUTE
+    to_stage: ANALYZE
+    purpose: "turn raw logs / results into analyzable ledgers"
+    consumes: [run_record, raw_results]
+    produces: [result_analysis]
+    required_skills: []
+  - bridge_id: analyze_to_verify
+    from_stage: ANALYZE
+    to_stage: VERIFY
+    purpose: "turn the analysis into claim candidates + an audit package"
+    consumes: [result_analysis, failure_report]
+    produces: [claim_decisions]
+    required_skills: [claim_check]
+  - bridge_id: verify_to_report
+    from_stage: VERIFY
+    to_stage: REPORT
+    purpose: "turn the verified claims into the director-facing report"
+    consumes: [verification_report, claim_decisions]
+    produces: [report]
+    required_skills: []

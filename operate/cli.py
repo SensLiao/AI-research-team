@@ -28,7 +28,12 @@ from typing import Optional
 from . import spine
 from .artifacts import GateBlock
 from .modes import REGISTRY
+from ..tools import execution_registry as exreg
+from ..tools import lifecycle as lifecycle_tool
 from ..tools import projects as projects_tool
+from ..tools import resources as rp
+from ..tools import runstore
+from ..tools import workspace as ws_tool
 from ..tools.budget_tracker import BudgetExceeded
 from ..tools.runstore import find_run_dir
 from ..tools.scope_guard import discover_vault_root
@@ -293,6 +298,180 @@ def cmd_menu(a) -> None:
         print("  PIVOT: bet on none of these — re-scope the direction", file=sys.stderr)
 
 
+# --------------------------------------------------------------------------- execution granularity (W4)
+# Run ONE stage / skill / bridge mid-flight. These LAYER ON the begin/worker/run-dets/commit loop: they
+# never bypass a gate — they resolve the registry entry, locate the project's run, dependency-check
+# against the tamper-evident manifest, and either emit the worker/skill/bridge plan (ready) or the
+# repair menu (not ready, exit 3). The machine NEVER fabricates a missing input.
+
+def _resolve_run_id(a) -> str:
+    """The run to act on: explicit --run-id / --from-run, else the project's most recent run."""
+    rid = getattr(a, "run_id", None) or getattr(a, "from_run", None)
+    if rid:
+        return rid
+    runs = ws_tool.project_runs(a.project, a.runs_dir)
+    if not runs:
+        _emit({"error": f"no run found for project {a.project!r}", "ready": False,
+               "repair_actions": [f"operate begin --mode <mode> --project {a.project} --request \"...\""]})
+        sys.exit(3)
+    return runs[0]["run_id"]
+
+
+def cmd_run_stage(a) -> None:
+    rid = _resolve_run_id(a)
+    rd = _run_dir(a.runs_dir, rid)
+    try:
+        info = exreg.stage_readiness(rd, a.stage)
+        definition = exreg.load_stages().get(a.stage, {})
+    except (ValueError, FileNotFoundError) as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
+    out = {"unit": "stage", "run_id": rid, "project": a.project, "stage": a.stage,
+           "definition": definition, **info}
+    if info["ready"]:
+        out["next"] = f"operate worker --run-id {rid} --stage {a.stage}   (then run-dets, then commit)"
+        out["note"] = ("READY — this stage is the run's pending next step; drive it through the normal "
+                       "worker -> run-dets -> commit loop (the gates still run)")
+        _emit(out)
+        return
+    out["note"] = "NOT READY — do repair_actions first; the machine will NOT fabricate a missing input"
+    _emit(out)
+    sys.exit(3)
+
+
+def cmd_run_skill(a) -> None:
+    rid = _resolve_run_id(a)
+    rd = _run_dir(a.runs_dir, rid)
+    try:
+        info = exreg.skill_readiness(rd, a.skill)
+        definition = exreg.load_skills().get(a.skill, {})
+    except (ValueError, FileNotFoundError) as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
+    out = {"unit": "skill", "run_id": rid, "project": a.project, "skill": a.skill,
+           "definition": definition, **info}
+    if info["ready"]:
+        hint = ("delegates to the project-local `server-query` skill (read-only) — it needs a "
+                "primary_gpu binding + RAT_SERVER_QUERY_AUTHORIZED" if a.skill == "server_query" else
+                f"consumes {definition.get('consumes', [])} -> produces {definition.get('produces', [])}")
+        out["note"] = f"READY — run this skill within stage {info.get('stage', '?')}; {hint}"
+        _emit(out)
+        return
+    out["note"] = "NOT READY — do repair_actions first; nothing is fabricated"
+    _emit(out)
+    sys.exit(3)
+
+
+def cmd_run_bridge(a) -> None:
+    rid = _resolve_run_id(a)
+    rd = _run_dir(a.runs_dir, rid)
+    try:
+        info = exreg.bridge_readiness(rd, a.bridge)
+        definition = exreg.load_bridges().get(a.bridge, {})
+    except (ValueError, FileNotFoundError) as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
+    out = {"unit": "bridge", "run_id": rid, "project": a.project, "bridge": a.bridge,
+           "definition": definition, **info}
+    if info["ready"]:
+        out["note"] = (f"READY — bridge {info['from_stage']} -> {info['to_stage']}; "
+                       f"required_skills={definition.get('required_skills', [])}; commit {info['to_stage']} "
+                       "via the normal loop")
+        _emit(out)
+        return
+    out["note"] = "NOT READY — do repair_actions first; nothing is fabricated"
+    _emit(out)
+    sys.exit(3)
+
+
+# --------------------------------------------------------------------------- workspace + lifecycle + resources (W5)
+# Director-facing palette surface. Lifecycle wraps tools/lifecycle.py (the GUARDED archive/soft_delete/
+# hard_purge — never the raw projects.delete_project), resources wraps tools/resources.py (capability
+# view + scoping binds, NEVER a secret). The vault is never touched by any of these.
+
+def cmd_dashboard(a) -> None:
+    _emit(ws_tool.dashboard(a.project, projects_root=a.projects_dir, runs_dir=a.runs_dir, vault_root=a.vault))
+
+
+def cmd_index(a) -> None:
+    rows = ws_tool.project_index(projects_root=a.projects_dir, runs_dir=a.runs_dir, vault_root=a.vault,
+                                 include_hidden=a.include_hidden)
+    _emit({"projects": rows})
+
+
+def cmd_set_active(a) -> None:
+    st = ws_tool.set_active_project(a.project, a.ts or _ts(), ws_root=a.workspace_root)
+    _emit({"active_project": st.get("active_project"), "last_touched": st.get("last_touched")})
+
+
+def cmd_project_archive(a) -> None:
+    data = lifecycle_tool.archive(a.project, a.ts or _ts(), projects_root=a.projects_dir,
+                                  reason=a.reason or "")
+    _emit({"project": a.project, "lifecycle_status": data["status"],
+           "note": "hidden from the active picker; nothing deleted — fully reversible via project-restore"})
+
+
+def cmd_project_restore(a) -> None:
+    try:
+        data = lifecycle_tool.restore(a.project, a.ts or _ts(), projects_root=a.projects_dir,
+                                      workspace_root_path=a.workspace_root)
+    except ValueError as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
+    _emit({"project": a.project, "lifecycle_status": data["status"], "note": "back to active"})
+
+
+def cmd_project_soft_delete(a) -> None:
+    res = lifecycle_tool.soft_delete(a.project, a.ts or _ts(), projects_root=a.projects_dir,
+                                     workspace_root_path=a.workspace_root, reason=a.reason or "")
+    _emit({"project": a.project, **res})
+
+
+def cmd_project_purge(a) -> None:
+    """GUARDED physical removal of a project's machine-side scratch. Refuses unless hidden first + no
+    active run / no active lease / no promoted vault claims. The vault + shared pool are never touched."""
+    try:
+        res = lifecycle_tool.hard_purge(a.project, a.ts or _ts(), confirm=a.confirm,
+                                        projects_root=a.projects_dir, runs_dir=a.runs_dir,
+                                        vault_root=a.vault, workspace_root_path=a.workspace_root,
+                                        allow_promoted=a.allow_promoted)
+    except (ValueError, PermissionError) as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
+    _emit(res)
+
+
+def cmd_resources(a) -> None:
+    try:
+        pool = rp.pool_overview(scope=a.scope)
+    except (ValueError, FileNotFoundError) as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
+    out = {"resources": pool}
+    if a.project:
+        binds = rp.load_bindings(a.projects_dir, a.project)
+        bound = {b.get("resource_ref"): b.get("alias") for b in binds.get("bindings", []) if b.get("alias")}
+        for r in pool:
+            r["bound_as"] = bound.get(r["resource_id"])     # this project's alias, or None if unbound
+        out["project"] = a.project
+    _emit(out)
+
+
+def cmd_resource_bind(a) -> None:
+    split = lambda s: [x.strip() for x in (s or "").split(",") if x.strip()]   # noqa: E731
+    try:
+        binding = rp.add_binding(a.projects_dir, a.project, alias=a.alias, resource_ref=a.resource,
+                                 capabilities=split(a.capabilities), stages=split(a.stages),
+                                 skills=split(a.skills), requires_human_approval=a.requires_approval)
+    except (ValueError, FileNotFoundError) as exc:
+        _emit({"error": str(exc)})
+        sys.exit(2)
+    _emit({"project": a.project, "binding": binding,
+           "note": "binding scopes WHICH pool resource + capabilities a run may LEASE; the global "
+                   "default-deny policy still applies on top, and no secret is stored in the binding "
+                   "(the credential stays a .env reference on the resource)"})
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)         # shared opts available AFTER the subcommand
     common.add_argument("--runs-dir", default=DEFAULT_RUNS_DIR)
@@ -390,6 +569,103 @@ def build_parser() -> argparse.ArgumentParser:
     pd.add_argument("--vault", default=None)
     pd.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
     pd.set_defaults(func=cmd_project_delete)
+
+    rs = sub.add_parser("run-stage", parents=[common],
+                        help="run ONE FSM stage mid-flight (dependency-checked against the run manifest)")
+    rs.add_argument("--project", required=True, help="the project whose run to act on")
+    rs.add_argument("--stage", required=True, choices=runstore.STAGES)
+    rs.add_argument("--run-id", default=None, help="explicit run (default: the project's most recent run)")
+    rs.add_argument("--from-run", default=None, help="alias for --run-id (which run to operate on)")
+    rs.set_defaults(func=cmd_run_stage)
+
+    rk = sub.add_parser("run-skill", parents=[common],
+                        help="run ONE mid-stage skill (ready when its stage is current or committed)")
+    rk.add_argument("--project", required=True)
+    rk.add_argument("--skill", required=True, help="skill_id from workspace/registries/skill_registry.yaml")
+    rk.add_argument("--run-id", default=None)
+    rk.add_argument("--from-run", default=None)
+    rk.set_defaults(func=cmd_run_skill)
+
+    rbr = sub.add_parser("run-bridge", parents=[common],
+                         help="run ONE stage-transition bridge (ready when 'from' is committed + 'to' pending)")
+    rbr.add_argument("--project", required=True)
+    rbr.add_argument("--bridge", required=True, help="bridge_id from workspace/registries/bridge_registry.yaml")
+    rbr.add_argument("--run-id", default=None)
+    rbr.add_argument("--from-run", default=None)
+    rbr.set_defaults(func=cmd_run_bridge)
+
+    dsh = sub.add_parser("dashboard", parents=[common],
+                         help="per-project snapshot (current stage / blockers / recent runs / bound resources)")
+    dsh.add_argument("--project", required=True)
+    dsh.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    dsh.add_argument("--vault", default=None)
+    dsh.set_defaults(func=cmd_dashboard)
+
+    idx = sub.add_parser("index", parents=[common],
+                         help="all projects with lifecycle status + current stage (richer than project-list)")
+    idx.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    idx.add_argument("--vault", default=None)
+    idx.add_argument("--include-hidden", action="store_true", help="also show archived / soft-deleted")
+    idx.set_defaults(func=cmd_index)
+
+    sa = sub.add_parser("set-active", parents=[common], help="point the workspace at a project (pointer only)")
+    sa.add_argument("--project", required=True)
+    sa.add_argument("--workspace-root", default=None)
+    sa.set_defaults(func=cmd_set_active)
+
+    pa = sub.add_parser("project-archive", parents=[common],
+                        help="hide a project from the active picker (reversible; deletes nothing)")
+    pa.add_argument("--project", required=True)
+    pa.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    pa.add_argument("--reason", default=None)
+    pa.set_defaults(func=cmd_project_archive)
+
+    pr = sub.add_parser("project-restore", parents=[common],
+                        help="bring an archived / soft-deleted project back to active")
+    pr.add_argument("--project", required=True)
+    pr.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    pr.add_argument("--workspace-root", default=None)
+    pr.set_defaults(func=cmd_project_restore)
+
+    psd = sub.add_parser("project-soft-delete", parents=[common],
+                         help="reversible removal: hide + revoke the project's active leases; deletes nothing")
+    psd.add_argument("--project", required=True)
+    psd.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    psd.add_argument("--workspace-root", default=None)
+    psd.add_argument("--reason", default=None)
+    psd.set_defaults(func=cmd_project_soft_delete)
+
+    pp = sub.add_parser("project-purge", parents=[common],
+                        help="GUARDED physical removal of machine-side scratch (must be hidden first; "
+                             "refuses while active-run / active-lease / promoted; vault never touched)")
+    pp.add_argument("--project", required=True)
+    pp.add_argument("--confirm", required=True, help="must equal the project slug (typed confirmation)")
+    pp.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    pp.add_argument("--vault", default=None)
+    pp.add_argument("--workspace-root", default=None)
+    pp.add_argument("--allow-promoted", action="store_true",
+                    help="override the promoted-claims guard (machine scratch goes; vault pages stay)")
+    pp.set_defaults(func=cmd_project_purge)
+
+    rsc = sub.add_parser("resources", parents=[common],
+                         help="list the shared resource pool (capabilities only — no secrets) + project binds")
+    rsc.add_argument("--project", default=None, help="also show which resources this project binds")
+    rsc.add_argument("--scope", default=None, choices=["shared", "personal"])
+    rsc.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    rsc.set_defaults(func=cmd_resources)
+
+    rb = sub.add_parser("resource-bind", parents=[common],
+                        help="bind a pool resource (caps/stages/skills) to a project under default-deny")
+    rb.add_argument("--project", required=True)
+    rb.add_argument("--alias", required=True, help="the project-local name for this binding")
+    rb.add_argument("--resource", required=True, help="resource_id from the pool (e.g. api.semantic_scholar)")
+    rb.add_argument("--capabilities", required=True, help="comma-separated; must be a subset of the resource's")
+    rb.add_argument("--stages", default=None, help="comma-separated FSM stages this binding is allowed in")
+    rb.add_argument("--skills", default=None, help="comma-separated skills this binding is allowed for")
+    rb.add_argument("--requires-approval", action="store_true",
+                    help="mark the binding as needing human approval at lease time")
+    rb.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    rb.set_defaults(func=cmd_resource_bind)
     return p
 
 
