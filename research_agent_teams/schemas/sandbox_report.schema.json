@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/sandbox_report.schema.json",
+  "title": "Sandbox Report",
+  "description": "EXECUTE-stage artifact. Output of sandbox-runner. Emits a smoke-test script and records the outcome once the script is externally executed. Because fenced agents cannot run Bash/GPU, smoke_passed is nullable and defaults to null until a real server runs the script. The report is valid before external execution — it records the script and invocation command for the out-of-band step.",
+  "type": "object",
+  "required": ["condition_id", "smoke_script"],
+  "additionalProperties": false,
+  "properties": {
+    "condition_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The experiment condition this smoke test targets."
+    },
+    "from_implementation_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Reference to the implementation_record being smoke-tested."
+    },
+    "smoke_script": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The actual runnable smoke-test script (code, not prose). Emitted as an artifact for out-of-band execution on a real server."
+    },
+    "invoke_command": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Shell command to execute the smoke_script (e.g. 'python smoke_test.py')."
+    },
+    "smoke_passed": {
+      "type": ["boolean", "null"],
+      "default": null,
+      "description": "Null until the script is externally executed. True = passed, False = failed. Fenced agents cannot set this — it is filled by an out-of-band runner."
+    },
+    "exit_code": {
+      "type": ["integer", "null"],
+      "default": null,
+      "description": "Exit code from the external run. Null until executed."
+    },
+    "stdout_tail": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Last N lines of stdout from the external run. Null until executed."
+    },
+    "stderr_tail": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Last N lines of stderr from the external run. Null until executed."
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Any notes on what the script tests, known limitations, or expected output."
+    }
+  }
+}

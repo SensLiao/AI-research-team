@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/idea_grounding_report.schema.json",
+  "title": "Idea Grounding Report",
+  "description": "IDEATE/VERIFY-stage artifact (absorption wave 1; ScholarEval pattern). Output of tools/idea_grounding.py: retrieval-grounded soundness / contribution signals per idea, derived from how the idea's evidence refs intersect live-retrieved neighbors. SCORE-ONLY discipline (novelty-paradox guard): EVERY input idea appears in the output, none are dropped or filtered, no verdict field — thresholds (from profiles/*.yaml) only annotate, never cut. The director ranks/bets at /idea-bet.",
+  "type": "object",
+  "required": ["ideas", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "ideas": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["idea_id", "soundness", "contribution", "grounded_refs", "n_neighbors"],
+        "additionalProperties": false,
+        "properties": {
+          "idea_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "soundness": {"type": "number", "minimum": 0, "maximum": 1, "description": "How well the idea's stated evidence is supported by retrieved literature (grounded-support density)."},
+          "contribution": {"type": "number", "minimum": 0, "maximum": 1, "description": "How far the idea sits from its retrieved neighbors (distinctness given grounding)."},
+          "grounded_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "The idea's evidence refs that were confirmed against retrieval (may be empty — that itself is signal)."},
+          "n_neighbors": {"type": "integer", "minimum": 0},
+          "below_threshold": {"type": "array", "items": {"type": "string", "enum": ["soundness", "contribution"]}, "description": "Annotation only (profile thresholds); NEVER a cut."},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "thresholds": {
+      "type": ["object", "null"],
+      "default": null,
+      "additionalProperties": false,
+      "properties": {
+        "soundness_min": {"type": "number", "minimum": 0, "maximum": 1},
+        "contribution_min": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "description": "Echo of the active profile's idea_grounding thresholds used for annotation."
+    },
+    "evidence_ref": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "pattern": "\\S"}}
+  }
+}

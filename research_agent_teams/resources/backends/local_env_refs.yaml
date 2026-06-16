@@ -1,0 +1,8 @@
+# resource_id -> the gitignored-.env variable NAMES that hold its secrets/endpoints.
+# Values live ONLY in research_agent_teams/.env (CLAUDE.md §6). This map is references-only.
+schema_version: 1
+map:
+  server.honor.gpu: [RAT_SERVER_HOST, RAT_SERVER_PORT, RAT_SERVER_USER, RAT_SERVER_PASSWORD, RAT_REMOTE_WORKDIR, RAT_SERVER_KNOWN_HOSTS]
+  api.semantic_scholar: [RAT_S2_API_KEY]
+  api.openalex_crossref: [RAT_CONTACT_MAIL]
+  api.ollama_local: [RAT_OLLAMA_URL, RAT_OPENREVIEWER_MODEL]

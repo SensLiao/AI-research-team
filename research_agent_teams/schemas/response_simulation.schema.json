@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/response_simulation.schema.json",
+  "title": "Response Simulation",
+  "description": "VERIFY-stage advisory artifact. Output of review-response-simulator. Simulates anticipated reviewer/editor attacks on the work and records whether each is defensible. Advisory only (decision D) — does not block. An attack with defensible:false is an honest signal to the director that the submission may struggle at that point.",
+  "type": "object",
+  "required": ["attacks"],
+  "additionalProperties": false,
+  "properties": {
+    "attacks": {
+      "type": "array",
+      "description": "list of anticipated reviewer attacks; each records whether the team can defend against it",
+      "items": {
+        "type": "object",
+        "required": ["attack_class", "attack_text", "defensible"],
+        "additionalProperties": false,
+        "properties": {
+          "attack_class": {
+            "type": "string",
+            "minLength": 1,
+            "description": "category of attack (e.g. insufficient_power, unfair_baseline, dataset_leakage, overclaim, eval_frame_mismatch, out_of_scope, reproducibility)"
+          },
+          "attack_text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the specific reviewer attack, phrased as the reviewer would phrase it"
+          },
+          "defensible": {
+            "type": "boolean",
+            "description": "true if the team has a solid rebuttal; false if this attack is currently indefensible (honest signal)"
+          },
+          "defense_argument": {
+            "type": "string",
+            "default": "",
+            "description": "the rebuttal argument; may be empty when defensible is false"
+          },
+          "severity_if_indefensible": {
+            "type": "string",
+            "enum": ["fatal", "major", "minor", "unknown"],
+            "default": "unknown",
+            "description": "estimated impact on acceptance if this attack cannot be answered"
+          }
+        }
+      }
+    },
+    "indefensible_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "count of attacks with defensible:false; informational only"
+    },
+    "simulation_notes": {
+      "type": "string",
+      "default": "",
+      "description": "optional notes on the simulation (e.g. which venue/conference was simulated)"
+    },
+    "run_ref": {
+      "type": "string",
+      "default": "",
+      "description": "reference to the run this simulation covers"
+    }
+  }
+}

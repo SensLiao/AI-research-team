@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/recall_note.schema.json",
+  "title": "Recall Note",
+  "description": "The RECALL-stage exit artifact (the M⇐D seam, read side). Output of recall.py / the machine-side /recall. Records what System D was asked and what it answered BY REFERENCE ONLY: each citation is a slug + content sha + section + a short 'supports' note. There is deliberately NO field for the DB page body — the recall_note never inlines System-D content into the run-store (blueprint §5; evidence-contract). A citation requires a non-empty slug + sha (no invented slug — evidence-contract clause 4). allOf: a non-silent recall must carry >=1 citation; a silent recall carries an optional 'closest' pointer instead.",
+  "type": "object",
+  "required": ["query", "citations", "confidence", "vault_silent"],
+  "additionalProperties": false,
+  "properties": {
+    "query": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "The topic / question recalled."
+    },
+    "citations": {
+      "type": "array",
+      "description": "By-reference citations into System D. Empty iff vault_silent. NEVER contains the DB page body.",
+      "items": {
+        "type": "object",
+        "required": ["slug", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "A lowercase-kebab slug that EXISTS in System-D index.md (never invented)."
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "description": "Content hash of the cited DB page at recall time (the 'by reference, with sha' anchor)."
+          },
+          "section": {
+            "type": "string",
+            "description": "Optional §heading within the page the citation points at."
+          },
+          "supports": {
+            "type": "string",
+            "description": "Optional short note on how this page supports the answer — a pointer, NOT a copy of the page body."
+          }
+        }
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "Recall confidence (evidence-contract clause 7)."
+    },
+    "vault_silent": {
+      "type": "boolean",
+      "description": "true when System D has nothing on the topic (recall must say so explicitly, never fabricate)."
+    },
+    "closest": {
+      "type": ["object", "null"],
+      "default": null,
+      "description": "For a silent recall: the closest existing page + how it differs.",
+      "additionalProperties": false,
+      "properties": {
+        "slug": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
+        "differs": {"type": "string"}
+      },
+      "required": ["slug", "differs"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["vault_silent"],
+        "properties": {"vault_silent": {"const": false}}
+      },
+      "then": {
+        "properties": {"citations": {"minItems": 1}}
+      }
+    }
+  ]
+}

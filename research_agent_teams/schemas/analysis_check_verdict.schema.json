@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/analysis_check_verdict.schema.json",
+  "title": "Analysis Check Verdict",
+  "description": "ANALYZE-stage check-panel artifact. Shared by fairness-auditor, compliance-auditor, and goal-alignment-checker via the panel_role discriminator (decision H — NOT named panel_verdict). pass is derived from violations: if violations is non-empty then pass MUST be false (allOf structural enforcement).",
+  "type": "object",
+  "required": ["panel_role", "pass", "violations"],
+  "additionalProperties": false,
+  "properties": {
+    "panel_role": {
+      "type": "string",
+      "enum": ["fairness", "compliance", "goal_alignment"],
+      "description": "Which check-panel agent produced this verdict"
+    },
+    "pass": {
+      "type": "boolean",
+      "description": "True iff no violations found — derived from violations, never hand-set"
+    },
+    "violations": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Human-readable violation descriptions; empty array means clean"
+    },
+    "checked_items": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "What items/conditions/claims were checked"
+    },
+    "notes": {
+      "type": "string",
+      "default": "",
+      "description": "Optional free-text notes from the auditor"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["violations"],
+        "properties": {"violations": {"minItems": 1}}
+      },
+      "then": {
+        "properties": {"pass": {"const": false}}
+      }
+    }
+  ]
+}

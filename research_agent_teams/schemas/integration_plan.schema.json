@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/integration_plan.schema.json",
+  "title": "Integration Plan",
+  "description": "DESIGN-stage artifact. Output of method-integration-planner. Declares how the new method integrates into the existing codebase relative to conditions. Schema enforces: exactly one condition must be the baseline with module:null; at least one non-baseline treatment condition must be present.",
+  "type": "object",
+  "required": ["research_question", "conditions"],
+  "additionalProperties": false,
+  "properties": {
+    "research_question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "from_matrix_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Reference to the experiment_matrix this plan integrates"
+    },
+    "conditions": {
+      "type": "array",
+      "minItems": 2,
+      "description": "Integration entries for each condition. Exactly one must have module:null (the baseline). At least one must NOT have module:null (a treatment).",
+      "items": {
+        "type": "object",
+        "required": ["condition_id", "module", "entry_point"],
+        "additionalProperties": false,
+        "properties": {
+          "condition_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "module": {
+            "type": ["string", "null"],
+            "description": "Python module path for this condition's method. null = this is the baseline (no new module needed)."
+          },
+          "entry_point": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Script or function entry point for this condition"
+          },
+          "patch_description": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "What code changes are needed to integrate this condition"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Required packages or modules"
+          },
+          "notes": {
+            "type": ["string", "null"],
+            "default": null
+          }
+        }
+      }
+    },
+    "shared_infra_notes": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Notes on shared infrastructure (data loaders, metrics, etc.) that must remain identical across conditions"
+    }
+  },
+  "allOf": [
+    {
+      "description": "Exactly one baseline condition (module:null) is required. minContains/maxContains on the same contains schema enforces the exactly-one constraint per JSON Schema draft 2020-12.",
+      "properties": {
+        "conditions": {
+          "contains": {
+            "type": "object",
+            "required": ["condition_id", "module", "entry_point"],
+            "properties": {
+              "module": {"type": "null"}
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      }
+    },
+    {
+      "description": "At least one treatment condition (module is a non-null string) is required. A plan with only baselines and no treatments is rejected.",
+      "properties": {
+        "conditions": {
+          "contains": {
+            "type": "object",
+            "required": ["condition_id", "module", "entry_point"],
+            "properties": {
+              "module": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

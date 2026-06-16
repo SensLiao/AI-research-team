@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/idea_tournament.schema.json",
+  "title": "Idea Tournament",
+  "description": "IDEATE-stage artifact. Output of idea-tournament-ranker. A complete round-robin pairwise tournament over a set of research ideas: every distinct pair plays exactly once (C(N,2) matchups), winner determined by score_key with stable tiebreak by idea_id. The ranking is by win-count DESC then idea_id (contiguous 1..N). NEVER a score mean — this is a real pairwise bracket. evidence_ref binds to the hypothesis_set or source the ideas came from (anti-slop). No selected/chosen/picked/winner-idea field: the director picks via the /idea-bet gate.",
+  "type": "object",
+  "required": ["matchups", "ranking", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "matchups": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every distinct pair plays once. C(N,2) matchups for N ideas. Each matchup records pair_a, pair_b, and winner (which must equal pair_a or pair_b — enforced by tournament_bracket.py and a test).",
+      "items": {
+        "type": "object",
+        "required": ["pair_a", "pair_b", "winner"],
+        "additionalProperties": false,
+        "properties": {
+          "pair_a": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "idea_id of the first participant"
+          },
+          "pair_b": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "idea_id of the second participant"
+          },
+          "winner": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "idea_id of the winner — MUST equal pair_a or pair_b. Enforced by tournament_bracket.py."
+          }
+        }
+      }
+    },
+    "ranking": {
+      "type": "array",
+      "minItems": 1,
+      "description": "All N ideas ranked by win-count DESC, then idea_id ASC as stable tiebreak. rank is contiguous 1..N.",
+      "items": {
+        "type": "object",
+        "required": ["idea_id", "rank", "wins"],
+        "additionalProperties": false,
+        "properties": {
+          "idea_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "idea_id matching the input idea"
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rank in the tournament, 1 = most wins. Assigned 1..N contiguously."
+          },
+          "wins": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of matchups won by this idea. Maximum N-1 (wins all)."
+          }
+        }
+      }
+    },
+    "evidence_ref": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Anti-slop: references to the hypothesis_set artifact or source(s) the ideas were drawn from. At least one required; each must be non-blank.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    }
+  }
+}

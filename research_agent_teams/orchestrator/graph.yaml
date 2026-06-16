@@ -1,0 +1,71 @@
+# The research-stage FSM (the macro pipeline the run progresses through).
+# The 7-segment spine (PARSE/RECALL/WORK/VERIFY/RECORD/REVIEW/REPORT) is the micro-protocol the
+# orchestrator engine runs WITHIN each stage; this graph is the stage-to-stage routing surface.
+# Dynamic routing picks an entry_stage + agent_subset; gated stages cannot be skipped (see router).
+known_artifact_types:
+  - task_frame
+  - domain_profile
+  - run_manifest
+  - ledger_event
+  - agent_run_log
+  - adr
+  - evidence_table
+  - idea_backlog
+  - experiment_matrix
+  - run_record
+  - result_summary
+  - review_report
+  - report_note
+
+stages:
+  DISCOVER:
+    allowed_agents: [lit-scout, model-dataset-scout, evidence-verifier, repo-code-verifier,
+                     literature-ingest, source-quality-ranker, claim-extractor, claim-evidence-linker,
+                     contradiction-miner, dataset-card-builder, staleness-auditor, citation-integrity-auditor,
+                     landscape-mapper, monitor, future-work-miner, weakness-spotter, white-space-mapper,
+                     cross-domain-transfer-scout, contrarian-angle-generator, gap-classifier, novelty-scorer]
+    blocking_gates: [evidence-verifier, citation-integrity-auditor]
+    exit_artifacts: [evidence_table]
+    next: IDEATE
+  IDEATE:
+    allowed_agents: [hypothesis-generator, idea-tournament-ranker, idea-evolver, feasibility-reranker, gap-classifier]
+    blocking_gates: []
+    exit_artifacts: [idea_backlog]
+    next: DESIGN
+  DESIGN:
+    allowed_agents: [rq-architect, experiment-planner, protocol-compiler, dataset-split-planner,
+                     data-protocol-designer, config-unifier, method-integration-planner, baseline-fairness-planner,
+                     variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor,
+                     statistics-power-auditor, decision-surfacer]
+    blocking_gates: [variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor]
+    exit_artifacts: [experiment_matrix]
+    next: EXECUTE
+  EXECUTE:
+    allowed_agents: [patch-planner, code-implementer, unit-test-writer, trainset-builder, testset-builder,
+                     preflight-checker, ablation-runner, experiment-journaler, train-test-parity-verifier,
+                     sandbox-runner, failure-triager, repro-runner, auto-debugger, experiment-tree-explorer,
+                     variable-touch-guard, monitor]
+    blocking_gates: [preflight-checker, train-test-parity-verifier, variable-touch-guard]
+    exit_artifacts: [run_record]
+    next: ANALYZE
+  ANALYZE:
+    allowed_agents: [result-analyzer, result-sanity-checker, baseline-comparison-auditor, variance-analyzer,
+                     fairness-auditor, compliance-auditor, goal-alignment-checker, failure-case-miner,
+                     figure-generator, visualization-auditor, claim-strength-calibrator, figure-vlm-critic]
+    blocking_gates: [result-sanity-checker]
+    exit_artifacts: [result_summary]
+    next: VERIFY
+  VERIFY:
+    allowed_agents: [review-configurator, methodology-reviewer, domain-reviewer, adversarial-reviewer,
+                     scientific-critic, review-synthesizer, synthesis-writer, contribution-ledger-builder,
+                     threats-to-validity-writer, review-response-simulator, venue-review-configurator,
+                     venue-selector, venue-reviewer-persona, area-chair-synthesizer,
+                     baseline-scout, sub-domain-historian]
+    blocking_gates: [adversarial-reviewer]
+    exit_artifacts: [review_report]
+    next: REPORT
+  REPORT:
+    allowed_agents: []
+    blocking_gates: []
+    exit_artifacts: [report_note]
+    next: null

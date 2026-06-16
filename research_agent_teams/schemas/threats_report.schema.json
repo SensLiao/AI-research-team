@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/threats_report.schema.json",
+  "title": "Threats Report",
+  "description": "VERIFY-stage producer artifact. Output of threats-to-validity-writer. Covers all four validity dimensions: internal, external, construct, statistical. check_threats_coverage.py refuses emission if any of the four dimensions is missing (fewer than 4 dims = coverage violations).",
+  "type": "object",
+  "required": ["threats"],
+  "additionalProperties": false,
+  "properties": {
+    "threats": {
+      "type": "array",
+      "minItems": 1,
+      "description": "list of validity threats; must cover all four dimensions (internal/external/construct/statistical) — check_threats_coverage.py enforces completeness",
+      "items": {
+        "type": "object",
+        "required": ["validity_dimension", "threat_text", "mitigation"],
+        "additionalProperties": false,
+        "properties": {
+          "validity_dimension": {
+            "type": "string",
+            "enum": ["internal", "external", "construct", "statistical"],
+            "description": "which validity dimension this threat belongs to; check_threats_coverage.py requires all four to appear"
+          },
+          "threat_text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "description of the specific threat to validity"
+          },
+          "mitigation": {
+            "type": "string",
+            "minLength": 1,
+            "description": "mitigation taken or proposed; 'none identified' is a valid value when no mitigation exists"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["high", "medium", "low", "unknown"],
+            "default": "unknown",
+            "description": "estimated severity of this threat"
+          }
+        }
+      }
+    },
+    "coverage_confirmed": {
+      "type": "boolean",
+      "default": false,
+      "description": "set to true only after check_threats_coverage confirms all four dimensions present"
+    },
+    "missing_dimensions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["internal", "external", "construct", "statistical"]
+      },
+      "default": [],
+      "description": "populated by check_threats_coverage.py with any dimension not covered"
+    },
+    "run_ref": {
+      "type": "string",
+      "default": "",
+      "description": "reference to the run this threats report covers"
+    }
+  }
+}

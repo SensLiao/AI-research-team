@@ -1,0 +1,52 @@
+# PhD Research OS — gitignore
+
+# Environment / build
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Obsidian local state (keep settings, ignore workspace state)
+.obsidian/workspace*
+.obsidian/cache
+.obsidian/graph.json
+
+# Generated outputs
+tmp/
+output/
+.codex-tasks/cache/
+
+# Bootstrap intake (project-specific; commit a sanitized copy if desired)
+bootstrap-intake.yml
+
+# Large artifacts — point to them via 08-artifact-manifests/, don't commit
+*.pdf
+*.nii.gz
+*.npz
+*.npy
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.parquet
+*.tar
+*.tar.gz
+*.zip
+
+# Allow specific PDFs in raw/ if you intentionally commit them (override per-project)
+!01-raw/papers/.gitkeep
+
+# Logs that shouldn't enter git history
+*.log
+07-logs/agent-session-log.md  # session-specific, regenerated each run

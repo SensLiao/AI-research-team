@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/report_note.schema.json",
+  "title": "Report Note",
+  "description": "REPORT-stage exit artifact (the reply segment, mandatory for every task per constitution rule 1). A concise director-facing summary plus references to everything produced — by reference, never inlining the database.",
+  "type": "object",
+  "required": ["summary", "references"],
+  "additionalProperties": false,
+  "properties": {
+    "summary": {"type": "string", "minLength": 1},
+    "references": {"type": "array", "items": {"type": "string"}},
+    "produced_artifacts": {"type": "array", "items": {"type": "string"}, "default": []},
+    "open_questions": {"type": "array", "items": {"type": "string"}, "default": []}
+  }
+}

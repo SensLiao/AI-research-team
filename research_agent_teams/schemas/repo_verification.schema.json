@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/repo_verification.schema.json",
+  "title": "Repository Verification",
+  "description": "Output of repo-code-verifier. Establishes whether a cited code repo actually exists with usable code/license/pinned-commit/weights, and whether pretrained loads were grepped. UNVERIFIED/BLOCK when material facts are missing — a paper's 'code available' claim is not trusted without these.",
+  "type": "object",
+  "required": ["verdict", "repo_ref", "checks"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["VERIFIED", "UNVERIFIED", "BLOCK"]},
+    "repo_ref": {"type": "string", "minLength": 1},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["has_code", "has_license", "has_pinned_commit", "has_weights"],
+      "properties": {
+        "has_code": {"type": "boolean"},
+        "has_license": {"type": "boolean"},
+        "license_id": {"type": ["string", "null"], "default": null},
+        "has_pinned_commit": {"type": "boolean"},
+        "commit": {"type": ["string", "null"], "default": null},
+        "has_weights": {"type": "boolean"},
+        "pretrained_loads_grepped": {"type": "boolean", "default": false}
+      }
+    },
+    "missing": {"type": "array", "items": {"type": "string"}, "default": []}
+  }
+}

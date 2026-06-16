@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/landscape_map.schema.json",
+  "title": "Landscape Map",
+  "description": "DISCOVER-stage typed artifact. Output of landscape-mapper. A structured map of the research landscape: methods, baselines, datasets, and open gaps. The coverage_gaps field must be present; an uncovered method or direction is recorded there.",
+  "type": "object",
+  "required": ["domain_query", "methods", "coverage_gaps"],
+  "additionalProperties": false,
+  "properties": {
+    "domain_query": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the research area or question this landscape covers"
+    },
+    "methods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["method_id", "name", "covered_by_sources"],
+        "additionalProperties": false,
+        "properties": {
+          "method_id": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "covered_by_sources": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "source_refs that discuss this method"
+          },
+          "representative_result": {"type": ["string", "null"], "default": null},
+          "notes": {"type": "string", "default": ""}
+        }
+      },
+      "default": []
+    },
+    "datasets_in_landscape": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["dataset_ref", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "dataset_ref": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "usage_count": {"type": ["integer", "null"], "minimum": 0, "default": null}
+        }
+      },
+      "default": []
+    },
+    "coverage_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "gap_id": {"type": "string", "minLength": 1},
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "what method, domain, dataset, or question is NOT covered by current sources"
+          },
+          "gap_kind": {
+            "type": "string",
+            "enum": ["method", "dataset", "domain", "evaluation", "reproducibility", "other"],
+            "default": "other"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor"],
+            "default": "minor"
+          }
+        }
+      },
+      "description": "gaps in the current landscape — each uncovered method/direction appears here"
+    },
+    "n_methods_found": {"type": ["integer", "null"], "minimum": 0, "default": null},
+    "n_gaps_identified": {"type": ["integer", "null"], "minimum": 0, "default": null}
+  }
+}

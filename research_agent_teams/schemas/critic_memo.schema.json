@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/critic_memo.schema.json",
+  "title": "Critic Memo",
+  "description": "VERIFY-stage producer artifact. Output of scientific-critic. Cross-examines the panel_reviews for internal contradictions, unresolved tensions, and gaps not covered by either reviewer. Flags items that must be resolved before synthesis can APPROVE.",
+  "type": "object",
+  "required": ["cross_findings", "block_flags"],
+  "additionalProperties": false,
+  "properties": {
+    "cross_findings": {
+      "type": "array",
+      "description": "items where the two reviewers contradict each other or one reviewer's finding undermines the other's PASS judgment",
+      "items": {
+        "type": "object",
+        "required": ["description", "involved_lenses"],
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "human-readable description of the tension or contradiction"
+          },
+          "involved_lenses": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["methodology", "domain"]},
+            "minItems": 1,
+            "description": "which reviewers are involved"
+          },
+          "resolution_path": {
+            "type": "string",
+            "default": "",
+            "description": "suggested path to resolve this tension (may be empty if critic cannot suggest one)"
+          }
+        }
+      }
+    },
+    "block_flags": {
+      "type": "array",
+      "description": "explicit block signals that synthesis cannot APPROVE without documented rebuttal; derived from severity-BLOCK findings + unresolved contradictions",
+      "items": {
+        "type": "object",
+        "required": ["flag_text", "source"],
+        "additionalProperties": false,
+        "properties": {
+          "flag_text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "one-line statement of the blocking issue"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "where this block flag originates: reviewer finding id, cross-finding, or critic's own assessment"
+          },
+          "defensible_path": {
+            "type": "string",
+            "default": "",
+            "description": "minimal change that would make this flag defensible; empty if critic sees no path"
+          }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "topics not covered by either reviewer that the critic considers important"
+    },
+    "critic_notes": {
+      "type": "string",
+      "default": "",
+      "description": "free-form additional commentary from the scientific critic"
+    }
+  }
+}

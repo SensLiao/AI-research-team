@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/invalidation_record.schema.json",
+  "title": "Invalidation Record",
+  "description": "Contradiction-mining structured landing artifact (absorption wave 1; Graphiti bi-temporal invalidate-don't-delete pattern). When evidence_deep's contradiction mining finds that a vault claim is contradicted/superseded by newer evidence, it emits THIS record as the machine-side proposal: which claim, invalidated by what, since when, on what basis. It reaches the vault ONLY via /promote-to-vault (the director reviews and the promote gate applies the bi-temporal fields to the claim page — the claim is never deleted, it is invalidated with provenance). Slugs must be real vault slugs (evidence-contract: never invent a slug).",
+  "type": "object",
+  "required": ["claim_slug", "invalidated_by_slug", "edge_type", "invalid_at", "basis", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "claim_slug": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "description": "The vault claim page being invalidated (existing slug, never invented)."},
+    "invalidated_by_slug": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "description": "The vault page (paper/result/claim) that contradicts or supersedes it."},
+    "edge_type": {"type": "string", "enum": ["refutes", "supersedes"], "description": "Typed edge (Graphiti absorption): refutes = direct contradiction; supersedes = newer result replaces it."},
+    "invalid_at": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "When the claim stopped holding (ISO date or the superseding work's publication date) — bi-temporal validity, caller-supplied."},
+    "basis": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "The concrete contradiction evidence (what the newer source reports vs what the claim asserts)."},
+    "evidence_ref": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "pattern": "\\S"}}
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/rq_hypothesis_chain.schema.json",
+  "title": "RQ Hypothesis Chain",
+  "description": "DESIGN-stage artifact. Output of rq-architect. Decomposes a research question into a chain of testable hypotheses, each with a falsifiable prediction and the evidence needed to test it. A chain missing a falsifiable_prediction or evidence_needed is schema-rejected.",
+  "type": "object",
+  "required": ["research_question", "hypotheses"],
+  "additionalProperties": false,
+  "properties": {
+    "research_question": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The top-level research question being decomposed"
+    },
+    "hypotheses": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered chain of testable hypotheses; each must be independently falsifiable",
+      "items": {
+        "type": "object",
+        "required": ["hypothesis_id", "statement", "falsifiable_prediction", "evidence_needed"],
+        "additionalProperties": false,
+        "properties": {
+          "hypothesis_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Short identifier, e.g. H1, H2"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Declarative statement of what the hypothesis claims"
+          },
+          "falsifiable_prediction": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Concrete, observable, falsifiable prediction — what specifically would be observed if the hypothesis is true vs false"
+          },
+          "evidence_needed": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+            "description": "List of evidence types or experiments needed to test this hypothesis"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "hypothesis_ids this hypothesis logically depends on"
+          },
+          "notes": {
+            "type": ["string", "null"],
+            "default": null
+          }
+        }
+      }
+    },
+    "rq_notes": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional clarifications about the research question scope or assumptions"
+    }
+  }
+}

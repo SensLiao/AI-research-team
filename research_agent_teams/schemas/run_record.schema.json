@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/run_record.schema.json",
+  "title": "Run Record",
+  "description": "EXECUTE-stage exit artifact. Output of ablation-runner. Records one run's provenance (config/data/git/seed hashes) and any provisional metrics. Hard ceiling: status is 'planned' or 'provisional' only — a runner never freezes a result.",
+  "type": "object",
+  "required": ["condition_id", "status", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "condition_id": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["planned", "provisional"]},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["config_hash"],
+      "properties": {
+        "config_hash": {"type": "string", "minLength": 1},
+        "data_hash": {"type": ["string", "null"], "default": null},
+        "git_sha": {"type": ["string", "null"], "default": null},
+        "seed": {"type": ["integer", "null"], "default": null}
+      }
+    },
+    "metrics": {"type": "object", "default": {}},
+    "notes": {"type": "string"}
+  }
+}

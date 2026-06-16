@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/citation_integrity_verdict.schema.json",
+  "title": "Citation Integrity Verdict",
+  "description": "DISCOVER-stage hard-gate artifact. Output of citation-integrity-auditor. Derived mechanically from citation_checker.py over claim_list + claim_evidence_map. BLOCKs when: (1) a claim has no valid locus, (2) a locus has supports_claim=false (the linker read reported_result and judged the locus contradicting), (3) a locus has supports_claim omitted (linker must decide — conservative BLOCK), or (4) a ref is unresolvable. There is NO automatic numeric comparison — contradiction detection is the linker's explicit supports_claim decision, enforced deterministically by the gate. verdict BLOCK halts the DISCOVER stage.",
+  "type": "object",
+  "required": ["verdict", "violations"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+    "violations": {"type": "array", "items": {"type": "string"}},
+    "unresolvable_refs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "refs that could not be resolved to a real source"
+    },
+    "no_locus_claims": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "claim_ids that have no mapping in the claim_evidence_map or have only empty loci"
+    },
+    "contradicted_claims": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "claim_ids where a locus contradicts the claim: a locus has supports_claim=false (the linker read reported_result and judged it contradicting) or supports_claim is omitted (linker failed to decide — conservative BLOCK)"
+    },
+    "n_claims_checked": {"type": ["integer", "null"], "minimum": 0, "default": null}
+  },
+  "allOf": [
+    {
+      "if": {"required": ["violations"], "properties": {"violations": {"minItems": 1}}},
+      "then": {"properties": {"verdict": {"const": "BLOCK"}}}
+    }
+  ]
+}

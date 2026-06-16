@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/artifact_envelope.schema.json",
+  "title": "Artifact Envelope",
+  "description": "Universal wrapper every Research OS artifact MUST carry. Domain-agnostic. Constitution Rule: no artifact without an envelope; every artifact has hash + upstream + status + schema_version.",
+  "type": "object",
+  "required": ["artifact_id", "artifact_type", "schema_version", "created_by", "created_at", "status", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "artifact_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable unique id, e.g. task_frame-2026-06-08T14-22-04Z-d8f3"
+    },
+    "artifact_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Logical type; selects the payload schema, e.g. task_frame, domain_profile, split_manifest"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "SemVer of the payload schema this artifact validates against"
+    },
+    "created_by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Agent name, 'orchestrator', or 'human'"
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO-8601 UTC timestamp, e.g. 2026-06-08T14:22:04Z"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "blocked", "approved", "frozen"],
+      "description": "Lifecycle status; only approved/frozen may flow downstream per gate rules"
+    },
+    "input_artifact_hashes": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Upstream provenance: output_hash of every artifact this one derives from"
+    },
+    "output_hash": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Canonical hash of payload, set by tools/hash_artifact; null until hashed"
+    },
+    "domain_profile_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "profile_id of the active domain profile, when this artifact is domain-bound"
+    },
+    "payload": {
+      "type": "object",
+      "description": "The typed content, validated against the schema named by artifact_type"
+    }
+  }
+}

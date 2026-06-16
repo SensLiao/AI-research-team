@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/transfer_candidates.schema.json",
+  "title": "Transfer Candidates",
+  "description": "DISCOVER-stage artifact. Output of cross-domain-transfer-scout. Lists candidate methods or ideas from one domain that could be transferred to the target research domain. Each candidate carries source_domain + target_hook, so it is a direct classify_gap signal that maps to (transfer_gap, XFER_BIND) — rule 1 in the priority table (highest precedence). An empty candidates array is allowed (the surveyed work may have no identifiable transfer opportunities). Every present item carries at least one non-blank evidence_ref (anti-slop).",
+  "type": "object",
+  "required": ["candidates"],
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "description": "Cross-domain transfer candidates; each carries source_domain + target_hook so classify_gap can consume it directly.",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "source_domain", "target_hook", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "gap_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Short unique identifier, e.g. XF-001."
+          },
+          "source_domain": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The domain the method or idea originates from. Non-blank required."
+          },
+          "target_hook": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The specific problem or technique in the target domain where the transfer would apply. Non-blank required."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "description": "Evidence pointers grounding this transfer candidate (anti-slop). At least one required; each must be non-blank."
+          },
+          "method_ref": {
+            "type": "string",
+            "description": "Optional reference to the specific method or paper in the source domain."
+          }
+        }
+      }
+    }
+  }
+}

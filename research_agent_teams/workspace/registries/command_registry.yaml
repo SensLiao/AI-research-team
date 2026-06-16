@@ -1,0 +1,60 @@
+schema_version: 1
+# Command palette — the director-facing slash commands (.claude/commands/*.md) and the operate CLI verb
+# each one drives. Single source of truth for what the palette offers. Slash names are FROZEN
+# (build-contract Naming Freeze). `handler` = the `python -m research_agent_teams.operate <verb>` it
+# wraps (or a human gate in gates/*.md, or the server-query skill). Destructive commands set
+# disable_model_invocation: true — only the director runs them, with a typed confirmation.
+commands:
+  - command: start-research
+    description: "Open the workspace: dashboard + project picker, then route the request to a mode"
+    handler: "operate dashboard / operate index"
+    model_invocable: true
+  - command: project-new
+    description: "Registry-check + create a project's machine-side workspace (projects/<slug>/)"
+    handler: "operate project-init"
+    args: [--project]
+  - command: project-list
+    description: "List every project (registry + workspaces + runs) with lifecycle status + current stage"
+    handler: "operate index"
+    args: [--include-hidden]
+  - command: project-archive
+    description: "Hide a project from the active picker (fully reversible via project-restore)"
+    handler: "operate project-archive"
+    args: [--project]
+  - command: project-delete
+    description: "GUARDED removal of a project's machine-side scratch (soft-delete -> purge); the vault is NEVER touched"
+    handler: "operate project-soft-delete  then  operate project-purge --confirm <slug>"
+    args: [--project, --confirm]
+    disable_model_invocation: true
+  - command: project-restore
+    description: "Bring an archived / soft-deleted project back to active"
+    handler: "operate project-restore"
+    args: [--project]
+  - command: run-mode
+    description: "Start a full mode run (the 7 wired modes: new_direction / gap_breadth / evidence_* / venue_readiness / full_rigor_minimal)"
+    handler: "operate begin"
+    args: [--mode, --project, --request]
+  - command: run-stage
+    description: "Run ONE FSM stage mid-flight (dependency-checked against the run manifest; never fabricates a missing input)"
+    handler: "operate run-stage"
+    args: [--project, --stage]
+  - command: run-skill
+    description: "Run ONE mid-stage skill (ready when its stage is current or committed)"
+    handler: "operate run-skill"
+    args: [--project, --skill]
+  - command: run-bridge
+    description: "Run ONE stage-transition bridge (ready when 'from' is committed and 'to' is pending)"
+    handler: "operate run-bridge"
+    args: [--project, --bridge]
+  - command: resources
+    description: "List the shared resource pool + what this project binds (capabilities only; no secrets)"
+    handler: "operate resources"
+    args: [--project, --scope]
+  - command: resource-bind
+    description: "Bind a pool resource (capabilities/stages/skills) to a project under default-deny policy"
+    handler: "operate resource-bind"
+    args: [--project, --alias, --resource, --capabilities, --stages, --skills, --requires-approval]
+  - command: server-query
+    description: "Read-only GPU server status (delegates to the server-query skill; live SSH gated by RAT_SERVER_QUERY_AUTHORIZED)"
+    handler: "skill server-query  /  python -m research_agent_teams.server_monitor"
+    args: [--project, --live]

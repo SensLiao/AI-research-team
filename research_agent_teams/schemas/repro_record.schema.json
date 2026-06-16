@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/repro_record.schema.json",
+  "title": "Reproduction Record",
+  "description": "EXECUTE-stage artifact. Output of repro-runner. Locks the exact provenance triple (seed + config_hash + data_hash) required to reproduce a specific run result. All three fields are required and non-null — a repro_record without any of them is not a valid reproduction package.",
+  "type": "object",
+  "required": ["condition_id", "seed", "config_hash", "data_hash"],
+  "additionalProperties": false,
+  "properties": {
+    "condition_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The experiment condition being reproduced."
+    },
+    "from_run_record_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional reference to the run_record this repro targets."
+    },
+    "seed": {
+      "type": "integer",
+      "description": "The fixed random seed used for this reproduction. Required and non-null — a repro without a locked seed is not reproducible."
+    },
+    "config_hash": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Hash of the exact config file used. Required and non-null."
+    },
+    "data_hash": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Hash of the exact dataset used. Required and non-null."
+    },
+    "git_sha": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Git commit SHA of the codebase used for this run."
+    },
+    "repro_script": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "The runnable script to reproduce the run (emitted as artifact, executed out-of-band)."
+    },
+    "repro_passed": {
+      "type": ["boolean", "null"],
+      "default": null,
+      "description": "Null until externally executed. True = reproduction matched expected result, False = diverged."
+    },
+    "result_delta": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "If repro_passed is False, description of the divergence observed."
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Any caveats about the reproduction setup (environment, hardware, etc.)."
+    }
+  }
+}

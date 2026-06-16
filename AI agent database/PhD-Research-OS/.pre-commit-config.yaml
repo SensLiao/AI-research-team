@@ -1,0 +1,30 @@
+repos:
+  - repo: local
+    hooks:
+      - id: lint-vault
+        name: Lint vault frontmatter and links
+        entry: python 06-scripts/lint_vault.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+
+      - id: check-citation-gate
+        name: Check result citation gate consistency
+        entry: python 06-scripts/check_citation_gate.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict

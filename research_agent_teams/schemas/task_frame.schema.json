@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/task_frame.schema.json",
+  "title": "Task Frame",
+  "description": "PARSE-stage output: the structured, declarative plan for ONE task (mode + entry-stage + agent subset + gate level + budget). Domain-agnostic. This is the lightweight 'plan' the orchestrator emits; it is NOT a free-form planning doc.",
+  "type": "object",
+  "required": ["task_id", "mode", "entry_stage", "agent_subset", "gate_level", "budget"],
+  "additionalProperties": false,
+  "properties": {
+    "task_id": {"type": "string", "minLength": 1},
+    "project": {
+      "type": ["string", "null"],
+      "default": null,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 50,
+      "description": "The research project (lowercase-kebab slug, registered in the vault's 05-registry/project-registry.md) this run belongs to. Groups the run under runs/<project>/<run_id>/. null = legacy flat layout (pre-project runs / isolated tests)."
+    },
+    "mode": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Routing mode, e.g. check_run, design_experiment, evidence_review, gap_scan"
+    },
+    "request_text": {
+      "type": "string",
+      "description": "Original director request, verbatim"
+    },
+    "north_star": {
+      "type": "object",
+      "description": "The run's immutable direction contract (audit H2 fix). Pinned at PARSE, hashed into the ledger (task_frame_pinned event), injected into every worker prompt, and enforced per stage by tools/drift_gate.py. Only the director re-scopes a run.",
+      "required": ["statement"],
+      "additionalProperties": false,
+      "properties": {
+        "statement": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "One sentence: the ONLY direction of this run (defaults to request_text when the director gives no separate statement)"},
+        "in_scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": [], "description": "Topics/terms explicitly inside the direction (extra drift-gate anchor vocabulary)"},
+        "out_of_scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": [], "description": "Topics explicitly excluded — their appearance in any stage output is a hard drift violation"}
+      }
+    },
+    "entry_stage": {
+      "type": "string",
+      "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"],
+      "description": "Where this task enters the spine; upstream stages may be skipped (recorded), gated stages may not"
+    },
+    "stage_path": {
+      "type": "array",
+      "items": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]},
+      "description": "Optional explicit forward-only subset of stages this mode drives, starting at entry_stage and ending at REPORT. When absent, the engine drives every stage from entry_stage to REPORT (default full tail). Lets a mode express its true shape, e.g. evidence_review = [DISCOVER, REPORT] (forward-skip of experiment stages). Gated stages are never silently dropped — a director_signoff task must keep its entry stage's hard gates (router enforces)."
+    },
+    "agent_subset": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "minItems": 1,
+      "description": "Which agents this task activates (the WORK slot). Even a tiny task names >=1 worker."
+    },
+    "gate_level": {
+      "type": "string",
+      "enum": ["auto", "record_only", "director_signoff"],
+      "description": "How hard the REVIEW gate is: auto (low-risk reversible), record_only (audit line), director_signoff (irreversible / truth-claim)"
+    },
+    "model_policy": {
+      "type": "string",
+      "enum": ["default", "max_quality"],
+      "default": "default",
+      "description": "Model-allocation mode for this run. default = task-appropriate per-agent (opus for judgment/hard-gates/sign-off, sonnet for execution; haiku never used). max_quality = every reasoning agent forced to opus (director opt-in). model:none deterministic agents are unaffected by either mode."
+    },
+    "domain_profile_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Active domain profile id (profiles/*.yaml); null for domain-neutral tasks"
+    },
+    "budget": {
+      "type": "object",
+      "description": "Stopping conditions; prevents unbounded research sprawl (budget-and-stop-controller)",
+      "additionalProperties": false,
+      "required": ["max_agent_hops"],
+      "properties": {
+        "max_agent_hops": {"type": "integer", "minimum": 1},
+        "max_iterations_without_new_evidence": {"type": "integer", "minimum": 1, "default": 2},
+        "max_fulltext_reads": {"type": ["integer", "null"], "minimum": 0, "default": null},
+        "max_gpu_runs_before_review": {"type": ["integer", "null"], "minimum": 0, "default": null},
+        "max_debug_retries_per_run": {"type": "integer", "minimum": 0, "default": 2}
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/evidence_table.schema.json",
+  "title": "Evidence Table",
+  "description": "DISCOVER-stage exit artifact. Output of lit-scout: the graded set of sources gathered for a query, plus a snowball-saturation flag. Domain-agnostic. The evidence-verifier hard gate reads this to decide PASS/BLOCK; sources are carried by reference, never inlined.",
+  "type": "object",
+  "required": ["query", "sources", "saturation_reached"],
+  "additionalProperties": false,
+  "properties": {
+    "query": {"type": "string", "minLength": 1},
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "ref"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "title": {"type": "string"},
+          "kind": {"type": "string", "enum": ["paper", "repo", "dataset", "benchmark", "blog", "doc"]},
+          "year": {"type": ["integer", "null"], "default": null},
+          "ref": {"type": "string", "minLength": 1, "description": "[[slug]]+sha, DOI, arXiv id, or URL — a resolvable reference, never inlined content"},
+          "claim_support": {"type": "string", "enum": ["strong", "moderate", "weak", "none"], "default": "none"},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "saturation_reached": {"type": "boolean", "description": "true when snowball search stopped surfacing new relevant sources"},
+    "n_sources": {"type": ["integer", "null"], "minimum": 0, "default": null}
+  }
+}

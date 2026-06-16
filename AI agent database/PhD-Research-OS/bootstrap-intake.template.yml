@@ -1,0 +1,58 @@
+# Bootstrap intake — copy this file to `bootstrap-intake.yml` and fill all 12 fields.
+# Then run: python 06-scripts/bootstrap.py
+
+# 1. Project slug — lowercase-kebab, no spaces. Used in `project:` frontmatter everywhere.
+project_slug: ""
+
+# 2. Human-readable project title.
+project_title: ""
+
+# 3. Phase: undergraduate-thesis | masters-thesis | phd-chapter | phd-program | postdoc | independent
+phase: ""
+
+# 4. Supervisor / advisor name (or empty if independent).
+supervisor: ""
+
+# 5. Domain — 1-3 keywords (e.g., medical-imaging, nlp, robotics, hci).
+domain:
+  - ""
+
+# 6. Primary research questions — short imperative form.
+research_questions:
+  - id: RQ1
+    text: ""
+  - id: RQ2
+    text: ""
+
+# 7. Intended thesis-level contributions.
+contributions:
+  - id: C1
+    text: ""
+    serves_rq: [RQ1]
+  - id: C2
+    text: ""
+    serves_rq: [RQ1]
+
+# 8. Primary methods you will use / build (placeholder; can grow).
+methods_planned:
+  - ""
+
+# 9. Primary datasets / corpora (placeholder; can grow).
+datasets_planned:
+  - ""
+
+# 10. Reproducibility commitment level: full | partial | minimal
+#    full = git commit + container digest + data hash + env lock for every run
+#    partial = git commit + env lock only
+#    minimal = git commit only
+reproducibility_level: ""
+
+# 11. Citation gate strictness: strict | moderate | lenient
+#    strict   = can-cite-thesis requires frozen + leakage-pass + fairness-pass + reproducibility-pass
+#    moderate = frozen + leakage-pass + fairness-pass
+#    lenient  = frozen only
+citation_gate: ""
+
+# 12. Stakeholders the vault must be readable to (besides the user).
+stakeholders:
+  - ""

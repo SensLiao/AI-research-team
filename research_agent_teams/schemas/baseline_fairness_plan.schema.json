@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/baseline_fairness_plan.schema.json",
+  "title": "Baseline Fairness Plan",
+  "description": "DESIGN-stage artifact. Output of baseline-fairness-planner. Declares the fairness check for baseline vs treatment comparison: matching data_hash, compute budget, and metric configuration. Any mismatch is listed in fairness_violations.",
+  "type": "object",
+  "required": ["baseline_ref", "treatment_refs", "fairness_checks", "fairness_violations"],
+  "additionalProperties": false,
+  "properties": {
+    "baseline_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier for the baseline condition"
+    },
+    "treatment_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1},
+      "description": "Identifiers for the treatment conditions"
+    },
+    "fairness_checks": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Declared fairness checks performed",
+      "items": {
+        "type": "object",
+        "required": ["check_name", "baseline_value", "treatment_values"],
+        "additionalProperties": false,
+        "properties": {
+          "check_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What is being compared, e.g. data_hash, compute_budget, metric_set"
+          },
+          "baseline_value": {
+            "description": "The baseline's value for this check (any JSON type)"
+          },
+          "treatment_values": {
+            "type": "object",
+            "description": "Map of condition_id -> value for each treatment"
+          },
+          "mismatch_detected": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    "fairness_violations": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Human-readable descriptions of detected fairness mismatches. Empty = no violations found."
+    },
+    "override_justification": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "If a known violation is intentional (e.g. budget mismatch is the studied variable), justify here"
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "default": null
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/review_config.schema.json",
+  "title": "Review Config",
+  "description": "VERIFY-stage producer artifact. Output of review-configurator. Declares which lenses review the evidence, the independence anchors for each reviewer, and the synthesis mandate. Emitted only after check_review_independence.py finds no duplicate lenses or empty anchors.",
+  "type": "object",
+  "required": ["run_ref", "lenses", "synthesis_mandate"],
+  "additionalProperties": false,
+  "properties": {
+    "run_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "reference to the run being reviewed"
+    },
+    "lenses": {
+      "type": "array",
+      "minItems": 1,
+      "description": "ordered list of review lenses; each must be unique",
+      "items": {
+        "type": "object",
+        "required": ["lens", "anchor", "reviewer_agent"],
+        "additionalProperties": false,
+        "properties": {
+          "lens": {
+            "type": "string",
+            "enum": ["methodology", "domain", "adversarial"],
+            "description": "which reviewer perspective this entry governs. 'adversarial' is the eval-leakage / unfair-baseline lens (the #1 venue reject driver) used by the venue-review panel; the M2 freeze-check panel uses only methodology/domain."
+          },
+          "anchor": {
+            "type": "string",
+            "minLength": 1,
+            "description": "non-empty independence anchor: the unique factual focus this lens owns (prevents duplicate/empty anchors)"
+          },
+          "reviewer_agent": {
+            "type": "string",
+            "minLength": 1,
+            "description": "agent name responsible for this lens"
+          },
+          "notes": {
+            "type": "string",
+            "default": "",
+            "description": "optional configuration notes"
+          }
+        }
+      }
+    },
+    "synthesis_mandate": {
+      "type": "string",
+      "minLength": 1,
+      "description": "instructions to the review-synthesizer: what must be covered, what constitutes an addressable vs fatal gap"
+    },
+    "inputs_to_review": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "artifact refs the panel must read (result_summary, experiment_matrix, protocol_spec, etc.)"
+    }
+  }
+}

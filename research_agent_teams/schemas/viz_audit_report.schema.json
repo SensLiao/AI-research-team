@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/viz_audit_report.schema.json",
+  "title": "Visualization Audit Report",
+  "description": "ANALYZE-stage artifact (advisory). Output of visualization-auditor. Checks figure specs against domain profile metric valid_range to detect misleading axis truncation. axis_truncation_flags are derived mechanically by viz_audit.py; verdict is advisory (not a hard gate).",
+  "type": "object",
+  "required": ["figures_audited", "axis_truncation_flags", "clean"],
+  "additionalProperties": false,
+  "properties": {
+    "figures_audited": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "default": [],
+      "description": "figure_ids that were audited"
+    },
+    "axis_truncation_flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["figure_id", "metric", "axis", "declared_min", "valid_min", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "figure_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "metric": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Metric whose axis was checked"
+          },
+          "axis": {
+            "type": "string",
+            "enum": ["x", "y"],
+            "description": "Which axis is truncated"
+          },
+          "declared_min": {
+            "type": ["number", "null"],
+            "description": "The axis minimum declared in the figure spec"
+          },
+          "valid_min": {
+            "type": ["number", "null"],
+            "description": "The valid_range minimum from the domain profile for this metric"
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable explanation of the truncation concern"
+          }
+        }
+      },
+      "default": [],
+      "description": "Each entry is a figure/metric pair where axis truncation was detected"
+    },
+    "clean": {
+      "type": "boolean",
+      "description": "True iff no axis_truncation_flags found — derived, not hand-set"
+    },
+    "notes": {
+      "type": "string",
+      "default": "",
+      "description": "Advisory notes from the visualization auditor"
+    }
+  }
+}

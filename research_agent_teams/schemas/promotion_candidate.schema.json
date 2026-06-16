@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/promotion_candidate.schema.json",
+  "title": "Promotion Candidate",
+  "description": "The UNTRUSTED, worker-staged input to the /promote-to-vault gate (sits in runs/<run>/inbox/). It carries REFERENCES to the real audit artifacts and a proposed vault target — never a self-claimed status (the gate re-derives status from the referenced audits, never from this object). This schema is the trust boundary: additionalProperties:false blocks smuggled fields (e.g. a forged can_cite_thesis or a worker-set human_freeze), and the patterned slug / vault_type / vault_folder are single lowercase-kebab path segments — they cannot carry '/', '\\' or '..', so a candidate can never redirect the gate's write outside 02-wiki/<type>/ (the path-traversal class).",
+  "type": "object",
+  "required": ["slug"],
+  "additionalProperties": false,
+  "properties": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 100,
+      "description": "Proposed lowercase-kebab slug — a single safe path segment, never renamed once promoted. Bounded length so an overlong segment can't reach (and crash) the filesystem call."
+    },
+    "vault_type": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 50,
+      "description": "Target knowledge-note type (e.g. 'result'). A single safe, bounded-length path segment."
+    },
+    "vault_folder": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 50,
+      "description": "Optional explicit 02-wiki subfolder. A single safe, bounded-length path segment (defaults to vault_type+'s'). Cannot escape 02-wiki/."
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 50,
+      "description": "The registered research project this knowledge belongs to (lowercase-kebab slug from the vault's 05-registry/project-registry.md). When the vault has a project registry, the gate REJECTS a candidate whose project is not registered — promoted pages never carry an unknown project."
+    },
+    "title": {"type": "string"},
+    "body": {"type": "string"},
+    "source_result_status": {
+      "type": "string",
+      "enum": ["frozen", "provisional", "diagnostic-only", "invalid", "superseded", "missing-audit"],
+      "description": "The source artifact's claimed status. ADVISORY ONLY — the gate re-derives the real status from the referenced audits and ignores a 'frozen' self-claim here."
+    },
+    "result_ref": {"$ref": "#/$defs/ref"},
+    "leakage_audit_ref": {"$ref": "#/$defs/ref"},
+    "fairness_audit_ref": {"$ref": "#/$defs/ref"},
+    "reviewer_ref": {"$ref": "#/$defs/ref"},
+    "_path": {"type": "string"},
+    "_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "ref": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "pattern": "\\S"},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

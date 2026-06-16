@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/split_manifest.schema.json",
+  "title": "Split Manifest",
+  "description": "DESIGN-stage artifact. Output of dataset-split-planner. Declares the data split for an experiment: the split unit, ratios, stratification, and per-split counts. Validated by validate_split.py which raises ValueError if split_unit is in the profile's forbidden_split_units.",
+  "type": "object",
+  "required": ["split_unit", "splits", "leakage_declaration"],
+  "additionalProperties": false,
+  "properties": {
+    "split_unit": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The unit at which splits are made, e.g. patient, case, document. Must not appear in profile.split_policy.forbidden_split_units."
+    },
+    "splits": {
+      "type": "array",
+      "minItems": 2,
+      "description": "The declared splits (train, val, test, etc.)",
+      "items": {
+        "type": "object",
+        "required": ["name", "fraction"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Split name, e.g. train, val, test"
+          },
+          "fraction": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "description": "Proportion of total data assigned to this split"
+          },
+          "n_units": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "default": null,
+            "description": "Actual count of split_units in this split (null until data is finalized)"
+          },
+          "stratification_keys": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Keys used to stratify this split (must be declared in profile.split_policy.stratification_keys)"
+          },
+          "frozen": {
+            "type": "boolean",
+            "default": false,
+            "description": "True once test set is locked before training"
+          }
+        }
+      }
+    },
+    "leakage_declaration": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Written declaration confirming leakage checks performed (e.g. patient_id_disjoint, volume_id_disjoint)"
+    },
+    "from_domain_profile": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "profile_id this manifest was validated against"
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "default": null
+    }
+  }
+}

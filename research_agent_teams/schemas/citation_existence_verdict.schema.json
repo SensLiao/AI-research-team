@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/citation_existence_verdict.schema.json",
+  "title": "Citation Existence Verdict",
+  "description": "DISCOVER deterministic gate-helper artifact (absorption wave 1; ARS three-state pattern). Output of tools/citation_existence.build_existence_verdict: every external reference is looked up live and lands in exactly one of verified / not_found / lookup_error / skipped. BLOCK iff any ref is CONFIRMED not_found (fabricated-citation signal); lookup_error is a warning, never a block (offline-safe) and never silently verified. Complements (never replaces) the structural citation_integrity_verdict gate: that gate checks anchoring/contradiction against the claim_evidence_map; this one checks the refs exist in the world.",
+  "type": "object",
+  "required": ["checked", "n_verified", "n_not_found", "n_lookup_error", "n_skipped", "verdict", "violations", "warnings"],
+  "additionalProperties": false,
+  "properties": {
+    "checked": {
+      "type": "array",
+      "description": "One entry per input ref, in input order. Deterministic given the same transport answers.",
+      "items": {
+        "type": "object",
+        "required": ["ref", "kind", "state", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "kind": {"type": "string", "enum": ["doi", "arxiv", "title", "url", "slug"]},
+          "state": {"type": "string", "enum": ["verified", "not_found", "lookup_error", "skipped"]},
+          "detail": {"type": "string", "description": "Human-readable lookup evidence (source that answered, match ratio, or the error). Never inlined paper content."}
+        }
+      }
+    },
+    "n_verified": {"type": "integer", "minimum": 0},
+    "n_not_found": {"type": "integer", "minimum": 0},
+    "n_lookup_error": {"type": "integer", "minimum": 0},
+    "n_skipped": {"type": "integer", "minimum": 0},
+    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"], "description": "BLOCK iff n_not_found > 0."},
+    "violations": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "One line per confirmed-missing ref. Non-empty iff verdict is BLOCK."},
+    "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "One line per lookup_error ref (could not check; absence unconfirmed)."}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"n_not_found": {"const": 0}}},
+      "then": {"properties": {"verdict": {"const": "PASS"}}},
+      "else": {"properties": {"verdict": {"const": "BLOCK"}}}
+    }
+  ]
+}

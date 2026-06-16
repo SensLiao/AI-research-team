@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/variable_touch_verdict.schema.json",
+  "title": "Variable Touch Verdict",
+  "description": "EXECUTE-stage hard-gate artifact. Output of variable-touch-guard (computed by variable_touch_guard.py). BLOCK if any touched variable is studied or frozen; PASS if only controlled variables are touched. Verdict is derived from violations, never set by hand — the allOf forces BLOCK when violations is non-empty.",
+  "type": "object",
+  "required": ["verdict", "violations"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "BLOCK"],
+      "description": "PASS if no studied/frozen variables were touched; BLOCK if any were. Derived from violations by the tool."
+    },
+    "violations": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Human-readable violation strings naming the branch/session and the offending variable. Empty on PASS."
+    },
+    "checked_against": {
+      "type": "string",
+      "description": "Optional reference to the experiment_matrix the guard checked against."
+    },
+    "touched": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "The full list of variables that were touched (from the debug_session or experiment_tree branches)."
+    },
+    "studied": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "The studied variables from the experiment_matrix (copied for auditability)."
+    },
+    "frozen": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "The frozen variables from the experiment_matrix (copied for auditability)."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["violations"],
+        "properties": {"violations": {"minItems": 1}}
+      },
+      "then": {
+        "properties": {"verdict": {"const": "BLOCK"}}
+      }
+    }
+  ]
+}

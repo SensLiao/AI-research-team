@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/data_protocol.schema.json",
+  "title": "Data Protocol",
+  "description": "DESIGN-stage artifact. Output of data-protocol-designer. Declares preprocessing, augmentation, and postprocessing steps for all conditions. Anti-leakage rule (structurally enforced via allOf): any step with kind='augmentation' MUST have train_only:true — augmentation applied to test data is a leakage bug and is schema-rejected. Protocols with no augmentation steps at all are valid (the per-item rule only fires when an augmentation step is present).",
+  "type": "object",
+  "required": ["steps"],
+  "additionalProperties": false,
+  "properties": {
+    "from_split_manifest_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Reference to the split_manifest this protocol is designed for"
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered list of data processing steps",
+      "items": {
+        "type": "object",
+        "required": ["step_id", "kind", "description", "train_only"],
+        "additionalProperties": false,
+        "properties": {
+          "step_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["preprocessing", "augmentation", "postprocessing", "normalization", "resampling"],
+            "description": "Category of processing step"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "train_only": {
+            "type": "boolean",
+            "description": "True = applied only to training data; False = applied to all splits. Augmentation steps MUST be true."
+          },
+          "params": {
+            "type": "object",
+            "default": {},
+            "description": "Step-specific parameters"
+          },
+          "applies_to_splits": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Explicit split names this step applies to (empty = inferred from train_only)"
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "default": null
+    }
+  },
+  "allOf": [
+    {
+      "description": "Anti-leakage: any step with kind='augmentation' must have train_only:true. A protocol with no augmentation steps is valid; a protocol where any augmentation step has train_only:false is REJECTED.",
+      "properties": {
+        "steps": {
+          "items": {
+            "if": {
+              "properties": {"kind": {"const": "augmentation"}},
+              "required": ["kind"]
+            },
+            "then": {
+              "properties": {"train_only": {"const": true}},
+              "required": ["train_only"]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

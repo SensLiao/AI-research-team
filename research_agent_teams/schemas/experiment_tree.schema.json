@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/experiment_tree.schema.json",
+  "title": "Experiment Tree",
+  "description": "EXECUTE-stage artifact. Output of experiment-tree-explorer. Explores a bounded tree of next-run branches within the controlled variable space. Each branch declares the variables it touches and its depth. The tree declares a budget_bound capped by task_frame.budget. The variable-touch-guard reads touched_variables on each branch.",
+  "type": "object",
+  "required": ["tree_id", "root_run_ref", "branches", "budget_bound", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "tree_id": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Unique identifier for this experiment tree."
+    },
+    "root_run_ref": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Reference to the root run_record this tree expands from."
+    },
+    "branches": {
+      "type": "array",
+      "description": "The candidate next-run branches. May be empty if the explorer finds no admissible branches in the budget.",
+      "items": {
+        "type": "object",
+        "required": ["branch_id", "changed_factors", "touched_variables", "depth"],
+        "additionalProperties": false,
+        "properties": {
+          "branch_id": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Unique identifier for this branch within the tree."
+          },
+          "changed_factors": {
+            "type": "object",
+            "description": "The factor settings that differ from the root in this branch."
+          },
+          "touched_variables": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "description": "Experiment variables (from experiment_matrix) this branch would touch. Read by variable-touch-guard."
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Tree depth of this branch (root = depth 1)."
+          }
+        }
+      }
+    },
+    "budget_bound": {
+      "type": "object",
+      "required": ["max_depth", "max_width"],
+      "additionalProperties": false,
+      "properties": {
+        "max_depth": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum tree depth allowed, capped by task_frame.budget."
+        },
+        "max_width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum number of branches per level, capped by task_frame.budget."
+        }
+      }
+    },
+    "evidence_ref": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      },
+      "description": "Evidence references (run_records, experiment_matrix) supporting the tree design. Anti-slop: at least one non-empty reference required."
+    }
+  }
+}

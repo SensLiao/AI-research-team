@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/figure_spec_bundle.schema.json",
+  "title": "Figure Spec Bundle",
+  "description": "ANALYZE-stage artifact. Output of figure-generator. A machine-readable bundle of figure specifications — NOT rendered images. Each figure spec describes what to plot (data source, axes, type, labels) so a downstream renderer or human can produce the actual figure. figures[] minItems 1 ensures at least one spec is present.",
+  "type": "object",
+  "required": ["figures"],
+  "additionalProperties": false,
+  "properties": {
+    "run_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Reference to the run/result_summary this bundle is based on"
+    },
+    "figures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["figure_id", "figure_type", "title", "data_source"],
+        "additionalProperties": false,
+        "properties": {
+          "figure_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Unique identifier for this figure spec, e.g. fig1_dice_comparison"
+          },
+          "figure_type": {
+            "type": "string",
+            "enum": ["bar", "boxplot", "line", "scatter", "table", "heatmap", "other"],
+            "description": "Plot type"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable figure title"
+          },
+          "data_source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Reference to the result_summary, run_record, or condition_id this figure visualizes"
+          },
+          "x_axis": {
+            "type": ["object", "null"],
+            "default": null,
+            "description": "X-axis specification",
+            "additionalProperties": true
+          },
+          "y_axis": {
+            "type": ["object", "null"],
+            "default": null,
+            "description": "Y-axis specification including optional min/max range",
+            "additionalProperties": true
+          },
+          "conditions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Which condition_ids are included in this figure"
+          },
+          "metrics": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Which metrics are plotted"
+          },
+          "caption": {
+            "type": "string",
+            "default": "",
+            "description": "Suggested figure caption"
+          },
+          "notes": {
+            "type": "string",
+            "default": "",
+            "description": "Any additional notes for the renderer"
+          }
+        }
+      },
+      "description": "List of figure specifications. minItems 1 ensures at least one is present."
+    }
+  }
+}

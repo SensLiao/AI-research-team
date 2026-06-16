@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/venue_profile.schema.json",
+  "title": "Venue Profile",
+  "description": "VERIFY-stage C-path artifact. Output of venue-selector after the director has chosen a venue. Instantiates that venue's rubric into a scorecard: 7-dim weights, reject-triggers (with this-paper risk annotations), accept-condition, anti-bias suppressors, and the persona set. Consumed by venue-review-configurator (D2). Does NOT contain scores or a verdict — those are D2's job.",
+  "type": "object",
+  "required": [
+    "venue_id",
+    "tier",
+    "paper_type",
+    "dimension_weights",
+    "reject_triggers",
+    "accept_condition",
+    "personas",
+    "evidence_ref"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "venue_id": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Venue name or abbreviation (e.g. NeurIPS, MICCAI, TPAMI). Non-empty."
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["conf", "med", "journal"],
+      "description": "Venue tier: conf = top ML conference; med = medical imaging venue; journal = archival journal."
+    },
+    "paper_type": {
+      "type": "string",
+      "enum": ["methodological", "application-clinical"],
+      "description": "Paper type classification determining which dimensions are active and gating."
+    },
+    "dimension_weights": {
+      "type": "object",
+      "description": "Per-dimension rubric weights for this venue. Keys D1..D7. additionalProperties:false ensures only the 7 canonical dimensions exist.",
+      "required": ["D1", "D2", "D3", "D4", "D5", "D6", "D7"],
+      "additionalProperties": false,
+      "properties": {
+        "D1": {
+          "type": "object",
+          "required": ["weight"],
+          "additionalProperties": false,
+          "description": "Soundness/correctness — hard gate for all tiers.",
+          "properties": {
+            "weight": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Relative weight for this dimension at this venue."
+            },
+            "gating": {
+              "type": "boolean",
+              "default": false,
+              "description": "True if this dimension is a hard gate (failing it blocks accept)."
+            }
+          }
+        },
+        "D2": {
+          "type": "object",
+          "required": ["weight"],
+          "additionalProperties": false,
+          "description": "Significance/impact — journal gating; conf with novelty.",
+          "properties": {
+            "weight": {"type": "number", "minimum": 0},
+            "gating": {"type": "boolean", "default": false}
+          }
+        },
+        "D3": {
+          "type": "object",
+          "required": ["weight"],
+          "additionalProperties": false,
+          "description": "Originality/novelty — high for all tiers; journal has conceptual-advance gate.",
+          "properties": {
+            "weight": {"type": "number", "minimum": 0},
+            "gating": {"type": "boolean", "default": false}
+          }
+        },
+        "D4": {
+          "type": "object",
+          "required": ["weight"],
+          "additionalProperties": false,
+          "description": "Evaluation rigor/fairness — #1 reject driver; highest weight.",
+          "properties": {
+            "weight": {"type": "number", "minimum": 0},
+            "gating": {"type": "boolean", "default": false}
+          }
+        },
+        "D5": {
+          "type": "object",
+          "required": ["weight"],
+          "additionalProperties": false,
+          "description": "Reproducibility — mandatory gate for journals; scored for conf.",
+          "properties": {
+            "weight": {"type": "number", "minimum": 0},
+            "gating": {"type": "boolean", "default": false}
+          }
+        },
+        "D6": {
+          "type": "object",
+          "required": ["weight"],
+          "additionalProperties": false,
+          "description": "Clarity/presentation — medium weight for all tiers.",
+          "properties": {
+            "weight": {"type": "number", "minimum": 0},
+            "gating": {"type": "boolean", "default": false}
+          }
+        },
+        "D7": {
+          "type": "object",
+          "required": ["weight"],
+          "additionalProperties": false,
+          "description": "Clinical/domain validity — active only for med/Nature Medicine; paper_type=application-clinical gate.",
+          "properties": {
+            "weight": {"type": "number", "minimum": 0},
+            "gating": {"type": "boolean", "default": false}
+          }
+        }
+      }
+    },
+    "reject_triggers": {
+      "type": "array",
+      "description": "Reject-triggers active for this venue, instantiated with this-paper risk annotation (our_risk). Any fired trigger blocks accept.",
+      "items": {
+        "type": "object",
+        "required": ["trigger_id", "dimension", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "trigger_id": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Stable identifier (e.g. RT-D4-BASELINE). Non-empty."
+          },
+          "dimension": {
+            "type": "string",
+            "enum": ["D1", "D2", "D3", "D4", "D5", "D6", "D7"],
+            "description": "Which dimension this trigger maps to."
+          },
+          "description": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "What condition fires this trigger. Non-empty."
+          },
+          "our_risk": {
+            "type": "string",
+            "description": "Optional: this paper's specific risk against this trigger (本稿对号入座). Present when venue-selector can identify the concrete risk."
+          }
+        }
+      }
+    },
+    "accept_condition": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "The derivation rule for accept (echoed from rubric-7d). e.g. 'D1>=3 AND D4>=3 AND (D3>=3 OR D2>=3) AND no reject-trigger'. Non-empty."
+    },
+    "anti_bias_suppressors": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Not-valid-grounds for rejection at this venue (anti-bias guardrails). Empty list is allowed."
+    },
+    "overall_scale": {
+      "type": "string",
+      "description": "Optional: the overall score scale used at this venue (e.g. '1-6 NeurIPS', 'Accept/Minor/Major/Reject')."
+    },
+    "confidence_note": {
+      "type": "string",
+      "description": "Optional: which rubric lines need login-state re-check before citing (from venue module §6 confidence annotations)."
+    },
+    "personas": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": ["methodology", "domain", "adversarial"]
+      },
+      "description": "Reviewer personas to activate for this venue (at least one required)."
+    },
+    "evidence_ref": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      },
+      "description": "Evidence pointers grounding this profile (anti-slop). At least one required; each must be non-blank."
+    }
+  }
+}

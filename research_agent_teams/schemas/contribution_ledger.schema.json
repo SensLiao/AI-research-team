@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/contribution_ledger.schema.json",
+  "title": "Contribution Ledger",
+  "description": "VERIFY-stage producer artifact. Output of contribution-ledger-builder. Enumerates the paper's claimed contributions and binds each to evidence artifacts and the experimental condition that proves it. check_contribution_binding.py refuses a contribution with empty evidence_refs or no condition_id (unbound contribution).",
+  "type": "object",
+  "required": ["contributions"],
+  "additionalProperties": false,
+  "properties": {
+    "contributions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "list of claimed contributions; each must be bound to evidence and a condition",
+      "items": {
+        "type": "object",
+        "required": ["claim_text", "evidence_refs", "condition_id"],
+        "additionalProperties": false,
+        "properties": {
+          "claim_text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the contribution claim as stated in the paper or manuscript"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+            "description": "non-empty list of artifact refs that provide evidence for this contribution; check_contribution_binding.py BLOCKs if empty"
+          },
+          "condition_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "non-empty id of the experimental condition that demonstrates this contribution; check_contribution_binding.py BLOCKs if empty/missing"
+          },
+          "contribution_type": {
+            "type": "string",
+            "enum": ["method", "dataset", "benchmark", "analysis", "tool", "theory", "other"],
+            "description": "category of the contribution"
+          },
+          "scope_note": {
+            "type": "string",
+            "default": "",
+            "description": "optional note on the scope or limitations of this contribution claim"
+          }
+        }
+      }
+    },
+    "run_ref": {
+      "type": "string",
+      "default": "",
+      "description": "reference to the run whose evidence supports these contributions"
+    },
+    "ledger_notes": {
+      "type": "string",
+      "default": "",
+      "description": "optional notes on the ledger as a whole (e.g. what was excluded and why)"
+    }
+  }
+}

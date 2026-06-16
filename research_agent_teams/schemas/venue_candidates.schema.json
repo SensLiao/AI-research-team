@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/venue_candidates.schema.json",
+  "title": "Venue Candidates",
+  "description": "VERIFY-stage B-path artifact. Output of venue-selector when no target venue is given. Emits a ranked list of candidate venues for the director to choose from. NO selected/chosen/picked/director_* field exists: the schema is additionalProperties:false, making an auto-pick structurally impossible. The director picks via the /venue-pick human gate.",
+  "type": "object",
+  "required": ["candidates"],
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ranked list of candidate venues. Each candidate carries the nomination rationale and the deadliest reject-trigger for this work. The director picks one via /venue-pick; the model never self-selects.",
+      "items": {
+        "type": "object",
+        "required": [
+          "venue_id",
+          "tier",
+          "paper_type",
+          "hit_reason",
+          "deadliest_reject_trigger",
+          "evidence_ref"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "venue_id": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Venue name or abbreviation (e.g. NeurIPS, MICCAI, TPAMI). Non-empty."
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["conf", "med", "journal"],
+            "description": "Venue tier: conf = top ML conference; med = medical imaging venue; journal = archival journal."
+          },
+          "paper_type": {
+            "type": "string",
+            "enum": ["methodological", "application-clinical"],
+            "description": "Paper type classification for this work at this venue."
+          },
+          "hit_reason": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Why this venue is a strong match for the work (topic, strength, open-problem alignment). Non-empty."
+          },
+          "deadliest_reject_trigger": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "The single most likely reject-trigger this work faces at this venue. Non-empty."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "description": "Evidence pointers grounding the nomination (anti-slop). At least one required; each must be non-blank."
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional rank (1 = top recommendation). Present when venue-selector can rank candidates."
+          }
+        }
+      }
+    }
+  }
+}

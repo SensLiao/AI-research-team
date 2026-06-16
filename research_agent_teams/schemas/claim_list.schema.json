@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/claim_list.schema.json",
+  "title": "Claim List",
+  "description": "DISCOVER-stage typed artifact. Output of claim-extractor. An ordered list of atomic claims extracted from literature, each anchored to a source reference. Every claim requires non-empty text and a non-empty source_ref — a claim without a source cannot be verified.",
+  "type": "object",
+  "required": ["claims", "source_scope"],
+  "additionalProperties": false,
+  "properties": {
+    "source_scope": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the query string or source set these claims were extracted from"
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_id", "text", "source_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "claim_id": {"type": "string", "minLength": 1, "description": "unique stable id within this list, e.g. c1, c2"},
+          "text": {"type": "string", "minLength": 1, "description": "the atomic claim statement"},
+          "source_ref": {"type": "string", "minLength": 1, "description": "ref of the source making this claim (must be non-empty)"},
+          "kind": {
+            "type": "string",
+            "enum": ["performance", "method", "dataset", "comparison", "limitation", "other"],
+            "default": "other"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"],
+            "default": "medium"
+          },
+          "verbatim_quote": {"type": ["string", "null"], "default": null}
+        }
+      }
+    }
+  }
+}

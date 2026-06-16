@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/preflight_report.schema.json",
+  "title": "Preflight Report",
+  "description": "EXECUTE-stage hard-gate artifact. Output of preflight-checker. Before any run commits (real GPU now or on a director-provided server later), verifies pinned data hashes + a frozen compiled config + a PASS alignment contract + test-set freeze. verdict BLOCK halts the run. verdict is derived mechanically from preflight_checker.py — never set by hand.",
+  "type": "object",
+  "required": ["verdict", "violations"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+    "violations": {"type": "array", "items": {"type": "string"}},
+    "checks_performed": {"type": "array", "items": {"type": "string"}, "default": []},
+    "protocol_ref": {"type": ["string", "null"], "default": null},
+    "alignment_ref": {"type": ["string", "null"], "default": null}
+  },
+  "allOf": [
+    {
+      "if": {"required": ["violations"], "properties": {"violations": {"minItems": 1}}},
+      "then": {"properties": {"verdict": {"const": "BLOCK"}}}
+    }
+  ]
+}

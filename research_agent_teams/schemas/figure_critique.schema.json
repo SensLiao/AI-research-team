@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/figure_critique.schema.json",
+  "title": "Figure Critique",
+  "description": "ANALYZE-stage artifact (advisory). Output of figure-vlm-critic. Records per-figure findings derived deterministically from figure_spec_bundle structure checks (truncated axis, dual-axis confusion, missing error bars, etc.) merged with any viz_audit_report signals. Advisory only — no BLOCK verdict. Real PNG/VLM critique is an out-of-band step until a render/GPU server exists.",
+  "type": "object",
+  "required": ["findings"],
+  "additionalProperties": false,
+  "properties": {
+    "findings": {
+      "type": "array",
+      "minItems": 0,
+      "description": "Per-figure findings. Empty array means no findings were raised.",
+      "items": {
+        "type": "object",
+        "required": ["figure_id", "finding_type", "severity", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "figure_id": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "The figure_id from the figure_spec_bundle this finding pertains to."
+          },
+          "finding_type": {
+            "type": "string",
+            "enum": [
+              "misleading_axis",
+              "truncated_axis",
+              "dual_axis_confusion",
+              "missing_error_bars",
+              "cherry_picked_range",
+              "unclear",
+              "ok"
+            ],
+            "description": "Classification of the figure issue."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["info", "warn", "critical"],
+            "description": "Advisory severity. Never triggers a BLOCK gate."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Non-empty list of evidence pointers — anti-slop guard.",
+            "items": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation of the finding. Optional."
+          }
+        }
+      }
+    }
+  }
+}

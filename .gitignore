@@ -1,0 +1,39 @@
+# ── Secrets — NEVER commit real credentials. Only *.example placeholders ship. ──
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*_rsa
+*_ed25519
+id_*
+credentials*
+secrets*
+*.secret
+
+# ── Machine: ephemeral run-store + per-project workspaces (data, not code) ──
+research_agent_teams/runs/
+research_agent_teams/projects/
+
+# ── Knowledge base ships as STRUCTURE only. If you fork and want to keep your
+#    own research pages private, uncomment the next two lines. ──
+# AI agent database/PhD-Research-OS/01-raw/**
+# AI agent database/PhD-Research-OS/02-wiki/**
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.venv/
+
+# ── OS / editor ──
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/

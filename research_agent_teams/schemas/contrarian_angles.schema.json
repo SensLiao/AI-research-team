@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/contrarian_angles.schema.json",
+  "title": "Contrarian Angles",
+  "description": "DISCOVER-stage artifact. Output of contrarian-angle-generator. Lists angles that challenge a widely-held assumption in the surveyed literature. Each angle carries challenged_assumption, so it is a direct classify_gap signal that maps to (assumption_gap, ASSUMPTION) — rule 2 in the priority table. An empty angles array is allowed (the surveyed work may have no challengeable assumptions). Every present item carries at least one non-blank evidence_ref (anti-slop).",
+  "type": "object",
+  "required": ["angles"],
+  "additionalProperties": false,
+  "properties": {
+    "angles": {
+      "type": "array",
+      "description": "Contrarian angles challenging assumptions; each carries challenged_assumption so classify_gap can consume it directly.",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "challenged_assumption", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "gap_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Short unique identifier, e.g. CA-001."
+          },
+          "challenged_assumption": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The specific assumption being challenged. Non-blank required."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "description": "Evidence pointers grounding this contrarian angle (anti-slop). At least one required; each must be non-blank."
+          },
+          "supporting_argument": {
+            "type": "string",
+            "description": "Optional argument supporting why the assumption is challengeable."
+          }
+        }
+      }
+    }
+  }
+}

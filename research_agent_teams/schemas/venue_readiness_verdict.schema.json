@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/venue_readiness_verdict.schema.json",
+  "title": "Venue Readiness Verdict",
+  "description": "VERIFY-stage derived verdict artifact. Output of area-chair-synthesizer (via venue_score.py). The verdict is COMPUTED by venue_score.derive_meets_bar() from 7-dim scores + reject-triggers + independence — never set by hand. The allOf enforces: if any unresolved reject-trigger is present, verdict must be NOT-YET, WRONG-PATH, or DEGRADED-REVIEW (never MEETS-BAR or BORDERLINE). Mirrors the derivation family of sanity_verdict.schema.json.",
+  "type": "object",
+  "required": [
+    "verdict",
+    "unresolved_reject_triggers",
+    "dimension_synthesis",
+    "evidence_ref"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["MEETS-BAR", "BORDERLINE", "NOT-YET", "WRONG-PATH", "DEGRADED-REVIEW"],
+      "description": "Derived verdict. MEETS-BAR: accept-condition fully met, no reject-triggers. BORDERLINE: one non-gating dim short. NOT-YET: reject-trigger(s) fired but resolvable. WRONG-PATH: structural weakness (multiple gating dims <=2). DEGRADED-REVIEW: independence compromised or all confidence<=2."
+    },
+    "unresolved_reject_triggers": {
+      "type": "array",
+      "description": "Trigger IDs that remain unresolved across the full review panel. Empty iff no trigger fired.",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "dimension_synthesis": {
+      "type": "array",
+      "description": "Per-dimension cross-review argument (not a numeric mean — argument-based per ICML policy).",
+      "items": {
+        "type": "object",
+        "required": ["dimension", "argument"],
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "enum": ["D1", "D2", "D3", "D4", "D5", "D6", "D7"],
+            "description": "Which dimension this synthesis covers."
+          },
+          "argument": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "The cross-review argument (which reviewer's evidence is harder, key disagreements, agreed weakness). NOT a mean score."
+          },
+          "agreed_score": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4,
+            "description": "Optional: the minimum score across reviews (most-critical), used by venue_score.py for accept-condition check."
+          }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "default": [],
+      "description": "For NOT-YET verdict: gap-to-stage-to-fix list (what to add / change to resolve each reject-trigger).",
+      "items": {
+        "type": "object",
+        "required": ["gap", "stage", "what_to_add"],
+        "additionalProperties": false,
+        "properties": {
+          "gap": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Description of the specific gap or missing evidence."
+          },
+          "stage": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Which research stage should address this (S2/S3/S4 or DESIGN/EXECUTE/ANALYZE)."
+          },
+          "what_to_add": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Concrete action: what experiment to run, what to fix, what to add."
+          }
+        }
+      }
+    },
+    "strengths": {
+      "type": "array",
+      "default": [],
+      "description": "For MEETS-BAR verdict: key strengths to highlight.",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "shore_up": {
+      "type": "array",
+      "default": [],
+      "description": "For MEETS-BAR verdict: remaining weak points to strengthen before submission.",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "independence_ref": {
+      "type": "string",
+      "description": "Reference to the independence-report artifact (check_review_independence output) used for this verdict."
+    },
+    "evidence_ref": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Anti-slop guard: at least one pointer to the review artifacts this verdict synthesizes.",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["unresolved_reject_triggers"],
+        "properties": {
+          "unresolved_reject_triggers": {"minItems": 1}
+        }
+      },
+      "then": {
+        "properties": {
+          "verdict": {
+            "enum": ["NOT-YET", "WRONG-PATH", "DEGRADED-REVIEW"]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+# Domain profile: NLP text classification (a SECOND example domain — proves the system is not medical-only).
+# Validates against schemas/domain_profile.schema.json (payload).
+profile_id: nlp-text-classification
+display_name: "NLP text classification"
+applies_to:
+  - nlp
+  - text-classification
+  - transformers
+split_policy:
+  default_split_unit: document
+  allowed_split_units: ["document", "author", "conversation"]
+  forbidden_split_units: ["sentence", "token"]
+  stratification_keys: ["class_label", "language"]
+  external_test_recommended: true
+  freeze_test_before_training: true
+leakage_checks:
+  - document_id_disjoint
+  - near_duplicate_disjoint
+  - author_disjoint_if_author_split
+leakage_delta: 0.5
+metrics:
+  - {name: macro_f1, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: accuracy, higher_is_better: true, valid_range: [0.0, 1.0]}
+alignment_invariants:
+  - "identical tokenizer + max_length across compared models"
+  - "identical text normalization across train and test"
+  - "no label leakage via metadata features"
+protocol_fields:
+  tokenization:
+    scheme: configurable
+    lowercase: false
+hard_invariants:
+  - "test set frozen before training"
+  - "near-duplicate documents removed across splits"
+  - "identical tokenization across compared models unless tokenization is studied"

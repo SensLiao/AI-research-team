@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/gap_classification.schema.json",
+  "title": "Gap Classification",
+  "description": "DISCOVER-stage artifact. Output of gap-classifier. Classifies research gaps into one of 7 typed categories via the deterministic classify_gap.py tool. An empty gaps array is allowed (a clean literature set may yield zero classifiable gaps). Every present gap carries a non-blank reason_code and at least one non-blank evidence_ref (anti-slop): a gap with no real evidence is schema-rejected. The optional derived_from carries the provenance signals (which gap-hunters flagged this gap) forward so the novelty-scorer can aggregate them deterministically.",
+  "type": "object",
+  "required": ["gaps"],
+  "additionalProperties": false,
+  "properties": {
+    "gaps": {
+      "type": "array",
+      "description": "Classified research gaps; each present gap must carry at least one non-blank evidence_ref.",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "gap_type", "reason_code", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "gap_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Short unique identifier, e.g. GAP-001"
+          },
+          "gap_type": {
+            "type": "string",
+            "enum": [
+              "stated_open_problem",
+              "methodological_gap",
+              "coverage_gap",
+              "transfer_gap",
+              "assumption_gap",
+              "evidence_gap",
+              "empirical_gap"
+            ],
+            "description": "The 7-type gap taxonomy, determined deterministically by classify_gap.py."
+          },
+          "reason_code": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Deterministic code from classify_gap.py identifying the distinguishing signal, e.g. FW_STATED, WEAK_LOCUS. Must be non-blank."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "description": "Evidence pointers (source_refs / paper_note ids) supporting this gap (anti-slop). At least one required; each must be non-blank."
+          },
+          "derived_from": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "description": "Optional provenance signals (e.g. future_work, white_space_present, weakness_opportunity) carried forward from the gap-hunters that flagged this gap. The novelty-scorer aggregates these; an empty/absent list means the only provenance is the classifier's own reason_code."
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": ["future_work", "weakness", "white_space", "transfer", "contrarian"],
+            "description": "Optional provenance kind of the gap signal."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional clarifying notes."
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/hypothesis_set.schema.json",
+  "title": "Hypothesis Set",
+  "description": "IDEATE-stage artifact. Output of hypothesis-generator. A set of testable hypotheses generated from gap_classification + novelty_score inputs. Every hypothesis carries a non-blank falsifiable_prediction, a non-empty evidence_needed (each non-blank), and a non-empty evidence_ref (each non-blank, anti-slop binding to the source gap). A hypothesis missing/blanking any of these is schema-rejected.",
+  "type": "object",
+  "required": ["hypotheses"],
+  "additionalProperties": false,
+  "properties": {
+    "hypotheses": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered list of testable hypotheses. minItems:1 ensures a non-empty set is produced.",
+      "items": {
+        "type": "object",
+        "required": [
+          "hypothesis_id",
+          "statement",
+          "falsifiable_prediction",
+          "evidence_needed",
+          "evidence_ref"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "hypothesis_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Short identifier, e.g. IH1, IH2"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Declarative statement of what the hypothesis claims"
+          },
+          "falsifiable_prediction": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Concrete, observable, falsifiable prediction — what would specifically be observed if the hypothesis is true vs false. Must contain a non-whitespace character (a blank prediction is not falsifiable). Mirrors rq_hypothesis_chain style."
+          },
+          "evidence_needed": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "description": "List of evidence types or experiments needed to test this hypothesis; each must be non-blank"
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "description": "Anti-slop: references to the gap_id(s) or source(s) this hypothesis is generated from. At least one required; each must be non-blank."
+          },
+          "source_gap_ref": {
+            "type": "string",
+            "description": "Optional: the gap_id from gap_classification that triggered this hypothesis"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "hypothesis_ids this hypothesis logically depends on"
+          },
+          "notes": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Optional clarifications or uncertainty flags"
+          }
+        }
+      }
+    }
+  }
+}

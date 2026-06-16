@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/idea_backlog.schema.json",
+  "title": "Idea Backlog",
+  "description": "IDEATE-stage exit artifact. Output of feasibility-reranker. A deterministically ranked MENU of ideas for the director to choose from. Every idea carries a feasibility score and at least one non-blank evidence_ref (anti-slop). HARD: this schema contains NO selected/chosen/bet/winner/director_* field, and every object is additionalProperties:false — so the producing model cannot self-bet (structurally impossible). The optional from_hypothesis_ref/novelty_ref must look like real refs (contain a digit), closing the prose-channel smuggle of a flag-word. The bet is recorded ONLY by the human /idea-bet gate as a separate adr.",
+  "type": "object",
+  "required": ["ranked_ideas"],
+  "additionalProperties": false,
+  "properties": {
+    "ranked_ideas": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ideas ranked by feasibility score DESC (rank 1 = most feasible). The model produces this ranked menu; the director picks via the /idea-bet gate.",
+      "items": {
+        "type": "object",
+        "required": [
+          "idea_id",
+          "rank",
+          "summary",
+          "feasibility",
+          "evidence_ref"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "idea_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Unique identifier for this idea, e.g. IDEA-001"
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Deterministic rank: 1 = highest feasibility. Assigned by feasibility_score.py."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "One-sentence summary of the research idea (non-blank)"
+          },
+          "feasibility": {
+            "type": "object",
+            "required": ["score"],
+            "additionalProperties": false,
+            "description": "Feasibility assessment produced by feasibility_score.py",
+            "properties": {
+              "score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Feasibility score in [0, 1]; higher = more feasible"
+              },
+              "compute": {
+                "type": ["string", "number", "null"],
+                "default": null,
+                "description": "Compute demand signal used in the rubric (e.g. 'low', 'high', or a numeric estimate)"
+              },
+              "data": {
+                "type": ["string", "number", "null"],
+                "default": null,
+                "description": "Data availability signal used in the rubric"
+              },
+              "time": {
+                "type": ["string", "number", "null"],
+                "default": null,
+                "description": "Time-to-result signal used in the rubric"
+              }
+            }
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "description": "Anti-slop: references to hypothesis_ids, gap_ids, or sources backing this idea. At least one required; each must be non-blank."
+          },
+          "from_hypothesis_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "[0-9]",
+            "description": "Optional: the hypothesis_id this idea was derived from. Must look like a real ref (contain a digit) — this blocks smuggling a flag-word ('SELECTED'/'WINNER') through a free-text field."
+          },
+          "novelty_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "[0-9]",
+            "description": "Optional: the gap_id whose novelty_score informed this idea. Must contain a digit (real-ref guard)."
+          },
+          "caveats": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Optional list of known limitations or risks for this idea (free text; never read as a control signal)"
+          }
+        }
+      }
+    }
+  }
+}

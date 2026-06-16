@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/protocol_spec.schema.json",
+  "title": "Protocol Spec",
+  "description": "Output of protocol-compiler. Compiles an experiment_matrix into concrete, runnable per-condition configs (so coders never guess from prose). References the matrix it derives from; carries a canonical shared config plus per-condition divergences.",
+  "type": "object",
+  "required": ["from_matrix_ref", "shared", "configs"],
+  "additionalProperties": false,
+  "properties": {
+    "from_matrix_ref": {"type": "string", "minLength": 1},
+    "shared": {"type": "object", "description": "canonical config common to all conditions"},
+    "configs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["condition_id", "config"],
+        "additionalProperties": false,
+        "properties": {
+          "condition_id": {"type": "string", "minLength": 1},
+          "config": {"type": "object"},
+          "script_entry": {"type": ["string", "null"], "default": null},
+          "seed": {"type": ["integer", "null"], "default": null}
+        }
+      }
+    }
+  }
+}

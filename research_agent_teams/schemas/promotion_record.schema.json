@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/promotion_record.schema.json",
+  "title": "Promotion Record",
+  "description": "The audit trail of one /promote-to-vault attempt (the M⇒D seam, write side). Output of the human promotion gate via promote.py. result-status + can-cite-thesis are RE-DERIVED by promote.rederive() from the ACTUAL referenced audit artifacts (leakage / fairness / reviewer) plus the human freeze flag — never copied from any payload's self-claim (blueprint §0: 'the promoter re-derives status and never trusts a sidecar's self-claim'). The allOf enforces the safety direction: admissible can be true ONLY when rederived_result_status == 'frozen' AND rederived_can_cite_thesis == true AND a vault_path was written. provisional / non-frozen ⇒ admissible must be false (structurally non-promotable). Mirrors the derivation family of venue_readiness_verdict.schema.json + sanity_verdict.schema.json.",
+  "type": "object",
+  "required": [
+    "candidate_ref",
+    "admissible",
+    "rederived_result_status",
+    "rederived_can_cite_thesis",
+    "reasons",
+    "decided_by",
+    "decided_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "candidate_ref": {
+      "type": "object",
+      "description": "Reference (path + sha) to the promotion_candidate this record decides. Same {path, sha256} shape as ledger artifact refs.",
+      "required": ["path", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "pattern": "\\S"},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "admissible": {
+      "type": "boolean",
+      "description": "Whether the candidate was admitted into System D. true ONLY when re-derived frozen + citable (see allOf). false ⇒ rejected, vault untouched."
+    },
+    "rederived_result_status": {
+      "type": "string",
+      "enum": ["frozen", "provisional", "diagnostic-only", "invalid", "superseded", "missing-audit"],
+      "description": "RE-DERIVED result-status (05-registry/status-registry.md). 'frozen' iff human_freeze AND reviewer≠BLOCK AND leakage==pass AND fairness==pass AND source not invalid/superseded; else passes through the source non-frozen status or 'provisional'. Never copied from a self-claim."
+    },
+    "rederived_can_cite_thesis": {
+      "type": "boolean",
+      "description": "RE-DERIVED: (rederived_result_status=='frozen') AND leakage==pass AND fairness==pass. Manual override forbidden (status-registry derived-field rule). Never copied from a self-claim."
+    },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Non-empty derivation trace: every fact that drove admit/reject (e.g. 'leakage-audit=fail', 'no human_freeze', 'reviewer=BLOCK', 'admitted: frozen+leakage_pass+fairness_pass').",
+      "items": {"type": "string", "pattern": "\\S"}
+    },
+    "vault_path": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Where the page was written in System D (02-wiki/<type>/<slug>.md) when admitted; null when rejected."
+    },
+    "vault_slug": {
+      "type": ["string", "null"],
+      "default": null,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "The lowercase-kebab slug written (admitted), else null. Pattern enforces a recall-able kebab slug (applies only when a string)."
+    },
+    "decided_by": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Who ran the gate (human-only). Typically 'director'."
+    },
+    "decided_at": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "ISO-8601 timestamp of the promotion decision."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["admissible"],
+        "properties": {"admissible": {"const": true}}
+      },
+      "then": {
+        "required": ["vault_path", "vault_slug"],
+        "properties": {
+          "rederived_result_status": {"const": "frozen"},
+          "rederived_can_cite_thesis": {"const": true},
+          "vault_path": {"type": "string", "pattern": "\\S"},
+          "vault_slug": {"type": "string", "pattern": "\\S"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"rederived_result_status": {"not": {"const": "frozen"}}}
+      },
+      "then": {
+        "properties": {"admissible": {"const": false}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"rederived_can_cite_thesis": {"const": false}}
+      },
+      "then": {
+        "properties": {"admissible": {"const": false}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"vault_path": {"type": "string"}},
+        "required": ["vault_path"]
+      },
+      "then": {
+        "properties": {"admissible": {"const": true}}
+      }
+    }
+  ]
+}

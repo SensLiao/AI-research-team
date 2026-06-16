@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_note.schema.json",
+  "title": "Paper Note",
+  "description": "Output of literature-ingest. A selected paper distilled into a typed, citable note (summary + atomic claims + methods/datasets/metrics), by reference. Ingestion produces draft knowledge only — it never freezes.",
+  "type": "object",
+  "required": ["title", "source_ref", "summary", "claims"],
+  "additionalProperties": false,
+  "properties": {
+    "title": {"type": "string", "minLength": 1},
+    "source_ref": {"type": "string", "minLength": 1},
+    "year": {"type": ["integer", "null"], "default": null},
+    "venue": {"type": ["string", "null"], "default": null},
+    "summary": {"type": "string", "minLength": 1},
+    "claims": {"type": "array", "items": {"type": "string"}},
+    "methods": {"type": "array", "items": {"type": "string"}, "default": []},
+    "datasets": {"type": "array", "items": {"type": "string"}, "default": []},
+    "metrics": {"type": "array", "items": {"type": "string"}, "default": []},
+    "vault_slug": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Set ONLY by an ingest run given vault_root: the slug of an EXISTING 02-wiki/papers page whose title (normalized) or source ref matches this paper. A read-only cross-reference, not an assertion that this note IS that page. null / absent = no match found (or no vault scanned)."
+    },
+    "possible_duplicate": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when vault_slug was set — flags that this paper may already be in the vault so the director can dedup before promoting. Advisory only; ingestion still produces draft knowledge and never blocks."
+    }
+  }
+}

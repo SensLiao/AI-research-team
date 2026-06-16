@@ -1,0 +1,1 @@
+The validated-knowledge layer — the crown jewels. One markdown page per item (paper / concept / method / experiment / result / decision …), organized by the subfolder taxonomy, each with typed frontmatter. Permanent; only entered via ingest or the `/promote-to-vault` human gate. Empty in this published skeleton.

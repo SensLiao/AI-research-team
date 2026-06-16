@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/monitor_alert.schema.json",
+  "title": "Monitor Alert",
+  "description": "EXECUTE/DISCOVER-stage artifact (advisory). Output of monitor. Records per-run alerts derived deterministically from run_record status and budget fields (stalled, over_budget, failed, cost_spike). Advisory only — no BLOCK verdict. The monitor has little to watch until real GPU runs exist.",
+  "type": "object",
+  "required": ["alerts"],
+  "additionalProperties": false,
+  "properties": {
+    "alerts": {
+      "type": "array",
+      "minItems": 0,
+      "description": "Per-run alerts. Empty array means all runs are healthy.",
+      "items": {
+        "type": "object",
+        "required": ["run_ref", "alert_type", "severity", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "run_ref": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Reference to the run_record or run_manifest that triggered this alert."
+          },
+          "alert_type": {
+            "type": "string",
+            "enum": ["stalled", "over_budget", "failed", "cost_spike"],
+            "description": "Classification of the monitoring alert."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["info", "warn", "critical"],
+            "description": "Advisory severity. Never triggers a BLOCK gate."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Non-empty list of evidence pointers — anti-slop guard.",
+            "items": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation of the alert. Optional."
+          }
+        }
+      }
+    }
+  }
+}
