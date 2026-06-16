@@ -1,0 +1,84 @@
+# Domain profile: ML systems / training-efficiency research (a CS-research domain — NOT the system's target).
+# Validates against schemas/domain_profile.schema.json (payload).
+#
+# The studied variable here is the SYSTEM (a kernel, scheduler, parallelism strategy, quantization,
+# memory manager, data pipeline), NOT model accuracy. The cardinal sin is an unfair comparison: claiming
+# a speedup while the baseline ran on different hardware, different data, or was measured at a different
+# point. The gates therefore enforce hardware parity, identical data/workload, and honest wall-clock-vs-step
+# accounting, and the metrics are systems metrics (throughput / latency / memory / cost), most of which are
+# NOT in [0,1] and are NOT all higher-is-better.
+profile_id: cs-ml-systems
+display_name: "ML systems / training & inference efficiency (throughput, latency, memory, cost)"
+applies_to:
+  - ml-systems
+  - training-efficiency
+  - inference-efficiency
+  - distributed-training
+  - gpu-kernels
+  - quantization
+  - serving-systems
+  - mlperf
+split_policy:
+  # A systems study's "unit" is a benchmark WORKLOAD / configuration measured repeatedly, not a data fold.
+  # Disjointness that matters is hardware/data/workload parity across conditions (alignment_invariants),
+  # not a held-out test set — but the unit must still be a whole workload, never a sub-step.
+  default_split_unit: workload_run
+  allowed_split_units: ["workload_run", "benchmark_config", "model_size", "batch_size"]
+  # Measuring a fraction of steps / a single warmup iteration / one micro-batch and extrapolating hides
+  # steady-state behavior and ramp costs.
+  forbidden_split_units: ["single_step", "warmup_iteration", "micro_batch"]
+  stratification_keys: ["hardware", "model_size", "batch_size", "precision"]
+  external_test_recommended: false
+  freeze_test_before_training: false
+leakage_checks:
+  # The compared systems must run identical input data / workload so a "speedup" is not a data difference.
+  - identical_workload_and_data_across_conditions
+  # No silent caching / warm-cache reuse that benefits one condition's second run only.
+  - no_cross_condition_warm_cache_advantage
+  # Quality is held: an efficiency win must not come from silently degraded model output (report a quality metric alongside).
+  - quality_held_constant_or_reported
+leakage_delta: 0.5
+metrics:
+  # Systems metrics. NOTE: these are NOT all [0,1] and NOT all higher-is-better. Unbounded-above quantities
+  # use [0, null]; cost/latency/memory are lower-is-better; speedup is a ratio with floor 0 and no ceiling.
+  - {name: throughput_samples_per_sec, higher_is_better: true,  valid_range: [0.0, null]}
+  - {name: tokens_per_sec,             higher_is_better: true,  valid_range: [0.0, null]}
+  - {name: latency_ms,                 higher_is_better: false, valid_range: [0.0, null]}
+  - {name: p99_latency_ms,             higher_is_better: false, valid_range: [0.0, null]}
+  - {name: peak_memory_gb,             higher_is_better: false, valid_range: [0.0, null]}
+  - {name: time_to_accuracy_sec,       higher_is_better: false, valid_range: [0.0, null]}
+  - {name: speedup,                    higher_is_better: true,  valid_range: [0.0, null]}
+  - {name: cost_usd,                   higher_is_better: false, valid_range: [0.0, null]}
+  - {name: energy_joules,              higher_is_better: false, valid_range: [0.0, null]}
+  # model-utilization efficiencies are genuine fractions [0,1]
+  - {name: gpu_utilization,            higher_is_better: true,  valid_range: [0.0, 1.0]}
+  - {name: model_flops_utilization,    higher_is_better: true,  valid_range: [0.0, 1.0]}
+alignment_invariants:
+  # Hardware parity: same GPU/CPU/accelerator model, count, interconnect, and driver/CUDA stack across conditions.
+  - "hardware parity across compared systems — identical accelerator model + count, interconnect, host, driver / CUDA / library versions, all reported (hardware_parity)"
+  # Identical data and workload: same dataset, same sequence/batch shapes, same total work across conditions.
+  - "identical data and workload across compared systems — same dataset, sequence lengths, batch/global-batch sizes, and total work unless the workload IS the studied variable (workload_parity)"
+  # Wall-clock vs step honesty: if comparing wall-clock, report steps/throughput too; never mix a per-step win with a wall-clock claim.
+  - "wall-clock vs per-step accounting is explicit — a wall-clock-time claim also reports steps and throughput, and a per-step claim is not presented as end-to-end speedup (wallclock_vs_step_honesty)"
+  # Measurement hygiene: warmup excluded, steady-state measured, >1 repetition with variance, fixed clocks where possible.
+  - "measurement excludes warmup, measures steady state, reports repetitions + variance, and pins clocks / disables turbo where feasible (measurement_hygiene)"
+  # Quality parity: an efficiency claim holds model quality constant (or reports the quality delta) — speed at the cost of accuracy is disclosed.
+  - "model quality is held constant or its delta is reported alongside the efficiency metric — a speedup that silently degrades accuracy is disclosed (quality_parity)"
+idea_grounding:
+  soundness_min: 0.5
+  contribution_min: 0.3
+protocol_fields:
+  measurement:
+    studied_variable: "the SYSTEM, not accuracy"
+    warmup_excluded: true
+    repetitions_min: 3
+    report_variance: true
+    clock_pinning: "fixed clocks / disable turbo where feasible"
+    report_hardware: ["accelerator_model", "count", "interconnect", "driver", "cuda", "framework_version"]
+hard_invariants:
+  - "the studied variable is the SYSTEM (kernel / parallelism / quantization / scheduler / pipeline), not model accuracy — and that is stated"
+  - "hardware parity across compared systems: identical accelerator model + count, interconnect, host, and software stack, all reported"
+  - "identical data and workload across compared systems unless the workload itself is the studied variable"
+  - "wall-clock-vs-step accounting is explicit and honest — no per-step win presented as an end-to-end speedup"
+  - "measurement excludes warmup, measures steady state, and reports repetitions with variance"
+  - "model quality is held constant or the quality delta is reported alongside any efficiency claim"

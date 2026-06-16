@@ -1,0 +1,45 @@
+schema_version: 1
+# Mid-step skills — finer-grained units that run WITHIN a stage, so the director can invoke one
+# directly instead of a whole mode. Each maps to exactly ONE FSM stage; readiness = that stage is the
+# run's current stage OR already committed (execution_registry.skill_readiness). resource_requirements
+# reference the resource pool (W1) by capability + binding alias; optional=true means the skill
+# degrades honestly when the resource is unbound (never fabricates the missing capability's output).
+skills:
+  - skill_id: literature_pull
+    stage: DISCOVER
+    purpose: "pull + summarize relevant papers for the run's question"
+    consumes: [task_frame]
+    produces: [evidence_table]
+    resource_requirements:
+      - {capability: paper_search, alias: paper_api, optional: true}
+  - skill_id: gap_classify
+    stage: DISCOVER
+    purpose: "classify the surfaced gaps by type + novelty (score-only; never self-bets a direction)"
+    consumes: [evidence_table]
+    produces: [gap_map]
+    resource_requirements: []
+  - skill_id: experiment_matrix_builder
+    stage: DESIGN
+    purpose: "build the experiment matrix + variable-control plan from the selected idea"
+    consumes: [selected_idea]
+    produces: [experiment_protocol]
+    resource_requirements: []
+  - skill_id: server_query
+    stage: EXECUTE
+    purpose: "read-only GPU server status (delegates to the server-query skill; never mutates the server)"
+    consumes: []
+    produces: [server_status]
+    resource_requirements:
+      - {capability: query_status, alias: primary_gpu, optional: false}
+  - skill_id: failure_mining
+    stage: ANALYZE
+    purpose: "mine failed cases + recurring failure mechanisms from the raw results"
+    consumes: [raw_results]
+    produces: [failure_report]
+    resource_requirements: []
+  - skill_id: claim_check
+    stage: VERIFY
+    purpose: "check whether the evidence actually supports each candidate claim"
+    consumes: [result_analysis]
+    produces: [claim_decisions]
+    resource_requirements: []

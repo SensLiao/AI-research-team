@@ -1,0 +1,34 @@
+schema_version: 1
+# The 7 REAL FSM stages (runstore.STAGES) exposed as individually-runnable units, for the command
+# palette + dependency menu. Declarative: what each stage consumes / produces. READINESS is grounded
+# in the run manifest (execution_registry.stage_readiness), never in this prose — this file documents
+# the contract; the manifest decides whether a stage can run right now.
+stages:
+  - stage: DISCOVER
+    purpose: "collect frontier / papers / prior work / gaps; ground in live + vault evidence"
+    consumes: [task_frame]
+    produces: [evidence_table, gap_map]
+  - stage: IDEATE
+    purpose: "generate + rank research ideas into a backlog (tournament-judged)"
+    consumes: [DISCOVER]
+    produces: [idea_backlog]
+  - stage: DESIGN
+    purpose: "experiment protocol / metrics / baselines / runnable scripts (+ preregistration)"
+    consumes: [selected_idea]
+    produces: [experiment_protocol, metric_registry, run_scripts]
+  - stage: EXECUTE
+    purpose: "run — or, until the GPU server is operated, EMIT runnable scripts for — the experiments"
+    consumes: [DESIGN]
+    produces: [run_record, raw_results]
+  - stage: ANALYZE
+    purpose: "mine results / failures / variance / slices"
+    consumes: [EXECUTE]
+    produces: [result_analysis, failure_report]
+  - stage: VERIFY
+    purpose: "audit evidence / reproducibility / leakage / fairness / claims"
+    consumes: [ANALYZE]
+    produces: [verification_report, claim_decisions]
+  - stage: REPORT
+    purpose: "synthesize the run into a director-facing report"
+    consumes: [VERIFY]
+    produces: [report]

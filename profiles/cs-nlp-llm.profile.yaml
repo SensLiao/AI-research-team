@@ -1,0 +1,77 @@
+# Domain profile: NLP / LLM evaluation (a CS-research domain — NOT the system's target).
+# The system is AI/CS-research-general; this profile specializes the gates for evaluating
+# language models / LLMs on benchmarks. Validates against schemas/domain_profile.schema.json (payload).
+#
+# THE central leakage risk here is DATA CONTAMINATION: benchmark / test items (or paraphrases) leaking
+# into the model's pretraining or instruction-tuning corpus, which silently inflates every score. The
+# gates therefore make contamination + LLM-as-judge bias first-class invariants.
+profile_id: cs-nlp-llm
+display_name: "NLP / LLM evaluation (benchmarks, instruction-following, generation)"
+applies_to:
+  - nlp
+  - large-language-models
+  - llm-evaluation
+  - benchmarking
+  - instruction-following
+  - code-generation
+  - in-context-learning
+split_policy:
+  # An LLM benchmark is split per evaluation INSTANCE (a prompt/question), but the real disjointness
+  # that matters is test-item-vs-pretraining, enforced by leakage_checks below, not by a held-out fold.
+  default_split_unit: benchmark_instance
+  allowed_split_units: ["benchmark_instance", "task", "dataset", "document"]
+  # Splitting per-token / per-sentence / per-message leaks context across the boundary; splitting per
+  # template lets the same surface form appear in train and test.
+  forbidden_split_units: ["token", "sentence", "message_turn", "prompt_template"]
+  stratification_keys: ["task", "language", "difficulty"]
+  external_test_recommended: true
+  freeze_test_before_training: true
+leakage_checks:
+  # THE central one: detect benchmark/test items present (verbatim or near-duplicate / n-gram overlap)
+  # in the model's pretraining or instruction-tuning corpus — the canonical LLM data-contamination check.
+  - benchmark_contamination_in_pretraining
+  # Held-out instances must be disjoint from any few-shot / in-context demonstration pool used at eval.
+  - test_instance_disjoint_from_fewshot_pool
+  # Near-duplicate / paraphrase detection so a reworded test item is not silently scored as unseen.
+  - near_duplicate_and_paraphrase_disjoint
+  # Canary-string / membership-inference probe: check the model does not complete known benchmark canaries.
+  - canary_string_membership_check
+leakage_delta: 0.5
+metrics:
+  # Standard LLM/NLP scoring metrics, all bounded [0,1].
+  - {name: exact_match, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: f1, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: pass_at_k, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: accuracy, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: rouge_l, higher_is_better: true, valid_range: [0.0, 1.0]}
+  - {name: win_rate, higher_is_better: true, valid_range: [0.0, 1.0]}
+alignment_invariants:
+  # Identical prompt template, system prompt, and few-shot exemplars across compared models unless the
+  # prompt itself is the studied variable.
+  - "identical prompt template, system prompt, and in-context / few-shot exemplars across compared models unless the prompt IS the studied variable (prompt_parity)"
+  # Identical decoding configuration (temperature, top_p, max_tokens, stop sequences, sampling seed).
+  - "identical decoding configuration across compared models — temperature, top_p, max_tokens, stop sequences, and sampling seed reported (decoding_parity)"
+  # Identical answer-extraction / parsing and scoring implementation, so a parser difference is not a score difference.
+  - "identical answer extraction / parsing and identical metric implementation across compared models (scoring_parity)"
+  # LLM-as-judge is order- and identity-biased: swap candidate order bidirectionally, use >1 judge or human cross-check, report agreement.
+  - "any LLM-as-judge evaluation mitigates bias — swap candidate order bidirectionally, use more than one judge (or a human cross-check), and report inter-judge agreement (llm_judge_bias_note)"
+  # The judge / reward model must not be the same family as a candidate it scores without disclosure (self-preference bias).
+  - "an LLM judge is not the same model family as a candidate it scores unless self-preference bias is disclosed and controlled (judge_self_preference_control)"
+  # pass@k must be reported with the n and k actually sampled (and unbiased estimator), not a single best-of.
+  - "pass@k is reported with the sampled n, the k, and an unbiased estimator — not cherry-picked best-of-n (passk_estimator_honesty)"
+idea_grounding:
+  soundness_min: 0.5
+  contribution_min: 0.3
+protocol_fields:
+  evaluation:
+    judge_protocol: "swap-order + >=2 judges + report agreement"
+    contamination_audit: "n-gram overlap + canary probe vs declared training corpus"
+    fewshot_shots: configurable
+    decoding: {temperature: 0.0, top_p: 1.0, report_seed: true}
+hard_invariants:
+  - "test set frozen before training; benchmark instances checked for contamination in the pretraining / instruction-tuning corpus (data contamination is THE central risk)"
+  - "all pretrained / base model weights and their training-data provenance explicitly declared"
+  - "identical prompt template, in-context exemplars, and decoding configuration across compared models unless that IS the studied variable"
+  - "identical answer extraction and metric implementation across compared models"
+  - "any LLM-as-judge evaluation mitigates order + self-preference bias (bidirectional swap, >1 judge or human cross-check, reported agreement)"
+  - "pass@k reported with the actual n and k and an unbiased estimator, never best-of-n cherry-picking"
