@@ -9,9 +9,18 @@ modes:
     budget: {max_agent_hops: 2}
   ingest_paper:
     entry_stage: DISCOVER
+    operated: true   # wired in operate/modes/REGISTRY (paper-reading upgrade 2026-06-26; wiring test enforces the mirror)
+    stage_path: [DISCOVER, REPORT]   # Tier-S quick typed note: distil paper -> paper_note spine, then reply
     agent_subset: [literature-ingest]
-    gate_level: record_only
+    gate_level: record_only           # reading = draft knowledge; the human gate is /promote-to-vault. Drift gate + paper_note schema contract still fire as deterministic cores.
     budget: {max_agent_hops: 1}
+  read_paper_deep:
+    entry_stage: DISCOVER
+    operated: true   # wired in operate/modes/REGISTRY (paper-reading upgrade 2026-06-26; wiring test enforces the mirror)
+    stage_path: [DISCOVER, REPORT]   # Tier-D single-paper deep read -> full 0+3+1 card (8 artifacts), then reply
+    agent_subset: [literature-ingest, claim-extractor, claim-evidence-linker]   # the routed worker labels the consolidated read-paper-deep-worker embodies; the 5 per-paper producers (method-teardown-extractor/figure-reader/paper-appraiser/paper-relations-mapper/trend-card-builder) are operate sub-workers (not FSM-routed; same pattern as novelty-collision-checker)
+    gate_level: record_only           # reading = draft knowledge; the human gate is /promote-to-vault. LIVE hard gates (north-star drift + citation-integrity + citation-existence) fire as deterministic cores regardless of gate_level; the evidence-verifier SATURATION gate is N/A for a single source and is honestly omitted (never listed-then-skipped)
+    budget: {max_agent_hops: 8}
   evidence_review:
     entry_stage: DISCOVER
     operated: true   # wired in operate/modes/REGISTRY (audit B1/B3; wiring test enforces the mirror)
@@ -80,11 +89,38 @@ modes:
   new_direction:
     entry_stage: DISCOVER
     operated: true   # wired in operate/modes/REGISTRY (audit B1/B3; wiring test enforces the mirror)
-    stage_path: [DISCOVER, IDEATE, REPORT]   # gap-hunting -> ideate -> idea_backlog (the ranked MENU) -> director reviews at the IDEATE gate
+    stage_path: [DISCOVER, IDEATE, REPORT]   # gap-hunting -> ideate -> NOVELTY-COLLISION gate -> idea_backlog (the ranked MENU) -> director reviews at the IDEATE gate
+    # NOVELTY-COLLISION gate (director lock 2026-06-18): IDEATE dispatches a SECOND, independent worker
+    # (novelty-collision-checker) AFTER the ideate worker; before the /idea-bet menu is built,
+    # _shared.run_collision_gate checks each idea for an EVIDENCED prior-art collision (a real,
+    # existence-verified paper that already did this method×problem AND ran it) and CUTS it from the menu
+    # (hard_block, profile novelty_collision.hard_block default True), recording it to the project's
+    # known-prior-art ledger so future runs never re-output it. A novelty SCORE still never cuts — only an
+    # evidenced collision does. Offline -> nothing cut, all UNVERIFIED, the report says novelty was NOT
+    # verified. (novelty-collision-checker runs as an operate sub-worker; not in agent_subset by design —
+    # the artifact is authored by it, but routing stays minimal. See new_direction.py + _shared.py.)
     agent_subset: [future-work-miner, gap-classifier, novelty-scorer, evidence-verifier, citation-integrity-auditor,
                    hypothesis-generator, feasibility-reranker]
     gate_level: director_signoff     # a new direction commits GPU+writing time (high-stakes): both DISCOVER hard gates (evidence-verifier + citation-integrity-auditor) fire so ideation is grounded in VERIFIED evidence (router guardrail 1). The director gate fires at each stage; the IDEATE boundary IS the /idea-bet review (a reject = "none of these — pivot"). idea_backlog has NO self-bet field (structural); the chosen bet is recorded by the human /idea-bet slash as an adr. Downstream experiment rigor (DESIGN..VERIFY hard gates) fires only AFTER a bet.
     budget: {max_agent_hops: 6}
+  # --- RAT-2 Wave-3 (2026-06-19) — deep_ideation: the FULL deep-ideation chain (IDEATE-v2) ---
+  deep_ideation:
+    entry_stage: DISCOVER
+    operated: true   # wired in operate/modes/REGISTRY (wiring test enforces the mirror)
+    stage_path: [DISCOVER, IDEATE, REPORT]   # SAME macro path as new_direction — the deep chain is a
+    # micro-subgraph INSIDE the macro stages (runstore stage enum untouched; report's hard constraint).
+    # DISCOVER: new_direction's grounding + the deep panel (formalize → mechanism graph → cross-domain
+    # analogy → contradiction) + measured evidence-saturation. IDEATE: hypotheses → tournament →
+    # NOVELTY-COLLISION gate → experiment sketches → idea lineage → the /idea-bet MENU. REPORT: a
+    # cross-stage quality scorecard (quality-controller) + integrity recommendation (advisory) + blind
+    # pairwise quality eval. Composed on new_direction's proven base via _deep_ideate (zero drift); the
+    # deep RAT-2 capability workers are dispatched as operate sub-workers (by prompt), so agent_subset
+    # stays the minimal routed set (same as new_direction) — both DISCOVER hard gates included so
+    # ideation is grounded in VERIFIED evidence (router guardrail 1). The IDEATE boundary IS /idea-bet.
+    agent_subset: [future-work-miner, gap-classifier, novelty-scorer, evidence-verifier, citation-integrity-auditor,
+                   hypothesis-generator, feasibility-reranker]
+    gate_level: director_signoff
+    budget: {max_agent_hops: 9}
   # --- M3-c (gap-hunting breadth) — the differentiation engine, focused scan ---
   gap_breadth:
     entry_stage: DISCOVER

@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/mechanism_mapping.schema.json",
+  "title": "Mechanism Mapping",
+  "description": "DISCOVER-stage downstream artifact (Explicit analogy mapping cluster). Output of analogy-mapper. Takes an EXISTING transfer_candidates item (a cross-domain candidate already surfaced by cross-domain-transfer-scout) plus a problem_abstraction, and turns the informal 'is this retrieved cross-domain paper a real structural analog' judgment into a TYPED, scored, checkable artifact: it lays the source-domain mechanisms next to the target-problem mechanisms, records which mechanisms are SHARED, which source assumptions would BLOCK the transfer, and which ADAPTATIONS are required. overlap_score is computed (set by tools/analogy_graph_match.match_mechanisms, never hand-set). The verdict is PASS / REPAIR / REJECT. The allOf below mirrors the derivation-verdict family in this repo (sanity_verdict / venue_readiness_verdict): a 'PASS' verdict structurally REQUIRES blocking_assumptions to be empty (maxItems 0) — so a 'PASS with unresolved blockers' is impossible to even write. analogy-mapper consumes transfer_candidates; it does NOT redefine it, fetch papers, or decide final selection. Domain-general: no domain is hardcoded (medical-imaging / NLP / RL are just instances of source_domain).",
+  "type": "object",
+  "required": [
+    "mapping_id",
+    "source_domain",
+    "target_problem_id",
+    "shared_mechanisms",
+    "blocking_assumptions",
+    "required_adaptations",
+    "overlap_score",
+    "verdict"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "mapping_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Short unique identifier for this mapping, e.g. AM-001. Non-blank required."
+    },
+    "source_domain": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "The domain the analogous mechanism originates from (carried from the transfer_candidates item's source_domain), e.g. 'natural language processing', 'graph neural networks'. Non-blank required."
+    },
+    "target_problem_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Identifier of the target-problem / problem_abstraction this mapping is scored against (e.g. a target_hook id or a problem_abstraction id). Non-blank required."
+    },
+    "shared_mechanisms": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The mechanisms that genuinely appear in BOTH the source domain and the target problem — the structural core of the analogy. At least one required (a mapping with zero shared mechanisms is not an analogy and must not be emitted as one).",
+      "items": {
+        "type": "object",
+        "required": ["mechanism", "source_evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "mechanism": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "A mechanism-level phrase shared by source and target (domain nouns stripped), e.g. 'propagate labels along a sparse graph', 'segment thin elongated structure'. Non-blank required."
+          },
+          "source_evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "description": "Anti-slop: at least one non-blank pointer (the transfer_candidates evidence_ref / a real source-domain paper ref) grounding that this mechanism is real in the source domain."
+          },
+          "target_hook": {
+            "type": "string",
+            "description": "Optional: where in the target problem this shared mechanism applies (carried from the transfer_candidates item's target_hook)."
+          }
+        }
+      }
+    },
+    "blocking_assumptions": {
+      "type": "array",
+      "description": "Source-domain assumptions that would BREAK the transfer if they do not hold in the target problem. EMPTY iff the analogy carries no unresolved blocker. A non-empty list forbids a PASS verdict (see allOf).",
+      "items": {
+        "type": "object",
+        "required": ["assumption", "why_blocking"],
+        "additionalProperties": false,
+        "properties": {
+          "assumption": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The source-domain assumption at risk in the target problem, e.g. 'source method assumes dense supervision'. Non-blank required."
+          },
+          "why_blocking": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Why this assumption blocks the transfer in the target problem. Non-blank required."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "description": "Optional pointers grounding the blocking assumption."
+          }
+        }
+      }
+    },
+    "required_adaptations": {
+      "type": "array",
+      "description": "Concrete changes needed to make the source mechanism work on the target problem (the 'how to port it' list). May be empty when the transfer is direct.",
+      "items": {
+        "type": "object",
+        "required": ["adaptation", "addresses"],
+        "additionalProperties": false,
+        "properties": {
+          "adaptation": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The concrete adaptation, e.g. 'replace dense loss with a sparse-label variant'. Non-blank required."
+          },
+          "addresses": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Which blocking_assumption.assumption or shared mechanism this adaptation addresses. Non-blank required."
+          }
+        }
+      }
+    },
+    "overlap_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Mechanism-set overlap in [0,1], COMPUTED by tools/analogy_graph_match.match_mechanisms (Jaccard of the source vs target mechanism sets) — never hand-set. A score alone never decides the verdict (it informs it)."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "REPAIR", "REJECT"],
+      "description": "PASS: a real structural analog with NO unresolved blocking assumptions (allOf forbids PASS while blocking_assumptions is non-empty). REPAIR: a plausible analog but blocked until the required_adaptations are made / blocking_assumptions resolved. REJECT: not a real structural analog (mechanisms do not actually overlap)."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional free-text caveats, north-star drift notes, or why a borderline analog got its verdict."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["verdict"],
+        "properties": {
+          "verdict": {"const": "PASS"}
+        }
+      },
+      "then": {
+        "properties": {
+          "blocking_assumptions": {"maxItems": 0}
+        }
+      }
+    }
+  ]
+}

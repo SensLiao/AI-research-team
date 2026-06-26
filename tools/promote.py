@@ -242,6 +242,20 @@ def promote_to_vault(candidate: dict, *, signals: dict, human_freeze: bool,
                              vault_path=None, vault_slug=None, decided_by=decided_by, decided_at=decided_at,
                              candidate_path=candidate_path, candidate_sha=candidate_sha)
 
+    # 1.4) renderer discipline: the promote gate writes ONLY `result` pages (its sole conformant
+    # renderer). A non-result vault_type would otherwise receive result-shaped frontmatter
+    # (evidence-class EXP-RESULT / result-status / can-cite-thesis) mislabeled as e.g. `method` — a
+    # format-drift breach. Non-result types enter the vault via migration/ingest (vault_page_contract-
+    # validated), never through this gate. Fail closed.
+    _vault_type = candidate.get("vault_type", "result")
+    if _vault_type != "result":
+        return _build_record(
+            candidate,
+            _hard_reject(f"rejected: promote writes only `result` pages; vault_type {_vault_type!r} has "
+                         "no conformant renderer (non-result types enter via migration/ingest)"),
+            vault_path=None, vault_slug=None, decided_by=decided_by, decided_at=decided_at,
+            candidate_path=candidate_path, candidate_sha=candidate_sha)
+
     # 1.5) project discipline: when the vault HAS a project-registry FILE (the real vault always
     # does), every promoted page must carry a REGISTERED project slug — no more 'unknown'-project
     # knowledge. A registry that exists but parses to zero rows fails CLOSED (rejects everything)

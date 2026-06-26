@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_relations.schema.json",
+  "title": "Paper Relations",
+  "description": "Stage-4 typed paper-to-paper edges anchored at one focal paper. Output of the relations producer in the single-paper deep-read path. Each edge names how the focal paper relates to another paper (inherits / refutes / unifies / replaces / opens / extends / uses), so the read paper can be situated in its lineage rather than read in isolation.",
+  "type": "object",
+  "required": ["source_ref", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the focal paper this relation map is anchored at — every edge is read FROM this paper"
+    },
+    "edges": {
+      "type": "array",
+      "description": "typed directed edges from the focal paper to other papers",
+      "items": {
+        "type": "object",
+        "required": ["target_ref", "relation"],
+        "additionalProperties": false,
+        "properties": {
+          "target_ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the other paper this edge points to"
+          },
+          "relation": {
+            "type": "string",
+            "enum": ["inherits", "refutes", "unifies", "replaces", "opens", "extends", "uses"],
+            "description": "how the focal paper relates to the target paper"
+          },
+          "note": {
+            "type": "string",
+            "description": "free-text justification for this edge — what exactly is inherited/refuted/etc."
+          }
+        }
+      }
+    }
+  }
+}

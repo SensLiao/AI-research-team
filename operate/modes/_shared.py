@@ -33,6 +33,8 @@ from ..artifacts import GateBlock, write_artifact
 from ...tools.citation_existence import ExistenceCache, build_existence_verdict
 from ...tools.drift_gate import build_verdict as _build_drift_verdict
 from ...tools.idea_dedup import lexical_similarity
+from ...tools.novelty_collision import SOURCE_WORKER, VERDICT_DEAD, build_collision_verdict
+from ...tools import project_memory as _pm
 from ...tools.paper_search import no_semantic_neighbor_found, search, write_search_bundle
 from ...tools.scope_guard import discover_vault_root
 from ...tools.validate_artifact import PROFILE_DIR
@@ -303,3 +305,98 @@ def negative_result_caveats(vault_root, ideas: List[dict],
                     f"possible prior NEGATIVE result: [[{slug}]] (lexical similarity "
                     f"{round(best, 2)}) — check it before betting on this idea")
     return out
+
+
+# --------------------------------------------------------------------------- novelty-collision gate (2026-06-18)
+
+def collision_findings_bundle(run_dir) -> Optional[dict]:
+    """The independent collision-checker worker's bundle (inbox/COLLISION.bundle.json), or None.
+
+    Missing/corrupt -> None: the gate then treats the run as not-retrieval-grounded (every idea
+    UNVERIFIED, nothing cut) and the recipe report says novelty was NOT verified — never a false cut,
+    never a silently-clean menu (mandatory-check honesty, design §4)."""
+    p = Path(run_dir) / "inbox" / "COLLISION.bundle.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def run_collision_gate(run_dir, stage: str, ts: str, menu_ideas: List[dict], *,
+                       hard_block: bool = True,
+                       cut_requires_experiments: bool = True) -> Tuple[List[dict], dict, str]:
+    """Mandatory pre-/idea-bet prior-art COLLISION gate (novelty-collision-upgrade 2026-06-18).
+
+    An EVIDENCED collision — a real, existence-verified paper that already did this method×problem AND
+    ran it — is CUT before the menu and recorded to the project's known-prior-art ledger so the machine
+    never re-outputs it. A novelty SCORE still never cuts; only an evidenced collision does (design §1).
+    Offline (no collision bundle / no retrieval) -> nothing is cut, every idea is UNVERIFIED. Returns
+    (survivors, verdict_payload, artifact_path). Never raises on a collision (a cut is not a run halt —
+    the run continues with the survivors; an empty survivor set is the honest 'all already done')."""
+    bundle = collision_findings_bundle(run_dir)
+    findings = [f for f in (bundle or {}).get("findings", []) if isinstance(f, dict)]
+    retrieval_grounded = bundle is not None and bool(findings)
+
+    # Existence-verify every claimed colliding ref (reuse the live, offline-safe checker). A cut can
+    # only stand on a paper that PASSES citation_existence — never a fabricated/unconfirmable one.
+    refs: List[str] = []
+    for f in findings:
+        for cp in (f.get("colliding_papers") or []):
+            r = str((cp or {}).get("ref") or "").strip()
+            if r:
+                refs.append(r)
+    existence_by_ref: Dict[str, str] = {}
+    if refs:
+        cache = ExistenceCache(str(Path(run_dir) / "inbox" / "citation-cache.sqlite"))
+        try:
+            ver = build_existence_verdict(list(dict.fromkeys(refs)), ts,
+                                          transport=EXISTENCE_TRANSPORT, cache=cache)
+        finally:
+            cache.close()
+        existence_by_ref = {c["ref"]: c["state"] for c in ver.get("checked", [])}
+
+    # Cross-run known-prior-art ledger: an idea already established DEAD in a prior run stays cut
+    # (the machine must not re-output a known-dead idea), even with no fresh worker finding.
+    prior_art_hits: Dict[str, dict] = {}
+    ws = _pm.workspace_for_run(run_dir)
+    if ws is not None:
+        prior_art_hits = _pm.prior_art_matches(menu_ideas, _pm.load_prior_art(ws))
+
+    verdict = build_collision_verdict(
+        menu_ideas, findings, existence_by_ref, prior_art_hits,
+        hard_block=hard_block, cut_requires_experiments=cut_requires_experiments,
+        retrieval_grounded=retrieval_grounded)
+
+    status = "blocked" if verdict["cut_ids"] else "approved"
+    path = write_artifact(run_dir, stage, "novelty-collision-verdict.artifact.json",
+                          "novelty_collision_report", "novelty-collision-checker", verdict, ts, status)
+
+    # Record fresh worker-confirmed DEAD cuts to the ledger (future runs pre-match + never re-output).
+    if ws is not None and verdict["cut_ids"]:
+        run_id = task_frame(run_dir)["payload"]["task_id"]
+        ideas_by_id = {str(i.get("idea_id")): i for i in menu_ideas}
+        finding_by_id = {str(f.get("idea_id")): f for f in findings if f.get("idea_id")}
+        dead_rows: List[dict] = []
+        for e in verdict["ideas"]:
+            if e.get("verdict") == VERDICT_DEAD and e.get("source") == SOURCE_WORKER and e.get("cut"):
+                iid = e["idea_id"]
+                fnd = finding_by_id.get(iid, {})
+                fp = " | ".join(str(fnd.get(k) or "") for k in
+                                ("method_combination", "application", "domain")).strip(" |")
+                dead_rows.append({
+                    "idea_id": iid,
+                    "fingerprint": fp or str(ideas_by_id.get(iid, {}).get("summary") or ""),
+                    "summary": str(ideas_by_id.get(iid, {}).get("summary") or ""),
+                    "colliding_refs": [p.get("ref") for p in (e.get("colliding_papers") or [])
+                                       if p.get("ref")],
+                    "experimentally_validated": any(
+                        p.get("experimentally_validated") for p in (e.get("colliding_papers") or [])),
+                })
+        if dead_rows:
+            _pm.append_prior_art(ws, run_id, ts, dead_rows)
+
+    cut = set(verdict["cut_ids"])
+    survivors = [i for i in menu_ideas if str(i.get("idea_id")) not in cut]
+    return survivors, verdict, path

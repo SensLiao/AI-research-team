@@ -23,13 +23,14 @@
 > 红线：**真能跑** ≠ **只有规格（spec-only）** ≠ **等服务器**。把「出脚本的设计跑」说成「实验真跑了」是
 > 红线（CLAUDE.md §3）。
 
-### ✅ 桶一 · 现在就能一键跑、不用 GPU（the SEVEN wired modes + 三个常驻动作）
+### ✅ 桶一 · 现在就能一键跑、不用 GPU（the EIGHT wired modes + 三个常驻动作）
 
-这 7 个 mode 有 operate 配方、镜像测试过，导演一句话就能从头跑到尾：
+这 8 个 mode 有 operate 配方、镜像测试过，导演一句话就能从头跑到尾：
 
 | Mode | 干嘛用（业务价值） | 产出 |
 |---|---|---|
-| `new_direction` | 找研究方向：扫空白 → 锦标赛式评点子 → 排名菜单 | `/idea-bet` 菜单（导演下注） |
+| `new_direction` | 找研究方向（**DEEP 单域**）：扫空白 + 形式化→机制图→反例→锦标赛评点子→查重→实验草图→血缘→质量分；graceful 稳健（漏跑某深步会降级不崩） | `/idea-bet` 菜单（导演下注） |
+| `deep_ideation` | 深度找方向（= new_direction **+ 跨域类比 + 证据饱和**，strict 每步必到）：深度+广度最大化，更费 agent/token | 同一个 `/idea-bet` 菜单 + 整条可审计深链路 |
 | `gap_breadth` | 扫空白点：5 个 hunter 并行 → 分类 → 只打新颖度分 | 空白点清单（score-only） |
 | `evidence_review` | 评证据 / 文献快读 | 证据表 + 裁决 |
 | `evidence_deep` | 文献深读 | 深度证据综述 |
@@ -134,4 +135,4 @@ conda `set -u` / SFTP 整文件替换 / BatchMode 不可用）见 `server_monito
 
 † `project-delete` 标 `disable_model_invocation`：只有导演带 typed `--confirm <slug>` 才跑；有护栏、**库永不碰**。
 
-跑机器自测：`python -m pytest research_agent_teams/tests/ -q`（当前 **2103 green**）。
+跑机器自测：`python -m pytest research_agent_teams/tests/ -q`（当前 **2655 green**）。

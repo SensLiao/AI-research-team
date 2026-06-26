@@ -7,6 +7,13 @@ function — not the LLM — decides the shape of the note, so the payload is me
 Required facts: title, source_ref, summary, claims (list).
 Optional facts (with defaults): year (None), venue (None), methods ([]), datasets ([]), metrics ([]).
 
+Optional Stage-0 positioning + Pass-1 contract (the Tier-S spine of the 0+3+1 research card):
+paper_type, read_purpose, relation_to_thesis, reading_objective, reading_status, and paper_contract
+(a dict). Each is added to the payload ONLY when the corresponding key is present in `facts` — exactly
+like the vault-dedup keys below. When none are passed the payload is byte-identical to the pre-card
+behaviour (the keys are simply absent, never present-as-null). The agent gathers these only when the
+read supports them and omits unknown fields rather than guessing.
+
 Optional READ-ONLY vault dedup (L7): pass `vault_root` to cross-check this paper against the existing
 `02-wiki/papers/**/*.md` pages. On a title-normalized or source-ref match the payload gains
 `vault_slug` + `possible_duplicate=True` so the director can dedup before promoting. The vault is only
@@ -54,9 +61,10 @@ def ingest_paper(facts: dict, vault_root: Optional[str] = None) -> dict:
             02-wiki/papers/**/*.md pages are READ (never written) to flag a possible duplicate.
 
     Returns:
-        A dict that is schema-valid against paper_note.schema.json. With a vault match it also carries
-        `vault_slug` + `possible_duplicate=True`; otherwise those keys are absent (byte-identical to the
-        pre-dedup payload).
+        A dict that is schema-valid against paper_note.schema.json. Any Stage-0 positioning / Pass-1
+        `paper_contract` facts present are added (conditional-add); any absent are simply not keyed. With
+        a vault match it also carries `vault_slug` + `possible_duplicate=True`; otherwise those keys are
+        absent (byte-identical to the pre-card / pre-dedup payload when no such facts are supplied).
 
     Raises:
         ValueError: If any required field is missing or empty, or if claims is absent.
@@ -85,6 +93,20 @@ def ingest_paper(facts: dict, vault_root: Optional[str] = None) -> dict:
         "datasets": datasets,
         "metrics": metrics,
     }
+
+    # Stage-0 positioning + Pass-1 contract (OPTIONAL). Conditional-add, mirroring the vault-dedup keys
+    # below: each field is attached ONLY when the agent actually gathered it, so when none are passed the
+    # payload is byte-identical to the pre-card behaviour (keys absent, never present-as-null).
+    for field in (
+        "paper_type",
+        "read_purpose",
+        "relation_to_thesis",
+        "reading_objective",
+        "reading_status",
+        "paper_contract",
+    ):
+        if field in facts:
+            payload[field] = facts[field]
 
     if vault_root is not None:
         match = _find_vault_duplicate(title, source_ref, vault_root)

@@ -38,6 +38,8 @@ _HEADING = re.compile(r"^#{1,3}\s+(.*\S)", re.MULTILINE)
 _WIKILINK = re.compile(r"\[\[([a-z0-9]+(?:-[a-z0-9]+)*)")
 _YEAR_KEY = re.compile(r"(?im)^(?:year|date|published|review-date)\s*:\s*\"?(\d{4})")
 _WORD = re.compile(r"[a-z0-9]+")
+_FM_BLOCK = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
+_PROJECT_LINE = re.compile(r"(?m)^project[ \t]*:[ \t]*(.*)$")  # [ \t] not \s: must not cross the newline into a block list
 
 RRF_K = 60
 TOP_K = 6
@@ -208,6 +210,30 @@ def _supports_note(slug: str, query_tokens: List[str], channel_ranks: Dict[str, 
 
 # ---------- pure: per-page parse (cacheable) ----------
 
+def _page_projects(text: str) -> frozenset:
+    """The `project:` facet(s) of a page (schema-contract §9.6 many-to-many): scalar, inline `[a, b]`,
+    or block (`- a`) list — all normalise to a frozenset. Empty when the page declares no project.
+    Project-isolated RECALL keeps a page iff this set intersects {active_project, 'meta'}."""
+    fm = _FM_BLOCK.match(text)
+    block = fm.group(1) if fm else ""
+    pm = _PROJECT_LINE.search(block)
+    if not pm:
+        return frozenset()
+    val = pm.group(1).strip()
+    if val and val != "[]":
+        if val.startswith("["):
+            return frozenset(x.strip().strip("'\"") for x in val.strip("[]").split(",") if x.strip())
+        return frozenset({val.strip("'\"")})
+    out = []
+    for line in block[pm.end():].splitlines():
+        s = line.strip()
+        if s.startswith("- "):
+            out.append(s[2:].strip().strip("'\""))
+        elif s:
+            break
+    return frozenset(i for i in out if i)
+
+
 def _parse_page(slug: str, text: str) -> dict:
     """Build the immutable-by-convention page record from a slug + its raw text. Pure: same
     (slug, text) -> equal dict. The returned sets/dicts are only ever READ downstream (channel
@@ -222,6 +248,7 @@ def _parse_page(slug: str, text: str) -> dict:
             "tf": tf, "links": set(_WIKILINK.findall(text)) - {slug},
             "year": int(ym.group(1)) if ym else None,
             "heading": heading.group(1) if heading else "",
+            "projects": _page_projects(text),
             "sha": _sha256_text(text)}
 
 
@@ -264,7 +291,7 @@ def _load_pages(vault_root: Path) -> List[dict]:
     return pages
 
 
-def recall(query: str, *, vault_root, top_k: int = TOP_K) -> dict:
+def recall(query: str, *, vault_root, project: Optional[str] = None, top_k: int = TOP_K) -> dict:
     """Resolve `query` against System D BY REFERENCE and return a recall_note.
 
     Four-channel TEMPR-style retrieval fused with RRF (module docstring); citations stay
@@ -273,6 +300,13 @@ def recall(query: str, *, vault_root, top_k: int = TOP_K) -> dict:
     vault_root = Path(vault_root)
     toks = _tokens(query)
     pages = _load_pages(vault_root)
+    # PROJECT ISOLATION (no cross-project contamination): a scoped recall keeps only pages whose
+    # `project:` facet set intersects {project, 'meta'} — project B never sees project A's pages,
+    # while genuinely cross-project knowledge (`project: meta`) stays visible to all. project=None
+    # keeps the legacy whole-vault behaviour, so existing callers/tests are byte-unaffected.
+    if project is not None:
+        allowed = {project, "meta"}
+        pages = [p for p in pages if p["projects"] & allowed]
     slugs = [p["slug"] for p in pages]
 
     ch: Dict[str, Dict[str, int]] = {}

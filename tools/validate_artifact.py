@@ -130,6 +130,27 @@ PAYLOAD_SCHEMAS = {
     "invalidation_record": "invalidation_record.schema.json",  # contradiction-mining structured landing (Graphiti bi-temporal; via promote only)
     # --- Audit waves A-D (2026-06-13; see _design/review/ai-capability-audit-2026-06-12.md §6) ---
     "preregistration": "preregistration.schema.json",          # tools/prereg.py (C3: analysis contract frozen at DESIGN, deviation-checked at ANALYZE)
+    # --- Novelty-collision upgrade (2026-06-18; see _design/novelty-collision-upgrade-LEDGER.md) ---
+    "collision_findings": "collision_findings.schema.json",    # novelty-collision-checker worker bundle (semantic judgment; never decides a cut)
+    "novelty_collision_report": "novelty_collision_report.schema.json",  # tools/novelty_collision.py (EVIDENCE-not-score; cuts only on an existence-verified paper)
+    # --- RAT-2 Wave-1/2 genuinely-new core (2026-06-18; see _design/rat2/01-roadmap-waves1-3.md) ---
+    "problem_abstraction": "problem_abstraction.schema.json",  # mathematical-formalizer (IDEATE; typed mechanism abstraction + formal_form)
+    "mechanism_mapping": "mechanism_mapping.schema.json",      # analogy-mapper (IDEATE; source↔target mechanism map; PASS⇒no blockers)
+    "evidence_saturation_report": "evidence_saturation_report.schema.json",  # evidence-saturation-judge (DISCOVER; measured saturation, informs gate not decides)
+    "stage_scorecard": "stage_scorecard.schema.json",          # quality-controller intermediate (per-stage rollup of existing analysis_check_verdict)
+    "global_quality_scorecard": "global_quality_scorecard.schema.json",  # quality-controller (cross-stage aggregate; can_finish⇒all required dims pass)
+    "integrity_recommendation": "integrity_recommendation.schema.json",  # integrity-refusal-recommender (ANALYZE; ADVISORY-only, decision_authority=director-human-gate)
+    # --- RAT-2 Wave-3 deep-ideation chain (2026-06-19; see _design/idea-engine/IDEA-ENGINE-LEDGER.md) ---
+    "mechanism_graph": "mechanism_graph.schema.json",          # mechanism-graph-builder (DISCOVER; explicit internal causal graph of the problem; depth as a measurable object)
+    "experiment_sketch": "experiment_sketch.schema.json",      # experiment-architect (IDEATE; minimal testable experiment per surviving idea; lighter than DESIGN protocol)
+    "idea_lineage": "idea_lineage.schema.json",                # idea-lineage-tracker (IDEATE; per-idea provenance ledger; disposition is mechanical, never a bet)
+    "idea_quality_eval": "idea_quality_eval.schema.json",      # idea_quality_eval.py (REPORT; blind pairwise quality harness; decomposed scores, no collapsed total / no bet)
+    # --- Paper-reading upgrade (2026-06-26; see _design/paper-reading-upgrade/paper-reading-upgrade-LEDGER.md) ---
+    "method_teardown": "method_teardown.schema.json",          # Pass-2 method teardown of a read paper (problem / assumptions / per-term loss / flows / data / cost / baseline diff)
+    "figure_reading": "figure_reading.schema.json",            # Pass-2 structured figure reading (axes / controls / error-bars / take-home / distrust)
+    "paper_appraisal": "paper_appraisal.schema.json",          # Pass-3 outward per-paper appraisal (venue-7D re-pointed OUTWARD; ADVISORY, never a gate / never self-decides)
+    "paper_relations": "paper_relations.schema.json",          # Stage-4 typed paper->paper edges (inherits / refutes / unifies / replaces / opens / extends / uses)
+    "trend_card": "trend_card.schema.json",                    # Stage-4 concept-centric trend extraction (shifts / failure-modes / mechanism-vs-result / opportunities)
 }
 
 _ENVELOPE_SCHEMA = "artifact_envelope.schema.json"

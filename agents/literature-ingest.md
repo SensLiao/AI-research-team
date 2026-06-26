@@ -1,6 +1,6 @@
 ---
 name: literature-ingest
-spec_version: "1.1.0"
+spec_version: "1.2.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
@@ -22,7 +22,9 @@ produces **draft knowledge only** — it never freezes or promotes anything.
 
 One `paper_note` artifact written to `runs/<run>/evidence/DISCOVER/paper-note-<slug>.artifact.json`
 with `title`, `source_ref`, `summary`, `claims[]`, and the optional fields `year`, `venue`,
-`methods[]`, `datasets[]`, `metrics[]`.
+`methods[]`, `datasets[]`, `metrics[]` plus the optional Stage-0 positioning (`paper_type`,
+`read_purpose`, `relation_to_thesis`, `reading_objective`, `reading_status`) and the Pass-1
+`paper_contract` — each emitted only when the read supports it.
 
 ## What you do (gather facts, then call the assembler)
 
@@ -48,8 +50,31 @@ then extract these facts:
 - **datasets** — list of dataset names used or evaluated on
 - **metrics** — list of metric names reported
 
+### Stage-0 positioning + Pass-1 contract (OPTIONAL — gather when the read supports them)
+
+These place the paper before the deep passes. They are **all optional**: a skim may only fill the
+positioning fields plus a short contract; a fuller read fills more. **Gather a field only when the read
+actually supports it — if a field is unknown, OMIT it rather than guess.** Never fabricate a positioning
+or contract value to make the card "look complete".
+
+- **paper_type** — kind of paper: one of `method`, `theory`, `empirical`, `dataset-benchmark`, `tool`,
+  `review`, `position` (selects the downstream reading lens). Omit if not yet classifiable.
+- **read_purpose** — why this paper is being read: one of `idea`, `method`, `baseline`,
+  `related-work`, `reproduce`, `review` (drives reading depth).
+- **relation_to_thesis** — `A-core` (deep/reproduce) | `B-related` (method + conclusions) |
+  `C-background` (skim). Mirrors the DB page relevance dial.
+- **reading_objective** — one line: what this read must establish for the thesis.
+- **reading_status** — the depth dial, mirroring the DB reading-status ladder: one of `to-read`,
+  `skimmed`, `read`, `deep-read`, `cited`, `deprecated`. Set it to the depth you actually reached.
+- **paper_contract** — the Pass-1 5-C contract, an object with the optional keys:
+  `category`, `context`, `correctness_prior`, `contributions` (list), `clarity`, and
+  `contract_sentence` (problem → method → vs prior → evidence → applicability conditions).
+  Fill the C's the read supports; a skim may carry only `category` + `context` + a short
+  `contract_sentence`.
+
 Then call `research_agent_teams.tools.paper_ingest.ingest_paper(facts)` to assemble the payload.
-The assembler — not you — decides the payload shape and enforces the schema contract.
+The assembler — not you — decides the payload shape and enforces the schema contract; it adds each of
+the positioning / contract fields ONLY when you actually gathered it, so an omitted field never appears.
 
 ## You must NOT
 

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/integrity_recommendation.schema.json",
+  "title": "Integrity Recommendation (ADVISORY ONLY)",
+  "description": "Output of the integrity-refusal-recommender. RECOMMENDATION-ONLY: it surfaces integrity risks the machine does not otherwise flag (an UNSUPPORTED NUMBER = a numeric claim with no evidence_ref; a fabricated-data / completion-pressure smell; a missing-evidence situation that should trigger an honest refusal) and emits an ADVISORY recommendation that a HUMAN acts on. It is NOT an authorization, NOT a gate, and NEVER blocks anything. The constitution rule holds: the machine produces honest derived verdicts, but the decision to bet / publish / write the crown jewels is ALWAYS the director's — see decision_authority. This artifact never self-authorizes and never replaces the director's human gates (/idea-bet, /promote-to-vault, /venue-pick, /venue-decide). RECOMMEND_HALT is the strongest signal it can emit: a recommendation to pause for human review, never an enforced stop.",
+  "type": "object",
+  "required": ["recommendation_id", "scanned_artifacts", "risk_flags", "recommendation", "rationale", "decision_authority"],
+  "additionalProperties": false,
+  "properties": {
+    "recommendation_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Short unique identifier, e.g. IR-001. Non-blank."
+    },
+    "scanned_artifacts": {
+      "type": "array",
+      "description": "The artifact references this recommendation was derived from (e.g. claim_list / claim_evidence_map locators or run-store paths). May be empty when nothing was scanned; each entry must be non-blank.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "risk_flags": {
+      "type": "array",
+      "description": "The integrity risks found. An empty array is valid (a clean scan yields no flags and a PROCEED recommendation).",
+      "items": {
+        "type": "object",
+        "required": ["kind", "locus", "severity", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "unsupported_number",
+              "fabricated_data_smell",
+              "completion_pressure",
+              "missing_evidence_refusal"
+            ],
+            "description": "The integrity-risk category. unsupported_number = a numeric claim with no evidence_ref; fabricated_data_smell = a synthetic-data tell (e.g. too-clean / placeholder values); completion_pressure = a hurried-to-finish tell that an honest answer was traded for a confident one; missing_evidence_refusal = a claim that asserts a result with no evidence at all, which should trigger an honest refusal rather than a confident answer."
+          },
+          "locus": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Where the risk lives (e.g. a claim_id or artifact locator). Non-blank."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "description": "Advisory severity of this single flag. Drives the deterministic severity to recommendation mapping; it is NOT an enforcement level."
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Human-readable explanation of the risk (anti-slop: must be non-blank so a flag always carries a reason)."
+          }
+        }
+      }
+    },
+    "recommendation": {
+      "type": "string",
+      "enum": ["PROCEED", "CAUTION", "RECOMMEND_HALT"],
+      "description": "The ADVISORY verdict, derived deterministically from the flag severities. PROCEED = no integrity risk worth pausing for; CAUTION = risks a human should weigh; RECOMMEND_HALT = a recommendation to pause for human review (the strongest signal — still advisory, never an enforced stop). This is a RECOMMENDATION a human acts on, not an authorization and not a gate verdict."
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Why this recommendation was reached, in terms of the flags found. Non-blank (anti-slop)."
+    },
+    "decision_authority": {
+      "const": "director-human-gate",
+      "description": "Invariant marker that the deciding authority is the director's human gate, NEVER this recommender. This artifact is advisory: it can recommend pausing (RECOMMEND_HALT) but it can never authorize, block, or self-decide. The director's human gates (/idea-bet, /promote-to-vault, /venue-pick, /venue-decide) remain the only deciders."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional clarifying notes."
+    }
+  }
+}

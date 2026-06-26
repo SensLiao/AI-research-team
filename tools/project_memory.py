@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from research_agent_teams.tools.idea_dedup import lexical_similarity
 from research_agent_teams.tools.projects import PROJECT_SLUG_RE
 
 PRIOR_OVERLAP_THRESHOLD = 0.6  # lexical similarity at/above which a gap counts as 'seen before'
+PRIOR_ART_MATCH_THRESHOLD = 0.6  # lexical similarity at/above which a new idea counts as 'already dead'
 
 
 def workspace_for_run(run_dir) -> Optional[Path]:
@@ -99,4 +100,90 @@ def prior_overlaps(gaps: List[dict], inventory: List[dict], *, run_id: str,
                         "prior_run_id": str(best_row.get("run_id") or ""),
                         "prior_gap_id": str(best_row.get("gap_id") or ""),
                         "similarity": round(best, 4)})
+    return out
+
+
+def _prior_art_path(workspace: Path) -> Path:
+    return Path(workspace) / "notes" / "known-prior-art.jsonl"
+
+
+def load_prior_art(workspace) -> List[dict]:
+    p = _prior_art_path(Path(workspace))
+    if not p.exists():
+        return []
+    rows: List[dict] = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except ValueError:
+            continue  # a corrupt line never breaks recall of the rest
+    return rows
+
+
+def append_prior_art(workspace, run_id: str, ts: str, dead_rows: List[dict]) -> int:
+    """Append this run's DEAD ideas to the known-prior-art ledger so future runs never re-output them.
+
+    Idempotent per (run_id, fingerprint). Returns lines added. Each dead_row supplies a fingerprint
+    (normalized "method | application | domain"); when absent it falls back to the row's summary, and a
+    row with neither is skipped (never write an empty key)."""
+    ws = Path(workspace)
+    p = _prior_art_path(ws)
+    if "phd-research-os" in str(p.resolve()).replace("\\", "/").lower():
+        raise ValueError(f"known-prior-art ledger must never live in the vault: {p}")
+    existing = {(r.get("run_id"), r.get("fingerprint")) for r in load_prior_art(ws)}
+    p.parent.mkdir(parents=True, exist_ok=True)
+    added = 0
+    with open(p, "a", encoding="utf-8") as fh:
+        for d in dead_rows:
+            summary = str(d.get("summary") or "")
+            fingerprint = str(d.get("fingerprint") or "") or summary
+            if not fingerprint or (run_id, fingerprint) in existing:
+                continue
+            row = {"run_id": run_id, "ts": ts,
+                   "idea_id": str(d.get("idea_id") or ""),
+                   "fingerprint": fingerprint,
+                   "summary": summary,
+                   "colliding_refs": list(d.get("colliding_refs") or []),
+                   "experimentally_validated": bool(d.get("experimentally_validated")),
+                   "verdict": "DEAD"}
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            added += 1
+    return added
+
+
+def prior_art_matches(ideas: List[dict], inventory: List[dict], *,
+                      threshold: float = PRIOR_ART_MATCH_THRESHOLD) -> Dict[str, dict]:
+    """Match new ideas against the project's known-prior-art ledger.
+
+    Returns {idea_id: matched_ledger_row} for every new idea whose summary (and its fingerprint, if
+    present) lexically matches a ledger row's fingerprint+summary at/above threshold — 'this one is
+    already done in the literature'. Picks the best-scoring ledger row per idea."""
+    out: Dict[str, dict] = {}
+    rows = [r for r in inventory if r.get("fingerprint") or r.get("summary")]
+    for idea in ideas:
+        idea_id = str(idea.get("idea_id") or "")
+        if not idea_id:
+            continue
+        probes = [str(idea.get("summary") or "")]
+        fp = str(idea.get("fingerprint") or "")
+        if fp:
+            probes.append(fp)
+        probes = [t for t in probes if t]
+        if not probes:
+            continue
+        best, best_row = 0.0, None
+        for r in rows:
+            targets = [str(r.get("fingerprint") or ""), str(r.get("summary") or "")]
+            for probe in probes:
+                for target in targets:
+                    if not target:
+                        continue
+                    sim = lexical_similarity(probe, target)
+                    if sim > best:
+                        best, best_row = sim, r
+        if best_row is not None and best >= threshold:
+            out[idea_id] = best_row
     return out

@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/problem_abstraction.schema.json",
+  "title": "Problem Abstraction",
+  "description": "Upstream cross-domain artifact. Output of mathematical-formalizer. Turns a concrete research problem into a TYPED mechanism abstraction plus a formal problem class. domain_surface holds the original field-specific phrasing; mechanism_primitives are domain-NEUTRAL primitives (field-agnostic — no medical/NLP/RL nouns) that name the underlying mechanisms; formal_form names the mathematical class the problem belongs to (graph / manifold / variational / dynamical / statistical / optimization / none), determined deterministically by formal_problem_schema.classify_form from the primitive set. This artifact abstracts; it asserts NO novelty, feasibility, or solution — those are downstream judgments. abstraction_confidence is advisory only (a self-reported confidence in the abstraction, never a gate). Anti-slop: every present string field is non-blank (pattern \\S).",
+  "type": "object",
+  "required": [
+    "problem_id",
+    "domain_surface",
+    "mechanism_primitives",
+    "failure_modes",
+    "constraints",
+    "success_metrics",
+    "formal_form",
+    "abstraction_confidence"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "problem_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Short unique identifier for this abstraction, e.g. PA-001. Non-blank."
+    },
+    "domain_surface": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "The original, domain-specific phrasing of the problem (the surface form before abstraction), e.g. 'segment the inferior alveolar canal in CBCT scans'. Non-blank."
+    },
+    "mechanism_primitives": {
+      "type": "array",
+      "description": "Domain-NEUTRAL mechanism primitives underlying the problem (field-agnostic — never a domain noun). MAY be empty: a problem whose mechanism could not be reduced to any known primitive is legitimately empty, and formal_form is then 'none'. Each present item is one of the closed primitive vocabulary.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "thin_structure",
+          "topology_preservation",
+          "boundary_uncertainty",
+          "anisotropic_geometry",
+          "long_range_dependency",
+          "class_imbalance",
+          "partial_observability",
+          "noise_robustness",
+          "constraint_satisfaction",
+          "multi_scale_structure",
+          "graph_connectivity",
+          "energy_minimization",
+          "dynamical_stability"
+        ]
+      }
+    },
+    "failure_modes": {
+      "type": "array",
+      "description": "The ways this problem class is known to fail / be hard (mechanism-level, domain-neutral phrasing preferred). MAY be empty. Each present item is a non-blank string.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "description": "Hard constraints the problem imposes (e.g. label scarcity, compute ceiling, real-time budget). MAY be empty. Each present item is a non-blank string.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "success_metrics": {
+      "type": "array",
+      "description": "How success is measured at the mechanism level (e.g. boundary fidelity, connectivity preservation, calibration). MAY be empty. Each present item is a non-blank string.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "formal_form": {
+      "type": "string",
+      "enum": [
+        "graph",
+        "manifold",
+        "variational",
+        "dynamical",
+        "statistical",
+        "optimization",
+        "none"
+      ],
+      "description": "The mathematical problem class. Determined deterministically by formal_problem_schema.classify_form from mechanism_primitives via a documented priority rule table. 'none' when no primitive maps to a form (including an empty primitive set)."
+    },
+    "abstraction_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Self-reported confidence in [0, 1] that this abstraction faithfully captures the problem's mechanism. ADVISORY ONLY — never a gate or cut. Low confidence is legitimate and must stay representable."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional clarifying notes (e.g. why a primitive was or was not assigned, drift against the north star)."
+    }
+  }
+}

@@ -30,6 +30,14 @@ direction.
 The `/venue-decide` gate is the SOLE writer of the publish/iterate/pivot decision, and it is executed
 only by the director.
 
+## Presentation (AskUserQuestion — director lock 2026-06-16)
+
+When the orchestrator reaches this gate it surfaces the admissible action set as a Claude Code
+**AskUserQuestion**: the subset of **SUBMIT / ADD-EXPERIMENTS / CHANGE-METHOD / PIVOT / RE-REVIEW** the
+derived verdict makes admissible (always ≥ 2), with the verdict + its derivation shown as context. The
+director clicks + submits. Presentation only — the model never decides to publish or pivot
+(`disable-model-invocation`; the verdict authorizes no action). See research-orchestrator SKILL §0.5.
+
 ## What the director does
 
 1. Open the `venue_readiness_verdict` artifact at

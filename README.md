@@ -29,7 +29,7 @@ into the control plane or agents.
 
 ```
 research_agent_teams/
-├── schemas/      JSON-Schema artifact contracts (domain-agnostic) — 86 schemas
+├── schemas/      JSON-Schema artifact contracts (domain-agnostic) — 104 schemas
 ├── profiles/     pluggable domain profiles (cv-medical-segmentation, nlp-text-classification, ai-generic)
 ├── tools/        deterministic validators/hashers/checkers — the enforcement primitives (incl. the promote_gate)
 ├── tests/        REAL pytest for every tool — no "passes" without terminal evidence
@@ -63,5 +63,5 @@ director's wired server). See `RESEARCH-SYSTEM-OVERVIEW.md` for the full by-the-
 Run the self-tests (from the case-for-research dir):
 
 ```
-python -m pytest research_agent_teams/tests/ -q     # 1753 green (pre-wave) → see build record for the wave-1 count
+python -m pytest research_agent_teams/tests/ -q     # 2546 green
 ```
