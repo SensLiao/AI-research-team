@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/paper_note.schema.json",
   "title": "Paper Note",
-  "description": "Output of literature-ingest. A selected paper distilled into a typed, citable note (summary + atomic claims + methods/datasets/metrics), by reference. Ingestion produces draft knowledge only — it never freezes.",
+  "description": "Output of literature-ingest. A selected paper distilled into a typed, citable note. The Tier-S spine of the 0+3+1 research card: Stage-0 positioning (paper_type / read_purpose / relation_to_thesis / reading_objective / reading_status) + Pass-1 contract (paper_contract) + summary + atomic claims + methods/datasets/metrics, by reference. Deeper passes live in separate artifacts (claim_evidence_map / method_teardown / figure_reading / paper_appraisal / paper_relations / trend_card). Ingestion produces draft knowledge only — it never freezes.",
   "type": "object",
   "required": ["title", "source_ref", "summary", "claims"],
   "additionalProperties": false,
@@ -25,6 +25,49 @@
       "type": "boolean",
       "default": false,
       "description": "True when vault_slug was set — flags that this paper may already be in the vault so the director can dedup before promoting. Advisory only; ingestion still produces draft knowledge and never blocks."
+    },
+    "paper_type": {
+      "type": ["string", "null"],
+      "enum": ["method", "theory", "empirical", "dataset-benchmark", "tool", "review", "position", null],
+      "default": null,
+      "description": "Stage-0 positioning: kind of paper; selects the downstream reading lens + reporting standard. null = not yet classified."
+    },
+    "read_purpose": {
+      "type": ["string", "null"],
+      "enum": ["idea", "method", "baseline", "related-work", "reproduce", "review", null],
+      "default": null,
+      "description": "Stage-0 positioning: why this paper is being read (drives reading depth)."
+    },
+    "relation_to_thesis": {
+      "type": ["string", "null"],
+      "enum": ["A-core", "B-related", "C-background", null],
+      "default": null,
+      "description": "Stage-0 positioning: A-core (deep/reproduce) | B-related (method+conclusions) | C-background (skim). Mirrors the DB page relevance dial."
+    },
+    "reading_objective": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Stage-0 positioning: one-line objective — what this read must establish for the thesis."
+    },
+    "reading_status": {
+      "type": ["string", "null"],
+      "enum": ["to-read", "skimmed", "read", "deep-read", "cited", "deprecated", null],
+      "default": null,
+      "description": "Depth dial, mirrors the DB paper-page reading-status ladder; determines which deeper artifacts a full read produces."
+    },
+    "paper_contract": {
+      "type": ["object", "null"],
+      "default": null,
+      "additionalProperties": false,
+      "description": "Pass-1 5-C contract: the one-sentence claim plus Keshav's five C's.",
+      "properties": {
+        "category": {"type": "string"},
+        "context": {"type": "string"},
+        "correctness_prior": {"type": "string"},
+        "contributions": {"type": "array", "items": {"type": "string"}, "default": []},
+        "clarity": {"type": "string"},
+        "contract_sentence": {"type": "string", "description": "problem -> method -> vs prior -> evidence -> applicability conditions."}
+      }
     }
   }
 }

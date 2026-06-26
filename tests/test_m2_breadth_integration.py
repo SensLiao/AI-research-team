@@ -133,6 +133,48 @@ def test_every_breadth_agent_produces_a_registered_type():
         assert produces in PAYLOAD_SCHEMAS, f"{name}: produces {produces!r} is not a registered artifact_type"
 
 
+# Control / run-infra agents whose `produces:` frontmatter is free-text prose describing run-store
+# plumbing (manifests, ledger entries, the orchestrator's own bookkeeping), NOT a payload artifact_type.
+# They CANNOT be detected by `model: none` alone — these two declare a real LLM tier (opus / sonnet)
+# yet emit no typed artifact, so the glob guard below must skip them explicitly. Keep this set as small
+# as the truth requires (exactly these two — adding more would mask a real unregistered worker type).
+PROSE_PRODUCES_CONTROL_AGENTS = {"research-orchestrator", "state-tracker"}
+
+
+def _produces_types(produces) -> list[str]:
+    # `produces:` is parsed by yaml.safe_load, so it is either a single string (most agents) or a list
+    # (e.g. venue-selector: `produces: [venue_candidates, venue_profile]` — BOTH must be registered).
+    if produces is None:
+        return []
+    if isinstance(produces, list):
+        return [str(p) for p in produces]
+    return [str(produces)]
+
+
+def test_all_noncontrol_agents_produce_registered_types():
+    # GLOB-based completeness guard: the hardcoded BREADTH_AGENTS list above only covers ~41 of the ~83
+    # non-control producers, leaving the rest unchecked — so a NEW agent declaring a typo or an
+    # unregistered `produces:` type would slip through. This iterates EVERY agents/*.md, skips only the
+    # control/infra agents (model: none + the two prose-producing control agents above), and asserts each
+    # declared produces-type (single OR array form) is a registered key in PAYLOAD_SCHEMAS — so the engine
+    # can always contract-validate that agent's output at runtime.
+    checked = 0
+    for md in sorted(AGENTS_DIR.glob("*.md")):
+        fm = _frontmatter(md)
+        model = fm.get("model")
+        if model == NON_LLM_MODEL or md.stem in PROSE_PRODUCES_CONTROL_AGENTS:
+            continue  # control / run-infra agent — its `produces:` is plumbing prose, not a payload type
+        checked += 1
+        for atype in _produces_types(fm.get("produces")):
+            assert atype in PAYLOAD_SCHEMAS, (
+                f"{md.name}: produces type {atype!r} is not a registered artifact_type in "
+                f"validate_artifact.PAYLOAD_SCHEMAS"
+            )
+    # Guard the guard: the glob must actually cover the broad worker roster, not silently match nothing.
+    # (~83 non-control producers today; assert a healthy floor so a glob/skip regression is caught.)
+    assert checked >= 80, f"completeness guard only checked {checked} agents — expected the full non-control roster (~83)"
+
+
 def test_breadth_runtime_model_tiers_match_the_plan():
     # §9 default-mode tiers: the depth layer is judgment-heavy (auditors/gates/reviewers = opus).
     # synthesis-writer joined the opus tier 2026-06-13 (audit M7): it renders the director-facing

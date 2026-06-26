@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/idea_lineage.schema.json",
+  "title": "Idea Lineage",
+  "description": "IDEATE-stage deep-ideation artifact. Output of the idea-lineage-tracker. The provenance LEDGER for every candidate idea: the chain of typed artifacts it descended through (problem_abstraction -> mechanism_graph -> mechanism_mapping(s) -> gap(s) -> hypothesis -> contradiction(s) -> experiment_sketch) plus its evolutionary parents and its PIPELINE disposition. This makes the system's depth accumulable and auditable across runs instead of vanishing into prose. HARD governance (mirrors idea_backlog): there is NO selected / chosen / bet / winner field — `disposition` records the MECHANICAL fate of an idea inside the pipeline (still a candidate, cut for evidenced prior art, merged as a duplicate, or an evolved descendant), never a recommendation. The director still bets via the /idea-bet human gate. Anti-slop: every lineage carries a non-empty evidence_ref and refs that look real (digit-guarded).",
+  "type": "object",
+  "required": ["lineages"],
+  "additionalProperties": false,
+  "properties": {
+    "lineages": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One lineage record per candidate idea (originals + evolved). minItems:1.",
+      "items": {
+        "type": "object",
+        "required": ["idea_id", "disposition", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "idea_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The idea this lineage traces, e.g. IDEA-1 / EV-1. Non-blank."
+          },
+          "problem_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "[0-9]",
+            "description": "Optional: the problem_abstraction.problem_id at the root of this idea's chain. Real-ref guard (digit)."
+          },
+          "mechanism_graph_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Optional: the mechanism_graph.graph_id this idea's mechanism reasoning came from."
+          },
+          "mechanism_mapping_refs": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "default": [],
+            "description": "Optional: mechanism_mapping.mapping_id(s) (cross-domain analogies) feeding this idea."
+          },
+          "gap_refs": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "default": [],
+            "description": "Optional: the gap_id(s) this idea addresses."
+          },
+          "hypothesis_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "[0-9]",
+            "description": "Optional: the hypothesis_id this idea realizes. Real-ref guard (digit)."
+          },
+          "contradiction_refs": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "default": [],
+            "description": "Optional: contradiction conflict_id(s) this idea had to account for."
+          },
+          "experiment_sketch_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Optional: the experiment_sketch.sketch_id that makes this idea testable."
+          },
+          "parent_ids": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "default": [],
+            "description": "Evolutionary provenance: the idea_id(s) this one was mutated/recombined from (empty for an original)."
+          },
+          "disposition": {
+            "type": "string",
+            "enum": ["candidate", "cut_prior_art", "merged_duplicate", "evolved"],
+            "description": "MECHANICAL pipeline fate (never a bet): candidate = still on the /idea-bet menu; cut_prior_art = removed by the novelty-collision gate (evidenced prior art); merged_duplicate = folded into another idea by dedup; evolved = a descendant produced by the idea-evolver."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "description": "Anti-slop: at least one non-blank pointer backing this lineage record (an upstream id or [[slug]])."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional: e.g. why an idea was cut/merged, or a drift note."
+          }
+        }
+      }
+    }
+  }
+}

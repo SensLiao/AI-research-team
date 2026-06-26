@@ -31,6 +31,7 @@ from .modes import REGISTRY
 from ..tools import execution_registry as exreg
 from ..tools import lifecycle as lifecycle_tool
 from ..tools import projects as projects_tool
+from ..tools import research_plan
 from ..tools import resources as rp
 from ..tools import runstore
 from ..tools import workspace as ws_tool
@@ -85,6 +86,19 @@ def _north_star_from_args(a) -> dict:
             "in_scope": split(a.in_scope), "out_of_scope": split(a.out_of_scope)}
 
 
+def _resolve_upstream_dirs(runs_dir: str, upstream_run_ids) -> list:
+    """Resolve --upstream-run ids (prior chain links) to their run dirs. A bad id exits cleanly (the
+    chain must not silently drop a link the orchestrator believed it threaded)."""
+    dirs = []
+    for rid in (upstream_run_ids or []):
+        try:
+            dirs.append(str(find_run_dir(runs_dir, rid)))
+        except (FileNotFoundError, RuntimeError) as exc:
+            _emit({"error": f"--upstream-run {rid!r}: {exc}"})
+            sys.exit(2)
+    return dirs
+
+
 def cmd_begin(a) -> None:
     mode = a.mode
     run_id = a.run_id or f"{mode}-{_ts().replace(':', '').replace('-', '')}"
@@ -109,11 +123,21 @@ def cmd_begin(a) -> None:
                        north_star=_north_star_from_args(a))
     first = plan["stages"][0]
     vault = a.vault or getattr(mod, "DEFAULT_VAULT", None)
+    # Combination layer (2026-06-19): when this run is a LINK in a director-approved chain, thread the
+    # prior link(s)' output in — write inbox/upstream-grounding.json and fold a PRIOR CHAIN CONTEXT
+    # block into the first worker's prompt so it builds ON the upstream result instead of restarting.
+    upstream = _resolve_upstream_dirs(a.runs_dir, a.upstream_run)
+    if upstream:
+        research_plan.write_upstream_grounding(plan["run_dir"], upstream)
     worker = (mod.llm_step(plan["run_dir"], first, a.request, vault=vault, model_policy=a.model_policy)
               if hasattr(mod, "llm_step") else None)
+    if upstream:
+        worker = research_plan.augment_worker_with_upstream(worker, plan["run_dir"])
     out = {"run_id": run_id, "run_dir": plan["run_dir"], "mode": mode, "project": a.project,
            "project_check": check, "stages": plan["stages"], "north_star": plan.get("north_star"),
            "gate_level": plan["gate_level"], "first_stage": first, "next_worker": worker}
+    if upstream:
+        out["upstream_runs"] = upstream
     if hasattr(mod, "pre_search"):
         out["pre_search_note"] = ("RECOMMENDED next: `pre-search --run-id " + run_id + "` — grounds "
                                   "novelty/evidence in live literature BEFORE spawning the worker "
@@ -141,8 +165,11 @@ def cmd_worker(a) -> None:
     mod = _mode_module(mode)
     vault = a.vault or getattr(mod, "DEFAULT_VAULT", None)
     request = _pinned_request(a.runs_dir, a.run_id, a.request)
-    worker = mod.llm_step(_run_dir(a.runs_dir, a.run_id), a.stage, request, vault=vault,
+    rd = _run_dir(a.runs_dir, a.run_id)
+    worker = mod.llm_step(rd, a.stage, request, vault=vault,
                           model_policy=_policy_from_run(a.runs_dir, a.run_id))
+    # Carry the chain context into every downstream stage too (no-op for a single-mode run).
+    worker = research_plan.augment_worker_with_upstream(worker, rd)
     multi = bool(worker) and "workers" in worker
     _emit({"run_id": a.run_id, "stage": a.stage, "worker": worker,
            "note": ("no LLM worker for this stage (deterministic-only) — go straight to run-dets"
@@ -296,6 +323,16 @@ def cmd_menu(a) -> None:
             for cv in (r.get("caveats") or []):
                 print(f"        ⚠ {cv}", file=sys.stderr)
         print("  PIVOT: bet on none of these — re-scope the direction", file=sys.stderr)
+
+
+# --------------------------------------------------------------------------- combination layer (tiers)
+# The director-lock 2026-06-19 entry: a request maps to an INTENT and PROPOSES tiered mode-COMBINATIONS
+# (core 1-mode -> mainline -> full), NOT a single mode. Advisory — it starts no run and picks nothing;
+# the orchestrator renders the tiers as the director's AskUserQuestion, then runs the chosen chain
+# link-by-link via `begin --upstream-run`.
+
+def cmd_plan_propose(a) -> None:
+    _emit(research_plan.propose_for_request(a.request, intent=a.intent))
 
 
 # --------------------------------------------------------------------------- execution granularity (W4)
@@ -503,6 +540,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "output is a hard drift BLOCK")
     b.add_argument("--vault", default=None, help="vault root (defaults to the mode's DEFAULT_VAULT)")
     b.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    b.add_argument("--upstream-run", action="append", default=None,
+                   help="run_id of a PRIOR chain link whose output grounds this run (repeatable). The "
+                        "combination layer threads its REPORT/idea-backlog into this run's first worker "
+                        "(inbox/upstream-grounding.json) so the link builds ON it instead of restarting")
     b.set_defaults(func=cmd_begin)
 
     w = sub.add_parser("worker", parents=[common], help="print the LLM worker spec to spawn for a stage")
@@ -547,6 +588,15 @@ def build_parser() -> argparse.ArgumentParser:
     m = sub.add_parser("menu", parents=[common], help="print the ranked idea_backlog (the /idea-bet menu)")
     m.add_argument("--run-id", required=True)
     m.set_defaults(func=cmd_menu)
+
+    plp = sub.add_parser("plan-propose", parents=[common],
+                         help="propose tiered mode-COMBINATIONS for a request (intents + tiers + cost + "
+                              "gates + per-mode drill-down questions) — the combination layer's entry; "
+                              "advisory, starts no run")
+    plp.add_argument("--request", required=True)
+    plp.add_argument("--intent", default=None,
+                     help="force an intent id (else the request is matched; no match -> all intents)")
+    plp.set_defaults(func=cmd_plan_propose)
 
     pi = sub.add_parser("project-init", parents=[common],
                         help="validate a registered project + create its projects/<slug>/ workspace")

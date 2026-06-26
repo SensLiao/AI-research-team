@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/evidence_saturation_report.schema.json",
+  "title": "Evidence Saturation Report",
+  "description": "DISCOVER-stage advisory artifact. Output of evidence-saturation-judge: a deterministic measurement of whether a literature/evidence search has SATURATED (diminishing new results across rounds) or still needs more queries. Domain-agnostic. Computed by the deterministic tools/saturation_meter.py from a per-round search history; the judge never sets the verdict by hand. This informs (does NOT decide) the DISCOVER gate: lit-scout's self-asserted saturation_reached boolean is here replaced by a measured, multi-round new-result-rate. A SCORE/RATE never silently terminates a search — INSUFFICIENT_DATA is emitted when there are too few rounds to judge.",
+  "type": "object",
+  "required": [
+    "report_id",
+    "rounds",
+    "new_result_rate_last_round",
+    "duplicate_rate",
+    "coverage_dimensions",
+    "saturation_score",
+    "verdict"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "report_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Short unique identifier for this saturation report, e.g. SAT-001. Non-blank."
+    },
+    "rounds": {
+      "type": "array",
+      "description": "Per-round search history, in chronological order (round 0 first). Each round records the queries run and how many unique sources it surfaced. An empty array is allowed (yields INSUFFICIENT_DATA).",
+      "items": {
+        "type": "object",
+        "required": [
+          "round_index",
+          "queries_run",
+          "new_unique_sources",
+          "cumulative_unique_sources"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "round_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based round ordinal (0 = first round)."
+          },
+          "queries_run": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of distinct queries issued in this round."
+          },
+          "new_unique_sources": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Count of sources first seen in this round (not present in any earlier round). Anti-double-count: this is the dedup'd delta, not raw hits."
+          },
+          "cumulative_unique_sources": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Running total of distinct unique sources seen through (and including) this round. Monotonically non-decreasing across rounds."
+          }
+        }
+      }
+    },
+    "new_result_rate_last_round": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of the last round's surfaced sources that were NEW (new_unique / total_seen_this_round-basis). 0.0 means the last round surfaced nothing new (fully saturated signal); near 1.0 means the search is still finding fresh material."
+    },
+    "duplicate_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Cumulative fraction of surfaced results that were duplicates of already-seen sources, across the whole history = 1 - (cumulative_unique / total_surfaced). 0.0 = no overlap yet; high = the search is heavily re-treading known ground."
+    },
+    "coverage_dimensions": {
+      "type": "array",
+      "description": "Which angles / facets the search covered (e.g. method, dataset, application-domain, baseline, ablation). Carried for the gate's qualitative read; the meter does not require any particular dimension. Each entry must be non-blank.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "saturation_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "A [0,1] saturation index where 1.0 = fully saturated (no new results) and 0.0 = wide open. Derived from the last round's new-result rate (saturation_score = 1 - new_result_rate_last_round). A score is advisory and never on its own cuts a search."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["SATURATED", "NOT_SATURATED", "INSUFFICIENT_DATA"],
+      "description": "SATURATED = new-result rate stayed below the documented threshold over the last N rounds (search may stop). NOT_SATURATED = still finding fresh material (widen / keep searching). INSUFFICIENT_DATA = fewer than the minimum number of rounds to judge (never a silent cut)."
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Optional one-line human-readable explanation of the verdict (the meter fills a default; the judge may enrich)."
+    }
+  }
+}

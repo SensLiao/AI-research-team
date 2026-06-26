@@ -24,6 +24,13 @@ agents:
     - citation-integrity-auditor
     - landscape-mapper
     - monitor
+    - evidence-saturation-judge   # RAT-2: measured DISCOVER search-saturation verdict (informs gate, never decides)
+    # paper-reading upgrade (2026-06-26): per-paper deep-read producers (operate sub-workers; rostered, intentionally NOT in any graph allowed_agents / mode agent_subset — same pattern as novelty-collision-checker; the deep-read operate recipe dispatches them)
+    - paper-appraiser             # produces paper_appraisal (ADVISORY outward 7-D appraisal of a read paper; never a verdict / gate)
+    - method-teardown-extractor   # produces method_teardown (Pass-2 method decomposition of a read paper)
+    - figure-reader               # produces figure_reading (Pass-2 structured figure reading)
+    - paper-relations-mapper      # produces paper_relations (Stage-4 typed paper<->paper edges)
+    - trend-card-builder          # produces trend_card (Stage-4 concept-centric trend extraction)
   gap_hunting:
     - future-work-miner
     - weakness-spotter
@@ -37,6 +44,9 @@ agents:
     - idea-tournament-ranker
     - idea-evolver
     - feasibility-reranker
+    - mathematical-formalizer     # RAT-2: typed mechanism abstraction + formal_form (reuses abstract_problem)
+    - analogy-mapper              # RAT-2: source↔target mechanism mapping (consumes transfer_candidates)
+    - novelty-collision-checker   # novelty-collision gate worker (director lock 2026-06-18): independent IDEATE sub-worker that prior-art-checks every idea before /idea-bet. Rostered so its spec is wellformed; intentionally NOT in any mode agent_subset / graph allowed_agents (it is an operate sub-worker, not an FSM-routed agent — keeps router guardrails minimal).
   design:
     - rq-architect
     - experiment-planner
@@ -80,6 +90,7 @@ agents:
     - visualization-auditor
     - claim-strength-calibrator
     - figure-vlm-critic
+    - integrity-refusal-recommender   # RAT-2: ADVISORY-only unsupported-number/integrity flagger (never a gate; decision stays the director's)
   verify:
     - review-configurator
     - methodology-reviewer
@@ -95,6 +106,7 @@ agents:
     - venue-selector
     - venue-reviewer-persona
     - area-chair-synthesizer
+    - quality-controller          # RAT-2: cross-stage scorecard aggregator (reads existing verdicts; can_finish derived, never overrides human gates)
     # absorption wave 1 — ScholarPeer panel roles
     - baseline-scout
     - sub-domain-historian

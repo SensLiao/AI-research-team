@@ -39,6 +39,14 @@ A forged self-claim (a candidate that says `can_cite_thesis: true` while its rea
 `BLOCK`) is **ignored by construction** — re-derivation recomputes from the referenced audits and
 rejects. This is the crown-jewel red line: a more capable model still cannot promote or cite its own work.
 
+## Presentation (AskUserQuestion — director lock 2026-06-16)
+
+When the orchestrator reaches this gate it surfaces the decision as a Claude Code **AskUserQuestion**:
+**PROMOTE-FROZEN** / **HOLD-PROVISIONAL** / **REJECT** (with the re-derived status + audit summary shown
+as context). The director clicks + submits. Presentation only — the invariant stands: the gate is
+`disable-model-invocation`, status is re-derived from the real audits, and the env-var authorization
+(`RAT_PROMOTE_AUTHORIZED`) is still required; the model never promotes or self-freezes. See SKILL §0.5.
+
 ## What the director does
 
 1. Open the `promotion_candidate` at `runs/<run>/inbox/promotion-candidate-<slug>.json` and skim the run's

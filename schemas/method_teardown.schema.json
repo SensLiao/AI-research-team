@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/method_teardown.schema.json",
+  "title": "Method Teardown",
+  "description": "Pass-2 method teardown of ONE read paper. The structured breakdown of how the paper's method actually works: the problem it defines, the assumptions that must hold, the representation/search-space/objective it changes, the per-term loss with 'what deleting it does', the train/infer flow, the data, the cost, and the single mechanism that differs from the baseline. source_ref-anchored; rendered into the DB paper page. A reading aid — never a governed gate.",
+  "type": "object",
+  "required": ["source_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the paper this teardown reads (matches the paper_note / DB page source_ref)"
+    },
+    "problem_definition": {
+      "type": "string",
+      "description": "the input/output/target and task boundary — what the method takes in, what it produces, what it is and is not solving"
+    },
+    "core_assumptions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "what must hold for the method to work (data, modeling, or deployment assumptions)"
+    },
+    "representation": {
+      "type": "string",
+      "description": "what structure, search-space, or objective the method changes relative to the prior art"
+    },
+    "loss_terms": {
+      "type": "array",
+      "description": "per-term loss decomposition; ablate_effect records 'what deleting this term does'",
+      "items": {
+        "type": "object",
+        "required": ["term"],
+        "additionalProperties": false,
+        "properties": {
+          "term": {"type": "string", "description": "name of the loss term, e.g. 'Dice', 'boundary', 'L_consistency'"},
+          "role": {"type": "string", "description": "what this term is meant to enforce"},
+          "ablate_effect": {"type": "string", "description": "the observed (or stated) effect of removing this term"}
+        }
+      }
+    },
+    "training_flow": {
+      "type": "string",
+      "description": "how the method is trained: stages, inputs, supervision, optimization"
+    },
+    "inference_flow": {
+      "type": "string",
+      "description": "how the method runs at inference: inputs, passes, post-processing"
+    },
+    "train_infer_consistency": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "whether train-time and inference-time conditions match, and any train/infer gap that could distort results"
+    },
+    "data": {
+      "type": "string",
+      "description": "source/scale/splits and the leakage risk of the data used"
+    },
+    "cost": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "compute/data/annotation/deploy cost of the method"
+    },
+    "baseline_difference": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "the one mechanism that changed versus the baseline — the single causal delta that the paper claims drives the improvement"
+    }
+  }
+}

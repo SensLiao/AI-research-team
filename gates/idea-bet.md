@@ -26,6 +26,15 @@ inject a pick into `idea_backlog` is structurally rejected by the schema.
 
 The `/idea-bet` gate is the SOLE writer of the bet, and it is executed only by the director.
 
+## Presentation (AskUserQuestion — director lock 2026-06-16)
+
+When the orchestrator pauses at this gate it surfaces the ranked `idea_backlog` as a Claude Code
+**AskUserQuestion** (selectable options), not a prose menu: one option per ranked idea
+(`IDEA-xxx: <summary> (rank N)`) PLUS the standing **PIVOT** option ("none of these — re-scope the
+direction"). The director clicks + submits; the orchestrator then records the pick as the adr below.
+Presentation only — the invariant stands: the model NEVER self-bets (`disable-model-invocation`; the
+`idea_backlog` schema has no `selected`/`chosen` field). See research-orchestrator SKILL §0.5.
+
 ## What the director does
 
 1. Open the `idea_backlog` artifact at

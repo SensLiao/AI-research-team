@@ -29,6 +29,14 @@ not a model decision.
 
 The `/venue-pick` gate is the SOLE writer of the venue choice, and it is executed only by the director.
 
+## Presentation (AskUserQuestion — director lock 2026-06-16)
+
+When the orchestrator reaches this gate it surfaces the ranked `venue_candidates` as a Claude Code
+**AskUserQuestion**: one option per candidate (`<venue_id> (<tier>/<paper_type>): <hit_reason>`) PLUS
+the standing **HOLD** ("none — re-scope/strengthen first"). The director clicks + submits; the pick is
+recorded as the adr. Presentation only — the model never self-picks (`disable-model-invocation`; the
+`venue_candidates` schema has no `selected` field). See research-orchestrator SKILL §0.5.
+
 ## What the director does
 
 1. Open the `venue_candidates` artifact at

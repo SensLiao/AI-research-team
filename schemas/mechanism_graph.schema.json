@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/mechanism_graph.schema.json",
+  "title": "Mechanism Graph",
+  "description": "DISCOVER-stage deep-ideation artifact. Output of the mechanism-graph-builder worker. The EXPLICIT internal causal/dependency graph of the TARGET problem itself — distinct from mechanism_mapping (which is a CROSS-domain analogy between a source domain and this problem). This is where 'depth' becomes a measurable object instead of a longer paragraph: the problem is decomposed into mechanism / variable / mediator / outcome nodes and the directed causal edges between them, plus the points where one could intervene and the known failure modes. Descriptive ONLY — it asserts no novelty, feasibility, ranking, or selection (no verdict / chosen / bet field; additionalProperties:false everywhere). Anti-slop: every node and every edge carries a non-empty evidence_ref; every present string is non-blank (pattern \\S). Graph metrics (depth, branch count, unclosed-chain count) are computed downstream by idea_quality_eval, never hand-set here. Domain-general: node labels may use domain-surface phrasing, but the graph STRUCTURE is the unit of depth. Cross-field integrity (every edge from_node/to_node names a real node_id) is enforced by the producing recipe, mirroring the tournament-pair integrity check.",
+  "type": "object",
+  "required": ["graph_id", "problem_ref", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "graph_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Short unique identifier for this graph, e.g. MG-001. Non-blank."
+    },
+    "problem_ref": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "[0-9]",
+      "description": "The problem_abstraction.problem_id this graph decomposes (e.g. PA-001). Real-ref guard: must contain a digit, so a flag-word cannot be smuggled through this field."
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 2,
+      "description": "The mechanism nodes of the problem. At least 2 (a graph needs >=2 nodes to carry an edge). Each node is a mechanism, variable, mediator, intervention point, or outcome.",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "label", "kind", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Identifier unique within this graph, e.g. N1. Referenced by edges. Non-blank."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "What this node is, e.g. 'frozen-encoder feature drift'. Non-blank."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["mechanism", "variable", "mediator", "intervention_point", "outcome"],
+            "description": "The role of this node in the causal graph."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "description": "Anti-slop: at least one non-blank pointer (a real [[slug]], gap_id, or claim_id) grounding that this mechanism is real, not invented."
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Directed relations between nodes — the causal/dependency structure. At least 1 (a graph with zero edges is a node list, not a mechanism graph). Depth = the longest from->to chain (computed downstream).",
+      "items": {
+        "type": "object",
+        "required": ["edge_id", "from_node", "to_node", "relation", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "edge_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Identifier unique within this graph, e.g. E1. Non-blank."
+          },
+          "from_node": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "node_id this edge starts at (must name a real node — the recipe enforces it). Non-blank."
+          },
+          "to_node": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "node_id this edge points to (must name a real node — the recipe enforces it). Non-blank."
+          },
+          "relation": {
+            "type": "string",
+            "enum": ["causes", "enables", "inhibits", "mediates", "depends_on", "correlates"],
+            "description": "The causal/dependency relation from_node -> to_node."
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "description": "Anti-slop: at least one non-blank pointer grounding that this relation is real, not invented."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Optional one-line justification of why the relation holds."
+          }
+        }
+      }
+    },
+    "intervention_points": {
+      "type": "array",
+      "description": "Where one could ACT to change the outcome (the levers). MAY be empty. Each names a node_id and why it is actionable.",
+      "items": {
+        "type": "object",
+        "required": ["node_ref", "rationale"],
+        "additionalProperties": false,
+        "properties": {
+          "node_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "node_id of an intervention_point/mechanism node one could act on. Non-blank."
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Why acting here would change the outcome. Non-blank."
+          }
+        }
+      }
+    },
+    "failure_modes": {
+      "type": "array",
+      "description": "How this mechanism is known to break / be hard (mechanism-level phrasing preferred). MAY be empty. Each present item is a non-blank string.",
+      "items": {"type": "string", "minLength": 1, "pattern": "\\S"}
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional clarifying notes (e.g. north-star drift, uncertainty in a relation)."
+    }
+  }
+}

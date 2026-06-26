@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/claim_evidence_map.schema.json",
   "title": "Claim Evidence Map",
-  "description": "DISCOVER-stage typed artifact. Output of claim-evidence-linker. Maps each claim to the concrete evidence loci (table cell, figure, code block, dataset row) that support or refute it. Every mapping must have at least one non-empty locus — a claim with no locus cannot be citation-checked.",
+  "description": "DISCOVER-stage typed artifact. Output of claim-evidence-linker. Maps each claim to the concrete evidence loci (table cell, figure, code block, dataset row) that support or refute it. Every mapping must have at least one non-empty locus — a claim with no locus cannot be citation-checked. Optional per-locus `directness` records HOW the evidence relates to the claim (direct / indirect / proxy / assumed); optional per-mapping `claim_risk` flags the risk that the claim is wrong or overstated (level + note). Both are advisory reading aids — they do not change citation-checking, which still keys on each locus's `supports_claim`.",
   "type": "object",
   "required": ["mappings"],
   "additionalProperties": false,
@@ -43,6 +43,11 @@
                 "supports_claim": {
                   "type": "boolean",
                   "description": "REQUIRED. The linker must explicitly decide per locus: true = this locus supports the claim; false = this locus contradicts the claim (reports the opposite). No default — omitting this field causes citation_checker.py to conservatively BLOCK (cannot verify the claim)."
+                },
+                "directness": {
+                  "type": "string",
+                  "enum": ["direct", "indirect", "proxy", "assumed"],
+                  "description": "OPTIONAL. How this evidence locus relates to the claim: direct = measures exactly what the claim asserts; indirect = a related quantity that implies it; proxy = a stand-in metric/surrogate; assumed = not actually shown, taken on faith. Advisory only — does not affect citation-checking."
                 }
               }
             }
@@ -51,6 +56,22 @@
             "type": "string",
             "enum": ["supported", "partial", "contradicted", "not-found"],
             "default": "not-found"
+          },
+          "claim_risk": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "OPTIONAL. Advisory flag for the risk that this claim is wrong or overstated relative to its evidence. Never auto-cuts or decides anything — a reading aid only.",
+            "properties": {
+              "level": {
+                "type": "string",
+                "enum": ["high", "medium", "low"],
+                "description": "high = claim likely overstated / weakly supported; low = well supported by direct evidence."
+              },
+              "note": {
+                "type": "string",
+                "description": "brief justification for the risk level, e.g. 'only proxy metrics, no direct measurement'."
+              }
+            }
           }
         }
       }

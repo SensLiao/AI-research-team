@@ -23,7 +23,8 @@ stages:
                      literature-ingest, source-quality-ranker, claim-extractor, claim-evidence-linker,
                      contradiction-miner, dataset-card-builder, staleness-auditor, citation-integrity-auditor,
                      landscape-mapper, monitor, future-work-miner, weakness-spotter, white-space-mapper,
-                     cross-domain-transfer-scout, contrarian-angle-generator, gap-classifier, novelty-scorer]
+                     cross-domain-transfer-scout, contrarian-angle-generator, gap-classifier, novelty-scorer,
+                     mathematical-formalizer, analogy-mapper, evidence-saturation-judge]   # RAT-2 Wave-3: deep_ideation DISCOVER panel (problem formalization / cross-domain analogy / measured saturation; contradiction-miner already above)
     blocking_gates: [evidence-verifier, citation-integrity-auditor]
     exit_artifacts: [evidence_table]
     next: IDEATE
@@ -65,7 +66,7 @@ stages:
     exit_artifacts: [review_report]
     next: REPORT
   REPORT:
-    allowed_agents: []
+    allowed_agents: [quality-controller, integrity-refusal-recommender]   # RAT-2 Wave-3: deep_ideation REPORT aggregation — closes audit A2 (quality-controller scorecard route placed at REPORT) + A3 (integrity-refusal-recommender given a real FSM-stage home; ADVISORY-only, decision stays the director's)
     blocking_gates: []
     exit_artifacts: [report_note]
     next: null

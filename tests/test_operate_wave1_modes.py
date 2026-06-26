@@ -60,9 +60,12 @@ def _validate_written(paths):
 
 def test_registry_has_seven_wired_modes():
     # wave 1 wired four; audit waves A-D (2026-06-13) wired gap_breadth + venue_readiness +
-    # full_rigor_minimal — the operated surface is now SEVEN (mirror-tested in test_operate_wiring).
-    assert set(REGISTRY) == {"new_direction", "evidence_review", "evidence_deep", "deep_research",
-                             "gap_breadth", "venue_readiness", "full_rigor_minimal"}
+    # full_rigor_minimal (SEVEN); RAT-2 Wave-3 (2026-06-19) wired deep_ideation (EIGHT); the
+    # paper-reading upgrade (2026-06-26) wired the reading family ingest_paper + read_paper_deep —
+    # the operated surface is now TEN (mirror-tested in test_operate_wiring). (Name kept for history.)
+    assert set(REGISTRY) == {"new_direction", "deep_ideation", "evidence_review", "evidence_deep",
+                             "deep_research", "gap_breadth", "venue_readiness", "full_rigor_minimal",
+                             "ingest_paper", "read_paper_deep"}
     for mod in REGISTRY.values():
         assert callable(mod.llm_step) and callable(mod.run_dets)
 

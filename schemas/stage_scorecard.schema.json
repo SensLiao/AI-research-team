@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/stage_scorecard.schema.json",
+  "title": "Stage Scorecard",
+  "description": "Per-stage rollup of the EXISTING per-stage gate verdicts. This is an AGGREGATOR artifact: it READS the verdicts the blocking_gates already produced for ONE FSM stage (analysis_check_verdict / drift / grounding outcomes) and rolls them into a small set of dimension_results, then derives stage_pass as the AND over those dimensions. It NEVER re-implements a gate and NEVER overrides a human gate. stage_pass is derived (AND over dimension_results.pass) — see allOf: a failing dimension makes stage_pass:true structurally impossible.",
+  "type": "object",
+  "required": ["stage", "dimension_results", "stage_pass"],
+  "additionalProperties": false,
+  "properties": {
+    "stage": {
+      "type": "string",
+      "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"],
+      "description": "The real FSM stage this card rolls up (orchestrator/graph.yaml stages)."
+    },
+    "dimension_results": {
+      "type": "array",
+      "description": "One entry per quality dimension assessed at this stage, each carrying the pass bit read from an existing per-stage verdict plus an evidence_ref pointing back to it.",
+      "items": {
+        "type": "object",
+        "required": ["dimension", "pass", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the quality dimension assessed (e.g. grounding, analysis_validity)."
+          },
+          "pass": {
+            "type": "boolean",
+            "description": "True iff the underlying per-stage verdict passed. Read from the existing verdict — never hand-set."
+          },
+          "evidence_ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Pointer to the existing per-stage verdict artifact this pass bit was read from (anti-slop: a dimension result must trace to a real verdict)."
+          }
+        }
+      }
+    },
+    "stage_pass": {
+      "type": "boolean",
+      "description": "Derived: AND over dimension_results[].pass. A single failing dimension forces stage_pass:false (allOf-enforced)."
+    },
+    "notes": {
+      "type": "string",
+      "default": "",
+      "description": "Optional free-text aggregation notes (e.g. which verdicts were absent)."
+    }
+  },
+  "allOf": [
+    {
+      "description": "If any dimension result has pass:false, stage_pass MUST be false. Makes a 'passing stage' with a failing dimension structurally impossible.",
+      "if": {
+        "required": ["dimension_results"],
+        "properties": {
+          "dimension_results": {
+            "contains": {
+              "type": "object",
+              "properties": {"pass": {"const": false}},
+              "required": ["pass"]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {"stage_pass": {"const": false}}
+      }
+    }
+  ]
+}

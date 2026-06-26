@@ -16,8 +16,10 @@ from research_agent_teams.orchestrator.router import resolve_task
 
 TS = "2026-06-13T00:00:00Z"
 
-EXPECTED_WIRED = {"new_direction", "evidence_review", "evidence_deep", "deep_research",
-                  "gap_breadth", "venue_readiness", "full_rigor_minimal"}
+EXPECTED_WIRED = {"new_direction", "deep_ideation", "evidence_review", "evidence_deep", "deep_research",
+                  "gap_breadth", "venue_readiness", "full_rigor_minimal",
+                  # paper-reading upgrade (2026-06-26): the single-paper reading family
+                  "ingest_paper", "read_paper_deep"}
 
 
 def test_operated_flags_mirror_the_registry_exactly():

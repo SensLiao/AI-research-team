@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_appraisal.schema.json",
+  "title": "Paper Appraisal",
+  "description": "ADVISORY outward per-paper appraisal — the venue 7-dimension rigor rubric RE-POINTED OUTWARD at an EXTERNAL paper being READ (a reading aid), NOT inward at the machine's own manuscript (that is venue_review). It is purely advisory: a reviewer-mode reading record. It carries NO verdict / accept / reject / cut / decision / meets_bar / status field and NEVER governs a gate or decides anything — additionalProperties:false makes any such self-decision field structurally impossible. The dimension scores, checklist, and prose fields are evidence for the reader, never a release verdict.",
+  "type": "object",
+  "required": [
+    "source_ref",
+    "dimensions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference to the external paper being appraised (file path, [[slug]], DOI, or artifact id)."
+    },
+    "paper_type": {
+      "type": ["string", "null"],
+      "enum": [
+        "method",
+        "theory",
+        "empirical",
+        "dataset-benchmark",
+        "tool",
+        "review",
+        "position",
+        null
+      ],
+      "default": null,
+      "description": "Paper category, used to select the right appraisal lens / reporting standard. null when unclassified."
+    },
+    "dimensions": {
+      "type": "array",
+      "description": "Per-dimension rigor scores on the 7-D venue rubric, re-pointed outward at the read paper. Advisory only — never aggregated into a verdict here.",
+      "items": {
+        "type": "object",
+        "required": ["dim", "score"],
+        "additionalProperties": false,
+        "properties": {
+          "dim": {
+            "type": "string",
+            "enum": [
+              "soundness",
+              "significance",
+              "originality",
+              "eval_rigor",
+              "reproducibility",
+              "clarity",
+              "domain_validity"
+            ],
+            "description": "Which of the 7 rubric dimensions this score applies to."
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4,
+            "description": "1=poor, 2=fair, 3=good, 4=excellent (NeurIPS 1-4 anchor scale)."
+          },
+          "evidence_ref": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Optional pointer (section/figure/table ref) justifying the score. null when not anchored."
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional free-text justification for this dimension's score."
+          }
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "Implicit, load-bearing assumptions the paper relies on (whether or not it states them).",
+      "items": {"type": "string"}
+    },
+    "limitations_acknowledged": {
+      "type": "array",
+      "description": "Limitations the paper itself acknowledges.",
+      "items": {"type": "string"}
+    },
+    "limitations_unacknowledged": {
+      "type": "array",
+      "description": "Limitations the paper does NOT state but that matter for trusting its claims.",
+      "items": {"type": "string"}
+    },
+    "baseline_fairness": {
+      "type": "string",
+      "description": "Reviewer-mode prose: are the baselines strong, current, and fairly tuned/compared?"
+    },
+    "ablation_sufficiency": {
+      "type": "string",
+      "description": "Reviewer-mode prose: do ablations isolate each component's contribution?"
+    },
+    "statistical_robustness": {
+      "type": "string",
+      "description": "Reviewer-mode prose: are results reported with variance / significance / adequate runs?"
+    },
+    "selective_reporting": {
+      "type": "string",
+      "description": "Reviewer-mode prose: signs of cherry-picking, missing negative results, or favorable-only metrics."
+    },
+    "reproducibility_gaps": {
+      "type": "array",
+      "description": "Specific gaps that would block an expert from reproducing the main results.",
+      "items": {"type": "string"}
+    },
+    "generalization": {
+      "type": "string",
+      "description": "Reviewer-mode prose: how far the claims plausibly generalize beyond the reported setting."
+    },
+    "reviewer_questions": {
+      "type": "array",
+      "description": "Questions a reviewer would raise — the things the reader should resolve before trusting the paper.",
+      "items": {"type": "string"}
+    },
+    "checklist": {
+      "type": ["object", "null"],
+      "default": null,
+      "additionalProperties": false,
+      "description": "Optional paper-type-selected formal reporting checklist. null when no standard applies.",
+      "properties": {
+        "standard": {
+          "type": "string",
+          "enum": [
+            "neurips",
+            "casp",
+            "cochrane_rob2",
+            "strobe",
+            "tripod_ai",
+            "prisma",
+            "consort",
+            "none"
+          ],
+          "description": "Which formal reporting / risk-of-bias standard this checklist instantiates."
+        },
+        "items": {
+          "type": "array",
+          "description": "Per-item status against the chosen standard.",
+          "items": {
+            "type": "object",
+            "required": ["item", "status"],
+            "additionalProperties": false,
+            "properties": {
+              "item": {
+                "type": "string",
+                "description": "The checklist item / requirement text."
+              },
+              "status": {
+                "type": "string",
+                "enum": ["met", "partial", "unmet", "na"],
+                "description": "Whether the paper meets this item."
+              },
+              "note": {
+                "type": "string",
+                "description": "Optional evidence / caveat for this item's status."
+              }
+            }
+          }
+        }
+      }
+    },
+    "overall": {
+      "type": "string",
+      "description": "One-paragraph reviewer-mode summary of the paper's standing — prose only, ADVISORY. NOT a verdict/accept/reject; it never decides anything."
+    }
+  }
+}

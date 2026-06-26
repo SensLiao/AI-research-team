@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/experiment_sketch.schema.json",
+  "title": "Experiment Sketch",
+  "description": "IDEATE-stage deep-ideation artifact. Output of the experiment-architect worker. A MINIMAL, runnable-next-quarter experiment design for ONE surviving idea — deliberately lighter than the DESIGN-stage experiment_matrix / protocol_spec (a sketch that makes an idea testable, NOT the full preregistered protocol). It enforces the report's 'designability gate': an idea that cannot be reduced to a minimal experiment with a concrete falsifier is not yet a real direction. Descriptive ONLY — no selection / bet / chosen / winner field (additionalProperties:false). Anti-slop: idea_ref is a real ref (contains a digit); every present string is non-blank (pattern \\S). This artifact does NOT replace DESIGN: a bet idea still goes through full_rigor_minimal / design_experiment after /idea-bet.",
+  "type": "object",
+  "required": ["sketch_id", "idea_ref", "experiment", "controls", "metrics", "observable_signals", "falsifier"],
+  "additionalProperties": false,
+  "properties": {
+    "sketch_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Short unique identifier for this sketch, e.g. ES-001. Non-blank."
+    },
+    "idea_ref": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "[0-9]",
+      "description": "The idea_id this experiment tests (e.g. IDEA-1, EV-1). Real-ref guard: must contain a digit."
+    },
+    "experiment": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "The minimal experiment to run — concrete enough that someone could start it next quarter. Non-blank."
+    },
+    "controls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+      "description": "What is held fixed / the control condition(s) the comparison is against (e.g. 'same backbone, frozen vs adapted encoder'). At least one; each non-blank."
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+      "description": "The observable metric(s) measured (e.g. 'Dice on the held-out canal set', 'boundary F1'). At least one; each non-blank."
+    },
+    "observable_signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+      "description": "What you would actually OBSERVE if the idea works vs fails (the read-out that distinguishes the two). At least one; each non-blank."
+    },
+    "falsifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "The concrete result that would FALSIFY the idea (e.g. 'no Dice gain over the frozen-encoder baseline at matched compute'). Non-blank — an idea with no falsifier is not yet testable."
+    },
+    "next_branch": {
+      "type": "string",
+      "description": "Optional: what to try next if this experiment fails (the recovery branch)."
+    },
+    "feasibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional feasibility triple, mirroring idea_backlog (the single biggest cost should dominate the rating).",
+      "properties": {
+        "compute": {"type": ["string", "number", "null"], "default": null, "description": "Compute demand signal."},
+        "data": {"type": ["string", "number", "null"], "default": null, "description": "Data availability signal."},
+        "time": {"type": ["string", "number", "null"], "default": null, "description": "Time-to-result signal."}
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional caveats (e.g. assumptions the sketch depends on, north-star drift)."
+    }
+  }
+}
