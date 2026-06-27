@@ -25,7 +25,7 @@ evidence-class / owner / reviewed / review-cycle
 
 | type | Folder | Purpose | Required type-specific fields | Optional fields |
 |------|--------|---------|------------------------------|-----------------|
-| `paper` | `papers/` | External research paper | `authors` (list), `year` (int), `venue` (str), `reading-status` (to-read\|skimmed\|read\|deep-read\|cited\|deprecated), `relevance` (direct\|adjacent\|background) | `doi`, `url`, `key-claims`, `serves-claim` (list of `[[claim-slug]]`) |
+| `paper` | `papers/` | External research paper | `authors` (list), `year` (int), `venue` (str), `reading-status` (to-read\|skimmed\|read\|deep-read\|cited\|deprecated), `relevance` (direct\|adjacent\|background) | `doi`, `url`, `key-claims`, `serves-claim` (list of `[[claim-slug]]`), `paper-type` (method\|theory\|empirical\|dataset-benchmark\|tool\|review\|position), `read-purpose` (idea\|method\|baseline\|related-work\|reproduce\|review), `reading-objective` (str) |
 | `source` | `sources/` | Internal runbook / plan / rules | `source-type` (runbook\|plan\|rules\|readme\|transcript), `maintained-by` (human\|llm\|both) | `canonical` (bool) |
 | `experiment` | `experiments/` | Experiment design (one per research question slice) | `experiment-id` (str), `model` (`[[model-slug]]`), `dataset` (`[[dataset-slug]]`), `protocol` (`[[protocol-slug]]`), `serves-rq` (list), `serves-contrib` (list) | `expected-outputs` (list), `stop-conditions` (list), `runs` (list of `[[run-slug]]`), `result-pages` (list of `[[result-slug]]`) |
 | `run` | `runs/` | A single execution of an experiment | `experiment` (`[[experiment-slug]]`), `run-id` (str), `seed` (int), `git-commit` (str, 40-char SHA), `data-version` (str — DVC hash or dataset release), `env-lock` (`[[env-lock-slug]]` or path), `started` (datetime ISO 8601), `finished` (datetime ISO 8601), `wallclock-hours` (float), `hardware` (str), `status` (running\|completed\|failed\|aborted) | `container-digest` (str), `metrics-file` (path), `log-file` (path), `notes` (str), `superseded-by` (`[[run-slug]]`) |
@@ -126,6 +126,13 @@ Types are never deleted. If obsolete:
 ---
 
 ## Field-extension log (ritual records)
+
+- **2026-06-26 — 0+3+1 reading protocol on `paper`** (paper-reading-upgrade). New OPTIONAL `paper` fields: `paper-type`, `read-purpose`,
+  `reading-objective` (Stage-0 positioning). Body is graduated by `reading-status` and enforced by
+  `06-scripts/lint_vault.py` (skimmed → Stage 0 + Pass 1; read → + Pass 2 claim-evidence table + method;
+  deep-read → + figure reading + Pass 3 appraisal + Stage 4 typed relations/trend). Template updated:
+  `04-templates/paper.md`. Existing skims stay `skimmed` (leave-and-label); re-deepen is director-driven
+  via Codex work-orders. The fields are registry-optional but LINT-required at `reading-status ≥ read`.
 
 - **2026-06-10 — bi-temporal validity on `claim` / `comparison`** (absorption wave 1; Graphiti
   invalidate-don't-delete pattern). New OPTIONAL fields: `valid-at`, `invalid-at`,

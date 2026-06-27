@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/trend_card.schema.json",
+  "title": "Trend Card",
+  "description": "Stage-4 concept-centric trend extraction across a sub-area (a thread of papers, not a single paper). Captures how the field is shifting along problem/method/representation/assumption/evaluation/resource dimensions, what failure modes recur, whether the field explains WHY or only reports THAT, and where the reader's own opportunity lies. Source-grounded in source_refs.",
+  "type": "object",
+  "required": ["scope"],
+  "additionalProperties": false,
+  "properties": {
+    "scope": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the sub-area / thread this trend covers (e.g. 'foundation-model adaptation for thin-structure 3D segmentation')"
+    },
+    "shifts": {
+      "type": "array",
+      "description": "directional shifts the field is undergoing, one per dimension",
+      "items": {
+        "type": "object",
+        "required": ["dimension"],
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "enum": ["problem", "method", "representation", "assumption", "evaluation", "resource"],
+            "description": "which axis the field is shifting along"
+          },
+          "from": {
+            "type": "string",
+            "description": "what the field used to do on this dimension"
+          },
+          "to": {
+            "type": "string",
+            "description": "what the field is moving toward on this dimension"
+          }
+        }
+      },
+      "default": []
+    },
+    "failure_modes": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "recurring failure modes the sub-area keeps running into",
+      "default": []
+    },
+    "mechanism_vs_result": {
+      "type": "string",
+      "description": "does the field explain WHY methods work (mechanism) or merely report THAT they work (result)?"
+    },
+    "reproducibility_trend": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "whether reproducibility in this sub-area is improving, stagnant, or worsening — null if not assessed"
+    },
+    "opportunities": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "your-opportunity extraction — open white space the reader could own",
+      "default": []
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "papers grounding this trend",
+      "default": []
+    }
+  }
+}

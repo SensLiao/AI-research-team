@@ -99,6 +99,38 @@
         "contribution_min": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.3}
       }
     },
+    "reading": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "description": "Paper-reading upgrade (D6): per-domain reading rigor, tunable like experiment rigor. Reading agents consult this to pick a default paper type, the reporting standards to appraise against, and a domain appraisal checklist. Advisory — never a governed gate.",
+      "properties": {
+        "paper_type_default": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "default paper_type assumption when a read paper's type is unstated, e.g. 'method' for an ML-systems profile, 'empirical' for a clinical profile."
+        },
+        "reporting_standards": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["tripod_ai", "strobe", "consort", "prisma", "neurips", "casp", "cochrane_rob2"]
+          },
+          "default": [],
+          "description": "reporting/appraisal standards relevant to this domain; paper_appraisal selects its checklist from here."
+        },
+        "appraisal_checklist": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "reference to a domain appraisal checklist (e.g. a checklist name or doc ref) the appraiser should apply."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "free-form domain reading notes / caveats for reading agents."
+        }
+      }
+    },
     "hard_invariants": {
       "type": "array",
       "items": {"type": "string"},

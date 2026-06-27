@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/idea_quality_eval.schema.json",
+  "title": "Idea Quality Eval",
+  "description": "REPORT-stage deep-ideation artifact. Output of tools/idea_quality_eval.py (the blind pairwise quality harness). It scores every candidate idea on a DECOMPOSED, auditable set of quality dimensions computed deterministically from the run's typed artifacts (mechanism_graph depth & branching -> depth; mechanism_mapping cross-domain edges -> breadth; citation resolvability / evidence diversity -> grounding; contradiction coverage -> refutation; experiment_sketch falsifier presence -> falsifiability; novelty-collision verdicts -> novelty) and records blind PAIRWISE comparisons per dimension. HARD design rule (the report's §测试与评估): the harness NEVER emits a single collapsed total that could be read as a bet, and carries NO recommended / best / chosen field — pairwise winners are per-dimension EVIDENCE (mirroring elo_tournament), not a global selection. Measurement / advisory ONLY: it never cuts an idea and never gates a stage. Every score is DERIVED by the tool, never hand-set. stability (run-to-run consistency) and cost (token/tool per idea) are OPTIONAL: present only when multi-run / budget telemetry exists — never fabricated.",
+  "type": "object",
+  "required": ["eval_id", "per_idea", "pairwise"],
+  "additionalProperties": false,
+  "properties": {
+    "eval_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Short unique identifier for this eval, e.g. QE-001. Non-blank."
+    },
+    "per_idea": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One decomposed scorecard per candidate idea. minItems:1.",
+      "items": {
+        "type": "object",
+        "required": ["idea_id", "scores", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "idea_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The idea scored, e.g. IDEA-1. Non-blank."
+          },
+          "scores": {
+            "type": "object",
+            "required": ["depth", "breadth", "grounding", "refutation", "falsifiability", "novelty"],
+            "additionalProperties": false,
+            "description": "Decomposed quality scores, each in [0,1], DERIVED from artifacts. The 6 required dimensions are always derivable from a single run; stability/cost are optional (telemetry-dependent). A single collapsed total is deliberately ABSENT (no bet-by-total).",
+            "properties": {
+              "depth": {"type": "number", "minimum": 0, "maximum": 1, "description": "Mechanism-graph depth & branching (did the idea reach the underlying mechanism, or stay shallow)."},
+              "breadth": {"type": "number", "minimum": 0, "maximum": 1, "description": "Cross-domain reach: mechanism_mapping edges / distinct source domains (real transfer, not word-swap)."},
+              "grounding": {"type": "number", "minimum": 0, "maximum": 1, "description": "Resolvable-citation rate + evidence diversity (traceable, not single-source)."},
+              "refutation": {"type": "number", "minimum": 0, "maximum": 1, "description": "Contradiction/counterexample coverage (did it survive adversarial checking)."},
+              "falsifiability": {"type": "number", "minimum": 0, "maximum": 1, "description": "Experiment-sketch completeness + falsifier presence (can it enter a real experiment)."},
+              "novelty": {"type": "number", "minimum": 0, "maximum": 1, "description": "Prior-art-collision posture (avoids pseudo-novelty); derived from the collision verdict, never a raw score-cut."},
+              "stability": {"type": "number", "minimum": 0, "maximum": 1, "description": "Optional: run-to-run consistency (blind pairwise win-rate / Elo variance). Present only with multi-run telemetry."},
+              "cost": {"type": "number", "minimum": 0, "maximum": 1, "description": "Optional: token / tool-call efficiency per idea. Present only with budget telemetry."}
+            }
+          },
+          "evidence_ref": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+            "description": "Anti-slop: the artifact path(s) each score was derived from (e.g. evidence/DISCOVER/mechanism-graph.artifact.json)."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional: which dimensions were unavailable (e.g. stability requires multiple runs)."
+          }
+        }
+      }
+    },
+    "pairwise": {
+      "type": "array",
+      "description": "Blind per-dimension pairwise comparisons (EVIDENCE, not a bet). May be empty when fewer than 2 ideas. winner is one of the two idea_ids or 'tie' (deterministic: higher score on that dimension).",
+      "items": {
+        "type": "object",
+        "required": ["pair_a", "pair_b", "dimension", "winner"],
+        "additionalProperties": false,
+        "properties": {
+          "pair_a": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "First idea_id (lexicographically smaller). Non-blank."},
+          "pair_b": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "Second idea_id. Non-blank."},
+          "dimension": {
+            "type": "string",
+            "enum": ["depth", "breadth", "grounding", "refutation", "falsifiability", "novelty", "stability", "cost"],
+            "description": "Which decomposed dimension this comparison is on."
+          },
+          "winner": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The idea_id with the higher score on this dimension, or 'tie'. Per-dimension only — never a global selection."
+          },
+          "rationale_ref": {
+            "type": "string",
+            "description": "Optional: pointer to the score basis (e.g. the two evidence_refs compared)."
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional eval-level caveats (e.g. 'cost omitted — no budget telemetry this run')."
+    }
+  }
+}

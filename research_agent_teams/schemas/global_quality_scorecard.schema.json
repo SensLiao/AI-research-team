@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/global_quality_scorecard.schema.json",
+  "title": "Global Quality Scorecard",
+  "description": "The genuinely-new CROSS-STAGE aggregation layer. Per-stage gate verdicts ALREADY exist (analysis_check_verdict, the blocking_gates in graph.yaml, drift_gate); this artifact ROLLS those existing per-stage verdicts (via stage_scorecard) up into one run-level view and derives a deterministic can_finish. It is an AGGREGATOR ONLY: it reads existing verdicts, it does NOT re-run or replace any gate, and can_finish is an internal completeness signal — it NEVER overrides the director's human gates (/promote-to-vault, /idea-bet), which remain the sole deciders to bet, publish, or write the DB. can_finish is derived: it is true ONLY when every required dimension passes (allOf-enforced — structurally impossible to finish with a failing required dimension).",
+  "type": "object",
+  "required": ["run_id", "stage_scorecards", "dimensions", "can_finish", "blocking_reasons"],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The run this scorecard aggregates."
+    },
+    "stage_scorecards": {
+      "type": "array",
+      "description": "The per-stage rollups feeding this global view. Each item is a stage_scorecard-shaped object (same shape as stage_scorecard.schema.json).",
+      "items": {
+        "type": "object",
+        "required": ["stage", "dimension_results", "stage_pass"],
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "type": "string",
+            "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]
+          },
+          "dimension_results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["dimension", "pass", "evidence_ref"],
+              "additionalProperties": false,
+              "properties": {
+                "dimension": {"type": "string", "minLength": 1},
+                "pass": {"type": "boolean"},
+                "evidence_ref": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "stage_pass": {"type": "boolean"},
+          "notes": {"type": "string", "default": ""}
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["dimension_results"],
+              "properties": {
+                "dimension_results": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {"pass": {"const": false}},
+                    "required": ["pass"]
+                  }
+                }
+              }
+            },
+            "then": {"properties": {"stage_pass": {"const": false}}}
+          }
+        ]
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "description": "The six global quality dimensions, each rolled up across the stages that bear on it. Every dimension is REQUIRED and carries a pass bit derived from the underlying per-stage verdicts. These six are the required set the can_finish AND ranges over.",
+      "required": ["grounding", "novelty", "method_completeness", "analysis_validity", "integrity", "review"],
+      "additionalProperties": false,
+      "properties": {
+        "grounding": {"$ref": "#/$defs/dimension"},
+        "novelty": {"$ref": "#/$defs/dimension"},
+        "method_completeness": {"$ref": "#/$defs/dimension"},
+        "analysis_validity": {"$ref": "#/$defs/dimension"},
+        "integrity": {"$ref": "#/$defs/dimension"},
+        "review": {"$ref": "#/$defs/dimension"}
+      }
+    },
+    "can_finish": {
+      "type": "boolean",
+      "description": "Derived: AND over every required dimension's pass bit. true ONLY when all six dimensions pass (allOf-enforced). This is the machine's completeness signal — NOT a publish/bet/promote decision (those remain the director's human gates)."
+    },
+    "blocking_reasons": {
+      "type": "array",
+      "description": "Human-readable reasons can_finish is false — names each failing required dimension. Empty iff can_finish is true.",
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "$defs": {
+    "dimension": {
+      "type": "object",
+      "required": ["pass", "evidence_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "pass": {
+          "type": "boolean",
+          "description": "True iff every per-stage verdict bearing on this dimension passed. Derived, never hand-set."
+        },
+        "evidence_ref": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "Pointers to the stage(s) / verdict(s) this dimension was rolled up from (anti-slop)."
+        },
+        "blocking_reasons": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "default": [],
+          "description": "Per-dimension reasons this dimension failed (empty when pass is true)."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "can_finish:true requires EVERY required dimension pass:true. Encoded as: if can_finish is true, then each of the six dimensions must have pass:const true. Structurally impossible to 'finish' with any failing required dimension.",
+      "if": {
+        "required": ["can_finish"],
+        "properties": {"can_finish": {"const": true}}
+      },
+      "then": {
+        "required": ["dimensions"],
+        "properties": {
+          "dimensions": {
+            "required": ["grounding", "novelty", "method_completeness", "analysis_validity", "integrity", "review"],
+            "properties": {
+              "grounding": {"properties": {"pass": {"const": true}}, "required": ["pass"]},
+              "novelty": {"properties": {"pass": {"const": true}}, "required": ["pass"]},
+              "method_completeness": {"properties": {"pass": {"const": true}}, "required": ["pass"]},
+              "analysis_validity": {"properties": {"pass": {"const": true}}, "required": ["pass"]},
+              "integrity": {"properties": {"pass": {"const": true}}, "required": ["pass"]},
+              "review": {"properties": {"pass": {"const": true}}, "required": ["pass"]}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,7 +1,14 @@
 """
 lint_vault.py — Programmatic LINT for the PhD Research OS vault.
 
-Runs 13 checks. Exits non-zero on errors so CI / pre-commit can block.
+Runs 15 checks. Exits non-zero on errors so CI / pre-commit can block.
+
+NOTE (paper-reading-upgrade, 2026-06-26): the READING_DEPTH section-graduation check
+(#15) is intentionally emitted as a WARNING during the legacy-page migration window so
+the ~60 pre-upgrade paper pages do NOT fail-all. It is designed to HARDEN to ERROR at
+`reading-status >= read` once the legacy pages have been re-deepened (P6 Codex
+work-orders). The graduation mapping mirrors the project's reading-depth LEDGER table
+and 04-templates/paper.md.
 
 Checks:
   1. UNIVERSAL_FRONTMATTER  — every knowledge-note page has all required fields
@@ -15,12 +22,20 @@ Checks:
   9. DUPLICATE_SLUG         — no two pages share a filename (case-insensitive)
  10. VOCAB                  — domain/tags values are in the controlled registries
                              (advisory: warning for domain, info for tags — never blocks)
- 11. READING_DEPTH          — granularity controller: flags over-read (background at
+ 11. OVER_READ / DEEP_READ_CAP — granularity controller: flags over-read (background at
                              deep-read) + per-thread deep-read soft cap (advisory only)
  12. SOURCE_REF_DUPLICATE   — (M12) same doi/url source identifier on ≥2 paper pages
                              → error; same normalized title across ≥2 slugs → warning
  13. REVIEW_CYCLE_OVERDUE   — (L4) page with review-cycle:<N> not reviewed within N days
                              → warning (advisory, never blocks)
+ 14. READING_STATUS_ENUM    — (paper-reading-upgrade) type:paper `reading-status` is in the
+                             registry enum {to-read, skimmed, read, deep-read, cited,
+                             deprecated} → warning (catches enum drift)
+ 15. READING_DEPTH          — (paper-reading-upgrade) type:paper body carries the sections
+                             its reading-status earns (skimmed→Stage 0+Pass 1;
+                             read→+Pass 2; deep-read/cited→+Figure+Pass 3+Stage 4)
+                             → warning during migration; hardens to ERROR at
+                             reading-status >= read after legacy pages are migrated
 
 Usage:
   python 06-scripts/lint_vault.py                  # full lint, exit non-zero on errors
@@ -341,10 +356,10 @@ def check_vocab(report: LintReport, path: Path, meta: dict, domains: set[str], t
                            f"tag '{t}' not in 05-registry/tags.md (advisory)")
 
 
-# Thread labels — keep in sync with 05-registry/tags.md "Thread labels" section.
-# Replace these EXAMPLE labels with your own project's thread labels at bootstrap.
+# Thread labels — project-specific; keep in sync with 05-registry/tags.md "Thread labels" section.
+# These are EXAMPLE thread labels — replace them with your own project's threads.
 THREAD_LABELS = {
-    "thread-example-1", "thread-example-2", "thread-example-3",
+    "example-thread-a", "example-thread-b", "example-thread-c",
 }
 
 
@@ -360,6 +375,86 @@ def check_reading_depth(report: LintReport, path: Path, meta: dict) -> None:
         report.add("warning", "OVER_READ", page,
                    f"`background` paper at reading-status={rs} — the granularity rule caps "
                    f"`background` at `skimmed` (likely over-zoom; demote relevance or the read).")
+
+
+# ── Section-graduation (paper-reading-upgrade, 2026-06-26) ───────────────────────
+# A type:paper page must carry the body sections its `reading-status` earns. Tokens are
+# distinctive words matched case-insensitively against the page's headings, so renaming a
+# heading ("Pass 1 — Contract" → "Pass 1: Setup") does NOT false-fail. WARN-ONLY during the
+# legacy-page migration window (see module docstring): it is designed to HARDEN to ERROR at
+# `reading-status >= read` once the legacy pages are re-deepened. The mapping mirrors the
+# LEDGER graduation table (the project's reading-depth design ledger) and the
+# section markers in 04-templates/paper.md.
+READING_STATUS_ENUM = {"to-read", "skimmed", "read", "deep-read", "cited", "deprecated"}
+
+_GRAD_SKIMMED = [
+    ("Stage 0 positioning", ("stage 0", "stage-0", "positioning")),
+    ("TL;DR", ("tl;dr", "tldr", "tl dr")),
+    ("Pass 1 contract", ("pass 1", "pass-1", "contract")),
+]
+_GRAD_READ = [
+    ("Pass 2 teardown", ("pass 2", "pass-2")),
+    ("claim→evidence table", ("claim",)),
+    ("method breakdown", ("method",)),
+    ("results table", ("result",)),
+]
+_GRAD_DEEP = [
+    ("figure reading", ("figure",)),
+    ("Pass 3 appraisal", ("pass 3", "pass-3", "appraisal")),
+    ("Stage 4 relations & trend", ("stage 4", "stage-4", "concept network", "trend")),
+]
+# Cumulative: each rung inherits the rungs below it.
+READING_GRADUATION = {
+    "skimmed": _GRAD_SKIMMED,
+    "read": _GRAD_SKIMMED + _GRAD_READ,
+    "deep-read": _GRAD_SKIMMED + _GRAD_READ + _GRAD_DEEP,
+    "cited": _GRAD_SKIMMED + _GRAD_READ + _GRAD_DEEP,
+}
+
+_HEADING_RE = re.compile(r"^#{1,6}\s+(.*)$", re.MULTILINE)
+
+
+def _page_headings(body: str) -> list[str]:
+    return [m.group(1).strip().lower() for m in _HEADING_RE.finditer(body)]
+
+
+def check_reading_status_enum(report: LintReport, path: Path, meta: dict) -> None:
+    """READING_STATUS_ENUM (paper-reading-upgrade): a type:paper page's `reading-status`
+    must be one of the registry enum values (status-registry §paper.reading-status).
+    WARN-only — catches enum drift (e.g. `web-verified-...`, `shallow-read`)."""
+    if is_meta_type(meta) or meta.get("type") != "paper":
+        return
+    rs = meta.get("reading-status")
+    if rs in (None, "", []):
+        return  # absence is not drift; the template seeds a default
+    if str(rs) not in READING_STATUS_ENUM:
+        report.add("warning", "READING_STATUS_ENUM", page_slug(path),
+                   f"reading-status '{rs}' not in the registry enum "
+                   f"{{to-read, skimmed, read, deep-read, cited, deprecated}} "
+                   f"(05-registry/status-registry.md §paper.reading-status — fix the drift).")
+
+
+def check_reading_section_graduation(report: LintReport, path: Path, meta: dict, body: str) -> None:
+    """READING_DEPTH (paper-reading-upgrade): a type:paper page must carry the body sections
+    its `reading-status` earns. Tolerant heading match (distinctive words, case-insensitive)
+    so a heading rename does not false-fail. WARN during the migration window; HARDENS to
+    ERROR at reading-status >= read once legacy pages are migrated (see module docstring +
+    the LEDGER graduation table)."""
+    if is_meta_type(meta) or meta.get("type") != "paper":
+        return
+    rs = meta.get("reading-status")
+    required = READING_GRADUATION.get(str(rs))
+    if not required:
+        return  # to-read / deprecated / unknown — no graduation floor (enum drift caught separately)
+    headings = _page_headings(body)
+    missing = [label for label, tokens in required
+               if not any(tok in h for h in headings for tok in tokens)]
+    if missing:
+        report.add("warning", "READING_DEPTH", page_slug(path),
+                   f"reading-status={rs} requires sections (cumulative): "
+                   f"{', '.join(label for label, _ in required)}; missing: {', '.join(missing)}. "
+                   f"WARN during the paper-reading-upgrade migration window — hardens to ERROR at "
+                   f"reading-status>=read after legacy pages are migrated.")
 
 
 def check_bitemporal(report: LintReport, path: Path, meta: dict) -> None:
@@ -586,6 +681,8 @@ def main(argv: list[str] | None = None) -> int:
         check_citation_gate(report, fp, meta)
         check_vocab(report, fp, meta, domains, tags_vocab)
         check_reading_depth(report, fp, meta)
+        check_reading_status_enum(report, fp, meta)
+        check_reading_section_graduation(report, fp, meta, body)
         check_bitemporal(report, fp, meta)
         check_review_cycle_overdue(report, [fp])
         # Cross-file checks (orphans / broken links / duplicate slugs / source-ref-duplicate)
@@ -603,6 +700,8 @@ def main(argv: list[str] | None = None) -> int:
             check_citation_gate(report, p, meta)
             check_vocab(report, p, meta, domains, tags_vocab)
             check_reading_depth(report, p, meta)
+            check_reading_status_enum(report, p, meta)
+            check_reading_section_graduation(report, p, meta, body)
             check_bitemporal(report, p, meta)
             check_review_cycle_overdue(report, [p])
         check_links_and_orphans(report, pages)

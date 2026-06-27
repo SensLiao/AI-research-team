@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/novelty_collision_report.schema.json",
+  "title": "Novelty Collision Report",
+  "description": "IDEATE-stage gate verdict artifact (novelty-collision-upgrade). Output of tools/novelty_collision.build_collision_verdict, written by operate.modes._shared.run_collision_gate BEFORE the /idea-bet menu. EVIDENCE-NOT-SCORE discipline: this is the ONE novelty channel allowed to CUT an idea, and only on a FACT — a specific paper that PASSED citation_existence (exists in the world) AND demonstrably did the same method×problem AND (by default) actually ran/implemented it. A novelty SCORE still never cuts (that stays idea_grounding's SCORE-ONLY job). A claimed collision whose paper is nonexistent / unconfirmable degrades to UNVERIFIED, never DEAD — the expensive error is killing a good idea, so absence of proof is never proof. Every input idea appears exactly once; cuts are reported (not hidden) so the director can override.",
+  "type": "object",
+  "required": ["ideas", "policy", "cut_ids", "survivors", "retrieval_grounded", "evidence_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "ideas": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One verdict per input idea, in input order. Every menu idea appears exactly once — none dropped.",
+      "items": {
+        "type": "object",
+        "required": ["idea_id", "verdict", "cut", "colliding_papers", "reason", "source"],
+        "additionalProperties": false,
+        "properties": {
+          "idea_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "verdict": {"type": "string", "enum": ["DEAD", "WHITE_SPACE", "CLEAR", "UNVERIFIED"], "description": "DEAD = existence-verified prior art did this method×problem (and ran it, by default) -> cut. WHITE_SPACE = exists on a different application/problem or proposed-only -> keep + flag (publishable). CLEAR = no collision found within coverage -> keep (not 'proven novel'). UNVERIFIED = retrieval ungrounded or the collider could not be existence-verified -> keep + loudly flag."},
+          "cut": {"type": "boolean", "description": "True iff this idea is removed from the /idea-bet menu. Only ever True for DEAD, and only when policy.hard_block is True. CLEAR / WHITE_SPACE / UNVERIFIED are never cut."},
+          "colliding_papers": {
+            "type": "array",
+            "description": "The papers the verdict rests on (may be []). 'existence' carries the citation_existence state for the ref (the fact-check the cut depends on).",
+            "items": {
+              "type": "object",
+              "required": ["ref", "existence", "experimentally_validated"],
+              "additionalProperties": false,
+              "properties": {
+                "ref": {"type": "string", "description": "The citation the worker named (existence-checked by the gate). May be empty only if the worker omitted it."},
+                "existence": {"type": "string", "enum": ["verified", "not_found", "lookup_error", "skipped", "EXISTS", "NONEXISTENT", "UNKNOWN"], "description": "The citation_existence state for this ref. Real states are 'verified' / 'not_found' / 'lookup_error' / 'skipped'; the design aliases EXISTS / NONEXISTENT / UNKNOWN are also accepted. A DEAD cut requires 'verified' (or 'EXISTS')."},
+                "experimentally_validated": {"type": "boolean", "description": "Whether the colliding paper actually ran / implemented the method (carried through from the worker finding / ledger row)."}
+              }
+            }
+          },
+          "reason": {"type": "string", "minLength": 1, "description": "Human-readable justification for the verdict (and, for UNVERIFIED, why no cut was made)."},
+          "source": {"type": "string", "enum": ["worker", "ledger"], "description": "worker = decided from this run's collision findings; ledger = pre-matched to the known-prior-art ledger (already cut in a prior run)."}
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["hard_block", "cut_requires_experiments"],
+      "additionalProperties": false,
+      "properties": {
+        "hard_block": {"type": "boolean", "description": "Director default True: a DEAD idea is cut from the menu. False = flag-only (keep, still label DEAD)."},
+        "cut_requires_experiments": {"type": "boolean", "description": "True (default): a DEAD verdict additionally requires the colliding paper to have actually run/implemented it; proposed-only collisions become WHITE_SPACE."}
+      },
+      "description": "The knobs applied this run (profile-tunable; defaults are director-set)."
+    },
+    "cut_ids": {"type": "array", "items": {"type": "string", "minLength": 1, "pattern": "\\S"}, "description": "idea_ids with cut == True (input order). These are removed from the /idea-bet menu and reported under cut_for_prior_art."},
+    "survivors": {"type": "array", "items": {"type": "string", "minLength": 1, "pattern": "\\S"}, "description": "idea_ids with cut == False (input order). Only these reach build_idea_backlog / the /idea-bet menu."},
+    "retrieval_grounded": {"type": "boolean", "description": "False when no retrieval records existed this run: every non-ledger idea is UNVERIFIED and nothing is cut. The orchestrator must loudly tell the director novelty was NOT verified (mandatory-check honesty)."},
+    "evidence_ref": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "pattern": "\\S"}, "description": "Pointer(s) to the collision bundle the verdict was derived from (e.g. ['inbox/COLLISION.bundle.json'])."}
+  }
+}

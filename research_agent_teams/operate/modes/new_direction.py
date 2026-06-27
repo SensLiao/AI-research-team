@@ -32,7 +32,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from . import _shared
+from . import _deep_ideate, _shared
 from ..artifacts import GateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
 from ...tools.citation_checker import build_report
@@ -161,6 +161,55 @@ Each idea must be a real experiment someone could run next quarter, not a resear
 feasibility triple honestly (the single biggest cost should dominate the rating).
 After writing, verify valid JSON. Return one line: counts + the tournament winner + the most feasible idea."""
 
+COLLISION_WORKER_PROMPT = """You are the NOVELTY-COLLISION CHECKER — an INDEPENDENT prior-art auditor, \
+NOT the author of these ideas (you are the prosecutor, not the athlete judging itself). The IDEATE \
+worker proposed candidate ideas; your ONLY job is to find out, for EACH idea, whether someone has \
+ALREADY ACTUALLY DONE it. Read:
+  - `{run_dir}/inbox/IDEATE.bundle.json`  — check EVERY idea in BOTH `ideas` and `evolved`.
+  - `{run_dir}/inbox/search-results.json` IF it exists — the sanctioned live-retrieval bundle.
+
+{north_star}
+
+For EACH idea (originals AND evolved):
+ 1. DECOMPOSE it into (method_combination × application/problem × domain).
+ 2. Build TARGETED queries around the METHOD + PROBLEM (not the idea's wording); search the real \
+literature (use the search bundle + your retrieval tools). Hunt hardest for the exact COMBINATION on \
+the same problem.
+ 3. For each near-hit, judge HONESTLY: does this SPECIFIC paper do the SAME method-combination on the \
+SAME problem? did it actually RUN experiments / implement it (not merely propose)?
+ 4. Assign a verdict:
+      "collision" = a SPECIFIC real paper does the same method × same problem AND ran it -> name it.
+      "adjacent"  = the combination exists but on a DIFFERENT application/problem, OR was proposed but \
+NOT experimentally validated here (this is publishable WHITE SPACE — say so).
+      "clear"     = targeted retrieval surfaced no collision ('none found within coverage', NOT \
+'proven novel').
+
+HARD HONESTY (a FALSE collision KILLS a good idea — the expensive error):
+  - NEVER claim "collision" without a SPECIFIC real paper you can cite (arXiv:/doi:/exact title).
+  - NEVER fabricate a paper, DOI, arXiv id, or quote (a downstream existence gate checks every ref; a \
+fabricated/unconfirmable colliding paper is discarded and CANNOT cut).
+  - If unsure -> "adjacent" or "clear", NEVER "collision".
+  - Emit exactly ONE finding per input idea_id; you do NOT drop, rank, or select ideas.
+
+Write ONLY this JSON to `{out}` (filename ends in .bundle.json, NOT .artifact.json):
+{{
+  "findings": [
+    {{"idea_id": "IDEA-1", "method_combination": "<the combined methods>",
+      "application": "<the problem it is applied to>", "domain": "<the field>",
+      "queries": ["<targeted query 1>", "<query 2>"], "verdict": "collision|adjacent|clear",
+      "colliding_papers": [
+        {{"ref": "arXiv:2407.01517", "title": "<paper title>",
+          "does_same_method_on_same_problem": true, "experimentally_validated": true,
+          "justification": "<1 line: why it is the same>", "quote": "<short supporting quote>"}}
+      ],
+      "confidence": "high|medium|low", "retrieval_note": "<coverage caveat — what you could not check>"}}
+  ],
+  "evidence_ref": ["inbox/COLLISION.bundle.json"]
+}}
+colliding_papers MUST be [] when verdict is "clear". Every finding needs idea_id, method_combination, \
+application, domain, queries (>=1), verdict, colliding_papers, confidence. After writing, verify valid \
+JSON. Return one line: counts of collision/adjacent/clear + the idea you are most confident is already done."""
+
 
 # --------------------------------------------------------------------------- stage plan (what the skill spawns)
 
@@ -179,23 +228,69 @@ def pre_search(run_dir: str, request: str, ts: str, transport=None,
                               sources=sources, limit_per_source=limit_per_source)
 
 
+def discover_worker(run_dir: str, request: str, vault: str = DEFAULT_VAULT,
+                    model_policy: str = "max_quality") -> dict:
+    """The base DISCOVER grounding worker (evidence_table / claim_list / claim_evidence_map / signals).
+    Reused by deep_ideation too (so the two modes share ONE base-worker definition — no drift)."""
+    out = f"{run_dir}/inbox/DISCOVER.bundle.json"
+    return {"label": "discover-worker", "model": _worker_model("DISCOVER", model_policy), "output": out,
+            "prompt": DISCOVER_WORKER_PROMPT.format(request=request, vault=vault, out=out,
+                                                    run_dir=run_dir,
+                                                    north_star=_shared.north_star_block(run_dir))}
+
+
+def ideate_worker(run_dir: str, request: str, vault: str = DEFAULT_VAULT,
+                  model_policy: str = "max_quality") -> dict:
+    """The base IDEATE worker (hypotheses / ideas / tournament / evolved). Reused by deep_ideation too."""
+    out = f"{run_dir}/inbox/IDEATE.bundle.json"
+    return {"label": "ideate-worker", "model": _worker_model("IDEATE", model_policy), "output": out,
+            "prompt": IDEATE_WORKER_PROMPT.format(request=request, run_dir=run_dir, out=out, vault=vault,
+                                                  north_star=_shared.north_star_block(run_dir))}
+
+
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
              model_policy: str = "max_quality") -> Optional[dict]:
-    """The LLM worker to dispatch for a stage (or None if the stage is purely deterministic).
-
-    Requires the run to exist (task_frame written) — the prompt carries the run's NORTH STAR block
-    so every worker knows the direction it serves (audit A2)."""
-    out = f"{run_dir}/inbox/{stage}.bundle.json"
-    ns_block = _shared.north_star_block(run_dir)
+    """The worker PANEL to dispatch for a stage (or None if deterministic). new_direction is now
+    deep-by-default but SINGLE-DOMAIN (it omits the cross-domain analogy-mapper — that breadth layer is
+    deep_ideation's signature) and GRACEFUL (run_dets uses required=False, so a skipped deep worker
+    degrades to the proven base instead of blocking). Panels are spawned IN ORDER (each deep worker reads
+    the prior inbox bundles). NORTH STAR is in every worker prompt (audit A2). REPORT is deterministic."""
     if stage == "DISCOVER":
-        return {"label": "discover-worker", "model": _worker_model(stage, model_policy), "output": out,
-                "prompt": DISCOVER_WORKER_PROMPT.format(request=request, vault=vault, out=out,
-                                                        run_dir=run_dir, north_star=ns_block)}
+        deep = _deep_ideate.discover_deep_workers(run_dir, request, vault, model_policy, with_analogy=False)
+        return {"workers": [discover_worker(run_dir, request, vault, model_policy), *deep],
+                "panel_note": "spawn IN ORDER: discover -> formalize -> mechanism -> contradiction "
+                              "(each reads the prior inbox/*.bundle.json). Deep SINGLE-DOMAIN: no "
+                              "cross-domain analogy (that breadth layer is deep_ideation)."}
     if stage == "IDEATE":
-        return {"label": "ideate-worker", "model": _worker_model(stage, model_policy), "output": out,
-                "prompt": IDEATE_WORKER_PROMPT.format(request=request, run_dir=run_dir, out=out,
-                                                      vault=vault, north_star=ns_block)}
+        return {"workers": [ideate_worker(run_dir, request, vault, model_policy),
+                            collision_step(run_dir, vault=vault, model_policy=model_policy),
+                            _deep_ideate.experiment_worker(run_dir, request, model_policy)],
+                "panel_note": "spawn IN ORDER: ideate -> novelty-collision -> experiment-architect."}
     return None  # REPORT is deterministic
+
+
+def collision_step(run_dir: str, vault: str = DEFAULT_VAULT,
+                   model_policy: str = "max_quality") -> dict:
+    """The INDEPENDENT novelty-collision-checker worker to dispatch in IDEATE, AFTER the ideate worker
+    and BEFORE `run_dets("IDEATE")` (the gate consumes its `inbox/COLLISION.bundle.json`). It is a
+    SEPARATE worker from the idea proposer (no athlete-judging-self): per director lock 2026-06-18,
+    every final idea must be prior-art-checked before reaching /idea-bet. Model: opus (collision
+    judgment gates output — a false cut kills a good idea), matching the IDEATE judgment tier."""
+    out = f"{run_dir}/inbox/COLLISION.bundle.json"
+    ns_block = _shared.north_star_block(run_dir)
+    return {"label": "novelty-collision-checker", "model": _worker_model("IDEATE", model_policy),
+            "output": out,
+            "prompt": COLLISION_WORKER_PROMPT.format(run_dir=run_dir, out=out, north_star=ns_block)}
+
+
+def _collision_hard_block(run_dir) -> bool:
+    """Cut policy for the novelty-collision gate: profile `novelty_collision.hard_block`, default True
+    (director lock 2026-06-18 — an evidenced prior-art collision is REMOVED from the menu before
+    /idea-bet). A profile may set it False to keep every idea (flag-only) while still labelling DEAD."""
+    prof = _shared.domain_profile(run_dir) or {}
+    block = prof.get("novelty_collision") or {}
+    val = block.get("hard_block")
+    return True if val is None else bool(val)
 
 
 def _load_bundle(run_dir, stage) -> dict:
@@ -399,7 +494,15 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
     paths.append(write_artifact(run_dir, "IDEATE", "idea-grounding-report.artifact.json",
                                 "idea_grounding_report", "feasibility-reranker", grounding, ts))
 
-    backlog = build_idea_backlog(menu_ideas, budget=_shared.budget(run_dir))   # ranked MENU (no self-bet field)
+    # NOVELTY-COLLISION GATE (director lock 2026-06-18): the mandatory pre-/idea-bet prior-art check.
+    # An EVIDENCED collision (a real, existence-verified paper that already did this method×problem AND
+    # ran it) is CUT here + recorded to the known-prior-art ledger; only SURVIVORS reach the menu. A
+    # novelty SCORE still never cuts (design §1). Offline -> nothing cut, all UNVERIFIED, flagged below.
+    survivors, cverdict, cpath = _shared.run_collision_gate(
+        run_dir, "IDEATE", ts, menu_ideas, hard_block=_collision_hard_block(run_dir))
+    paths.append(cpath)
+
+    backlog = build_idea_backlog(survivors, budget=_shared.budget(run_dir))   # ranked MENU (survivors only; no self-bet field)
     paths.append(write_artifact(run_dir, "IDEATE", "idea-backlog.artifact.json",
                                 "idea_backlog", "feasibility-reranker", backlog, ts))
     return paths, {"ideas_ranked": len(backlog["ranked_ideas"]),
@@ -408,31 +511,67 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
                    "evolved": len(evolved),
                    "grounding_advisory": bool(records),
                    "negative_result_flags": sum(len(v) for v in nr.values()),
+                   "collision_cut": len(cverdict["cut_ids"]),
+                   "collision_white_space": sum(1 for e in cverdict["ideas"]
+                                                if e["verdict"] == "WHITE_SPACE"),
+                   "collision_unverified": sum(1 for e in cverdict["ideas"]
+                                               if e["verdict"] == "UNVERIFIED"),
+                   "collision_retrieval_grounded": cverdict["retrieval_grounded"],
                    "slug_warnings": ri_warnings}
 
 
 def _report(run_dir, ts) -> tuple:
     records = _shared.search_records(run_dir)
-    note = {"summary": "new-direction menu: evidence-grounded ideas, tournament-judged and "
-                       "feasibility-ranked; awaiting /idea-bet (the director bets — the machine never does)",
+    note = {"summary": "new-direction menu: evidence-grounded ideas, tournament-judged, "
+                       "prior-art-collision screened, and feasibility-ranked; awaiting /idea-bet "
+                       "(the director bets — the machine never does)",
             "references": ["evidence/IDEATE/idea-backlog.artifact.json",
                            "evidence/IDEATE/idea-tournament.artifact.json",
+                           "evidence/IDEATE/novelty-collision-verdict.artifact.json",
                            "evidence/DISCOVER/novelty-score.artifact.json"],
             "produced_artifacts": [], "open_questions": []}
+    # Honesty (director lock "必须检查"): a run that could not verify novelty, or that cut ideas for
+    # prior art, must say so to the director — never present a silently-clean menu.
+    cp = Path(run_dir) / "evidence" / "IDEATE" / "novelty-collision-verdict.artifact.json"
+    if cp.exists():
+        cv = json.loads(cp.read_text(encoding="utf-8"))["payload"]
+        if not cv.get("retrieval_grounded"):
+            note["open_questions"].append(
+                "novelty was NOT verified this run (collision retrieval not grounded) — re-run with "
+                "`operate pre-search` + the novelty-collision worker before betting")
+        if cv.get("cut_ids"):
+            note["open_questions"].append(
+                f"{len(cv['cut_ids'])} idea(s) cut for evidenced prior-art collision (already done) — "
+                "see novelty-collision-verdict; cut from the bet menu, not hidden — you may override")
     if not records:
-        note["open_questions"] = ["novelty was vault-only this run (no pre-search bundle) — "
-                                  "consider re-running with `operate pre-search` for literature grounding"]
-    return ([write_artifact(run_dir, "REPORT", "report-note.artifact.json",
-                            "report_note", "research-orchestrator", note, ts)], {})
+        note["open_questions"].append("novelty was vault-only this run (no pre-search bundle) — "
+                                      "consider re-running with `operate pre-search` for literature grounding")
+    paths = [write_artifact(run_dir, "REPORT", "report-note.artifact.json",
+                            "report_note", "research-orchestrator", note, ts)]
+    # RAT-2 Wave-3 deepening (2026-06-19; additive, REPORT-stage ONLY — zero change to the proven
+    # DISCOVER/IDEATE contract): a cross-stage quality scorecard (quality-controller) + an advisory
+    # integrity recommendation + the blind pairwise quality eval over the menu. deep_ideation adds the
+    # upstream deep chain (formalize/mechanism/analogy/contradiction/experiment); new_direction stays the
+    # lean flagship but now reports a decomposed, auditable quality read on the same /idea-bet menu.
+    paths += _deep_ideate.produce_report_quality(run_dir, ts)
+    return (paths, {})
 
 
 def run_dets(run_dir, stage, ts) -> tuple:
-    """Run the deterministic producers/gates for a stage. Returns (artifact_paths, report).
-    Raises GateBlock if a hard gate refuses (the run halts; the stage is NOT committed)."""
+    """Run the deterministic producers/gates for a stage. Returns (artifact_paths, report). Raises
+    GateBlock if a hard gate refuses (the run halts; the stage is NOT committed). new_direction is
+    deep-by-default + GRACEFUL: after the proven base, the deep producers run with required=False — a
+    skipped deep worker degrades to the base instead of blocking (deep_ideation runs them STRICT)."""
     if stage == "DISCOVER":
-        return _discover_dets(run_dir, ts, _load_bundle(run_dir, "DISCOVER"))
+        paths, report = _discover_dets(run_dir, ts, _load_bundle(run_dir, "DISCOVER"))
+        dpaths, frag = _deep_ideate.deep_discover_producers(run_dir, ts, required=False)
+        report.update(frag)
+        return paths + dpaths, report
     if stage == "IDEATE":
-        return _ideate_dets(run_dir, ts, _load_bundle(run_dir, "IDEATE"))
+        paths, report = _ideate_dets(run_dir, ts, _load_bundle(run_dir, "IDEATE"))
+        dpaths, frag = _deep_ideate.deep_ideate_producers(run_dir, ts, required=False)
+        report.update(frag)
+        return paths + dpaths, report
     if stage == "REPORT":
         return _report(run_dir, ts)
     raise ValueError(f"new_direction has no stage {stage!r}")
@@ -465,3 +604,17 @@ def menu(run_dir) -> list:
         row.update(elo_by_id.get(i["idea_id"], {}))
         rows.append(row)
     return rows
+
+
+def cut_for_prior_art(run_dir) -> list:
+    """The ideas CUT before the /idea-bet menu for an evidenced prior-art collision (DEAD), each with
+    its colliding papers + reason — shown to the director ALONGSIDE the menu (cut, NOT hidden; the
+    director may still override). [] when nothing was cut or the gate did not run. The companion to
+    menu(): menu() = what you may bet on; this = what was already done so you cannot bet on it."""
+    p = Path(run_dir) / "evidence" / "IDEATE" / "novelty-collision-verdict.artifact.json"
+    if not p.exists():
+        return []
+    v = json.loads(p.read_text(encoding="utf-8"))["payload"]
+    return [{"idea_id": e["idea_id"], "verdict": e["verdict"], "reason": e.get("reason", ""),
+             "colliding_papers": e.get("colliding_papers", []), "source": e.get("source", "")}
+            for e in v.get("ideas", []) if e.get("cut")]

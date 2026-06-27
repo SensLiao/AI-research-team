@@ -1,5 +1,5 @@
 # Domain profile: 3D medical image segmentation (ONE example domain — NOT the system's target).
-# The system is AI/CS-research-general; this profile just specializes it for the director's PhD domain.
+# The system is AI/CS-research-general; this profile just specializes it for one example domain.
 # Validates against schemas/domain_profile.schema.json (payload).
 profile_id: cv-medical-segmentation
 display_name: "3D medical image segmentation (incl. fine tubular anatomy, interactive, foundation-vs-scratch)"

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/figure_reading.schema.json",
+  "title": "Figure Reading",
+  "description": "Pass-2 structured figure reading of a read paper. For each figure that carries weight: its axes, the controls and error bars present (or honestly null when absent), the single take-home, and what to distrust about it. source_ref-anchored; rendered into the DB paper page. A reading aid — never a governed gate.",
+  "type": "object",
+  "required": ["source_ref", "figures"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the paper these figures come from (matches the paper_note / DB page source_ref)"
+    },
+    "figures": {
+      "type": "array",
+      "description": "one entry per read figure; figure_ref + take_home are the minimum a figure reading must carry",
+      "items": {
+        "type": "object",
+        "required": ["figure_ref", "take_home"],
+        "additionalProperties": false,
+        "properties": {
+          "figure_ref": {
+            "type": "string",
+            "description": "human-readable figure label, e.g. 'Figure 3', 'Fig. 2b', 'Table 4'"
+          },
+          "axes": {
+            "type": "string",
+            "description": "what the x/y axes (or rows/columns) actually measure"
+          },
+          "controls": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "the controls / ablations / baselines present in the figure, or null when none are shown"
+          },
+          "error_bars": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "the error bars / variance / confidence shown, or null when the figure reports point estimates with no spread"
+          },
+          "take_home": {
+            "type": "string",
+            "description": "the single thing this figure is meant to convince you of"
+          },
+          "distrust": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "what to be skeptical of in this figure: cherry-picked example, truncated axis, missing baseline, no variance, or null when nothing stands out"
+          }
+        }
+      }
+    }
+  }
+}

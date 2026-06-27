@@ -1,0 +1,245 @@
+# Research-plan catalog — the SINGLE SOURCE OF TRUTH for the orchestrator's "combine modes into
+# tiers" behavior (director lock 2026-06-19: a request must be able to invoke a COMBINATION of modes,
+# not one mode at a time).
+#
+# Flow this drives (see research-orchestrator SKILL.md §1):
+#   1. A director request maps to an INTENT (match_intents, by alias).
+#   2. Each intent offers TIERS — core / mainline / full (more allowed) — where a tier is an ORDERED
+#      CHAIN of one-button modes. The director picks ONE tier via AskUserQuestion (recommendation +
+#      cost shown).
+#   3. Then the director answers each chosen mode's drill-down questions — ONE round per mode (a
+#      3-mode tier => 3 rounds), from `mode_questions` below.
+#   4. The chain runs link-by-link: each link is a normal `operate begin --mode <m>` run, threaded
+#      with `--upstream-run <prev>` so link N reads link N-1's output, and PAUSING at the human gates
+#      a chain passes through (`mode_gates`).
+#
+# Honesty contract (enforced by tools/research_plan.py + tests/test_research_plan.py):
+#   - Only WIRED (operated:true in mode_registry.yaml) modes belong in a default tier. validate_chain
+#     REJECTS an unknown mode and FLAGS a spec-only one (never pretends a spec-only mode is one-button).
+#   - estimate_cost reads mode_registry.yaml budgets; tiers are ALWAYS core <= mainline <= full by
+#     agent-hops (a test enforces monotonicity).
+#   - The chain never self-decides: the model proposes; the director picks the tier AND every human gate.
+#   - This file is DATA. Edit a tier here and the menu changes with ZERO code change.
+
+version: 1
+
+# ----------------------------------------------------------------------------------------------------
+# Per-mode drill-down questions — the rounds asked AFTER a tier is picked (one round per mode in the
+# chosen chain). `maps_to` tells the orchestrator how to translate the answer onto the existing
+# `operate begin` surface (see SKILL.md §1.6):
+#   pre_search  -> run `operate pre-search` for that link (live) or skip it (vault-only)
+#   budget      -> the link's depth knob (folded into the request/north-star + model policy)
+#   north_star  -> sharpen the link's --north-star / --in-scope / --out-of-scope (or fold a value in)
+#   note        -> an honesty acknowledgement (no flag; e.g. GPU-still-gated)
+# A mode not listed here has no knob beyond the shared pre-search default.
+mode_questions:
+  gap_breadth:
+    - key: pre_search
+      ask: "扫空白前先联网拉一遍真实文献吗?(更全,稍慢)"
+      maps_to: pre_search
+      options:
+        - {label: "联网 · 推荐", value: live}
+        - {label: "只用库", value: vault-only}
+  deep_research:
+    - key: depth
+      ask: "文献深读到什么程度?"
+      maps_to: budget
+      options:
+        - {label: "快 · 约 8 篇精读", value: quick}
+        - {label: "标准 · 约 20 篇 · 推荐", value: standard}
+        - {label: "穷尽 · 拉满预算", value: exhaustive}
+    - key: pre_search
+      ask: "先联网拉真实文献?"
+      maps_to: pre_search
+      options:
+        - {label: "联网 · 推荐", value: live}
+        - {label: "只用库", value: vault-only}
+  evidence_review:
+    - key: pre_search
+      ask: "先联网拉真实文献再评?"
+      maps_to: pre_search
+      options:
+        - {label: "联网 · 推荐", value: live}
+        - {label: "只用库", value: vault-only}
+  evidence_deep:
+    - key: pre_search
+      ask: "先联网拉真实文献再深评(找矛盾/失效点)?"
+      maps_to: pre_search
+      options:
+        - {label: "联网 · 推荐", value: live}
+        - {label: "只用库", value: vault-only}
+  new_direction:
+    - key: scope
+      ask: "找方向要收紧范围吗?(给一句更窄的北极星 / 排除某些方向)"
+      maps_to: north_star
+      options:
+        - {label: "全域扫 · 不收紧", value: broad}
+        - {label: "我给一句更窄的方向", value: narrow}
+    - key: pre_search
+      ask: "先联网查真实文献来给点子接地?"
+      maps_to: pre_search
+      options:
+        - {label: "联网 · 推荐", value: live}
+        - {label: "只用库", value: vault-only}
+  deep_ideation:
+    - key: scope
+      ask: "深度+跨域找方向,要收紧范围吗?"
+      maps_to: north_star
+      options:
+        - {label: "全域 · 不收紧", value: broad}
+        - {label: "我给一句更窄的方向", value: narrow}
+    - key: pre_search
+      ask: "先联网查真实文献?(deep_ideation 强烈建议联网)"
+      maps_to: pre_search
+      options:
+        - {label: "联网 · 推荐", value: live}
+        - {label: "只用库", value: vault-only}
+  full_rigor_minimal:
+    - key: design_target
+      ask: "为哪个想法设计验证实验?"
+      maps_to: north_star
+      options:
+        - {label: "我在 /idea-bet 下注的那个", value: bet}
+        - {label: "我现在指定一个", value: specify}
+    - key: gpu_note
+      ask: "现在只产出实验设计 + 脚本 + 预注册(GPU 真跑要服务器),确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 先出设计与脚本", value: scripts-only}
+  venue_readiness:
+    - key: venue_tier
+      ask: "目标投稿层级?"
+      maps_to: north_star
+      options:
+        - {label: "顶会 (CVPR/NeurIPS/ICML…)", value: tier1}
+        - {label: "专科会议/期刊 (如医学影像)", value: tier2}
+        - {label: "期刊", value: tier3}
+
+# ----------------------------------------------------------------------------------------------------
+# Which human gate(s) a mode routes THROUGH. When a chain reaches such a mode it PAUSES there; the
+# director decides; the model never self-decides. Rendered as "this tier will stop for your sign-off
+# at …" on the tier card.
+mode_gates:
+  new_direction: ["/idea-bet"]
+  deep_ideation: ["/idea-bet"]
+  venue_readiness: ["/venue-pick", "/venue-decide"]
+
+# ----------------------------------------------------------------------------------------------------
+# Phase rank — a valid chain is NON-DECREASING in rank (discovery -> ideate -> design -> venue).
+# research_plan.validate_chain flags a STRICTLY-decreasing step (e.g. venue before ideate) as a
+# violation. Within a rank the order is free (e.g. scan a gap before OR after deep-reading evidence).
+phase_rank:
+  gap_breadth: 1        # discovery / scan
+  deep_research: 1      # discovery / evidence
+  evidence_review: 1
+  evidence_deep: 1
+  new_direction: 2      # ideate (find a direction)
+  deep_ideation: 2
+  full_rigor_minimal: 3 # design / execute
+  venue_readiness: 4    # venue / publish
+
+# ----------------------------------------------------------------------------------------------------
+# Intents — the research arcs a director request maps onto. Each tier's `modes` is an ordered chain of
+# WIRED modes; exactly one tier per intent carries `recommended: true`.
+intents:
+  find_direction:
+    aliases: ["找方向", "找个方向", "找研究方向", "找一个方向", "find a direction", "research direction",
+              "new direction", "想个课题", "下一步做什么", "帮我找方向"]
+    # keywords: shorter high-signal tokens matched as substrings (robust to natural phrasing where a
+    # full alias is broken up, e.g. 找/个/研究/方向). alias + keyword hits are summed; ties keep order.
+    keywords: ["方向", "课题", "direction", "research topic", "topic"]
+    description: "从零找一个值得下注的研究方向。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [new_direction]
+        why: "直接对你关心的领域做接地 + 查重 + 可行性打分,出一张可下注的方向卡。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [gap_breadth, new_direction]
+        why: "先并行扫一遍空白点,再深度产点子——方向更有把握。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [gap_breadth, deep_research, deep_ideation]
+        why: "扫空白 → 深读证据 → 跨域深度产点子,把深度和广度都拉满。"
+
+  validate_idea:
+    aliases: ["验证想法", "我有个想法", "验证一下", "验证这个想法", "validate", "validate idea",
+              "check this idea", "这个想法行不行", "评估我的点子", "我有个点子"]
+    keywords: ["想法", "点子", "验证", "idea", "validate"]
+    description: "你已经有一个候选想法,想把它压力测试到能不能做、值不值得做。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [new_direction]
+        why: "把你的想法接地 + 查重(有没有人做过)+ 可行性打分,出一张可下注卡。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [deep_research, new_direction, full_rigor_minimal]
+        why: "先把证据查扎实 → 深度产点子并查重 →(下注后)给一份可执行的验证实验设计。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [deep_research, deep_ideation, full_rigor_minimal, venue_readiness]
+        why: "深证据 → 跨域深度产点子 → 实验设计 → 投稿就绪度,一条龙。"
+
+  assess_evidence:
+    aliases: ["评证据", "评一下证据", "文献深读", "证据怎么样", "assess evidence", "evidence review",
+              "literature review", "这些证据靠谱吗", "证据评估"]
+    keywords: ["证据", "文献", "evidence", "literature", "citation"]
+    description: "评估某个主张/方向的证据强度与文献支持。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [evidence_review]
+        why: "把证据查清、查引用真伪,出一张证据画像。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [deep_research, evidence_deep]
+        why: "先深读文献 → 再做深度证据评估(找矛盾、找失效点)。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [deep_research, evidence_deep, gap_breadth]
+        why: "深读 → 深评 → 顺带扫出还剩哪些空白点。"
+
+  scan_gaps:
+    aliases: ["扫空白", "扫一遍空白点", "有哪些空白", "gap scan", "white space", "哪里还没人做",
+              "空白点", "找空白"]
+    keywords: ["空白", "白点", "gap", "white space", "还没人做"]
+    description: "在一个领域里并行扫描尚未被做的空白点。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [gap_breadth]
+        why: "5 个猎人并行扫空白 → 分类 → 打分(只打分不砍)。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [gap_breadth, deep_research]
+        why: "扫空白 → 对最有戏的空白深读文献坐实。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [gap_breadth, deep_research, deep_ideation]
+        why: "扫空白 → 深证据 → 跨域深度产点子(直到 /idea-bet)。"
+
+  prep_submission:
+    aliases: ["够投顶会吗", "投稿就绪", "能投吗", "venue", "venue readiness", "submission ready",
+              "投稿准备", "评审会怎么看", "够发表吗"]
+    keywords: ["投稿", "顶会", "发表", "venue", "submission", "审稿", "能投"]
+    description: "评估一个结果是否达到目标会议/期刊的发表门槛。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [venue_readiness]
+        why: "模拟盲审 3 个 reviewer 给一个就绪度判断 → /venue-pick · /venue-decide。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [full_rigor_minimal, venue_readiness]
+        why: "先把实验设计/统计补严(脚本 + 预注册)→ 再做投稿就绪度。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [evidence_deep, full_rigor_minimal, venue_readiness]
+        why: "深证据复核 → 实验严谨化 → 投稿就绪度,降低被拒风险。"

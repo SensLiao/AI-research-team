@@ -63,11 +63,26 @@ cited     → deprecated                 (only if a later paper supersedes it)
 
 This is the **driver** that turns `reading-status` from a hand-set label into a controlled dial — the counterpart of what `result-status` already has. The zoom moves from "scan trends" (coarse) to "read implementation" (fine):
 
-1. **`relevance: direct` ⇒ deep-read CANDIDATE**, not automatic deep-read. The paper enters the *deep-read worklist* (`03-views/11-granularity-worklists.base`). It is promoted to `read`/`deep-read` only when **(a)** the director commits to that thread's direction, or **(b)** the director hand-picks it from the worklist. (Rationale: e.g. M of N papers are `direct`; auto-promoting all M would light the whole library on fire, not zoom.)
+1. **`relevance: direct` ⇒ deep-read CANDIDATE**, not automatic deep-read. The paper enters the *deep-read worklist* (`03-views/11-granularity-worklists.base`). It is promoted to `read`/`deep-read` only when **(a)** the director commits to that thread's direction, or **(b)** the director hand-picks it from the worklist. (Rationale: when most papers in a library are `direct`, auto-promoting all of them would light the whole library on fire, not zoom.)
 2. **`relevance: background` ⇒ capped at `skimmed`.** Background establishes context, not implementation; deep-reading it is over-zoom. LINT flags `background ∧ deep-read` as a likely over-read.
 3. **`relevance: adjacent` ⇒ promote on demand only** (director flag or thesis-write pull).
-4. **Per-thread deep-read soft cap ≈ `ceil(sqrt(thread_size))`** (e.g. `<thread>` with K papers → ≤ceil(sqrt(K)) deep-reads). A soft advisory, never a hard block — encodes "deliberately ignore most, deep-read a sqrt-small core".
+4. **Per-thread deep-read soft cap ≈ `ceil(sqrt(thread_size))`** (e.g. a 12-paper thread → ≤4 deep-reads). A soft advisory, never a hard block — encodes "deliberately ignore most, deep-read a sqrt-small core".
 5. **Direction commit is the director's call, always.** AI emits the "this thread looks ready / saturated" signal; the human decides which direction to zoom into. Setting an `idea` to `idea-status: greenlit` is the commit signal — it moves that direction's `direct` papers from candidate to deep-read target.
+
+#### Section graduation (the reading-status → required body sections map — added 2026-06-26, paper-reading-upgrade)
+
+`reading-status` is also a **body-completeness contract**: a paper page must carry the body sections its depth earns (cumulative — each rung inherits the rung below it). The section template is `04-templates/paper.md`.
+
+| reading-status | required body sections (cumulative) |
+|---|---|
+| `to-read` | (stub; none) |
+| `skimmed` | Stage-0 positioning · Pass-1 (TL;DR + paper contract + key contributions) |
+| `read` | + Pass-2 (claim→evidence table + method breakdown + results table) |
+| `deep-read` | + Pass-2 figure reading + Pass-3 appraisal checklist + Stage-4 (typed relations + trend) |
+| `cited` | same as `deep-read` (already gated for citation by `render_claim_chain.py`) |
+| reproduce-level (a rigor flag on `deep-read`, not a status) | + reproducibility checklist + per-term loss filled |
+
+**LINT enforces this** (`06-scripts/lint_vault.py`, check `READING_DEPTH`): heading match is tolerant (distinctive words, case-insensitive) so renaming a heading does not false-fail. It is emitted as a **WARN during the legacy-page migration window** so the ~60 pre-upgrade pages do not fail-all; it is designed to **HARDEN to ERROR at `reading-status >= read`** once the legacy pages are re-deepened. A companion check `READING_STATUS_ENUM` (WARN) flags any `reading-status` outside the enum above. Don't fake depth — a deliberately shallow page keeps a shallow `reading-status`.
 
 #### Promotion audit
 
