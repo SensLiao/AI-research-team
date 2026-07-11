@@ -29,9 +29,10 @@ from pathlib import Path
 from typing import Callable, Tuple
 
 from ..tools.budget_tracker import violations
-from .artifacts import GateBlock
+from .artifacts import GateBlock, TargetedGateBlock
 
 DEFAULT_MAX_DEBUG_RETRIES = 3  # safe default: 2 repair attempts, the 3rd failure escalates
+REPAIR_CONTRACT_VERSION = "incremental-repair/v2"
 
 
 def _state_path(run_dir) -> Path:
@@ -41,8 +42,17 @@ def _state_path(run_dir) -> Path:
 def load_state(run_dir) -> dict:
     p = _state_path(run_dir)
     if not p.exists():
-        return {"attempts": []}
-    return json.loads(p.read_text(encoding="utf-8"))
+        return {"contract_version": REPAIR_CONTRACT_VERSION, "attempts": []}
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"repair state must be an object: {p}")
+    version = raw.get("contract_version")
+    if version not in {None, REPAIR_CONTRACT_VERSION}:
+        raise ValueError(f"unsupported repair-state contract {version!r}: {p}")
+    attempts = raw.get("attempts", [])
+    if not isinstance(attempts, list) or any(not isinstance(row, dict) for row in attempts):
+        raise ValueError(f"repair state attempts must be an object list: {p}")
+    return {"contract_version": REPAIR_CONTRACT_VERSION, "attempts": attempts}
 
 
 def _save_state(run_dir, state: dict) -> None:
@@ -52,7 +62,7 @@ def _save_state(run_dir, state: dict) -> None:
 
 
 def failures_for_stage(run_dir, stage: str) -> int:
-    return sum(1 for a in load_state(run_dir)["attempts"] if a["stage"] == stage)
+    return sum(1 for a in load_state(run_dir)["attempts"] if a.get("stage") == stage)
 
 
 def _effective_budget(budget: dict) -> dict:
@@ -63,12 +73,52 @@ def _effective_budget(budget: dict) -> dict:
     return b
 
 
-def build_feedback(stage: str, attempt: int, reason: str) -> str:
+def build_feedback(stage: str, attempt: int, reason: str, defects=None) -> str:
     """The feedback block the skill appends to the re-dispatched worker's prompt."""
-    return (f"REPAIR ATTEMPT {attempt} for stage {stage}: your previous bundle was BLOCKED by a "
-            f"deterministic hard gate.\nGate feedback (fix EXACTLY this, change nothing else):\n"
-            f"    {reason}\nRe-emit the COMPLETE corrected bundle to the same output path. "
-            f"Do not argue with the gate; do not relax any honesty rule to pass it.")
+    rows = [row for row in (defects or []) if isinstance(row, dict)]
+    if rows:
+        detail = "\n".join(
+            f"- {row.get('defect_id', 'DEFECT')}: "
+            f"{row.get('location', 'unspecified')}: "
+            f"{row.get('summary') or row.get('reason') or 'targeted supplement required'}"
+            for row in rows
+        )
+    else:
+        detail = str(reason)[:12000]
+    return (
+        f"REPAIR ATTEMPT {attempt} for stage {stage}: submit a TARGETED SUPPLEMENT only.\n"
+        f"Fix exactly these defects; preserve all unaffected analysis:\n{detail}\n"
+        "The scheduler preserves the previous bundle, records before/after hashes and a diff, then "
+        "reconciles the corrected bundle as v2. Do not change unrelated claims and do not relax any "
+        "honesty rule."
+    )
+
+
+def _attempt_record(stage: str, ts: str, exc: GateBlock) -> dict:
+    record = {
+        "stage": stage,
+        "reason": str(exc)[:12000],
+        "ts": ts,
+        "verdict": getattr(exc, "verdict", "NEEDS_SUPPLEMENT"),
+        "defects": [],
+        "target_agents": [],
+        "refresh_agents": [],
+    }
+    if isinstance(exc, TargetedGateBlock):
+        record["defects"] = exc.defects
+        record["target_agents"] = sorted({
+            str(agent)
+            for row in exc.defects
+            for agent in (row.get("target_agents") or [])
+            if str(agent).strip()
+        })
+        record["refresh_agents"] = sorted({
+            str(agent)
+            for row in exc.defects
+            for agent in (row.get("refresh_agents") or [])
+            if str(agent).strip()
+        })
+    return record
 
 
 def attempt_with_repair(run_dir, stage: str, budget: dict, ts: str,
@@ -82,8 +132,10 @@ def attempt_with_repair(run_dir, stage: str, budget: dict, ts: str,
     try:
         return ("ok", dets_fn())
     except GateBlock as e:
+        if isinstance(e, TargetedGateBlock) and e.verdict == "BLOCK":
+            raise
         state = load_state(run_dir)
-        state["attempts"].append({"stage": stage, "reason": str(e), "ts": ts})
+        state["attempts"].append(_attempt_record(stage, ts, e))
         _save_state(run_dir, state)
         n_failures = sum(1 for a in state["attempts"] if a["stage"] == stage)
         # `max_debug_retries_per_run` is a RETRY budget: cap=N must permit N retry prompts. The just-failed
@@ -92,4 +144,4 @@ def attempt_with_repair(run_dir, stage: str, budget: dict, ts: str,
         retries_consumed = n_failures - 1
         if violations(_effective_budget(budget), {"debug_retries": retries_consumed}):
             raise  # retry budget exhausted -> escalate the ORIGINAL GateBlock to the director
-        return ("retry", build_feedback(stage, n_failures, str(e)))
+        return ("retry", build_feedback(stage, n_failures, str(e), getattr(e, "defects", None)))

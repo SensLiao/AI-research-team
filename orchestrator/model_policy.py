@@ -23,6 +23,7 @@ Pure functions over files/dicts; no LLM, no network.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -38,6 +39,30 @@ FLOOR = "sonnet"            # director lock: nothing that reasons runs below son
 TOP = "opus"
 VALID_POLICIES = ("default", "max_quality")
 KNOWN_MODELS = (NO_MODEL,) + LLM_TIERS
+
+# Runtime selection is deliberately model-agnostic. Historical `sonnet`/`opus`
+# strings remain compatibility aliases for workload classes, not vendor model
+# requests. By default the harness omits a concrete model id, so the caller
+# inherits the strongest available runtime. A deployment may bind an id through
+# environment/config without changing any agent or mode definition.
+RUNTIME_MODEL_ENV = "RAT_RUNTIME_MODEL"
+RUNTIME_REASONING_ENV = "RAT_RUNTIME_REASONING_EFFORT"
+RUNTIME_SERVICE_ENV = "RAT_RUNTIME_SERVICE_TIER"
+
+_CAPABILITY_BY_TIER = {
+    "sonnet": {
+        "reasoning_quality": "strong",
+        "context_requirement": "long",
+        "tool_use": True,
+        "provider": "any",
+    },
+    "opus": {
+        "reasoning_quality": "frontier",
+        "context_requirement": "long",
+        "tool_use": True,
+        "provider": "any",
+    },
+}
 
 
 def _rank(tier: str) -> int:
@@ -74,6 +99,67 @@ def safe_resolve_model(declared: Optional[str], policy: str) -> Optional[str]:
         return resolve_model(declared, policy)
     except ValueError:
         return None
+
+
+def capability_requirements(resolved_model: Optional[str]) -> Dict[str, object]:
+    """Provider-neutral capabilities required by a logical workload class."""
+    if resolved_model is None or resolved_model == NO_MODEL:
+        return {}
+    if resolved_model not in LLM_TIERS:
+        raise ValueError(f"unknown resolved model '{resolved_model}' (known: {list(LLM_TIERS)})")
+    tier = "sonnet" if resolved_model == "haiku" else resolved_model
+    return dict(_CAPABILITY_BY_TIER[tier])
+
+
+def codex_runtime_fields(
+    resolved_model: Optional[str],
+    *,
+    environ: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Return concrete runtime fields only when deployment config supplies them.
+
+    The historical function name is retained for API compatibility. No model id,
+    reasoning setting, or service tier is hardcoded in the research architecture.
+    """
+    if resolved_model is None or resolved_model == NO_MODEL:
+        return {}
+    if resolved_model not in LLM_TIERS:
+        raise ValueError(f"unknown resolved model '{resolved_model}' (known: {list(LLM_TIERS)})")
+    env = os.environ if environ is None else environ
+    mapping = (
+        ("runtime_model", RUNTIME_MODEL_ENV),
+        ("reasoning_effort", RUNTIME_REASONING_ENV),
+        ("service_tier", RUNTIME_SERVICE_ENV),
+    )
+    return {
+        field: str(env.get(env_name) or "").strip()
+        for field, env_name in mapping
+        if str(env.get(env_name) or "").strip()
+    }
+
+
+def decorate_worker_runtime(worker: Optional[dict]) -> Optional[dict]:
+    """Add concrete Codex runtime fields to an operate worker spec.
+
+    The existing `model` field remains the logical tier for backward-compatible
+    tests and historical audit prose. `capability_requirements` is the actual
+    provider-neutral dispatch contract. Concrete runtime fields appear only when
+    deployment configuration explicitly binds them.
+    """
+    if not worker:
+        return worker
+    if "workers" in worker:
+        for child in worker.get("workers") or []:
+            decorate_worker_runtime(child)
+        return worker
+    tier = worker.get("model")
+    if not tier:
+        return worker
+    tier = str(tier)
+    worker.setdefault("model_tier", tier)
+    worker.setdefault("capability_requirements", capability_requirements(tier))
+    worker.update(codex_runtime_fields(tier))
+    return worker
 
 
 def _frontmatter(md_text: str) -> dict:

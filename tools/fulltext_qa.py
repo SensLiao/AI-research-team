@@ -2,13 +2,16 @@
 
 Two independent capabilities behind one artifact (``fulltext_qa_report``):
 
-1. Page-anchored full-text QA — a thin wrapper around the OPTIONAL ``paper-qa`` package
-   (PaperQA2). The engine is injectable: callers/tests pass ``engine`` (a callable
-   ``(question, doc_paths, cache_dir) -> {"answer": str, "contexts": [...]}``); when omitted, the
-   default engine imports paperqa lazily. HONESTY RULE: if the package is missing, no docs are
-   given, or the engine errors, the report says ``available: false`` + reason — the machine never
-   fabricates a full-text answer. Index/cache dirs are FENCED: anything inside the vault is
-   rejected (two-repo seam; caches belong in ``runs/`` or machine-side dirs).
+1. Page-anchored full-text QA: an optional ``paper-qa`` / PaperQA2 engine plus a
+   deterministic PyMuPDF local-PDF fallback. The engine is injectable:
+   callers/tests pass ``engine`` (a callable
+   ``(question, doc_paths, cache_dir) -> {"answer": str, "contexts": [...]}``);
+   when omitted, the default engine imports paperqa lazily and falls back to
+   local PDF extraction when docs exist. HONESTY RULE: if no engine/docs are
+   usable, the report says ``available: false`` + reason; the machine never
+   fabricates a full-text answer. Index/cache/doc scratch dirs are FENCED:
+   anything inside the vault is rejected (two-repo seam; caches belong in
+   ``runs/`` or machine-side dirs).
 
 2. Deterministic retraction check — Crossref ``filter=updates:<DOI>`` notices (no LLM, no
    paperqa needed): retracted / concern / ok / unknown per ref. ContraCrow-style contradiction
@@ -92,6 +95,57 @@ def _default_engine(question: str, doc_paths: List[str], cache_dir: Optional[str
     return {"answer": str(getattr(answer, "answer", "") or ""), "contexts": contexts}
 
 
+def _existing_local_pdfs(doc_paths: List[str]) -> List[Path]:
+    pdfs: List[Path] = []
+    for raw in doc_paths:
+        p = Path(raw)
+        if p.is_file() and p.suffix.lower() == ".pdf":
+            pdfs.append(p)
+    return pdfs
+
+
+def _keyword_relevance(question: str, text: str) -> float:
+    q_words = {w.lower() for w in question.replace("/", " ").replace("-", " ").split()
+               if len(w.strip()) >= 4}
+    if not q_words:
+        return 0.5
+    lowered = text.lower()
+    hits = sum(1 for w in q_words if w in lowered)
+    return max(0.1, min(1.0, hits / max(1, min(len(q_words), 8))))
+
+
+def _pymupdf_engine(question: str, doc_paths: List[str], cache_dir: Optional[str]) -> Dict:
+    """Deterministic local PDF extraction fallback used when PaperQA2 is unavailable."""
+    try:
+        import fitz  # PyMuPDF
+    except Exception as exc:  # pragma: no cover - optional local package
+        raise RuntimeError(f"PyMuPDF unavailable: {exc}") from exc
+
+    contexts: List[dict] = []
+    for doc_path in doc_paths:
+        p = Path(doc_path)
+        with fitz.open(str(p)) as doc:
+            for page_index, page in enumerate(doc):
+                text = " ".join((page.get_text("text") or "").split())
+                if not text:
+                    continue
+                for offset in range(0, min(len(text), 2000), _EXCERPT_MAX):
+                    excerpt = text[offset:offset + _EXCERPT_MAX].strip()
+                    if not excerpt:
+                        continue
+                    contexts.append({
+                        "doc_ref": str(p),
+                        "page": page_index + 1,
+                        "excerpt": excerpt,
+                        "relevance": _keyword_relevance(question, excerpt),
+                    })
+    return {
+        "answer": f"Extracted {len(contexts)} page-anchored PDF context chunks from "
+                  f"{len(doc_paths)} local document(s).",
+        "contexts": contexts,
+    }
+
+
 def _normalize_contexts(raw_contexts: List[dict]) -> List[dict]:
     out: List[dict] = []
     for c in raw_contexts or []:
@@ -129,12 +183,15 @@ def ask(question: str, doc_paths: List[str], cache_dir: Optional[str] = None,
         return dict(base, available=False, reason="no documents supplied (nothing to read)",
                     answer_summary="", contexts=[])
     if engine is None:
-        if not paperqa_available():
+        if paperqa_available():
+            engine = _default_engine
+        elif _existing_local_pdfs(doc_paths):
+            engine = _pymupdf_engine
+        else:
             return dict(base, available=False,
                         reason="optional dependency 'paper-qa' is not installed — "
-                               "pip install paper-qa to enable full-text QA",
+                               "supply an existing local PDF for the PyMuPDF fallback",
                         answer_summary="", contexts=[])
-        engine = _default_engine
     try:
         raw = engine(question, list(doc_paths), cache_dir)
     except Exception as e:  # honest: an engine crash is 'unavailable', never a fabricated answer

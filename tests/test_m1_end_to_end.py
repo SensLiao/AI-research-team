@@ -171,8 +171,14 @@ def _approve(stage, tf):
 # --------------------------------------------------------------------------- engine path unit tests
 
 def test_resolve_path_defaults_to_full_tail():
-    tf = resolve_task("x", "design_experiment", "r", TS)          # no stage_path
+    tf = resolve_task("x", "design_experiment", "r", TS)
+    tf["payload"].pop("stage_path", None)                         # simulate a legacy frame with no explicit path
     assert _resolve_path(tf) == ["DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]
+
+
+def test_resolve_path_uses_design_experiment_explicit_path():
+    tf = resolve_task("x", "design_experiment", "r", TS)
+    assert _resolve_path(tf) == ["DESIGN", "REPORT"]
 
 
 def test_resolve_path_uses_declared_forward_skip():

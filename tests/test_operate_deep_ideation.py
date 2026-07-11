@@ -20,8 +20,8 @@ from pathlib import Path
 import pytest
 
 from research_agent_teams.operate import spine
-from research_agent_teams.operate.artifacts import GateBlock
-from research_agent_teams.operate.modes import deep_ideation
+from research_agent_teams.operate.artifacts import GateBlock, TargetedGateBlock
+from research_agent_teams.operate.modes import _deep_ideate, deep_ideation, new_direction
 from research_agent_teams.tools.validate_artifact import validate_artifact
 
 TS = "2026-06-19T00:00:00Z"
@@ -78,6 +78,19 @@ ANALOGY_BUNDLE = {
                                         {"mechanism": "preserve connectivity", "source_evidence_ref": ["[[c]]"]}],
                   "blocking_assumptions": [], "required_adaptations": []}],
 }
+
+
+def test_deep_ideation_declares_four_wave_sparse_discover_dag(tmp_path):
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    rd = spine.begin(str(runs), "dag", REQ, "deep_ideation", TS)["run_dir"]
+    spec = deep_ideation.llm_step(rd, "DISCOVER", REQ)
+    assert spec["parallel_groups"] == [
+        ["direction-grounding-scout"],
+        ["mathematical-formalizer", "contradiction-miner"],
+        ["mathematical-formalizer"],
+        ["analogy-mapper"],
+    ]
 
 CONTRADICTION_BUNDLE = {"conflicts": [], "n_claims_checked": 1}
 
@@ -153,6 +166,8 @@ def _drop_ideate(rd):
     _drop(rd, "IDEATE", IDEATE_BUNDLE)
     _drop(rd, "COLLISION", COLLISION_BUNDLE)
     _drop(rd, "EXPERIMENT", EXPERIMENT_BUNDLE)
+    new_direction.write_legacy_replay_receipt(
+        rd, source_run_id="fixture-di1", reason="exercise frozen pre-panel compatibility")
 
 
 def _payload(rd, stage, name):
@@ -194,6 +209,11 @@ def test_deep_ideation_runs_discover_ideate_report_end_to_end(tmp_path):
     lineage = _payload(rd, "IDEATE", "idea-lineage.artifact.json")["lineages"]
     assert {ln["idea_id"] for ln in lineage} >= {"IDEA-1", "IDEA-2"}
     assert all(ln["disposition"] in ("candidate", "cut_prior_art", "evolved") for ln in lineage)
+    menu = Path(rd, "director-review", "ideas", "idea-bet-menu.md")
+    assert menu.is_file()
+    menu_text = menu.read_text(encoding="utf-8")
+    assert "Minimal experiment sketch" in menu_text
+    assert "Falsifier:" in menu_text
 
     rpaths, _ = deep_ideation.run_dets(rd, "REPORT", TS)
     gsc = _payload(rd, "REPORT", "global-quality-scorecard.artifact.json")
@@ -203,6 +223,7 @@ def test_deep_ideation_runs_discover_ideate_report_end_to_end(tmp_path):
     qe = _payload(rd, "REPORT", "idea-quality-eval.artifact.json")
     assert {pi["idea_id"] for pi in qe["per_idea"]} == {"IDEA-1", "IDEA-2"}
     assert "depth" in qe["per_idea"][0]["scores"] and "novelty" in qe["per_idea"][0]["scores"]
+    assert {pi["scores"]["grounding"] for pi in qe["per_idea"]} == {1.0}
 
     # EVERYTHING written across the whole run is contract-valid
     assert _all_artifacts_valid(rd) == []
@@ -222,6 +243,18 @@ def test_deep_ideation_menu_and_lineage_carry_no_self_bet(tmp_path):
     assert not (set(lineage) & {"selected", "chosen", "bet", "winner"})
     for ln in lineage["lineages"]:
         assert "disposition" in ln and ln["disposition"] != "chosen"
+
+
+def test_deep_ideation_requires_sketch_for_every_surviving_menu_idea(tmp_path):
+    rd = _begin(tmp_path)
+    _drop_discover(rd)
+    deep_ideation.run_dets(rd, "DISCOVER", TS)
+    _drop_ideate(rd)
+    broken = json.loads(json.dumps(EXPERIMENT_BUNDLE))
+    broken["sketches"] = broken["sketches"][:1]
+    _drop(rd, "EXPERIMENT", broken)
+    with pytest.raises(GateBlock, match="experiment-sketch coverage"):
+        deep_ideation.run_dets(rd, "IDEATE", TS)
 
 
 # --------------------------------------------------------------------------- 3. mechanism-graph integrity is live
@@ -244,6 +277,22 @@ def test_mechanism_graph_problem_ref_must_match_abstraction(tmp_path):
     _drop(rd, "MECHANISM", mism)
     with pytest.raises(GateBlock, match="problem_ref"):
         deep_ideation.run_dets(rd, "DISCOVER", TS)
+
+
+def test_malformed_deep_artifact_repairs_actual_owner_not_terminal_worker(tmp_path):
+    with pytest.raises(TargetedGateBlock) as caught:
+        _deep_ideate._write_or_block(
+            tmp_path,
+            "DISCOVER",
+            "mechanism-graph.artifact.json",
+            "mechanism_graph",
+            "mathematical-formalizer",
+            {},
+            TS,
+        )
+
+    assert caught.value.defects[0]["target_agents"] == ["mathematical-formalizer"]
+    assert caught.value.defects[0]["refresh_agents"] == []
 
 
 # --------------------------------------------------------------------------- 4. unknown stage raises (wiring)

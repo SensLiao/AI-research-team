@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "External Skill Review Registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "registry", "source", "entries"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "registry": { "type": "string", "const": "external_skill_review" },
+    "source": { "type": "string", "const": "Auto-Empirical-Research-Skills" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "review_id",
+          "status",
+          "candidate",
+          "intended_use",
+          "rat_stage",
+          "requested_by",
+          "requested_at",
+          "reviewed_by",
+          "reviewed_at",
+          "decision_note",
+          "requires_license_review",
+          "reference_allowed",
+          "execution_allowed",
+          "vault_write",
+          "child_skill_body_read",
+          "run_inbox_only"
+        ],
+        "properties": {
+          "review_id": { "type": "string", "pattern": "^aers-[a-f0-9]{16}$" },
+          "status": {
+            "type": "string",
+            "enum": ["pending_review", "approved_reference", "rejected"]
+          },
+          "candidate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "path",
+              "collection",
+              "license",
+              "commercial_use",
+              "source_url",
+              "source_confidence",
+              "recommendation",
+              "risk_level",
+              "risk_reasons",
+              "skill_path_exists",
+              "catalog_only"
+            ],
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "collection": { "type": "string" },
+              "license": { "type": "string" },
+              "commercial_use": { "type": "string" },
+              "source_url": { "type": "string" },
+              "source_confidence": { "type": "string" },
+              "recommendation": {
+                "type": "string",
+                "enum": ["safe_reference", "review_required", "do_not_use"]
+              },
+              "risk_level": { "type": "string", "enum": ["low", "medium", "high"] },
+              "risk_reasons": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "skill_path_exists": { "type": "boolean" },
+              "catalog_only": { "type": "boolean", "const": true }
+            }
+          },
+          "intended_use": { "type": "string" },
+          "rat_stage": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "null" }
+            ]
+          },
+          "requested_by": { "type": "string" },
+          "requested_at": { "type": "string" },
+          "reviewed_by": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "null" }
+            ]
+          },
+          "reviewed_at": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "null" }
+            ]
+          },
+          "decision_note": { "type": "string" },
+          "requires_license_review": { "type": "boolean" },
+          "reference_allowed": { "type": "boolean" },
+          "execution_allowed": { "type": "boolean", "const": false },
+          "vault_write": { "type": "boolean", "const": false },
+          "child_skill_body_read": { "type": "boolean", "const": false },
+          "run_inbox_only": { "type": "boolean", "const": true }
+        }
+      }
+    }
+  }
+}

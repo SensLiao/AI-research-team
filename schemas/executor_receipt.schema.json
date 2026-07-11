@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/executor_receipt.schema.json",
+  "title": "Trusted Non-LLM Executor Receipt",
+  "description": "Out-of-band execution receipt. It is produced and attested by a non-LLM executor, then re-verified by the deterministic control plane before provisional results are admitted.",
+  "type": "object",
+  "required": [
+    "receipt_version",
+    "producer_kind",
+    "run_id",
+    "job_id",
+    "condition_id",
+    "seed",
+    "command",
+    "code_hash",
+    "config_hash",
+    "data_hash",
+    "exit_status",
+    "started_at",
+    "finished_at",
+    "stdout",
+    "stderr",
+    "result_files",
+    "attestation"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "fileBinding": {
+      "type": "object",
+      "required": ["path", "sha256", "size_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "pattern": "^(?![A-Za-z]:|/|\\\\)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "size_bytes": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
+  "properties": {
+    "receipt_version": {"const": "executor-receipt/v1"},
+    "producer_kind": {"const": "non-llm-executor"},
+    "run_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "job_id": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:-]+$"},
+    "condition_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "seed": {"type": ["integer", "null"]},
+    "command": {
+      "type": "object",
+      "required": ["argv", "command_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "command_hash": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "code_hash": {"$ref": "#/$defs/sha256"},
+    "config_hash": {"$ref": "#/$defs/sha256"},
+    "data_hash": {"$ref": "#/$defs/sha256"},
+    "exit_status": {"type": "integer"},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "stdout": {"$ref": "#/$defs/fileBinding"},
+    "stderr": {"$ref": "#/$defs/fileBinding"},
+    "result_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "size_bytes", "role", "media_type"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "pattern": "^(?![A-Za-z]:|/|\\\\)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "size_bytes": {"type": "integer", "minimum": 0},
+          "role": {
+            "type": "string",
+            "enum": [
+              "raw_result_rows",
+              "diagnostic_intervention",
+              "replication_evidence",
+              "checkpoint",
+              "other"
+            ]
+          },
+          "media_type": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "required": ["scheme", "key_id", "signature"],
+      "additionalProperties": false,
+      "properties": {
+        "scheme": {"const": "ed25519"},
+        "key_id": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._-]+$"},
+        "signature": {"type": "string", "pattern": "^ed25519:[A-Za-z0-9+/]{86}==$"}
+      }
+    }
+  }
+}

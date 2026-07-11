@@ -553,20 +553,20 @@ def make_design_experiment_agent(test=_TEST_OK, design=_DESIGN, allow_tail=False
     return produce
 
 
-def test_design_experiment_full_design_subset_runs_and_then_hits_its_dead_tail(tmp_path):
+def test_design_experiment_full_design_subset_runs_then_reports(tmp_path):
     """The honest reachable behaviour: design_experiment (no stage_path) drives the FULL tail, but its
     subset is DESIGN-only. So all 11 DESIGN agents fire + the 3 DESIGN hard gates pass, the DESIGN
     boundary checkpoints, then the engine asks for EXECUTE — which the mode has NO worker for -> the
     run halts (crashed mid-EXECUTE). We assert this, NOT a faked 'done'."""
     runs = tmp_path / "runs"
-    with pytest.raises(DeadTail):
-        run_task(runs, "de1", "design the LoRA ablation", "design_experiment", TS,
-                 make_design_experiment_agent(), _approve, domain_profile_ref=PROFILE)
+    m = run_task(runs, "de1", "design the LoRA ablation", "design_experiment", TS,
+                 make_design_experiment_agent(allow_tail=True), _approve, domain_profile_ref=PROFILE)
+    assert m["status"] == "done"
     run_dir = runs / "de1"
-    # DESIGN completed (its boundary checkpointed); the run then died entering the unstaffed EXECUTE.
-    assert classify_status(run_dir) == "crashed_mid_stage"
+    # DESIGN completed, then the explicit REPORT path completed without implying experiment execution.
+    assert classify_status(run_dir) == "done"
     assert not (run_dir / "evidence" / "ANALYZE").exists()
-    assert not (run_dir / "evidence" / "REPORT").exists()
+    assert (run_dir / "evidence" / "REPORT" / "report-note.artifact.json").exists()
     # ALL 11 design_experiment agents produced their artifact at DESIGN (each contract-validated by _write).
     assert _names(run_dir, "DESIGN") == sorted(DESIGN_EXPERIMENT_AGENTS.values())
     # the 3 DESIGN hard gates fired and PASSED (the gated work was really gated)
@@ -577,13 +577,13 @@ def test_design_experiment_full_design_subset_runs_and_then_hits_its_dead_tail(t
     assert verify_chain(read_events(run_dir / "ledger.jsonl")) == []
 
 
-def test_design_experiment_dead_tail_is_structural_not_incidental(tmp_path):
+def test_design_experiment_explicit_path_is_structural_not_incidental(tmp_path):
     """Pin the dead tail at the registry/graph level so a refactor cannot silently grow a phantom tail:
     design_experiment declares NO stage_path, the engine therefore drives all 5 stages, yet ZERO of its
     agents is allowed in EXECUTE/ANALYZE/VERIFY — the entire experiment tail is unstaffed by this mode."""
     tf = resolve_task("x", "design_experiment", "r", TS)
     p = tf["payload"]
-    assert p.get("stage_path") is None                              # no forward-skip declared
+    assert p.get("stage_path") == ["DESIGN", "REPORT"]
     assert p["entry_stage"] == "DESIGN"
     subset = set(p["agent_subset"])
     assert len(subset) == 11

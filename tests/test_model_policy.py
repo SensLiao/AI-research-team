@@ -7,7 +7,13 @@ import pytest
 
 from research_agent_teams.orchestrator.model_policy import (
     NO_MODEL,
+    RUNTIME_MODEL_ENV,
+    RUNTIME_REASONING_ENV,
+    RUNTIME_SERVICE_ENV,
     VALID_POLICIES,
+    capability_requirements,
+    codex_runtime_fields,
+    decorate_worker_runtime,
     effective_models,
     haiku_offenders,
     load_agent_models,
@@ -53,6 +59,59 @@ def test_max_quality_forces_every_llm_agent_to_opus():
 def test_max_quality_never_puts_a_model_on_a_deterministic_hook():
     # a Python hook (model:none) is not "upgraded" to opus — it has no model to run.
     assert resolve_model(NO_MODEL, "max_quality") == NO_MODEL
+
+
+# ---------------------------------------------------------------- Codex runtime mapping
+
+def test_runtime_is_model_agnostic_until_deployment_binds_it():
+    assert codex_runtime_fields("sonnet", environ={}) == {}
+    assert codex_runtime_fields("opus", environ={}) == {}
+    assert codex_runtime_fields(NO_MODEL) == {}
+
+
+def test_runtime_binding_comes_from_environment_not_agent_specs():
+    env = {
+        RUNTIME_MODEL_ENV: "provider/frontier-model",
+        RUNTIME_REASONING_ENV: "maximum",
+        RUNTIME_SERVICE_ENV: "preferred",
+    }
+    assert codex_runtime_fields("opus", environ=env) == {
+        "runtime_model": "provider/frontier-model",
+        "reasoning_effort": "maximum",
+        "service_tier": "preferred",
+    }
+
+
+def test_capability_requirements_are_provider_neutral():
+    assert capability_requirements("sonnet")["reasoning_quality"] == "strong"
+    assert capability_requirements("opus")["reasoning_quality"] == "frontier"
+    assert capability_requirements("opus")["provider"] == "any"
+
+
+def test_worker_runtime_decoration_preserves_logical_tier_and_adds_capabilities(monkeypatch):
+    monkeypatch.delenv(RUNTIME_MODEL_ENV, raising=False)
+    monkeypatch.delenv(RUNTIME_REASONING_ENV, raising=False)
+    monkeypatch.delenv(RUNTIME_SERVICE_ENV, raising=False)
+    worker = {"label": "read-paper-deep-worker", "model": "opus", "prompt": "...",
+              "output": "x.bundle.json"}
+    decorated = decorate_worker_runtime(worker)
+    assert decorated["model"] == "opus"
+    assert decorated["model_tier"] == "opus"
+    assert decorated["capability_requirements"]["reasoning_quality"] == "frontier"
+    assert decorated["capability_requirements"]["provider"] == "any"
+    assert "runtime_model" not in decorated
+
+
+def test_worker_runtime_decoration_handles_panels(monkeypatch):
+    monkeypatch.delenv(RUNTIME_MODEL_ENV, raising=False)
+    monkeypatch.delenv(RUNTIME_REASONING_ENV, raising=False)
+    monkeypatch.delenv(RUNTIME_SERVICE_ENV, raising=False)
+    panel = {"workers": [{"label": "a", "model": "sonnet"}, {"label": "b", "model": "opus"}]}
+    decorated = decorate_worker_runtime(panel)
+    for worker in decorated["workers"]:
+        assert worker["model_tier"] == worker["model"]
+        assert worker["capability_requirements"]["provider"] == "any"
+        assert "runtime_model" not in worker
 
 
 # ---------------------------------------------------------------- guards (fail loud)

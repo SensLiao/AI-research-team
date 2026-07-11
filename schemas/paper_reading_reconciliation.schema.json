@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_reading_reconciliation.schema.json",
+  "title": "Paper Reading Reconciliation",
+  "description": "The first worker allowed to compare the primary analysis with the blind second read. It records disagreements and a repair ledger before quality audit or Markdown synthesis.",
+  "type": "object",
+  "required": [
+    "source_ref",
+    "comparison_performed",
+    "blind_bundle_ref",
+    "primary_bundle_refs",
+    "agreements",
+    "disagreements",
+    "repair_ledger",
+    "unresolved_repairs",
+    "verdict"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {"type": "string", "minLength": 1},
+    "comparison_performed": {"const": true},
+    "blind_bundle_ref": {"type": "string", "minLength": 1},
+    "primary_bundle_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "minItems": 4,
+      "uniqueItems": true
+    },
+    "agreements": {"type": "array", "items": {"type": "string"}, "default": []},
+    "disagreements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "disagreement_id", "topic", "primary_position", "blind_position",
+          "resolution", "evidence_ref", "repair_required"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "disagreement_id": {"type": "string", "minLength": 1},
+          "topic": {"type": "string", "minLength": 1},
+          "primary_position": {"type": "string", "minLength": 1},
+          "blind_position": {"type": "string", "minLength": 1},
+          "resolution": {"type": "string", "minLength": 1},
+          "evidence_ref": {"type": "string", "minLength": 1},
+          "repair_required": {"type": "boolean"}
+        }
+      },
+      "default": []
+    },
+    "missed_by_primary": {"type": "array", "items": {"type": "string"}, "default": []},
+    "missed_by_blind_reader": {"type": "array", "items": {"type": "string"}, "default": []},
+    "repair_ledger": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["repair_id", "disagreement_id", "issue", "status", "evidence_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "repair_id": {"type": "string", "minLength": 1},
+          "disagreement_id": {"type": "string", "minLength": 1},
+          "issue": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "enum": ["resolved", "accepted-limitation", "unresolved"]},
+          "evidence_ref": {"type": "string", "minLength": 1},
+          "resolution_note": {"type": "string"}
+        }
+      },
+      "default": []
+    },
+    "unresolved_repairs": {"type": "array", "items": {"type": "string"}, "default": []},
+    "verdict": {"type": "string", "enum": ["PASS", "PASS_WITH_CAVEATS", "NEEDS_SUPPLEMENT", "BLOCK"]},
+    "director_warning": {"type": ["string", "null"], "default": null}
+  }
+}

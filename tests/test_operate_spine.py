@@ -90,6 +90,8 @@ def _drive_discover(run_dir):
 def _drive_ideate(run_dir):
     _stage_bundle(run_dir, "IDEATE", {"hypotheses": _HYPOTHESES, "ideas": _IDEAS,
                                       "tournament": _TOURNAMENT, "evolved": _EVOLVED})
+    new_direction.write_legacy_replay_receipt(
+        run_dir, source_run_id="fixture-op1", reason="exercise frozen pre-panel compatibility")
     spine.open_stage(run_dir, "IDEATE", TS)
     paths, rep = new_direction.run_dets(run_dir, "IDEATE", TS)
     return spine.commit_stage(run_dir, "IDEATE", paths, TS), rep
@@ -164,6 +166,25 @@ def test_operate_menu_ranked_by_feasibility_and_no_self_bet(tmp_path):
         assert not (set(idea) & {"selected", "chosen", "bet", "winner"})
 
 
+def test_operate_ideate_writes_director_idea_bet_markdown(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "op3b", "rank promptable segmentation directions", "new_direction", TS)
+    rd = plan["run_dir"]
+    _stage_bundle(rd, "DISCOVER", _discover_bundle("clean"))
+    _drive_discover(rd)
+    _drive_ideate(rd)
+
+    menu = Path(rd) / "director-review" / "ideas" / "idea-bet-menu.md"
+    assert menu.is_file()
+    text = menu.read_text(encoding="utf-8")
+    assert "## Decision Snapshot" in text
+    assert "## Candidate Ideas" in text
+    assert "## Cut Before Betting" in text
+    assert "IDEA-1" in text and "IDEA-2" in text
+    assert "Minimal experiment sketch: not present" in text
+    assert "PIVOT" in text
+
+
 # --------------------------------------------------------------------------- 4. tamper-evident ledger intact
 
 def test_operate_ledger_hash_chain_intact(tmp_path):
@@ -179,3 +200,23 @@ def test_operate_ledger_hash_chain_intact(tmp_path):
     # the machine produced only the menu — no bet/adr written by the run
     produced = [p.name for p in (Path(rd) / "evidence").rglob("*.json")]
     assert not any("idea-bet" in n or ".adr." in n for n in produced)
+
+
+def test_open_stage_is_idempotent_for_multiple_panel_waves(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "op-open", "schedule a panel", "new_direction", TS)
+    rd = plan["run_dir"]
+    assert spine.open_stage(rd, "DISCOVER", TS) is True
+    assert spine.open_stage(rd, "DISCOVER", TS) is False
+    starts = [
+        event for event in read_events(Path(rd) / "ledger.jsonl")
+        if event["event_type"] == "stage_started"
+    ]
+    assert len(starts) == 1
+
+
+def test_open_stage_refuses_future_wave_before_current_stage_commits(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "op-future", "schedule a panel", "new_direction", TS)
+    with pytest.raises(ValueError, match="next legal stage"):
+        spine.open_stage(plan["run_dir"], "IDEATE", TS)

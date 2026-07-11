@@ -61,3 +61,12 @@ def test_mode_registry_unknown_agent_detected():
     reg = copy.deepcopy(load_mode_registry())
     reg["modes"]["evidence_review"]["agent_subset"].append("ghost")
     assert any("ghost" in e for e in validate_mode_registry(reg))
+
+
+def test_mode_registry_stage_path_must_start_forward_and_end_at_report():
+    reg = copy.deepcopy(load_mode_registry())
+    reg["modes"]["evidence_review"]["stage_path"] = ["IDEATE", "DISCOVER"]
+    errs = validate_mode_registry(reg)
+    assert any("stage_path must start" in e for e in errs)
+    assert any("stage_path must end at REPORT" in e for e in errs)
+    assert any("stage_path must be forward-only" in e for e in errs)

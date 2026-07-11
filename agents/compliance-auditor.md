@@ -5,7 +5,7 @@ rq_exempt: true
 model: opus
 stage: ANALYZE
 kind: check-panel
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: analysis_check_verdict
 permission_scope:
   read: [run-store evidence (ANALYZE), the experiment_matrix, the run_records, the active domain profile]

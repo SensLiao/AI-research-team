@@ -11,7 +11,25 @@
     "violations": {"type": "array", "items": {"type": "string"}},
     "checks_performed": {"type": "array", "items": {"type": "string"}, "default": []},
     "protocol_ref": {"type": ["string", "null"], "default": null},
-    "alignment_ref": {"type": ["string", "null"], "default": null}
+    "alignment_ref": {"type": ["string", "null"], "default": null},
+    "file_identity_checks": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "required": ["verdict", "violations", "required_paths", "covered_paths", "line_count"],
+        "additionalProperties": false,
+        "properties": {
+          "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+          "violations": {"type": "array", "items": {"type": "string"}},
+          "manifest_ref": {"type": ["string", "null"], "default": null},
+          "required_paths": {"type": "array", "items": {"type": "string"}},
+          "covered_paths": {"type": "array", "items": {"type": "string"}},
+          "line_count": {"type": "integer", "minimum": 0},
+          "stdout_sha256": {"type": ["string", "null"], "default": null}
+        }
+      }
+    }
   },
   "allOf": [
     {

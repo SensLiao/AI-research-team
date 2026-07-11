@@ -60,9 +60,9 @@ def test_tier_mode_counts_grow():
 
 def test_estimate_cost_sums_registry_hops():
     one = rp.estimate_cost(["new_direction"])
-    assert one["agent_hops"] == 6 and one["n_modes"] == 1 and one["band"] == "light"
+    assert one["agent_hops"] == 10 and one["n_modes"] == 1 and one["band"] == "medium"
     two = rp.estimate_cost(["new_direction", "deep_research"])
-    assert two["agent_hops"] == 10 and two["n_modes"] == 2 and two["band"] == "medium"
+    assert two["agent_hops"] == 22 and two["n_modes"] == 2 and two["band"] == "heavy"
 
 
 def test_gates_in_chain_surfaces_human_gates():
@@ -232,6 +232,21 @@ def test_augment_panel_worker(tmp_path):
     out = rp.augment_worker_with_upstream(worker, str(new_run))
     assert all("PRIOR CHAIN CONTEXT" in w["prompt"] for w in out["workers"])
     assert out["workers"][0]["prompt"].startswith("A")
+
+
+def test_augment_panel_sends_full_upstream_only_to_root_workers(tmp_path):
+    prev = _fake_prev_run(tmp_path)
+    new_run = tmp_path / "runs" / "proj" / "nd-4"
+    new_run.mkdir(parents=True)
+    rp.write_upstream_grounding(str(new_run), [prev])
+    panel = {"workers": [
+        {"label": "root", "prompt": "ROOT"},
+        {"label": "child", "prompt": "CHILD", "depends_on": ["root"]},
+    ]}
+    out = rp.augment_worker_with_upstream(panel, str(new_run))
+    assert "found 12 strong sources" in out["workers"][0]["prompt"]
+    assert "pointer only" in out["workers"][1]["prompt"]
+    assert "found 12 strong sources" not in out["workers"][1]["prompt"]
 
 
 def test_augment_is_noop_without_grounding(tmp_path):

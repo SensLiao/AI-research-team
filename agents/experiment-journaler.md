@@ -1,11 +1,11 @@
 ---
 name: experiment-journaler
-spec_version: "1.1.0"
+spec_version: "1.1.1"
 model: sonnet
 stage: EXECUTE
 kind: producer
 tools: [Read, Glob, Grep, Write]
-produces: journal_entry
+produces: [journal_entry, solution_tree]
 permission_scope:
   read: [task_frame, run-store evidence (EXECUTE), preflight_report (EXECUTE), run_record (EXECUTE)]
   write: [runs/<run>/evidence/EXECUTE/ only]

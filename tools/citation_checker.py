@@ -96,6 +96,7 @@ def check_no_locus(
 def check_contradicted(
     claim_list: dict,
     claim_evidence_map: dict,
+    coverage_based_absence_claim_ids: Optional[set[str]] = None,
 ) -> List[str]:
     """Return violations for claims where a locus contradicts them.
 
@@ -113,6 +114,7 @@ def check_contradicted(
        A locus missing supports_claim is a linker error; we BLOCK conservatively.
     """
     violations: List[str] = []
+    allowed_absence = set(coverage_based_absence_claim_ids or set())
     # Index mappings by claim_id (skip empty-id mappings)
     mapping_index: dict[str, dict] = {}
     for mapping in (claim_evidence_map.get("mappings") or []):
@@ -146,6 +148,10 @@ def check_contradicted(
 
             # --- Mechanism 1: supports_claim=False (linker judgment) ---
             if supports is False:
+                if (cid in allowed_absence
+                        and mapping.get("overall_support") == "not-found"
+                        and locus.get("support_relation") == "insufficient"):
+                    continue
                 reported_str = reported if reported is not None else "(not recorded)"
                 violations.append(
                     f"claim {cid!r} is contradicted by locus {loc_id!r}: "
@@ -186,6 +192,7 @@ def build_report(
     claim_list: dict,
     claim_evidence_map: dict,
     resolvable_refs: Optional[set] = None,
+    coverage_based_absence_claim_ids: Optional[set[str]] = None,
 ) -> dict:
     """Build a citation_integrity_verdict payload.
 
@@ -198,7 +205,9 @@ def build_report(
       - any locus source_ref is unresolvable               (when resolvable_refs provided)
     """
     v_no_locus = check_no_locus(claim_list, claim_evidence_map)
-    v_contradicted = check_contradicted(claim_list, claim_evidence_map)
+    v_contradicted = check_contradicted(
+        claim_list, claim_evidence_map, coverage_based_absence_claim_ids,
+    )
     v_unresolvable = check_unresolvable_refs(claim_evidence_map, resolvable_refs)
 
     all_violations: List[str] = v_no_locus + v_contradicted + v_unresolvable
@@ -210,7 +219,9 @@ def build_report(
         if _has_no_valid_locus(claim.get("claim_id", ""), claim_evidence_map)
     ]
 
-    contradicted_claims = _extract_contradicted_claim_ids(claim_list, claim_evidence_map)
+    contradicted_claims = _extract_contradicted_claim_ids(
+        claim_list, claim_evidence_map, coverage_based_absence_claim_ids,
+    )
 
     unresolvable_refs_list: List[str] = []
     if resolvable_refs is not None:
@@ -247,6 +258,7 @@ def _has_no_valid_locus(claim_id: str, claim_evidence_map: dict) -> bool:
 def _extract_contradicted_claim_ids(
     claim_list: dict,
     claim_evidence_map: dict,
+    coverage_based_absence_claim_ids: Optional[set[str]] = None,
 ) -> List[str]:
     """Collect claim_ids that are contradicted (by supports_claim=False or a
     missing supports_claim)."""
@@ -258,6 +270,7 @@ def _extract_contradicted_claim_ids(
         index[cid] = mapping
 
     result: List[str] = []
+    allowed_absence = set(coverage_based_absence_claim_ids or set())
     for claim in (claim_list.get("claims") or []):
         cid = claim.get("claim_id", "")
         if not cid:
@@ -270,6 +283,10 @@ def _extract_contradicted_claim_ids(
                 result.append(cid)
                 break
             if locus["supports_claim"] is False:
+                if (cid in allowed_absence
+                        and mapping.get("overall_support") == "not-found"
+                        and locus.get("support_relation") == "insufficient"):
+                    continue
                 result.append(cid)
                 break
     return result

@@ -4,7 +4,7 @@ spec_version: "1.0.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: paper_appraisal
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the active domain profile, the selected paper by reference, paper_note, method_teardown, figure_reading artifacts]
@@ -80,6 +80,23 @@ domain profile (its `reading` block may set a `paper_type_default`, `reporting_s
 - inline source text, figures, or raw extracted paragraphs into the artifact
 - score `domain_validity` as if clinical when the paper is methodological — mark it N/A instead
 - write to vault, other stages, or run infra files
+
+## Director Upgrade: Medical Imaging AI Checklist
+
+For medical imaging / clinical AI papers, fill `medical_imaging_checklist` in addition to the generic
+`checklist`. Use CLAIM for imaging AI reporting, TRIPOD+AI for prediction models, STARD-AI for
+diagnostic accuracy, CONSORT-AI / SPIRIT-AI for trials and protocols, STROBE for observational
+studies, and NeurIPS-style rubrics for methodological ML. Cover patient split, external validation,
+annotation protocol, inter-reader variability, scanner/site shift, metric direction, statistical
+uncertainty, clinical claim boundary, preprocessing leakage, and failure-case analysis. An honest
+`unmet` status is useful; omitting the category is not.
+
+Use the local item bank at
+`research_agent_teams/agents/references/reporting-guidelines/medical-imaging-ai-item-bank.json`.
+For every medical checklist row, include `standard_ref`, `item_id`, `category`, `status`,
+`evidence_ref`, `risk`, and `required_fix` when the item is partial/unmet. The goal is not to make
+the paper look compliant; the goal is to make the paper's clinical-imaging evidence limits impossible
+to miss.
 
 ## Handing back
 

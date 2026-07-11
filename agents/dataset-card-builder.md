@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: dataset_card
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the active domain profile, model_dataset_candidates, paper_note artifacts, repo_verification]

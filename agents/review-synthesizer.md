@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: VERIFY
 kind: auditor
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: panel_synthesis
 permission_scope:
   read: [task_frame, run-store evidence (VERIFY), panel_reviews (methodology + domain), critic_memo, review_config, result_summary]

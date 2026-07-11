@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RAT Quality Scoreboard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scoreboard",
+    "overall_status",
+    "summary",
+    "capability",
+    "eval",
+    "business_outputs",
+    "runs"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "scoreboard": { "type": "string", "const": "rat_quality_scoreboard" },
+    "overall_status": { "type": "string", "enum": ["machine_clean", "needs_manual", "blocked"] },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_machine_failures",
+        "manual_open",
+        "invalid_manifests",
+        "business_output_failures",
+        "business_output_advisories",
+        "run_count",
+        "vault_write",
+        "external_skill_execution"
+      ],
+      "properties": {
+        "required_machine_failures": { "type": "integer", "minimum": 0 },
+        "manual_open": { "type": "integer", "minimum": 0 },
+        "invalid_manifests": { "type": "integer", "minimum": 0 },
+        "business_output_failures": { "type": "integer", "minimum": 0 },
+        "business_output_advisories": { "type": "integer", "minimum": 0 },
+        "run_count": { "type": "integer", "minimum": 0 },
+        "vault_write": { "type": "boolean", "const": false },
+        "external_skill_execution": { "type": "boolean", "const": false }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_modes",
+        "operated_modes",
+        "spec_only_modes",
+        "execute_stage_modes",
+        "server_gated_modes",
+        "operate_registry_drift"
+      ],
+      "properties": {
+        "total_modes": { "type": "integer", "minimum": 0 },
+        "operated_modes": { "type": "integer", "minimum": 0 },
+        "spec_only_modes": { "type": "integer", "minimum": 0 },
+        "execute_stage_modes": { "type": "integer", "minimum": 0 },
+        "server_gated_modes": { "type": "integer", "minimum": 0 },
+        "operate_registry_drift": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "eval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "scenario_statuses"],
+      "properties": {
+        "summary": { "type": "object" },
+        "scenario_statuses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status", "severity"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "status": { "type": "string", "enum": ["pass", "needs_manual", "fail"] },
+              "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] }
+            }
+          }
+        }
+      }
+    },
+    "business_outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed_run_count", "pass", "advisory", "fail", "not_scored", "runs"],
+      "properties": {
+        "completed_run_count": { "type": "integer", "minimum": 0 },
+        "pass": { "type": "integer", "minimum": 0 },
+        "advisory": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0 },
+        "not_scored": { "type": "integer", "minimum": 0 },
+        "runs": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    },
+    "runs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs_dir", "run_count", "by_status", "invalid_manifests", "runs"],
+      "properties": {
+        "runs_dir": { "type": "string" },
+        "run_count": { "type": "integer", "minimum": 0 },
+        "by_status": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "invalid_manifests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "error"],
+            "properties": {
+              "path": { "type": "string" },
+              "error": { "type": "string" }
+            }
+          }
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "run_id",
+              "project",
+              "mode",
+              "status",
+              "current_stage",
+              "completed_stage_count",
+              "pending_gate_count",
+              "path"
+            ],
+            "properties": {
+              "run_id": { "type": "string", "minLength": 1 },
+              "project": {
+                "anyOf": [
+                  { "type": "string" },
+                  { "type": "null" }
+                ]
+              },
+              "mode": { "type": "string" },
+              "status": { "type": "string" },
+              "current_stage": {
+                "anyOf": [
+                  { "type": "string" },
+                  { "type": "null" }
+                ]
+              },
+              "completed_stage_count": { "type": "integer", "minimum": 0 },
+              "pending_gate_count": { "type": "integer", "minimum": 0 },
+              "path": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -5,6 +5,8 @@ unverifiable or the comparison invalid. verdict is derived from violations, neve
 """
 from __future__ import annotations
 
+import hashlib
+
 from research_agent_teams.tools.preflight_checker import build_report, check_preflight
 
 _TRAIN = {"split": "train", "script": "build_train()", "from_protocol_ref": "proto#1",
@@ -58,3 +60,43 @@ def test_test_script_without_split_blocks():
     v = check_preflight(_TRAIN, no_split, _PROTO, _ALIGN_PASS)
     assert any("not declared split='test'" in x for x in v)
     assert build_report(_TRAIN, no_split, _PROTO, _ALIGN_PASS)["verdict"] == "BLOCK"
+
+
+def _live_manifest(lines):
+    stdout = "\n".join(lines) + "\n"
+    return {
+        "mode": "live",
+        "lines": lines,
+        "missing": [],
+        "stdout_sha256": "sha256:" + hashlib.sha256(stdout.encode("utf-8")).hexdigest(),
+    }
+
+
+def test_live_file_identity_manifest_clears_preflight():
+    req = "nnUNet_results/predictions/nnunet_s1_fold5_test_nomirror"
+    line = "a" * 64 + f"  {req}/case001.nii.gz"
+    report = build_report(
+        _TRAIN, _TEST, _PROTO, _ALIGN_PASS,
+        file_identity_manifests=[{
+            "manifest_ref": "iac-baseline-hash",
+            "required_paths": [req],
+            "manifest": _live_manifest([line]),
+        }],
+    )
+    assert report["verdict"] == "PASS"
+    assert "file_identity_manifest" in report["checks_performed"]
+    assert report["file_identity_checks"][0]["verdict"] == "PASS"
+
+
+def test_plan_file_identity_manifest_blocks_preflight():
+    req = "nnUNet_results/predictions/nnunet_s1_fold5_test_nomirror"
+    report = build_report(
+        _TRAIN, _TEST, _PROTO, _ALIGN_PASS,
+        file_identity_manifests=[{
+            "manifest_ref": "offline-plan",
+            "required_paths": [req],
+            "manifest": {"mode": "plan", "read_only_command": "sha256sum x"},
+        }],
+    )
+    assert report["verdict"] == "BLOCK"
+    assert any("offline-plan" in v and "not live evidence" in v for v in report["violations"])

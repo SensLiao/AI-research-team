@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_markdown_card.schema.json",
+  "title": "Paper Markdown Card",
+  "description": "The human-readable Markdown synthesis card for a deep paper read. The payload is machine evidence that a Markdown card exists; the real director-facing file is written under director-review/papers/.",
+  "type": "object",
+  "required": ["source_ref", "title", "markdown", "evidence_refs", "covered_claim_ids", "covered_figure_refs", "covered_sections"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "markdown": {"type": "string", "minLength": 500},
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "covered_claim_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "covered_figure_refs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "covered_sections": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "decision-need",
+          "project-alignment",
+          "claims-and-evidence",
+          "method-or-theory",
+          "numeric-results",
+          "figures-and-tables",
+          "critical-appraisal",
+          "reproducibility",
+          "domain-transfer",
+          "independent-critique",
+          "medical-imaging-checklist",
+          "transfer-matrix",
+          "repair-plan",
+          "next-actions"
+        ]
+      },
+      "default": []
+    },
+    "quality_verdict": {
+      "type": ["string", "null"],
+      "enum": ["PASS", "PASS_WITH_CAVEATS", "NEEDS_SUPPLEMENT", "BLOCK", null],
+      "default": null
+    }
+  }
+}

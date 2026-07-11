@@ -10,7 +10,7 @@ produces: manifest.yaml, ledger.jsonl (entries)
 permission_scope:
   read: [runs/<run>/manifest.yaml, runs/<run>/ledger.jsonl]
   write: [runs/<run>/manifest.yaml, runs/<run>/ledger.jsonl, runs/<run>/LOCK]
-  never: [vault, evidence/ files, inbox/ files, any path outside runs/<run>/ infra, Bash]
+  never: [vault, evidence/ files, inbox/ files, any path outside runs/<run>/ infra]
 authority: exclusive writer of global run state — no other agent may write manifest.yaml or ledger.jsonl
 ---
 

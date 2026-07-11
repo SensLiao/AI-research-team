@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/gap_dossier_set.schema.json",
+  "title": "Gap Dossier Set",
+  "type": "object",
+  "required": ["dossiers"],
+  "additionalProperties": false,
+  "properties": {
+    "dossiers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "related_gap_ids", "knowledge_quadrant", "quadrant_basis",
+          "problem_statement", "evidence_refs", "why_open", "recent_prior_art",
+          "mechanism_chain", "cross_domain_bridge", "strongest_counterargument",
+          "counterevidence", "minimum_discriminating_experiment", "resources", "next_step"],
+        "additionalProperties": false,
+        "properties": {
+          "gap_id": {"type": "string", "minLength": 1},
+          "related_gap_ids": {"type": "array", "items": {"type": "string"}},
+          "knowledge_quadrant": {"type": "string", "enum": ["Known Known", "Unknown Known", "Known Unknown", "Unknown Unknown"]},
+          "quadrant_basis": {"type": "string", "minLength": 1},
+          "problem_statement": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "why_open": {"type": "string", "minLength": 1},
+          "recent_prior_art": {"type": "array", "items": {"type": "object"}},
+          "mechanism_chain": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}},
+          "cross_domain_bridge": {"type": "object"},
+          "strongest_counterargument": {"type": "string", "minLength": 1},
+          "counterevidence": {"type": "array", "items": {"type": "string"}},
+          "minimum_discriminating_experiment": {"type": "object"},
+          "resources": {"type": "object"},
+          "next_step": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

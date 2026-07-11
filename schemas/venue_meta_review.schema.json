@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/venue_meta_review.schema.json",
+  "title": "Venue Meta Review",
+  "description": "VERIFY-stage advisory area-chair synthesis over a frozen blind-review panel. It binds the precommit and review hashes, surfaces every disagreement and strongest rejection case, classifies fatal versus repairable gaps, and orders repairs. It contains no verdict, acceptance probability, submission authorization, status, or human decision; the deterministic venue_score layer runs afterward.",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "precommit_hash",
+    "review_receipt_ref",
+    "review_hashes",
+    "reviewer_disagreements",
+    "strongest_reject_reason",
+    "fatal_gaps",
+    "repairable_gaps",
+    "repair_sequence",
+    "human_gates",
+    "advisory_only"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "const": "venue-blind-review/v2"
+    },
+    "precommit_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "review_receipt_ref": {
+      "const": "inbox/VERIFY.reviews.receipt.json"
+    },
+    "review_hashes": {
+      "type": "object",
+      "required": ["methodology", "domain", "adversarial"],
+      "additionalProperties": false,
+      "properties": {
+        "methodology": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "domain": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "adversarial": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "reviewer_disagreements": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/disagreement"}
+    },
+    "strongest_reject_reason": {
+      "$ref": "#/$defs/strongest_reject_reason"
+    },
+    "fatal_gaps": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/gap"}
+    },
+    "repairable_gaps": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/gap"}
+    },
+    "repair_sequence": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/repair_step"}
+    },
+    "human_gates": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {"const": "/venue-pick"},
+        {"const": "/venue-decide"}
+      ],
+      "items": false
+    },
+    "advisory_only": {
+      "const": true
+    }
+  },
+  "$defs": {
+    "nonempty_ref_list": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "pattern": "\\S"}
+    },
+    "disagreement": {
+      "type": "object",
+      "required": ["dimension", "personas", "score_span", "synthesis", "evidence_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {"type": "string", "enum": ["D1", "D2", "D3", "D4", "D5", "D6", "D7"]},
+        "personas": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"type": "string", "enum": ["methodology", "domain", "adversarial"]}
+        },
+        "score_span": {"type": "integer", "minimum": 1, "maximum": 3},
+        "synthesis": {"type": "string", "pattern": "\\S"},
+        "evidence_ref": {"$ref": "#/$defs/nonempty_ref_list"}
+      }
+    },
+    "strongest_reject_reason": {
+      "type": "object",
+      "required": ["status", "reason", "source_personas", "evidence_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"type": "string", "enum": ["fatal", "repairable", "none"]},
+        "reason": {"type": "string", "pattern": "\\S"},
+        "source_personas": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "enum": ["methodology", "domain", "adversarial"]}
+        },
+        "evidence_ref": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "\\S"}
+        }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "required": ["gap_id", "reason", "evidence_ref", "responsible_stage"],
+      "additionalProperties": false,
+      "properties": {
+        "gap_id": {"type": "string", "pattern": "\\S"},
+        "trigger_id": {"type": "string", "pattern": "\\S"},
+        "reason": {"type": "string", "pattern": "\\S"},
+        "evidence_ref": {"$ref": "#/$defs/nonempty_ref_list"},
+        "responsible_stage": {
+          "type": "string",
+          "enum": ["DESIGN", "EXECUTE", "ANALYZE", "VERIFY"]
+        }
+      }
+    },
+    "repair_step": {
+      "type": "object",
+      "required": ["priority", "gap_id", "action", "responsible_stage", "verification"],
+      "additionalProperties": false,
+      "properties": {
+        "priority": {"type": "integer", "minimum": 1},
+        "gap_id": {"type": "string", "pattern": "\\S"},
+        "action": {"type": "string", "pattern": "\\S"},
+        "responsible_stage": {
+          "type": "string",
+          "enum": ["DESIGN", "EXECUTE", "ANALYZE", "VERIFY"]
+        },
+        "verification": {"type": "string", "pattern": "\\S"}
+      }
+    }
+  }
+}

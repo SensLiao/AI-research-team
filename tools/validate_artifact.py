@@ -64,13 +64,16 @@ PAYLOAD_SCHEMAS = {
     "repro_record": "repro_record.schema.json",                # repro-runner
     # --- M2 breadth 2.3 EVIDENCE depth ---
     "source_quality_report": "source_quality_report.schema.json",  # source-quality-ranker
+    "evidence_search_trace": "evidence_search_trace.schema.json",  # evidence-search-moderator
     "claim_list": "claim_list.schema.json",                    # claim-extractor
     "claim_evidence_map": "claim_evidence_map.schema.json",    # claim-evidence-linker
     "contradiction_report": "contradiction_report.schema.json",  # contradiction-miner
     "dataset_card": "dataset_card.schema.json",                # dataset-card-builder
     "staleness_report": "staleness_report.schema.json",        # staleness-auditor
     "citation_integrity_verdict": "citation_integrity_verdict.schema.json",  # citation-integrity-auditor (hard gate, DISCOVER)
+    "citation_attribution_report": "citation_attribution_report.schema.json",  # independent span/semantic attribution gate
     "landscape_map": "landscape_map.schema.json",              # landscape-mapper
+    "paper_note_verification": "paper_note_verification.schema.json",  # source-claim-verifier
     # --- M2 breadth 2.4 ANALYZE panel ---
     "baseline_audit_report": "baseline_audit_report.schema.json",  # baseline-comparison-auditor
     "variance_report": "variance_report.schema.json",          # variance-analyzer
@@ -91,6 +94,9 @@ PAYLOAD_SCHEMAS = {
     # --- M3-a (new-direction spine) artifact types ---
     "future_work_items": "future_work_items.schema.json",      # future-work-miner (DISCOVER gap)
     "gap_classification": "gap_classification.schema.json",    # gap-classifier (shared DISCOVER/IDEATE; 7-type)
+    "gap_prosecution": "gap_prosecution.schema.json",          # independent closure/open-status prosecution
+    "gap_dossier_set": "gap_dossier_set.schema.json",          # mechanism-grounded Known/Unknown dossiers
+    "gap_quality_audit": "gap_quality_audit.schema.json",      # independent scientific opportunity audit
     "novelty_score": "novelty_score.schema.json",              # novelty-scorer (SCORE-ONLY, advisory; never a cut)
     "hypothesis_set": "hypothesis_set.schema.json",            # hypothesis-generator (IDEATE)
     "idea_backlog": "idea_backlog.schema.json",                # feasibility-reranker / IDEATE exit (no self-bet field)
@@ -107,7 +113,8 @@ PAYLOAD_SCHEMAS = {
     "venue_candidates": "venue_candidates.schema.json",        # venue-selector B-path (no auto-pick field)
     "venue_profile": "venue_profile.schema.json",              # venue-selector C-path (instantiated rubric scorecard)
     "venue_review": "venue_review.schema.json",                # venue-reviewer-persona (NO self-decide field)
-    "venue_readiness_verdict": "venue_readiness_verdict.schema.json",  # area-chair-synthesizer (derived meets-bar)
+    "venue_meta_review": "venue_meta_review.schema.json",      # area-chair advisory synthesis (NO verdict/accept)
+    "venue_readiness_verdict": "venue_readiness_verdict.schema.json",  # deterministic advisory readiness derivation
     # --- M3-e (figure critic + monitor; both advisory) ---
     "figure_critique": "figure_critique.schema.json",          # figure-vlm-critic (advisory)
     "monitor_alert": "monitor_alert.schema.json",              # monitor (advisory)
@@ -127,6 +134,8 @@ PAYLOAD_SCHEMAS = {
     "calibration_report": "calibration_report.schema.json",    # review_calibration.py (SPECS-lite planted-error recall)
     "idea_grounding_report": "idea_grounding_report.schema.json",  # idea_grounding.py (ScholarEval-style; SCORE-ONLY)
     "research_brief": "research_brief.schema.json",            # operate/modes/deep_research.py (open_deep_research recipe)
+    "research_perspective_note": "research_perspective_note.schema.json",  # deep_research perspective worker
+    "research_markdown_brief": "research_markdown_brief.schema.json",      # deep_research director-facing Markdown brief
     "invalidation_record": "invalidation_record.schema.json",  # contradiction-mining structured landing (Graphiti bi-temporal; via promote only)
     # --- Audit waves A-D (2026-06-13; see _design/review/ai-capability-audit-2026-06-12.md §6) ---
     "preregistration": "preregistration.schema.json",          # tools/prereg.py (C3: analysis contract frozen at DESIGN, deviation-checked at ANALYZE)
@@ -139,11 +148,11 @@ PAYLOAD_SCHEMAS = {
     "evidence_saturation_report": "evidence_saturation_report.schema.json",  # evidence-saturation-judge (DISCOVER; measured saturation, informs gate not decides)
     "stage_scorecard": "stage_scorecard.schema.json",          # quality-controller intermediate (per-stage rollup of existing analysis_check_verdict)
     "global_quality_scorecard": "global_quality_scorecard.schema.json",  # quality-controller (cross-stage aggregate; can_finish⇒all required dims pass)
-    "integrity_recommendation": "integrity_recommendation.schema.json",  # integrity-refusal-recommender (ANALYZE; ADVISORY-only, decision_authority=director-human-gate)
+    "integrity_recommendation": "integrity_recommendation.schema.json",  # integrity-refusal-recommender (REPORT; ADVISORY-only, decision_authority=director-human-gate)
     # --- RAT-2 Wave-3 deep-ideation chain (2026-06-19; see _design/idea-engine/IDEA-ENGINE-LEDGER.md) ---
-    "mechanism_graph": "mechanism_graph.schema.json",          # mechanism-graph-builder (DISCOVER; explicit internal causal graph of the problem; depth as a measurable object)
-    "experiment_sketch": "experiment_sketch.schema.json",      # experiment-architect (IDEATE; minimal testable experiment per surviving idea; lighter than DESIGN protocol)
-    "idea_lineage": "idea_lineage.schema.json",                # idea-lineage-tracker (IDEATE; per-idea provenance ledger; disposition is mechanical, never a bet)
+    "mechanism_graph": "mechanism_graph.schema.json",          # mathematical-formalizer (DISCOVER; explicit internal causal graph of the problem; depth as a measurable object)
+    "experiment_sketch": "experiment_sketch.schema.json",      # experiment-planner (IDEATE; minimal testable experiment per surviving idea; lighter than DESIGN protocol)
+    "idea_lineage": "idea_lineage.schema.json",                # idea-evolver (IDEATE; per-idea provenance ledger; disposition is mechanical, never a bet)
     "idea_quality_eval": "idea_quality_eval.schema.json",      # idea_quality_eval.py (REPORT; blind pairwise quality harness; decomposed scores, no collapsed total / no bet)
     # --- Paper-reading upgrade (2026-06-26; see _design/paper-reading-upgrade/paper-reading-upgrade-LEDGER.md) ---
     "method_teardown": "method_teardown.schema.json",          # Pass-2 method teardown of a read paper (problem / assumptions / per-term loss / flows / data / cost / baseline diff)
@@ -151,6 +160,20 @@ PAYLOAD_SCHEMAS = {
     "paper_appraisal": "paper_appraisal.schema.json",          # Pass-3 outward per-paper appraisal (venue-7D re-pointed OUTWARD; ADVISORY, never a gate / never self-decides)
     "paper_relations": "paper_relations.schema.json",          # Stage-4 typed paper->paper edges (inherits / refutes / unifies / replaces / opens / extends / uses)
     "trend_card": "trend_card.schema.json",                    # Stage-4 concept-centric trend extraction (shifts / failure-modes / mechanism-vs-result / opportunities)
+    "paper_structure": "paper_structure.schema.json",          # full-paper section/figure/table inventory; prevents shallow read masquerading as deep
+    "paper_reading_plan": "paper_reading_plan.schema.json",    # pre-read question tree + decision contract for deep paper reads
+    "project_context_alignment": "project_context_alignment.schema.json",  # paper-to-project fit and downstream decision alignment
+    "result_table_audit": "result_table_audit.schema.json",    # numeric results, metric direction, baseline binding, variance, split/leakage audit
+    "math_algorithm_audit": "math_algorithm_audit.schema.json",  # equations / algorithm flow / pseudo-code consistency audit
+    "reproducibility_materials_audit": "reproducibility_materials_audit.schema.json",  # code/data/config/environment availability audit
+    "independent_reading_critique": "independent_reading_critique.schema.json",  # second-reader challenge memo
+    "paper_reading_reconciliation": "paper_reading_reconciliation.schema.json",  # blind-vs-primary comparison + repair ledger
+    "domain_transfer_note": "domain_transfer_note.schema.json",  # direct/indirect/proxy transfer boundary for the current research target
+    "paper_reading_quality": "paper_reading_quality.schema.json",  # independent business-quality audit of a paper read
+    "paper_markdown_card": "paper_markdown_card.schema.json",  # human-readable Markdown card evidence; actual .md is in director-review/papers/
+    # --- AERS-informed governance layer (2026-07-05+) ---
+    "numeric_benchmark_report": "numeric_benchmark_report.schema.json",  # numeric_benchmark_adapter.py (recompute metrics from result rows + journal/hash evidence)
+    "aers_skill_integration_plan": "aers_skill_integration_plan.schema.json",  # aers_skill_integration_planner.py (metadata-only AERS -> RAT stage/SOP map)
 }
 
 _ENVELOPE_SCHEMA = "artifact_envelope.schema.json"

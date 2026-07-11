@@ -114,7 +114,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["tripod_ai", "strobe", "consort", "prisma", "neurips", "casp", "cochrane_rob2"]
+            "enum": ["tripod_ai", "stard_ai", "claim", "consort_ai", "spirit_ai", "strobe", "consort", "prisma", "neurips", "casp", "cochrane_rob2"]
           },
           "default": [],
           "description": "reporting/appraisal standards relevant to this domain; paper_appraisal selects its checklist from here."

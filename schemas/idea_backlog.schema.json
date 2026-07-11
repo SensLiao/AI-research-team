@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/idea_backlog.schema.json",
   "title": "Idea Backlog",
-  "description": "IDEATE-stage exit artifact. Output of feasibility-reranker. A deterministically ranked MENU of ideas for the director to choose from. Every idea carries a feasibility score and at least one non-blank evidence_ref (anti-slop). HARD: this schema contains NO selected/chosen/bet/winner/director_* field, and every object is additionalProperties:false — so the producing model cannot self-bet (structurally impossible). The optional from_hypothesis_ref/novelty_ref must look like real refs (contain a digit), closing the prose-channel smuggle of a flag-word. The bet is recorded ONLY by the human /idea-bet gate as a separate adr.",
+  "description": "IDEATE-stage exit artifact. A deterministically ranked MENU of ideas for the director to choose from. Legacy runs rank by feasibility; strict idea-investment-memo runs rank by a transparent scientific_investment composite in which feasibility is only one bounded signal. Every idea carries a feasibility score and at least one non-blank evidence_ref (anti-slop). HARD: this schema contains NO selected/chosen/bet/winner/director_* field, and every object is additionalProperties:false, so the producing model cannot self-bet. The bet is recorded ONLY by the human /idea-bet gate as a separate adr.",
   "type": "object",
   "required": ["ranked_ideas"],
   "additionalProperties": false,
@@ -10,7 +10,7 @@
     "ranked_ideas": {
       "type": "array",
       "minItems": 1,
-      "description": "Ideas ranked by feasibility score DESC (rank 1 = most feasible). The model produces this ranked menu; the director picks via the /idea-bet gate.",
+      "description": "Ideas ranked by the active declared policy (scientific investment for strict runs; feasibility for legacy runs). The director picks via the /idea-bet gate.",
       "items": {
         "type": "object",
         "required": [
@@ -31,7 +31,7 @@
           "rank": {
             "type": "integer",
             "minimum": 1,
-            "description": "Deterministic rank: 1 = highest feasibility. Assigned by feasibility_score.py."
+            "description": "Deterministic menu rank under the active policy; never a bet or approval."
           },
           "summary": {
             "type": "string",
@@ -66,6 +66,35 @@
                 "default": null,
                 "description": "Time-to-result signal used in the rubric"
               }
+            }
+          },
+          "scientific_investment": {
+            "type": "object",
+            "required": [
+              "score",
+              "scientific_merit",
+              "tournament_signal",
+              "feasibility",
+              "evidence_grounding",
+              "falsification_readiness",
+              "confidence",
+              "policy_version",
+              "assessment_ref",
+              "strongest_rejection_case"
+            ],
+            "additionalProperties": false,
+            "description": "Optional on legacy artifacts; required by the strict idea-investment-memo/v1 operated contract. Transparent components preserve why the menu was ordered.",
+            "properties": {
+              "score": {"type": "number", "minimum": 0, "maximum": 1},
+              "scientific_merit": {"type": "number", "minimum": 0, "maximum": 1},
+              "tournament_signal": {"type": "number", "minimum": 0, "maximum": 1},
+              "feasibility": {"type": "number", "minimum": 0, "maximum": 1},
+              "evidence_grounding": {"type": "number", "minimum": 0, "maximum": 1},
+              "falsification_readiness": {"type": "number", "minimum": 0, "maximum": 1},
+              "confidence": {"type": "string", "enum": ["high", "provisional"]},
+              "policy_version": {"type": "string", "const": "scientific-investment/v1"},
+              "assessment_ref": {"type": "string", "minLength": 1, "pattern": "\\S"},
+              "strongest_rejection_case": {"type": "string", "minLength": 1, "pattern": "\\S"}
             }
           },
           "evidence_ref": {

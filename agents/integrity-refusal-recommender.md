@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: REVIEW
 kind: advisory-recommender
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: integrity_recommendation
 permission_scope:
   read: [task_frame, run-store evidence (any stage), the active domain profile, claim_list, claim_evidence_map, run_records]

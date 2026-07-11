@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: VERIFY
 kind: hard-gate
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: review_report
 permission_scope:
   read: [task_frame, run-store evidence (ANALYZE/VERIFY), the result_summary + run provenance + eval code path, the active domain profile]

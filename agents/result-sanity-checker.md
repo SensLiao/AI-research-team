@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: ANALYZE
 kind: hard-gate
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: sanity_verdict
 permission_scope:
   read: [task_frame, run-store evidence (ANALYZE), the result_summary, the run_record, the active domain profile]

@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: VERIFY
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: synthesis_text
 permission_scope:
   read: [task_frame, run-store evidence (VERIFY), panel_synthesis, panel_reviews, critic_memo]

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/project_context_alignment.schema.json",
+  "title": "Project Context Alignment",
+  "description": "Alignment note that ties a read paper to the current research project, advisor questions, vault context, and downstream decisions. This keeps paper reading from becoming generic summarization.",
+  "type": "object",
+  "required": ["source_ref", "project_context", "relevance", "thesis_fit", "downstream_decisions"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_context": {
+      "type": "string",
+      "minLength": 1
+    },
+    "relevance": {
+      "type": "string",
+      "enum": ["A-core", "B-related", "C-background", "not-relevant"]
+    },
+    "thesis_fit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "advisor_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "vault_or_project_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "must_answer": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "downstream_decisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "misuse_risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  }
+}

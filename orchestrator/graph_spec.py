@@ -79,8 +79,24 @@ def validate_mode_registry(registry: Optional[dict] = None, roster: Optional[Set
     roster = roster if roster is not None else load_roster()
     errors: List[str] = []
     for mode, spec in registry.get("modes", {}).items():
-        if spec.get("entry_stage") not in STAGES:
-            errors.append(f"{mode}.entry_stage invalid: {spec.get('entry_stage')}")
+        entry_stage = spec.get("entry_stage")
+        if entry_stage not in STAGES:
+            errors.append(f"{mode}.entry_stage invalid: {entry_stage}")
+        path = spec.get("stage_path")
+        if path is not None:
+            if not isinstance(path, list) or not path:
+                errors.append(f"{mode}.stage_path must be a non-empty list")
+            else:
+                for stage in path:
+                    if stage not in STAGES:
+                        errors.append(f"{mode}.stage_path invalid stage: {stage}")
+                if path and path[0] != entry_stage:
+                    errors.append(f"{mode}.stage_path must start at entry_stage {entry_stage}")
+                if path and path[-1] != "REPORT":
+                    errors.append(f"{mode}.stage_path must end at REPORT")
+                indexes = [STAGES.index(s) for s in path if s in STAGES]
+                if indexes != sorted(set(indexes)):
+                    errors.append(f"{mode}.stage_path must be forward-only without duplicates")
         for a in spec.get("agent_subset", []) or []:
             if a not in roster:
                 errors.append(f"{mode}.agent_subset unknown agent: {a}")

@@ -127,6 +127,10 @@ def _inject(run_dir, name, bundle):
     inbox = run_dir / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / name).write_text(json.dumps(bundle), encoding="utf-8")
+    if name == "IDEATE.bundle.json" and "memo_contract_version" not in bundle:
+        new_direction.write_legacy_replay_receipt(
+            str(run_dir), source_run_id="fixture-cg1",
+            reason="exercise frozen pre-panel collision compatibility")
 
 
 @pytest.fixture(autouse=True)

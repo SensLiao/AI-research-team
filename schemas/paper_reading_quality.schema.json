@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_reading_quality.schema.json",
+  "title": "Paper Reading Quality",
+  "description": "Independent quality audit of a deep paper read. This is the gate-like business quality artifact: it focuses on coverage, anchoring, method/figure depth, transfer honesty, and Markdown readiness, not safety theatre.",
+  "type": "object",
+  "required": [
+    "source_ref",
+    "verdict",
+    "coverage",
+    "single_paper_completeness",
+    "source_fidelity",
+    "visual_coverage",
+    "evidence_saturation",
+    "anchoring",
+    "method_depth",
+    "figure_table_coverage",
+    "result_table_depth",
+    "algorithmic_depth",
+    "reproducibility_depth",
+    "project_alignment",
+    "domain_transfer_honesty",
+    "independent_critique_resolution",
+    "markdown_ready",
+    "promotion_ready"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {"type": "string", "minLength": 1},
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "PASS_WITH_CAVEATS", "NEEDS_SUPPLEMENT", "BLOCK"]
+    },
+    "coverage": {
+      "type": "string",
+      "enum": ["full", "partial", "thin"]
+    },
+    "single_paper_completeness": {
+      "type": "string",
+      "enum": ["complete", "partial", "thin"],
+      "description": "Coverage of this one paper only; it is not a literature-saturation claim."
+    },
+    "source_fidelity": {
+      "type": "string",
+      "enum": ["strong", "mixed", "weak"],
+      "description": "Fidelity to the supplied full text and page anchors."
+    },
+    "visual_coverage": {
+      "type": "string",
+      "enum": ["complete", "partial", "unread", "not-applicable"],
+      "description": "Coverage of hash-verified page renders, separate from textual coverage."
+    },
+    "evidence_saturation": {
+      "type": "string",
+      "enum": ["not-assessed-single-paper"],
+      "description": "A single-paper read cannot establish multi-source evidence saturation."
+    },
+    "anchoring": {
+      "type": "string",
+      "enum": ["strong", "mixed", "weak"]
+    },
+    "method_depth": {
+      "type": "string",
+      "enum": ["strong", "mixed", "weak", "not-applicable"]
+    },
+    "figure_table_coverage": {
+      "type": "string",
+      "enum": ["complete", "partial", "missing", "not-applicable"]
+    },
+    "result_table_depth": {
+      "type": "string",
+      "enum": ["strong", "mixed", "weak", "not-applicable"]
+    },
+    "algorithmic_depth": {
+      "type": "string",
+      "enum": ["strong", "mixed", "weak", "not-applicable"]
+    },
+    "reproducibility_depth": {
+      "type": "string",
+      "enum": ["strong", "mixed", "weak", "not-applicable"]
+    },
+    "project_alignment": {
+      "type": "string",
+      "enum": ["strong", "mixed", "weak"]
+    },
+    "domain_transfer_honesty": {
+      "type": "string",
+      "enum": ["strong", "mixed", "weak"]
+    },
+    "independent_critique_resolution": {
+      "type": "string",
+      "enum": ["resolved", "unresolved", "not-applicable"]
+    },
+    "markdown_ready": {"type": "boolean"},
+    "promotion_ready": {"type": "boolean"},
+    "strengths": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "required_repairs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "reviewer_attack_points": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"type": "string"},
+          {
+            "type": "object",
+            "required": ["category", "attack"],
+            "additionalProperties": false,
+            "properties": {
+              "category": {
+                "type": "string",
+                "enum": [
+                  "novelty",
+                  "method_mechanism",
+                  "baseline_fairness",
+                  "dataset_split_leakage",
+                  "statistical_uncertainty",
+                  "metric_validity",
+                  "transfer_generalization",
+                  "reproducibility",
+                  "clinical_validity",
+                  "other"
+                ]
+              },
+              "attack": {"type": "string", "minLength": 1},
+              "evidence_ref": {"type": ["string", "null"], "default": null},
+              "severity": {"type": "string", "enum": ["low", "medium", "high"], "default": "medium"}
+            }
+          }
+        ]
+      },
+      "default": []
+    }
+  }
+}

@@ -4,18 +4,13 @@ gap_scan + full_new_direction are registry-defined + engine-routable but NOT one
 recipes (audit H8): both declare a DISCOVER entry with NO `stage_path`, so the engine's `_resolve_path`
 drives the FULL tail DISCOVER->IDEATE->...->REPORT — yet each mode's agent_subset holds ONLY
 DISCOVER-stage agents. That is a "dead tail": no agent does the work of any post-DISCOVER stage.
-ingest_paper is now an OPERATED reading mode (paper-reading upgrade 2026-06-26 — the real one-button
-ingest is its operate recipe), but its ENGINE-driven path is asserted here too: under the tight
-max_agent_hops=1 budget the stop-controller BITES at the first hop, before any stage runs. This test
-asserts the HONEST reachable behaviour of each, never a faked "done":
+ingest_paper is now an OPERATED reading mode whose two-stage ENGINE path mirrors its extractor and
+verifier/report shape. This test asserts the HONEST reachable behaviour of each, never a faked "done":
 
-  - ingest_paper        (operated reading mode; record_only, max_agent_hops=1, agents=[literature-ingest])
-        The 1-hop budget is so tight the stop-controller BITES on the very first stage — `usage`
-        hits agent_hops=1 and `assert_within` raises BudgetExceeded BEFORE the DISCOVER producer
-        even runs. The honest engine-level reachable behaviour: this budget cannot afford even one
-        stage through the engine (the budget bites at hop 1 regardless of the now-declared stage_path).
-        (The real one-button ingest is the `ingest_paper` OPERATE recipe / DB INGEST; this asserts the
-        separate engine-driven path's budget bite — no longer a spec-only stub.)
+  - ingest_paper        (operated reading mode; record_only, max_agent_hops=4,
+                         agents=[paper-note-extractor, source-claim-verifier])
+        DISCOVER writes the typed note and REPORT writes the completion note. Both stages fit the
+        declared budget and checkpoint cleanly.
 
   - gap_scan            (record_only, max_agent_hops=3, agents=[future-work-miner, weakness-spotter,
                          gap-classifier])
@@ -46,7 +41,6 @@ from pathlib import Path
 import pytest
 
 from research_agent_teams.orchestrator.engine import run_task
-from research_agent_teams.tools.budget_tracker import BudgetExceeded
 from research_agent_teams.tools.citation_checker import build_report as citation_report
 from research_agent_teams.tools.classify_gap import build_classification
 from research_agent_teams.tools.evidence_checker import build_verdict as evidence_verdict
@@ -132,12 +126,10 @@ _GAP_SIGNALS = [
 
 
 # =========================================================================== 1. ingest_paper
-# record_only, max_agent_hops=1, agents=[literature-ingest]. The budget is the limiter.
+# record_only, max_agent_hops=4, two-stage extractor -> verifier/report pipeline.
 
 def _make_ingest_producer(probe: dict):
-    """A literature-ingest producer for ingest_paper. It is wired with a REAL paper_note built by
-    tools.paper_ingest.ingest_paper, but it records whether it was ever CALLED — because the honest
-    expectation is that the 1-hop budget bites before this producer runs at all."""
+    """Current engine producer: typed paper note at DISCOVER, completion note at REPORT."""
 
     def produce(stage, tf, run_dir, ts):
         probe["called"] = probe.get("called", 0) + 1
@@ -149,35 +141,50 @@ def _make_ingest_producer(probe: dict):
                 "summary": "Freezes pretrained weights and learns rank-decomposition deltas.",
                 "claims": ["LoRA matches full fine-tune on several tasks at a fraction of the parameters."],
             })
-            return _write(d / "paper-note.artifact.json", _env("paper_note", "literature-ingest", note))
-        raise DeadTail(f"ingest_paper has no agent for stage {stage} (DISCOVER-only subset)")
+            return _write(
+                d / "paper-note.artifact.json",
+                _env("paper_note", "paper-note-extractor", note),
+            )
+        if stage == "REPORT":
+            note = {
+                "summary": "typed paper note extracted and source claims verified",
+                "references": [],
+                "produced_artifacts": ["evidence/DISCOVER/paper-note.artifact.json"],
+                "open_questions": [],
+            }
+            return _write(
+                d / "report-note.artifact.json",
+                _env("report_note", "source-claim-verifier", note),
+            )
+        raise AssertionError(f"unexpected ingest_paper stage {stage}")
 
     return produce
 
 
-def test_ingest_paper_budget_bites_before_its_single_stage(tmp_path):
-    """ingest_paper's max_agent_hops=1 is so tight the stop-controller raises BudgetExceeded on the
-    FIRST stage, before the literature-ingest producer ever runs — the honest reachable behaviour
-    (a one-paper mode that cannot afford even its own single DISCOVER hop is NOT 'done')."""
+def test_ingest_paper_current_two_stage_engine_path_completes(tmp_path):
+    """The current extractor/verifier path fits its budget and reaches an honest done state."""
     runs = tmp_path / "runs"
     probe: dict = {}
-    with pytest.raises(BudgetExceeded, match=r"max_agent_hops reached: 1/1"):
-        run_task(runs, "ip1", "把这篇论文收进库 / ingest this paper", "ingest_paper", TS,
-                 _make_ingest_producer(probe), _approve, domain_profile_ref=PROFILE)
+    manifest = run_task(
+        runs,
+        "ip1",
+        "把这篇论文收进库 / ingest this paper",
+        "ingest_paper",
+        TS,
+        _make_ingest_producer(probe),
+        _approve,
+        domain_profile_ref=PROFILE,
+    )
     run_dir = runs / "ip1"
-    # the producer was NEVER called (budget bit first) and nothing was produced
-    assert probe.get("called", 0) == 0
-    assert not (run_dir / "evidence" / "DISCOVER").exists()
-    assert run_dir.exists()                                   # the run dir/manifest were created at PARSE
-    assert classify_status(run_dir) != "done"                # never reached done (honest)
-    # the run never even opened its first stage -> no boundary -> not resumable-to-done either
-    assert classify_status(run_dir) == "ready"
+    assert probe.get("called", 0) == 2
+    assert [row["stage"] for row in manifest["completed_work"]] == ["DISCOVER", "REPORT"]
+    assert (run_dir / "evidence" / "DISCOVER" / "paper-note.artifact.json").is_file()
+    assert (run_dir / "evidence" / "REPORT" / "report-note.artifact.json").is_file()
+    assert classify_status(run_dir) == "done"
 
 
 def test_ingest_paper_paper_note_core_builds_a_valid_artifact():
-    """Honesty check that the literature-ingest agent's REAL tool-core is sound (the budget — not a
-    broken producer — is why the mode can't run): tools.paper_ingest.ingest_paper builds a paper_note
-    that passes the full artifact contract under the literature-ingest attribution."""
+    """The deterministic ingest core builds a schema-valid typed paper note."""
     note = ingest_paper({
         "title": "LoRA: Low-Rank Adaptation of Large Language Models",
         "source_ref": "arxiv:2106.09685",
@@ -219,12 +226,12 @@ def _make_gap_scan_producer():
     return produce
 
 
-def test_gap_scan_completes_discover_then_halts_on_the_dead_ideate_tail(tmp_path):
+def test_gap_scan_completes_discover_then_halts_on_the_dead_report_tail(tmp_path):
     """gap_scan's 3 DISCOVER hunters all produce + DISCOVER checkpoints; then the engine drives the
     declared-but-dead IDEATE tail (no IDEATE agent in the subset) and the producer refuses -> the run
     halts crashed_mid_stage. Honest: entry-stage work done, the unreachable tail is not faked."""
     runs = tmp_path / "runs"
-    with pytest.raises(DeadTail, match="no agent for stage IDEATE"):
+    with pytest.raises(DeadTail, match="no agent for stage REPORT"):
         run_task(runs, "gs1", "扫一遍空白点 / gap scan", "gap_scan", TS,
                  _make_gap_scan_producer(), _approve, domain_profile_ref=PROFILE)
     run_dir = runs / "gs1"
@@ -256,7 +263,7 @@ def test_gap_scan_record_only_never_self_decides_a_gate(tmp_path):
     def _explode_if_gated(stage, tf):
         raise AssertionError("record_only must NOT consult the director gate")
 
-    with pytest.raises(DeadTail, match="no agent for stage IDEATE"):
+    with pytest.raises(DeadTail, match="no agent for stage REPORT"):
         run_task(runs, "gs2", "gap scan, no gate", "gap_scan", TS,
                  _make_gap_scan_producer(), _explode_if_gated, domain_profile_ref=PROFILE)
     run_dir = runs / "gs2"
@@ -320,7 +327,7 @@ def test_full_new_direction_passes_both_discover_gates_then_halts_on_dead_tail(t
     — then the dead IDEATE tail halts the run crashed_mid_stage. Honest: a grounded DISCOVER, with no
     auto-advance into ungated betting/DESIGN."""
     runs = tmp_path / "runs"
-    with pytest.raises(DeadTail, match="no agent for stage IDEATE"):
+    with pytest.raises(DeadTail, match="no agent for stage REPORT"):
         run_task(runs, "fnd1", "帮我找个研究方向 / find a direction", "full_new_direction", TS,
                  _make_full_new_direction_producer(), _approve, domain_profile_ref=PROFILE)
     run_dir = runs / "fnd1"

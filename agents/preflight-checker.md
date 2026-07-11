@@ -5,7 +5,7 @@ rq_exempt: true
 model: opus
 stage: EXECUTE
 kind: hard-gate
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: preflight_report
 permission_scope:
   read: [run-store evidence (DESIGN exit + EXECUTE), the two dataset_script_records, the protocol_spec, the alignment_report, the active domain profile]

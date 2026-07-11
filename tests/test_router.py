@@ -42,6 +42,13 @@ def test_routing_rejects_missing_hard_gate():
     assert any("train-test-alignment-auditor" in e and "hard gate" in e for e in errors)
 
 
+def test_routing_rejects_missing_hard_gate_in_later_driven_stage():
+    tf = resolve_task("full rigor", "full_rigor_minimal", "run-1", TS)
+    tf["payload"]["agent_subset"].remove("variable-touch-guard")
+    errors = validate_routing(tf)
+    assert any("EXECUTE" in e and "variable-touch-guard" in e and "hard gate" in e for e in errors)
+
+
 def test_routing_rejects_agent_not_allowed_downstream():
     # lit-scout lives in DISCOVER; entering at VERIFY it is not allowed at/after VERIFY.
     tf = _tf("VERIFY", ["lit-scout"], gate_level="record_only")

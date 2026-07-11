@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: weakness_report
 permission_scope:
   read: [run-store evidence (DISCOVER), the active domain profile, task_frame, paper_note, landscape_map, evidence_table, note]

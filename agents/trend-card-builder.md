@@ -4,7 +4,7 @@ spec_version: "1.0.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: trend_card
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the active domain profile, the selected paper by reference, paper_note, paper_relations, landscape_map, contradiction_report artifacts]

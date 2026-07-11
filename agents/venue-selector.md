@@ -9,19 +9,20 @@ produces: [venue_candidates, venue_profile]
 permission_scope:
   read:
     - task_frame
-    - runs/<run>/evidence/VERIFY/
     - runs/<run>/evidence/DISCOVER/
     - runs/<run>/evidence/IDEATE/
     - agents/references/venue-rubrics/
     - runs/<run>/evidence/ANALYZE/
-  write: [runs/<run>/evidence/VERIFY/ only]
+    - manuscript/result refs named by the director
+  write: [runs/<run>/evidence/VERIFY/venue-candidates.artifact.json (Path B) or runs/<run>/inbox/VERIFY.profile.bundle.json (Path C) only]
   never:
     - vault
     - other stages
     - run infra (manifest/ledger/LOCK)
     - fabricating evidence_ref
     - picking a venue for the director
-    - writing reviews or scores (that is D2's job)
+    - writing review_config, reviews, or scores
+    - writing the frozen venue-profile artifact directly
 ---
 
 # venue-selector — producer (venue nomination + rubric instantiation)
@@ -80,7 +81,9 @@ notes field instead of silently following them. You never re-scope the run — o
    - Set `personas`: default `["methodology","domain","adversarial"]` for conf; add `"adversarial"`
      emphasis for med; keep all three for journals.
    - Set `evidence_ref` to the rubric file path(s) you loaded + the work artifact you used.
-6. Emit the `venue_profile` artifact to `runs/<run>/evidence/VERIFY/venue-profile.artifact.json`.
+6. Emit the candidate bundle to `runs/<run>/inbox/VERIFY.profile.bundle.json`. The configurator
+   consumes it next; only the deterministic precommit step may materialize the frozen
+   `evidence/VERIFY/venue-profile.artifact.json` used by reviewers.
 
 ## You must NOT
 
@@ -89,7 +92,8 @@ notes field instead of silently following them. You never re-scope the run — o
   or `director_*` field into `venue_candidates` is structurally impossible (`additionalProperties:false`),
   and attempting it by any other means violates the operating-model red line (mirrors the no-self-bet
   invariant from `gates/idea-bet.md`).
-- Write reviews, dimension scores, or any verdict. That is the D2 cluster's job.
+- Write reviews, dimension scores, or any verdict. The downstream blind panel and deterministic
+  scorer own those responsibilities.
 - Fabricate `evidence_ref` values — every reference must trace to an artifact you actually read.
 - Leave `evidence_ref` empty — the schema rejects any artifact without ≥1 evidence pointer.
 - Write outside `runs/<run>/evidence/VERIFY/`.
@@ -101,9 +105,10 @@ notes field instead of silently following them. You never re-scope the run — o
 **Path B**: Return the path to the `venue_candidates` artifact and a brief summary of the top-3
 candidates (venue_id + deadliest_reject_trigger). Await the director's pick via `/venue-pick`.
 
-**Path C**: Return the path to the `venue_profile` artifact and a one-line summary:
+**Path C**: Return the path to the `venue_profile` candidate bundle and a one-line summary:
 "venue_id [tier/paper_type] — accept_condition echo — N reject-triggers active."
-The `venue-review-configurator` (D2) consumes this profile next.
+The `venue-review-configurator` consumes this candidate next. Reviewers must never read the
+candidate bundle; they receive only the deterministically frozen profile/config and hash receipt.
 
 Note: the director's final publication decision (invest / pivot / submit) is made at the
 downstream human gate `/venue-decide` after the area-chair-synthesizer emits the

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/domain_transfer_note.schema.json",
+  "title": "Domain Transfer Note",
+  "description": "Business-quality domain transfer critique for a read paper: what can and cannot be used for the current research project, with explicit direct/indirect/proxy boundaries.",
+  "type": "object",
+  "required": ["source_ref", "target_context", "transfer_level", "usable_for", "not_usable_for", "required_local_validation"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {"type": "string", "minLength": 1},
+    "target_context": {"type": "string", "minLength": 1},
+    "transfer_level": {
+      "type": "string",
+      "enum": ["direct", "indirect", "proxy", "not-applicable"]
+    },
+    "usable_for": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "not_usable_for": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "evidence_limits": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "required_local_validation": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "risk_of_overclaim": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "default": "medium"
+    },
+    "transfer_matrix": {
+      "type": "array",
+      "description": "Structured source-vs-target comparison. For medical imaging this should cover modality, anatomy/task, dataset/population, scanner/site, annotation protocol, metrics, and deployment/clinical use.",
+      "items": {
+        "type": "object",
+        "required": ["axis", "source_setting", "target_setting", "match_level", "implication"],
+        "additionalProperties": false,
+        "properties": {
+          "axis": {
+            "type": "string",
+            "enum": ["modality", "anatomy_or_task", "dataset_population", "scanner_or_site", "annotation_protocol", "metrics", "deployment_context", "supervision_or_prompting", "other"]
+          },
+          "source_setting": {"type": "string", "minLength": 1},
+          "target_setting": {"type": "string", "minLength": 1},
+          "match_level": {"type": "string", "enum": ["same", "close", "distant", "unknown"]},
+          "implication": {"type": "string", "minLength": 1}
+        }
+      },
+      "default": []
+    }
+  }
+}

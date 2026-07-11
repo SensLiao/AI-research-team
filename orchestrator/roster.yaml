@@ -1,6 +1,6 @@
-# Known agent roster (the complete-form names). graph.yaml allowed_agents and mode_registry
-# agent_subset must be subsets of this. Building an agent = writing its spec under agents/;
-# listing it here only declares the name is known to the FSM. Status tiers live in the blueprint.
+# Known agent roster. graph.yaml allowed_agents and mode_registry.yaml
+# agent_subset must be subsets of this. Control agents are infrastructure and
+# are intentionally not ordinary mode workers.
 agents:
   control:
     - research-orchestrator
@@ -11,26 +11,42 @@ agents:
     - conflict-resolver
   discover:
     - lit-scout
+    - direction-grounding-scout
     - model-dataset-scout
     - evidence-verifier
     - repo-code-verifier
     - literature-ingest
+    - paper-note-extractor
+    - source-claim-verifier
     - source-quality-ranker
+    - evidence-search-moderator
     - claim-extractor
     - claim-evidence-linker
+    - citation-coverage-auditor
     - contradiction-miner
     - dataset-card-builder
     - staleness-auditor
     - citation-integrity-auditor
     - landscape-mapper
-    - monitor
-    - evidence-saturation-judge   # RAT-2: measured DISCOVER search-saturation verdict (informs gate, never decides)
-    # paper-reading upgrade (2026-06-26): per-paper deep-read producers (operate sub-workers; rostered, intentionally NOT in any graph allowed_agents / mode agent_subset — same pattern as novelty-collision-checker; the deep-read operate recipe dispatches them)
-    - paper-appraiser             # produces paper_appraisal (ADVISORY outward 7-D appraisal of a read paper; never a verdict / gate)
-    - method-teardown-extractor   # produces method_teardown (Pass-2 method decomposition of a read paper)
-    - figure-reader               # produces figure_reading (Pass-2 structured figure reading)
-    - paper-relations-mapper      # produces paper_relations (Stage-4 typed paper<->paper edges)
-    - trend-card-builder          # produces trend_card (Stage-4 concept-centric trend extraction)
+    - evidence-saturation-judge
+    - aers-sop-curator
+    - literature-search-strategist
+    - paper-reading-planner
+    - paper-appraiser
+    - paper-structure-mapper
+    - method-teardown-extractor
+    - figure-reader
+    - result-table-auditor
+    - math-algorithm-verifier
+    - paper-relations-mapper
+    - trend-card-builder
+    - project-context-aligner
+    - domain-transfer-critic
+    - reproducibility-materials-auditor
+    - independent-reading-critic
+    - paper-reading-reconciler
+    - paper-reading-quality-auditor
+    - paper-markdown-writer
   gap_hunting:
     - future-work-miner
     - weakness-spotter
@@ -39,15 +55,22 @@ agents:
     - contrarian-angle-generator
     - gap-classifier
     - novelty-scorer
+    - gap-prosecutor
+    - mechanism-synthesizer
+    - gap-quality-auditor
   ideate:
     - hypothesis-generator
     - idea-tournament-ranker
     - idea-evolver
     - feasibility-reranker
-    - mathematical-formalizer     # RAT-2: typed mechanism abstraction + formal_form (reuses abstract_problem)
-    - analogy-mapper              # RAT-2: source↔target mechanism mapping (consumes transfer_candidates)
-    - novelty-collision-checker   # novelty-collision gate worker (director lock 2026-06-18): independent IDEATE sub-worker that prior-art-checks every idea before /idea-bet. Rostered so its spec is wellformed; intentionally NOT in any mode agent_subset / graph allowed_agents (it is an operate sub-worker, not an FSM-routed agent — keeps router guardrails minimal).
+    - mathematical-formalizer
+    - analogy-mapper
+    - novelty-collision-checker
   design:
+    - baseline-fairness-critic
+    - protocol-critic
+    - statistics-critic
+    - design-synthesizer
     - rq-architect
     - experiment-planner
     - protocol-compiler
@@ -60,8 +83,12 @@ agents:
     - train-test-alignment-auditor
     - metric-implementation-auditor
     - statistics-power-auditor
+    - data-wrangling-auditor
     - decision-surfacer
   execute:
+    - script-author
+    - execution-evidence-auditor
+    - execute-synthesizer
     - patch-planner
     - code-implementer
     - unit-test-writer
@@ -74,10 +101,16 @@ agents:
     - sandbox-runner
     - failure-triager
     - repro-runner
+    - reproducibility-packager
     - auto-debugger
     - experiment-tree-explorer
     - variable-touch-guard
+    - monitor
   analyze:
+    - result-extractor
+    - statistician
+    - failure-attribution-skeptic
+    - analysis-synthesizer
     - result-analyzer
     - result-sanity-checker
     - baseline-comparison-auditor
@@ -90,8 +123,9 @@ agents:
     - visualization-auditor
     - claim-strength-calibrator
     - figure-vlm-critic
-    - integrity-refusal-recommender   # RAT-2: ADVISORY-only unsupported-number/integrity flagger (never a gate; decision stays the director's)
+    - benchmark-evidence-auditor
   verify:
+    - verify-synthesizer
     - review-configurator
     - methodology-reviewer
     - domain-reviewer
@@ -105,8 +139,15 @@ agents:
     - venue-review-configurator
     - venue-selector
     - venue-reviewer-persona
+    - venue-reviewer-methodology
+    - venue-reviewer-domain
+    - venue-reviewer-adversarial
     - area-chair-synthesizer
-    - quality-controller          # RAT-2: cross-stage scorecard aggregator (reads existing verdicts; can_finish derived, never overrides human gates)
-    # absorption wave 1 — ScholarPeer panel roles
     - baseline-scout
     - sub-domain-historian
+    - submission-guideline-scout
+    - bibliography-validator
+  report:
+    - quality-controller
+    - integrity-refusal-recommender
+    - manuscript-polish-editor

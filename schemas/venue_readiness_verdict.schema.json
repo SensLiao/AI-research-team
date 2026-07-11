@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/venue_readiness_verdict.schema.json",
   "title": "Venue Readiness Verdict",
-  "description": "VERIFY-stage derived verdict artifact. Output of area-chair-synthesizer (via venue_score.py). The verdict is COMPUTED by venue_score.derive_meets_bar() from 7-dim scores + reject-triggers + independence — never set by hand. The allOf enforces: if any unresolved reject-trigger is present, verdict must be NOT-YET, WRONG-PATH, or DEGRADED-REVIEW (never MEETS-BAR or BORDERLINE). Mirrors the derivation family of sanity_verdict.schema.json.",
+  "description": "VERIFY-stage advisory readiness artifact. The deterministic layer computes it with venue_score.derive_meets_bar() only after the frozen blind-review panel and venue_meta_review pass validation. It is not an acceptance fact or human venue decision. The allOf enforces: if any unresolved reject-trigger is present, verdict must be NOT-YET, WRONG-PATH, or DEGRADED-REVIEW (never MEETS-BAR or BORDERLINE).",
   "type": "object",
   "required": [
     "verdict",

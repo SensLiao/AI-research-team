@@ -232,8 +232,9 @@ def upstream_grounding(prev_run_dirs: List[str]) -> dict:
     runs: List[dict] = []
     for rd in prev_run_dirs:
         d = Path(rd)
-        entry: dict = {"run_id": d.name, "mode": "", "request": "", "summary": "",
-                       "top_ideas": [], "key_artifacts": []}
+        entry: dict = {"run_id": d.name, "run_dir": str(d.resolve()), "mode": "",
+                       "request": "", "summary": "", "top_ideas": [],
+                       "key_artifacts": [], "reusable_inputs": []}
         tf = _read_json(d / "task_frame.artifact.json")
         if tf:
             payload = tf.get("payload") or {}
@@ -252,6 +253,20 @@ def upstream_grounding(prev_run_dirs: List[str]) -> dict:
             entry["top_ideas"] = [{"idea_id": i.get("idea_id"), "summary": i.get("summary")}
                                   for i in ranked[:5] if isinstance(i, dict)]
             entry["key_artifacts"].append(str(backlog))
+        reusable_candidates = (
+            d / "inbox" / "search-results.json",
+            d / "evidence" / "DISCOVER" / "evidence-table.artifact.json",
+            d / "evidence" / "DISCOVER" / "source-quality-report.artifact.json",
+            d / "evidence" / "DISCOVER" / "claim-list.artifact.json",
+            d / "evidence" / "DISCOVER" / "claim-evidence-map.artifact.json",
+            d / "evidence" / "DISCOVER" / "citation-attribution-report.artifact.json",
+            d / "evidence" / "DISCOVER" / "contradiction-report.artifact.json",
+            d / "evidence" / "DISCOVER" / "landscape-map.artifact.json",
+            d / "evidence" / "DISCOVER" / "gap-dossier.artifact.json",
+        )
+        entry["reusable_inputs"] = [
+            str(path.resolve()) for path in reusable_candidates if path.is_file()
+        ]
         runs.append(entry)
     return {"upstream_runs": runs}
 
@@ -283,6 +298,12 @@ def _grounding_block(run_dir: str, grounding: dict) -> str:
         arts = up.get("key_artifacts") or []
         if arts:
             lines.append(f"      key artifacts (read by reference, do NOT redo): {', '.join(arts)}")
+        reusable = up.get("reusable_inputs") or []
+        if reusable:
+            lines.append(
+                "      frozen reusable evidence (reuse before new retrieval): "
+                + ", ".join(reusable)
+            )
         ideas = up.get("top_ideas") or []
         if ideas:
             ids = ", ".join(str(i.get("idea_id")) for i in ideas if i.get("idea_id"))
@@ -292,6 +313,15 @@ def _grounding_block(run_dir: str, grounding: dict) -> str:
         "Build the NEXT step ON this established ground; do not repeat upstream work. If the upstream "
         "output conflicts with your inputs, SAY SO rather than silently diverging — you never re-scope.")
     return "\n".join(lines)
+
+
+def _grounding_pointer_block(run_dir: str) -> str:
+    return (
+        "\n\n--- PRIOR CHAIN CONTEXT (pointer only) ---\n"
+        f"The root worker already receives the full upstream handoff. Read `{run_dir}/inbox/"
+        f"{UPSTREAM_GROUNDING_FILE}` only if a direct scientific dependency is absent from your "
+        "predecessor bundle; do not repeat upstream retrieval or synthesis."
+    )
 
 
 def augment_worker_with_upstream(worker: Optional[dict], run_dir: str) -> Optional[dict]:
@@ -305,10 +335,12 @@ def augment_worker_with_upstream(worker: Optional[dict], run_dir: str) -> Option
     if not grounding or not (grounding.get("upstream_runs")):
         return worker
     block = _grounding_block(run_dir, grounding)
+    pointer = _grounding_pointer_block(run_dir)
     if "workers" in worker and isinstance(worker.get("workers"), list):
         for w in worker["workers"]:
             if isinstance(w, dict) and isinstance(w.get("prompt"), str):
-                w["prompt"] = w["prompt"] + block
+                dependencies = list(w.get("depends_on") or [])
+                w["prompt"] = w["prompt"] + (pointer if dependencies else block)
     elif isinstance(worker.get("prompt"), str):
         worker["prompt"] = worker["prompt"] + block
     return worker

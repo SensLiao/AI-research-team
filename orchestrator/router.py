@@ -87,10 +87,15 @@ def validate_routing(task_frame: dict, graph: Optional[dict] = None) -> List[str
 
     # Guardrail 1: a director_signoff (high-stakes) task entering a gated stage must include that
     # stage's hard gates — you cannot run gated work and skip the gate.
+    driven_stages = list(p.get("stage_path") or STAGES[STAGES.index(entry):])
     if p.get("gate_level") == "director_signoff":
-        for g in stages[entry].get("blocking_gates", []) or []:
-            if g not in subset:
-                errors.append(f"gated stage {entry} requires hard gate '{g}' in agent_subset")
+        for stage in driven_stages:
+            if stage not in stages:
+                errors.append(f"stage_path contains invalid stage: {stage}")
+                continue
+            for g in stages[stage].get("blocking_gates", []) or []:
+                if g not in subset:
+                    errors.append(f"gated stage {stage} requires hard gate '{g}' in agent_subset")
 
     # Guardrail 2: every chosen agent must be allowed in some stage at or after entry.
     allowed_from_entry = set()

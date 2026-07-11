@@ -7,9 +7,9 @@ kind: producer
 tools: [Read, Glob, Grep]
 produces: review_config
 permission_scope:
-  read: [task_frame, runs/<run>/evidence/VERIFY/, 02-wiki/reviews/<tag>/venue-profile.md, research_agent_teams/agents/references/venue-rubrics/]
-  write: [runs/<run>/evidence/VERIFY/ only]
-  never: [vault, other stages, run infra (manifest/ledger/LOCK), scoring, writing reviews, picking a venue for the director]
+  read: [task_frame, runs/<run>/inbox/VERIFY.profile.bundle.json, research_agent_teams/agents/references/venue-rubrics/]
+  write: [runs/<run>/inbox/VERIFY.review-config.bundle.json only]
+  never: [vault, manuscript/result/code contents, reviewer outputs, other stages, run infra (manifest/ledger/LOCK), scoring, writing reviews, picking a venue for the director]
 ---
 
 # venue-review-configurator — producer (VR-mode review configuration)
@@ -33,8 +33,9 @@ if your assigned inputs pull against the north star, SAY SO explicitly in your a
 notes field instead of silently following them. You never re-scope the run — only the director may.
 
 
-1. Read the `venue_profile` artifact from `02-wiki/reviews/<tag>/venue-profile.md` (produced by
-   venue-selector).  Extract: `tier`, `paper_type`, `personas` list, `reject_triggers`,
+1. Read the `venue_profile` candidate from `runs/<run>/inbox/VERIFY.profile.bundle.json` (produced
+   by venue-selector). Do not read the manuscript, results, code, or reviewer output. Extract:
+   `tier`, `paper_type`, `personas` list, `reject_triggers`,
    `accept_condition`, `anti_bias_suppressors`.
 
 2. Select the persona subset based on tier + paper_type:
@@ -59,14 +60,20 @@ notes field instead of silently following them. You never re-scope the run — o
    Each lens owns its primary dimensions; no two lenses share the same dimension as their
    primary audit focus.
 
-5. Set the independence constraint: each persona instance uses a distinct seed; persona
-   instances MUST NOT read each other's review files before emitting their own review.
+5. Set the independence constraint: each persona gets a distinct reviewer-agent id; persona
+   instances MUST NOT read each other's review files before emitting their own review. All seats
+   receive the same deterministic precommit hash and frozen profile/config refs.
 
 6. Set `synthesis_mandate` to instruct area-chair-synthesizer to: aggregate by argument (not
    mean), apply confidence-weighting, surface all unresolved reject-triggers, and apply the
    anti-bias suppressors from the venue profile.
 
-7. Emit the `review_config` artifact.
+7. Put every manuscript/result/code/data input reviewers may inspect in `inputs_to_review`. This is
+   an allowlist, not a suggestion. Do not include profile candidates, reviews, panel receipts, or
+   meta-review paths.
+
+8. Emit the `review_config` candidate bundle. The deterministic precommit step validates the
+   profile/config pair, writes frozen artifacts, and records their hashes before reviewers start.
 
 ## You must NOT
 
@@ -79,9 +86,10 @@ notes field instead of silently following them. You never re-scope the run — o
 
 ## Handing back
 
-Emit the `review_config` artifact to
-`runs/<run>/evidence/VERIFY/review-config.artifact.json`.
+Emit the `review_config` candidate bundle to
+`runs/<run>/inbox/VERIFY.review-config.bundle.json`.
 State the persona subset chosen, the tier/paper_type dial applied, and any venue-specific
-independence notes. Return control to the orchestrator to dispatch the reviewer personas.
+independence notes. Return control to the deterministic precommit step. Reviewers may be dispatched
+only after it emits `inbox/VERIFY.precommit.receipt.json`.
 
 > Inline operate twin: this spec's worker duties also exist as an inline prompt in operate/modes/venue_readiness.py — any change here MUST be mirrored there (audit M5).

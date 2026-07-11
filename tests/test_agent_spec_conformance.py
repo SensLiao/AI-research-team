@@ -143,6 +143,19 @@ class TestModelField:
         assert not invalid, "Invalid model values:\n" + "\n".join(invalid)
 
 
+class TestToolDeclarations:
+    """Tool declarations must not advertise capabilities the runtime fence blocks."""
+
+    def test_no_agent_declares_bash_tool(self):
+        offenders = []
+        for p in AGENT_FILES:
+            _, fm_yaml, _ = _read(p)
+            tools = fm_yaml.get("tools") or []
+            if "Bash" in [str(t) for t in tools]:
+                offenders.append(p.name)
+        assert not offenders, "Bash is blocked for fenced agents; remove from tools:\n" + "\n".join(offenders)
+
+
 class TestSpecVersion:
     """spec_version must be present and match semantic version pattern."""
 
