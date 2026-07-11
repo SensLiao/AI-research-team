@@ -8,6 +8,7 @@ human gates a chain passes through are surfaced, and one link's output threads i
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -31,6 +32,17 @@ def test_every_default_tier_uses_only_wired_one_button_modes():
                 assert m in wired, f"{intent}/{tier['id']} uses non-wired mode {m!r}"
             assert tier["validation"]["ok"], f"{intent}/{tier['id']} fails validation: {tier['validation']}"
             assert not tier["validation"]["spec_only"]
+
+
+def test_every_wired_mode_declares_versioned_handoff_product():
+    modes = rp.load_mode_registry()["modes"]
+    for mode in rp.wired_modes():
+        handoff = modes[mode].get("handoff") or {}
+        assert handoff.get("contract_version") == rp.HANDOFF_CONTRACT_VERSION
+        assert handoff.get("product_version")
+        assert handoff.get("primary_markdown")
+        assert isinstance(handoff.get("reusable_artifacts"), list)
+        assert isinstance(handoff.get("accepts"), list)
 
 
 def test_each_intent_has_exactly_one_recommended_tier():
@@ -201,6 +213,31 @@ def test_upstream_grounding_extracts_summary_and_ideas(tmp_path):
     assert [i["idea_id"] for i in up["top_ideas"]] == ["IDEA-1", "IDEA-2"]
     assert any("report-note" in a for a in up["key_artifacts"])
     assert any("idea-backlog" in a for a in up["key_artifacts"])
+    assert g["handoff_contract_version"] == rp.HANDOFF_CONTRACT_VERSION
+    assert up["product_contract"]["product_version"] == "research-brief/v2"
+    assert up["artifact_manifest"]
+    assert all(row["sha256"].startswith("sha256:") for row in up["artifact_manifest"])
+    assert all(not row["run_relative_path"].startswith(str(tmp_path))
+               for row in up["artifact_manifest"])
+
+
+def test_handoff_compatibility_accepts_declared_chain_and_rejects_mismatch(tmp_path):
+    prev = _fake_prev_run(tmp_path, mode="deep_research")
+    good = rp.upstream_grounding([prev], downstream_mode="deep_ideation")
+    assert good["downstream_mode"] == "deep_ideation"
+    with pytest.raises(ValueError, match="mode handoff mismatch"):
+        rp.upstream_grounding([prev], downstream_mode="read_paper_deep")
+
+
+def test_handoff_hash_change_blocks_downstream_reuse(tmp_path):
+    prev = _fake_prev_run(tmp_path)
+    new_run = tmp_path / "runs" / "proj" / "nd-hash"
+    new_run.mkdir(parents=True)
+    rp.write_upstream_grounding(str(new_run), [prev], downstream_mode="deep_ideation")
+    report = Path(prev) / "evidence" / "REPORT" / "report-note.artifact.json"
+    report.write_text('{"payload":{"summary":"replaced after handoff"}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="handoff integrity failed"):
+        rp.augment_worker_with_upstream({"prompt": "BODY"}, str(new_run))
 
 
 def test_upstream_grounding_robust_to_empty_run(tmp_path):

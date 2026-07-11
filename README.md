@@ -31,6 +31,18 @@ compare ideas, design and analyze experiments, then write mode-specific Markdown
 The state machine, schemas, scheduler, receipts, and gates exist to keep those products honest; they
 are supporting machinery, not the definition of research quality.
 
+## Research Product Standards
+
+- [Paper reading standard and Markdown template](docs/PAPER-READING-STANDARD-CN.md)
+- [Idea card and scientific-investment template](docs/IDEA-CARD-STANDARD-CN.md)
+- [Storage, mode handoff, versioning, and promotion rules](docs/STORAGE-PIPELINE-AND-PROMOTION-CN.md)
+
+Cross-mode reuse uses `mode-handoff/v2`: each operated mode declares its semantic
+`product_version`, accepted upstream products, primary Markdown, and reusable artifacts in
+`orchestrator/mode_registry.yaml`. The handoff manifest records relative paths, SHA-256 hashes,
+artifact/schema versions, run status, and delivery status. It verifies transport integrity without
+re-running upstream scientific review.
+
 ## Domain generality (hard rule)
 
 Serves **computer-science / AI research in general** — NOT one domain. Medical-imaging prompt-based
@@ -69,7 +81,7 @@ needs the director's wired server. Direction-finding runs now expose a human
 Markdown idea-bet page before the human gate. See `PLATFORM-FACTS.md` for the
 current by-the-numbers status.
 
-Current local verification on 2026-07-10: `3023 passed`. The historical business-output
+Current local verification on 2026-07-11: `3058 passed`. The historical business-output
 scoreboard remains deliberately blocked: 45 completed operated runs predate the current
 mode-specific Markdown and scientific-truth contracts and must be rerun, not cosmetically upgraded.
 

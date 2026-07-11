@@ -23,6 +23,7 @@ IDEA_BET_REL = Path("director-review") / "ideas" / "idea-bet-menu.md"
 MEMO_CONTRACT_VERSION = "idea-investment-memo/v1"
 REQUIRED_HEADINGS = [
     "## Decision Snapshot",
+    "## Portfolio Execution Map",
     "## Candidate Ideas",
     "## Cut Before Betting",
     "## Evidence And Quality",
@@ -102,6 +103,10 @@ def _one_line(value: object, *, limit: int = 260) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3].rstrip() + "..."
+
+
+def _table_cell(value: object, *, limit: int = 150) -> str:
+    return _one_line(value, limit=limit).replace("|", "\\|") or "not recorded"
 
 
 def _by_id(rows: list[dict], key: str = "idea_id") -> dict[str, dict]:
@@ -387,9 +392,33 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         "- This page is a decision aid. It does not choose, approve, or promote any idea.",
         "- Standing option: `PIVOT` means bet on none of these and re-scope.",
         "",
+        "## Portfolio Execution Map",
+        "",
+        "This is a scan-first dependency view, not a machine-selected bet.",
+        "",
+        "| Rank | Idea | First decisive stage | Primary kill criterion | Recovery / next branch |",
+        "|---:|---|---|---|---|",
+    ]
+
+    for idea in ranked:
+        iid = str(idea.get("idea_id") or "")
+        proposal = proposal_by.get(iid) or idea
+        sketch = raw_sketch_by.get(iid) or {}
+        stages = [row for row in (sketch.get("stages") or []) if isinstance(row, dict)]
+        first_stage = stages[0] if stages else {}
+        first = first_stage.get("name") or sketch.get("experiment") or "not recorded"
+        kill = (sketch.get("kill_criteria") or [first_stage.get("kill_criteria") or "not recorded"])[0]
+        branch = sketch.get("next_branch") or "advance only after the declared threshold passes"
+        lines.append(
+            f"| {idea.get('rank')} | `{iid}` {_table_cell(proposal.get('summary'), limit=70)} "
+            f"| {_table_cell(first)} | {_table_cell(kill)} | {_table_cell(branch)} |"
+        )
+
+    lines.extend([
+        "",
         "## Candidate Ideas",
         "",
-    ]
+    ])
 
     for idea in ranked:
         iid = str(idea.get("idea_id"))
