@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: VERIFY
 kind: auditor
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: critic_memo
 permission_scope:
   read: [task_frame, run-store evidence (VERIFY/ANALYZE), the active domain profile, panel_reviews (methodology + domain), result_summary]

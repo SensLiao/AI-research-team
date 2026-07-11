@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: DESIGN
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: data_protocol
 permission_scope:
   read: [run-store evidence (DESIGN), the active domain profile, task_frame, split_manifest, experiment_matrix]

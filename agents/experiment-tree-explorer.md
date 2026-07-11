@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: EXECUTE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: experiment_tree
 permission_scope:
   read: [run-store evidence (EXECUTE), the root run_record, the experiment_matrix, the task_frame (for budget), the active domain profile]

@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 # budget key (in task_frame.budget) -> usage counter key
 LIMIT_TO_USAGE = {
     "max_agent_hops": "agent_hops",
+    "max_supplement_agent_hops": "supplement_agent_hops",
     "max_iterations_without_new_evidence": "iterations_without_new_evidence",
     "max_fulltext_reads": "fulltext_reads",
     "max_gpu_runs_before_review": "gpu_runs",

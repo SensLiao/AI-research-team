@@ -226,6 +226,7 @@ def test_check_run_honest_budget_stop_after_one_tail_stage(tmp_path):
     alert = json.loads((run_dir / "evidence" / "EXECUTE" / "monitor-alert.artifact.json").read_text(encoding="utf-8"))
     assert alert["payload"]["alerts"][0]["alert_type"] == "over_budget"
     assert not (run_dir / "evidence" / "ANALYZE").exists()
+    assert not (run_dir / "evidence" / "VERIFY").exists()
     assert not (run_dir / "evidence" / "REPORT").exists()
     # tamper-evident history intact through the partial run
     assert verify_chain(read_events(run_dir / "ledger.jsonl")) == []
@@ -296,21 +297,20 @@ def make_debug_failed_run_agent(touched_variables, *, parity_actual_test=None):
     return produce
 
 
-def test_debug_failed_run_honest_budget_stop_before_report(tmp_path):
+def test_debug_failed_run_executes_then_reports_on_explicit_path(tmp_path):
     """debug_failed_run (touching only the CONTROLLED variable batch_size — a legitimate OOM bug fix)
     clears variable-touch-guard + preflight + parity, runs EXECUTE->ANALYZE->VERIFY, then the 4th hop
     trips BudgetExceeded (4/4). HONEST: it completes 3 of 4 tail stages and never reaches REPORT."""
     runs = tmp_path / "runs"
-    with pytest.raises(BudgetExceeded) as ei:
-        run_task(runs, "df1", "debug the OOM failure and re-run", "debug_failed_run", TS,
+    m = run_task(runs, "df1", "debug the OOM failure and re-run", "debug_failed_run", TS,
                  make_debug_failed_run_agent(["batch_size"]), _approve, domain_profile_ref=PROFILE)
-    assert "max_agent_hops reached: 4/4" in str(ei.value)
+    assert m["status"] == "done"
 
     run_dir = runs / "df1"
     man = read_manifest(run_dir)
-    assert [c["stage"] for c in man["completed_work"]] == ["EXECUTE", "ANALYZE", "VERIFY"]
-    assert man["status"] != "done"
-    assert classify_status(run_dir) == "clean_boundary"
+    assert [c["stage"] for c in man["completed_work"]] == ["EXECUTE", "REPORT"]
+    assert man["status"] == "done"
+    assert classify_status(run_dir) == "done"
     # the EXECUTE gates all PASSED on the controlled-variable fix
     vt = json.loads((run_dir / "evidence" / "EXECUTE" / "variable-touch-verdict.artifact.json").read_text(encoding="utf-8"))
     assert vt["payload"]["verdict"] == "PASS" and vt["payload"]["violations"] == []
@@ -318,12 +318,14 @@ def test_debug_failed_run_honest_budget_stop_before_report(tmp_path):
         v = json.loads((run_dir / "evidence" / "EXECUTE" / f"{name}.artifact.json").read_text(encoding="utf-8"))
         assert v["payload"]["verdict"] == "PASS"
     # never reached REPORT (budget is one short of the 4-stage tail — the structural reason)
-    assert not (run_dir / "evidence" / "REPORT").exists()
+    assert not (run_dir / "evidence" / "ANALYZE").exists()
+    assert not (run_dir / "evidence" / "VERIFY").exists()
+    assert (run_dir / "evidence" / "REPORT" / "report-note.artifact.json").exists()
     assert verify_chain(read_events(run_dir / "ledger.jsonl")) == []
     # model_policy flows here too: the run's LEAD agent (subset[0]) labels every completed hop. For
     # debug_failed_run the lead is failure-triager, whose spec frontmatter declares model: sonnet (a
-    # triage/classification seat), so the obslog labels each of the 3 completed hops 'sonnet'.
-    assert _obs_models(run_dir) == ["sonnet", "sonnet", "sonnet"]
+    # triage/classification seat), so the obslog labels each completed hop 'sonnet'.
+    assert _obs_models(run_dir) == ["sonnet", "sonnet"]
 
 
 def test_debug_failed_run_variable_touch_guard_BLOCKS_studied_variable(tmp_path):
@@ -458,28 +460,29 @@ def make_tree_explore_agent(branch_var):
     return produce
 
 
-def test_tree_explore_honest_budget_stop_before_report(tmp_path):
+def test_tree_explore_executes_then_reports_on_explicit_path(tmp_path):
     """tree_explore exploring within the CONTROLLED space (branch touches batch_size) clears all EXECUTE
     gates, runs EXECUTE->ANALYZE->VERIFY, then the 4th hop trips BudgetExceeded (4/4). HONEST: 3 of 4
     tail stages complete, REPORT is never reached (budget is one short of the tail)."""
     runs = tmp_path / "runs"
-    with pytest.raises(BudgetExceeded) as ei:
-        run_task(runs, "te1", "explore a bounded tree of next runs", "tree_explore", TS,
+    m = run_task(runs, "te1", "explore a bounded tree of next runs", "tree_explore", TS,
                  make_tree_explore_agent("batch_size"), _approve, domain_profile_ref=PROFILE)
-    assert "max_agent_hops reached: 4/4" in str(ei.value)
+    assert m["status"] == "done"
 
     run_dir = runs / "te1"
     man = read_manifest(run_dir)
-    assert [c["stage"] for c in man["completed_work"]] == ["EXECUTE", "ANALYZE", "VERIFY"]
-    assert man["status"] != "done"
-    assert classify_status(run_dir) == "clean_boundary"
+    assert [c["stage"] for c in man["completed_work"]] == ["EXECUTE", "REPORT"]
+    assert man["status"] == "done"
+    assert classify_status(run_dir) == "done"
     vt = json.loads((run_dir / "evidence" / "EXECUTE" / "variable-touch-verdict.artifact.json").read_text(encoding="utf-8"))
     assert vt["payload"]["verdict"] == "PASS"
-    assert not (run_dir / "evidence" / "REPORT").exists()
+    assert not (run_dir / "evidence" / "ANALYZE").exists()
+    assert not (run_dir / "evidence" / "VERIFY").exists()
+    assert (run_dir / "evidence" / "REPORT" / "report-note.artifact.json").exists()
     assert verify_chain(read_events(run_dir / "ledger.jsonl")) == []
     # contrast with debug_failed_run's sonnet lead: tree_explore's lead is experiment-tree-explorer,
     # whose spec declares model: opus (a planning/exploration seat) — so each completed hop is 'opus'.
-    assert _obs_models(run_dir) == ["opus", "opus", "opus"]
+    assert _obs_models(run_dir) == ["opus", "opus"]
 
 
 def test_tree_explore_branch_changing_studied_variable_is_BLOCKED(tmp_path):

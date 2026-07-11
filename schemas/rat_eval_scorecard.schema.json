@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RAT Eval Scorecard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "harness", "summary", "scenarios"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "harness": { "type": "string", "const": "rat_eval_harness" },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario_count",
+        "pass",
+        "needs_manual",
+        "fail",
+        "machine_checks",
+        "manual_open",
+        "required_machine_failures"
+      ],
+      "properties": {
+        "scenario_count": { "type": "integer", "minimum": 0 },
+        "pass": { "type": "integer", "minimum": 0 },
+        "needs_manual": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0 },
+        "machine_checks": { "type": "integer", "minimum": 0 },
+        "manual_open": { "type": "integer", "minimum": 0 },
+        "required_machine_failures": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "severity", "status", "checks"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "category": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "status": { "type": "string", "enum": ["pass", "needs_manual", "fail"] },
+          "checks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "kind", "required", "passed", "message"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "kind": { "type": "string", "enum": ["machine", "manual"] },
+                "required": { "type": "boolean" },
+                "passed": {
+                  "anyOf": [
+                    { "type": "boolean" },
+                    { "type": "null" }
+                  ]
+                },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

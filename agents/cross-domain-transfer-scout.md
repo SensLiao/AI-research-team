@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: transfer_candidates
 permission_scope:
   read: [run-store evidence (DISCOVER), the active domain profile, task_frame, landscape_map, paper_note, evidence_table, note]

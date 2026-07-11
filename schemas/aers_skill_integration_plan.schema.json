@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/aers_skill_integration_plan.schema.json",
+  "title": "AERS Skill Integration Plan",
+  "description": "Metadata-only mapping from AERS catalog candidates to RAT stage/SOP integration lanes.",
+  "type": "object",
+  "required": ["schema_version", "planner", "summary", "by_stage", "by_sop_pack", "rows"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "planner": {"type": "string", "const": "aers_skill_integration_planner"},
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_candidates",
+        "reference_pack_candidates",
+        "human_gate_required",
+        "blocked",
+        "vault_write",
+        "external_skill_execution",
+        "child_skill_bodies_read"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "total_candidates": {"type": "integer", "minimum": 0},
+        "reference_pack_candidates": {"type": "integer", "minimum": 0},
+        "human_gate_required": {"type": "integer", "minimum": 0},
+        "blocked": {"type": "integer", "minimum": 0},
+        "vault_write": {"type": "boolean", "const": false},
+        "external_skill_execution": {"type": "boolean", "const": false},
+        "child_skill_bodies_read": {"type": "boolean", "const": false}
+      }
+    },
+    "by_stage": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "by_sop_pack": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "collection",
+          "recommendation",
+          "risk_level",
+          "risk_reasons",
+          "target_stage",
+          "target_agent_hint",
+          "sop_pack",
+          "integration_lane",
+          "license",
+          "commercial_use",
+          "source_url",
+          "catalog_only"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "path": {"type": "string"},
+          "collection": {"type": "string"},
+          "recommendation": {"type": "string", "enum": ["safe_reference", "review_required", "do_not_use"]},
+          "risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+          "risk_reasons": {"type": "array", "items": {"type": "string"}},
+          "target_stage": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]},
+          "target_agent_hint": {"type": "string"},
+          "sop_pack": {"type": "string"},
+          "integration_lane": {"type": "string", "enum": ["reference_pack", "human_gate_required", "blocked"]},
+          "license": {"type": "string"},
+          "commercial_use": {"type": "string"},
+          "source_url": {"type": "string"},
+          "catalog_only": {"type": "boolean", "const": true}
+        }
+      }
+    }
+  }
+}

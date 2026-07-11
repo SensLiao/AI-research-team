@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: ANALYZE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: calibrated_claims
 permission_scope:
   read: [task_frame, run-store evidence (ANALYZE), the result_summary, the variance_report, the active domain profile]

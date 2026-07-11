@@ -52,6 +52,24 @@ def test_injected_engine_maps_contexts_and_truncates_excerpts():
     assert _validate(rep) == []
 
 
+def test_local_pdf_fallback_extracts_page_contexts_when_paperqa_absent(tmp_path, monkeypatch):
+    fitz = pytest.importorskip("fitz")
+    pdf_path = tmp_path / "skeleton-recall.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Skeleton Recall Loss improves tubular connectivity in CBCT canals.")
+    doc.save(str(pdf_path))
+    doc.close()
+
+    monkeypatch.setattr("research_agent_teams.tools.fulltext_qa.paperqa_available", lambda: False)
+    rep = ask("skeleton recall CBCT canal", [str(pdf_path)])
+
+    assert rep["available"] is True
+    assert rep["contexts"] and rep["contexts"][0]["page"] == 1
+    assert "Skeleton Recall Loss" in rep["contexts"][0]["excerpt"]
+    assert _validate(rep) == []
+
+
 def test_engine_crash_is_unavailable_never_fabricated():
     def engine(question, doc_paths, cache_dir):
         raise RuntimeError("index exploded")

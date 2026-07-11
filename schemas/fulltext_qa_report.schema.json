@@ -2,18 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/fulltext_qa_report.schema.json",
   "title": "Fulltext QA Report",
-  "description": "DISCOVER-stage artifact (absorption wave 1; PaperQA2 wrapper). Output of tools/fulltext_qa.py: page-anchored answers over locally-supplied PDFs/markdown, plus deterministic Crossref retraction flags. HONESTY: when the optional paperqa dependency (or its index) is unavailable, available=false with a reason — the machine never fakes a fulltext answer. Contexts carry doc_ref + page + a SHORT excerpt (anchor, never inlined documents); the index cache is fenced into runs/, never the vault.",
+  "description": "DISCOVER-stage artifact (absorption wave 1; PaperQA2 pattern plus local-PDF fallback). Output of tools/fulltext_qa.py: page-anchored answers over locally-supplied PDFs/markdown, plus deterministic Crossref retraction flags. HONESTY: when no fulltext engine/docs are usable, available=false with a reason; the machine never fakes a fulltext answer. Contexts carry doc_ref + page + a SHORT excerpt (anchor, never inlined documents); the index/cache/docs are fenced into runs/, never the vault.",
   "type": "object",
   "required": ["question", "available"],
   "additionalProperties": false,
   "properties": {
     "question": {"type": "string", "minLength": 1, "pattern": "\\S"},
-    "available": {"type": "boolean", "description": "false when the optional fulltext-QA engine could not run (missing dependency, no docs, engine error)."},
+    "available": {"type": "boolean", "description": "false when no fulltext-QA engine could run (missing dependency, no docs, extraction error)."},
     "reason": {"type": "string", "description": "Required (non-empty) when available=false: why the engine could not answer."},
     "answer_summary": {"type": "string", "description": "The page-grounded answer synthesis. Empty when available=false."},
     "contexts": {
       "type": "array",
-      "description": "Page-anchored evidence contexts (the PaperQA2 absorption point: claim-evidence loci with page anchors).",
+      "description": "Page-anchored evidence contexts (PaperQA2 or PyMuPDF fallback: claim-evidence loci with page anchors).",
       "items": {
         "type": "object",
         "required": ["doc_ref", "excerpt"],

@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: DESIGN
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: rq_hypothesis_chain
 permission_scope:
   read: [run-store evidence (DESIGN), the active domain profile, task_frame, paper_note, note]

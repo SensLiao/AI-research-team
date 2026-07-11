@@ -60,7 +60,7 @@
       "type": "string",
       "enum": ["default", "max_quality"],
       "default": "default",
-      "description": "Model-allocation mode for this run. default = task-appropriate per-agent (opus for judgment/hard-gates/sign-off, sonnet for execution; haiku never used). max_quality = every reasoning agent forced to opus (director opt-in). model:none deterministic agents are unaffected by either mode."
+      "description": "Provider-neutral capability allocation for this run. default mixes strong and frontier reasoning seats by task; max_quality asks every reasoning seat for frontier capability. Concrete model ids are optional deployment bindings, never part of the research architecture; model:none deterministic workers are unaffected."
     },
     "domain_profile_ref": {
       "type": ["string", "null"],
@@ -74,6 +74,7 @@
       "required": ["max_agent_hops"],
       "properties": {
         "max_agent_hops": {"type": "integer", "minimum": 1},
+        "max_supplement_agent_hops": {"type": "integer", "minimum": 1},
         "max_iterations_without_new_evidence": {"type": "integer", "minimum": 1, "default": 2},
         "max_fulltext_reads": {"type": ["integer", "null"], "minimum": 0, "default": null},
         "max_gpu_runs_before_review": {"type": ["integer", "null"], "minimum": 0, "default": null},

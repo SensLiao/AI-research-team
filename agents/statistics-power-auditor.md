@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: DESIGN
 kind: auditor
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: power_audit_report
 permission_scope:
   read: [run-store evidence (DESIGN), the active domain profile, task_frame, experiment_matrix, unified_config]

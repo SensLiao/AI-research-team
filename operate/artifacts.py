@@ -10,12 +10,30 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Iterable, Mapping
 
 from ..tools.validate_artifact import validate_artifact
 
 
 class GateBlock(RuntimeError):
     """A deterministic hard gate refused — the run halts at this stage (no forward progress)."""
+
+
+class TargetedGateBlock(GateBlock):
+    """A local gap that can be repaired without replaying a whole stage."""
+
+    def __init__(
+        self,
+        message: str,
+        defects: Iterable[Mapping[str, object]],
+        *,
+        verdict: str = "NEEDS_SUPPLEMENT",
+    ) -> None:
+        if verdict not in {"NEEDS_SUPPLEMENT", "BLOCK"}:
+            raise ValueError(f"unsupported targeted gate verdict: {verdict!r}")
+        super().__init__(message)
+        self.verdict = verdict
+        self.defects = [dict(row) for row in defects]
 
 
 def envelope(artifact_type: str, created_by: str, payload: dict, ts: str,

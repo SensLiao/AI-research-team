@@ -1,11 +1,11 @@
 ---
 name: result-analyzer
-spec_version: "1.1.0"
+spec_version: "1.1.1"
 model: sonnet
 stage: ANALYZE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
-produces: result_summary
+tools: [Read, Glob, Grep]
+produces: [result_summary, experiment_feedback]
 permission_scope:
   read: [task_frame, run-store evidence (EXECUTE/ANALYZE), the run_record(s), the active domain profile]
   write: [runs/<run>/evidence/ANALYZE/ only]
@@ -93,14 +93,30 @@ setup (`environment`); use `unknown` when the evidence is genuinely ambiguous:
 
 ```python
 from research_agent_teams.tools.experiment_feedback import build_experiment_feedback
-payload = build_experiment_feedback(run_ref, outcome, attribution, summary, evidence_ref)
+payload = build_experiment_feedback(
+    run_ref=run_ref,
+    outcome=outcome,
+    attribution=attribution,
+    summary=summary,
+    evidence_ref=evidence_ref,
+    hypothesis_ref=hypothesis_ref,
+    validity={
+        "implementation_valid": implementation_valid,
+        "data_valid": data_valid,
+        "evaluation_valid": evaluation_valid,
+        "protocol_valid": protocol_valid,
+        "statistics_valid": statistics_valid,
+    },
+)
 ```
 
 The builder derives `next_action_hint` (revise_hypothesis / fix_implementation / fix_environment /
 escalate / stop) from your attribution. This hint routes the bounded-repair loop and the next
 DESIGN refinement; it is advisory EVIDENCE — it never executes anything and never bypasses a gate.
-Attribution must be traceable to the artifacts in `evidence_ref` (triage reports, journal entries,
-metric deltas) — never a vibe.
+Attribution must be traceable to the named `hypothesis_ref` and artifacts in `evidence_ref`.
+`intervention_confirmed`, `counterfactually_supported`, and `hypothesis` attribution additionally
+require receipt-verified diagnostic/replication artifact bindings; journal prose and self-reported
+booleans cannot upgrade the state.
 
 ## Hard ceiling — you NEVER self-freeze
 

@@ -1,7 +1,7 @@
 """Step-wise spine driver — the engine's `_drive` loop broken into resumable STEPS.
 
 `engine.run_task()` drives a whole run in one blocking call with an opaque `agent_fn`. Real workers
-are Claude-Code sub-agents, which a Python callable cannot spawn — so the operate layer exposes the
+are Codex-harness sub-agents, which a Python callable cannot spawn — so the operate layer exposes the
 SAME per-stage micro-protocol as discrete steps the orchestrator interleaves with sub-agent dispatches:
 
     begin(mode, request) -> run_id + ordered stages
@@ -24,10 +24,12 @@ from pathlib import Path
 from typing import List, Optional
 
 from ..orchestrator.engine import _resolve_path, _validate_artifact_file
-from ..orchestrator.model_policy import load_agent_models, safe_resolve_model
+from ..orchestrator.model_policy import codex_runtime_fields, load_agent_models, safe_resolve_model
 from ..orchestrator.router import resolve_task, validate_routing
 from ..tools.budget_tracker import assert_within
 from ..tools.obslog import append_log
+from ..tools.ledger import read_events
+from ..tools.director_packet import packet_path, write_packet
 from ..tools.runstore import (
     checkpoint_stage,
     classify_status,
@@ -81,13 +83,36 @@ def next_stage(run_dir) -> Optional[str]:
     return None
 
 
-def open_stage(run_dir, stage, ts) -> None:
-    """Budget-check, then open the ledger boundary for a stage (stage_started)."""
+def open_stage(run_dir, stage, ts) -> bool:
+    """Budget-check and open one idempotent ``stage_started`` boundary.
+
+    The operated CLI may be called once per panel wave. Reopening the same
+    unfinished stage must not append duplicate ledger events, while attempting
+    to dispatch a future or completed stage is refused.
+    """
     tf = _task_frame(run_dir)
     p = tf["payload"]
+    expected = next_stage(run_dir)
+    if stage != expected:
+        raise ValueError(f"cannot open stage {stage!r}; next legal stage is {expected!r}")
+
+    events = read_events(Path(run_dir) / "ledger.jsonl")
+    active = None
+    for event in reversed(events):
+        if event.get("event_type") == "boundary":
+            break
+        if event.get("event_type") == "stage_started":
+            active = (event.get("payload") or {}).get("stage")
+            break
+    if active is not None:
+        if active != stage:
+            raise ValueError(f"run already has active stage {active!r}; cannot open {stage!r}")
+        return False
+
     usage = {"agent_hops": len(read_manifest(run_dir)["completed_work"]) + 1}
     assert_within(p["budget"], usage)                       # hard budget cap; over-budget raises
     start_stage(run_dir, stage, ts, p["agent_subset"])      # ledger: stage_started
+    return True
 
 
 def commit_stage(run_dir, stage, artifact_paths: List[str], ts) -> dict:
@@ -112,14 +137,21 @@ def commit_stage(run_dir, stage, artifact_paths: List[str], ts) -> dict:
     lead = (p["agent_subset"] or [None])[0]
     declared = load_agent_models().get(lead) if lead else None
     model_label = safe_resolve_model(declared, p.get("model_policy", "default"))
-    append_log(Path(run_dir) / "obs.jsonl",
-               {"agent_name": lead or "operate", "task_id": p["task_id"], "stage": stage,
-                "started_at": ts, "tool_calls": 1, "model": model_label})
+    obs_event = {"agent_name": lead or "operate", "task_id": p["task_id"], "stage": stage,
+                 "started_at": ts, "tool_calls": 1, "model": model_label}
+    obs_event.update(codex_runtime_fields(model_label))
+    append_log(Path(run_dir) / "obs.jsonl", obs_event)
     checkpoint_stage(run_dir, stage, list(artifact_paths), f"idem-{stage}", ts)
+    director_review_packet = None
+    if stage == "REPORT":
+        director_review_packet = str(write_packet(run_dir, generated_at=ts))
     nxt = next_stage(run_dir)
-    return {"stage": stage, "committed": True,
-            "gate": "director_signoff" if p["gate_level"] == "director_signoff" else "auto",
-            "next_stage": nxt, "done": nxt is None}
+    out = {"stage": stage, "committed": True,
+           "gate": "director_signoff" if p["gate_level"] == "director_signoff" else "auto",
+           "next_stage": nxt, "done": nxt is None}
+    if director_review_packet:
+        out["director_review_packet"] = director_review_packet
+    return out
 
 
 def reject_stage(run_dir, stage, ts, reason: Optional[str] = None) -> dict:
@@ -135,6 +167,8 @@ def status(run_dir) -> dict:
     """A snapshot of where the run is (completed stages, next, run-store status)."""
     tf = _task_frame(run_dir)
     done = [c["stage"] for c in read_manifest(run_dir)["completed_work"]]
+    pkt = packet_path(run_dir)
     return {"run_id": tf["payload"]["task_id"], "mode": tf["payload"]["mode"],
             "stages": _resolve_path(tf), "completed": done,
-            "next_stage": next_stage(run_dir), "run_status": classify_status(run_dir)}
+            "next_stage": next_stage(run_dir), "run_status": classify_status(run_dir),
+            "director_review_packet": str(pkt) if pkt.is_file() else None}

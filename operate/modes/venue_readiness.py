@@ -1,341 +1,428 @@
-"""Operate recipe for the `venue_readiness` mode (VERIFY -> REPORT) — audit B1.
+"""Staged operated recipe for venue-readiness peer review.
 
-The mode-registry's strongest-built chain with zero reachability: this recipe wires it into the
-one-button operate layer. "Is this manuscript good enough for venue X?" is answered by a BLIND
-review PANEL whose verdict is DERIVED, never self-declared:
-
-  - LLM workers (sub-agents) do the only part a deterministic tool cannot: a venue-selector reads
-    the venue's rubric material + the manuscript and instantiates the venue_profile (7-dim weights,
-    reject-triggers, accept-condition, personas); then THREE persona reviewers
-    (methodology / domain / adversarial) each emit a venue_review — pre-commitment anchor FIRST,
-    asymmetric-cost low-when-uncertain, anti-bias suppressors honoured, the adversarial persona
-    opening the eval code itself.
-  - Deterministic cores do the GATING / DERIVATION (never an LLM): structural consistency
-    (persona<->venue_id, the profile's declared personas + a mandatory adversarial seat present),
-    a deterministic pairwise lexical INDEPENDENCE check (an echo-chamber panel cannot reach a
-    publication verdict), and `venue_score.derive_meets_bar` — the single source of truth for the
-    readiness verdict (MEETS-BAR / BORDERLINE / NOT-YET / WRONG-PATH / DEGRADED-REVIEW).
-
-The verdict labels are INFORMATION for the director (the next step is the human `/venue-pick` /
-`/venue-decide` gates); only STRUCTURAL failure (a missing worker, a missing/extra persona, a
-venue_id mismatch, an invalid schema, north-star drift) is a GateBlock that halts the stage.
-
-Inline operate twin of agents/venue-reviewer-persona.md + agents/area-chair-synthesizer.md — any
-change to those specs' worker duties MUST be mirrored here (audit M5).
+The worker sequence is profile -> config -> frozen precommit -> mutually blind reviews -> frozen
+panel receipt -> area-chair meta-review -> deterministic readiness derivation. The final label is an
+advisory screen, never an acceptance fact or submission decision.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .. import bounded_repair
-from . import _shared
 from ..artifacts import GateBlock, write_artifact
+from . import _shared
 from ...tools.idea_dedup import lexical_similarity
+from ...tools import venue_review_protocol as protocol
+from ...tools.venue_readiness_markdown import (
+    VENUE_READINESS_REL,
+    write_venue_readiness_markdown,
+)
 from ...tools.venue_score import collect_unresolved_triggers, derive_meets_bar
+
 
 STAGES = ["VERIFY", "REPORT"]
 DEFAULT_VAULT = "AI agent database/PhD-Research-OS"
+INDEPENDENCE_SIM_THRESHOLD = 0.3
 
-INDEPENDENCE_SIM_THRESHOLD = 0.3  # >= this between any two reviews == echo chamber (DEGRADED-REVIEW)
-PERSONAS = ("methodology", "domain", "adversarial")
+# Public aliases keep existing operate callers and fixtures compatible while the protocol logic
+# lives in one venue-specific deterministic module.
+PERSONAS = protocol.PERSONAS
+PROTOCOL_VERSION = protocol.PROTOCOL_VERSION
+PROFILE_BUNDLE_REL = protocol.PROFILE_BUNDLE_REL
+CONFIG_BUNDLE_REL = protocol.CONFIG_BUNDLE_REL
+PRECOMMIT_RECEIPT_REL = protocol.PRECOMMIT_RECEIPT_REL
+PANEL_RECEIPT_REL = protocol.PANEL_RECEIPT_REL
+META_BUNDLE_REL = protocol.META_BUNDLE_REL
+PROFILE_ARTIFACT_REL = protocol.PROFILE_ARTIFACT_REL
+CONFIG_ARTIFACT_REL = protocol.CONFIG_ARTIFACT_REL
+PROFILE_REF = protocol.PROFILE_REF
+CONFIG_REF = protocol.CONFIG_REF
+PRECOMMIT_REF = protocol.PRECOMMIT_REF
+PANEL_RECEIPT_REF = protocol.PANEL_RECEIPT_REF
+prepare_review_precommit = protocol.prepare_review_precommit
+prepare_review_panel_receipt = protocol.prepare_review_panel_receipt
+_review_ref = protocol.review_ref
 
 
-# --------------------------------------------------------------------------- worker prompts (LLM WORK)
-
-_PROFILE_WORKER_PROMPT = """You are the VENUE-SELECTOR of a venue_readiness run. The director has \
-chosen a target venue; your job is to instantiate that venue's review rubric into a scorecard for \
-THIS manuscript, for the request:
+_PROFILE_WORKER_PROMPT = """You are the VENUE-SELECTOR in wave 1 of a staged venue-readiness run.
 
     REQUEST: {request}
 
 {north_star_block}
 
-Read (by reference, never inline):
-  1. The venue rubric material under `research_agent_teams/agents/references/venue-rubrics/` — pick \
-the file matching the target venue's tier (tier1-conf-ml / tier2-med-imaging / tier3-journal), plus \
-`reject-triggers.md`, `anti-bias-suppressors.md`, `rubric-7d.md`.
-  2. The manuscript / result artifacts the request points at (read them; do not trust a summary).
+Read the target venue rubric under `agents/references/venue-rubrics/` and the manuscript/result refs
+named by the request. Instantiate the venue's real review standard for this work. Do not score the
+paper, write a review, choose a different venue, or claim acceptance. Include all three personas.
+Every evidence_ref must point to a rubric or work input you actually read.
 
-HONESTY (hard): instantiate ONLY triggers that genuinely apply to this venue; annotate `our_risk` \
-only where you can name this paper's CONCRETE risk against the trigger (else omit it). Never invent \
-a venue. The personas list MUST include "adversarial" (the panel always carries an adversary).
-
-Write ONLY this JSON to `{out}` (filename ends in .bundle.json, NOT .artifact.json):
+Write ONLY this JSON to `{out}`:
 {{
   "venue_profile": {{
-    "venue_id": "<e.g. NeurIPS-2025 / MICCAI-2025 / TPAMI>",
+    "venue_id": "<chosen target venue>",
     "tier": "conf|med|journal",
     "paper_type": "methodological|application-clinical",
-    "dimension_weights": {{"D1":{{"weight":1.0,"gating":true}},"D2":{{"weight":1.0}},
-      "D3":{{"weight":1.0}},"D4":{{"weight":1.5,"gating":true}},"D5":{{"weight":1.0}},
-      "D6":{{"weight":0.5}},"D7":{{"weight":0.0}}}},
+    "dimension_weights": {{
+      "D1":{{"weight":1.0,"gating":true}}, "D2":{{"weight":1.0}},
+      "D3":{{"weight":1.0}}, "D4":{{"weight":1.5,"gating":true}},
+      "D5":{{"weight":1.0}}, "D6":{{"weight":0.5}}, "D7":{{"weight":0.0}}
+    }},
     "reject_triggers": [{{"trigger_id":"RT-D4-BASELINE","dimension":"D4",
-      "description":"<what fires it>","our_risk":"<this paper's concrete risk, optional>"}}],
+      "description":"<what fires it>","our_risk":"<paper-specific risk, optional>"}}],
     "accept_condition": "D1>=3 AND D4>=3 AND (D3>=3 OR D2>=3) AND no reject-trigger",
-    "anti_bias_suppressors": ["hasn't beaten SOTA alone", "new-combination-of-existing alone"],
+    "anti_bias_suppressors": ["hasn't beaten SOTA alone", "new combination alone"],
     "personas": ["methodology","domain","adversarial"],
-    "evidence_ref": ["<rubric path>", "<manuscript path / artifact id>"]
+    "evidence_ref": ["<rubric path>","<manuscript/result ref>"]
   }}
 }}
-After writing, verify it is valid JSON. Return one line: venue_id + tier + persona count + #triggers."""
+This is a candidate bundle. Reviewers are forbidden to read it; a deterministic step freezes it."""
 
-_PERSONA_WORKER_PROMPT = """You are a BLIND reviewer for venue **{venue_hint}**, playing the \
-**{persona}** role, reviewing the manuscript for the request:
+
+_CONFIG_WORKER_PROMPT = """You are the VENUE-REVIEW-CONFIGURATOR in wave 2.
 
     REQUEST: {request}
 
 {north_star_block}
 
-母版 = the adversarial-reviewer discipline. You have NO authority to decide acceptance: you emit a \
-`venue_review` evidentiary record ONLY — it carries NO verdict / meets_bar / decision / accept \
-field (the schema forbids them). The area chair derives the readiness verdict deterministically.
+Read ONLY `{profile_candidate}` plus rubric files named inside it. Do not read the manuscript,
+results, code, reviewer outputs, or review prose. Freeze three distinct anchors before review:
+methodology owns D1/D5, domain owns D2/D6/D7 when applicable, adversarial owns D3/D4.
 
-PROTOCOL (do these IN ORDER):
-  1. Write your PRE-COMMITMENT ANCHOR first (the standard you will hold this paper to for {persona}); \
-read `{run_dir}/evidence/VERIFY/venue-profile.artifact.json` for the venue's rubric, reject-triggers, \
-and anti-bias suppressors. You MAY NOT loosen the anchor after reading the manuscript.
-  2. Score the applicable dimensions (D1..D7, 1-4: 4=excellent 3=good 2=fair 1=poor). EVERY score \
-needs >=1 concrete `evidence_ref` (file:line / section / metric / table) — a score with no evidence \
-is score 1. Omit dimensions not applicable to this venue/paper_type.
-  3. Run the venue's reject-triggers. For each that fires: record trigger_id + dimension + locus \
-(exact manuscript location) + required_fix. A fired trigger means you CANNOT recommend accept.
-  4. ASYMMETRIC COST — default LOW when uncertain (a weak paper scored high wastes a whole \
-submission cycle; a strong paper scored low is recoverable by rebuttal).
-  5. ANTI-BIAS SUPPRESSORS — you MUST NOT fire a reject-trigger on a suppressed ground ALONE \
-(e.g. "didn't beat SOTA", "small fixable issues", "just a new combination of existing techniques", \
-"didn't cite a specific preprint", "rebuttal didn't add a requested experiment").
-{adversarial_clause}
-HONESTY (hard): never fabricate an evidence_ref, a metric, or a manuscript locus; never read another \
-reviewer's output before emitting yours (independence). venue_id MUST equal the profile's venue_id.
+`inputs_to_review` is the exact allowlist of manuscript, result, code, and data-pipeline refs that
+reviewers may inspect. Never include candidate bundles, reviewer outputs, receipts, or meta output.
 
-If this prompt carries a REPAIR ATTEMPT block: fix EXACTLY what the gate feedback names, change \
-nothing else, and re-emit the COMPLETE bundle (never argue with the gate, never relax honesty).
-
-Write ONLY this JSON to `{out}` (filename ends in .bundle.json, NOT .artifact.json):
+Write ONLY this JSON to `{out}`:
 {{
-  "venue_review": {{
-    "persona": "{persona}",
-    "venue_id": "<= the profile's venue_id>",
-    "dimension_scores": {{"D1":{{"score":3,"evidence_ref":["<file:line>"],"notes":"<why>"}},
-      "D4":{{"score":3,"evidence_ref":["<metric path>"],"notes":"<why>"}}}},
-    "reject_triggers_fired": [{{"trigger_id":"RT-D4-BASELINE","dimension":"D4",
-      "locus":"<section/table>","required_fix":"<concrete fix>"}}],
-    "overall": "<venue-scale recommendation, e.g. 'Weak Accept' / 'Reject'>",
-    "confidence": 4,
-    "evidence_ref": ["<>=1 pointer you actually read: file:line / section / metric path>"],
-    "minimal_fix": "<smallest change set resolving your fired triggers, optional>"
+  "review_config": {{
+    "run_ref": "{run_dir}",
+    "lenses": [
+      {{"lens":"methodology","anchor":"<frozen venue-specific standard>",
+        "reviewer_agent":"venue-reviewer-methodology-blind"}},
+      {{"lens":"domain","anchor":"<different frozen standard>",
+        "reviewer_agent":"venue-reviewer-domain-blind"}},
+      {{"lens":"adversarial","anchor":"<different frozen standard>",
+        "reviewer_agent":"venue-reviewer-adversarial-blind"}}
+    ],
+    "synthesis_mandate": "Surface all disagreements and strongest rejection; classify fatal vs
+      repairable; order repairs; never claim acceptance; defer /venue-pick and /venue-decide.",
+    "inputs_to_review": ["<manuscript/result/code/data refs only>"]
   }}
 }}
-After writing, verify valid JSON. Return one line: persona + #dims scored + #triggers fired + overall."""
-
-_ADVERSARIAL_CLAUSE = (
-    "  6. ADVERSARIAL OBLIGATION (you are the adversary): OPEN THE EVAL CODE YOURSELF "
-    "(read-only) — do not trust the paper's description. Personally check for: test-label "
-    "leakage into training, an unfair / under-tuned baseline, test-set tuning, wrong metric "
-    "aggregation. Apply D3 (novelty) and D4 (evaluation rigor) with the venue's anti-leaderboard "
-    "suppressor in force.\n"
-)
-_NONADVERSARIAL_CLAUSE = (
-    "  6. Stay within your {persona} lens; the adversarial seat (a separate reviewer) owns the "
-    "eval-code re-derivation — you focus on your dimension competencies.\n"
-)
+The deterministic precommit step validates and hashes this config before any reviewer starts."""
 
 
-# --------------------------------------------------------------------------- stage plan (what the skill spawns)
+_BLIND_REVIEW_PROMPT = """You are the `{persona}` reviewer in wave 4. You are blind to every other
+reviewer and must remain so until your designated bundle is emitted.
 
-def _persona_filename_stub(persona: str) -> str:
-    return f"VERIFY.review.{persona}"
+    REQUEST: {request}
+
+{north_star_block}
+
+FROZEN INPUTS SHARED BY EVERY REVIEWER:
+- profile `{profile_ref}`
+- config `{config_ref}`
+- receipt `{precommit_ref}`
+- precommit hash `{precommit_hash}`
+
+Read your frozen anchor FIRST. Then inspect only `review_config.inputs_to_review`, the task frame,
+and the three frozen refs above. Never read profile/config candidates, another reviewer bundle,
+review artifacts, the panel receipt, or meta output. If another review became visible, disclose it.
+
+Deeply audit your owned dimensions. Every score needs a real manuscript/result/table/metric/code
+locus; missing evidence means score 1. Fire only frozen-profile triggers and give a precise locus
+and fix. Apply anti-bias suppressors and default low under uncertainty. The adversarial seat must
+inspect evaluation code read-only for leakage, unfair baselines, test tuning, and aggregation bugs.
+
+`overall` is reviewer advice on the venue scale, not an acceptance fact. Never emit verdict,
+meets_bar, decision, status, or accept fields.
+
+Write ONLY this JSON to `{out}`:
+{{
+  "venue_review": {{
+    "persona": "{persona}", "venue_id": "{venue_id}",
+    "dimension_scores": {{"D1":{{"score":3,"evidence_ref":["<real locus>"],
+      "notes":"<evidence-based argument>"}}}},
+    "reject_triggers_fired": [],
+    "overall": "<venue-scale reviewer recommendation>", "confidence": 3,
+    "evidence_ref": ["<real input pointer>"]
+  }},
+  "blind_review_attestation": {{
+    "protocol_version": "{protocol_version}", "persona": "{persona}",
+    "reviewer_instance_id": "venue-reviewer-{persona}-blind",
+    "precommit_hash": "{precommit_hash}",
+    "profile_ref": "{profile_ref}", "config_ref": "{config_ref}",
+    "precommit_ref": "{precommit_ref}", "anchor_echo": "<copy frozen anchor exactly>",
+    "input_refs": ["task_frame.artifact.json", "{profile_ref}", "{config_ref}",
+      "{precommit_ref}", "<declared work input actually read>"],
+    "other_review_refs_seen": [], "output_ref": "{output_ref}"
+  }}
+}}"""
+
+
+_META_WORKER_PROMPT = """You are the AREA-CHAIR META-REVIEWER in the final judgment wave.
+
+    REQUEST: {request}
+
+{north_star_block}
+
+All blind reviewers have finished. Read `{panel_receipt_ref}`, `{precommit_ref}`, and only the three
+review bundles named by that receipt. Do not read manuscript/result/code inputs or candidate
+bundles. Synthesize arguments, not means. Surface every score disagreement, the strongest credible
+rejection case, every fired trigger, fatal-to-path vs repairable gaps, and a verified repair order.
+Do not alter review hashes or claim the venue will accept. Deterministic scoring happens afterward.
+
+Write ONLY this JSON to `{out}`:
+{{
+  "venue_meta_review": {{
+    "protocol_version": "{protocol_version}",
+    "precommit_hash": "{precommit_hash}",
+    "review_receipt_ref": "{panel_receipt_ref}",
+    "review_hashes": {review_hashes_json},
+    "reviewer_disagreements": [{{"dimension":"D4",
+      "personas":["methodology","domain","adversarial"],"score_span":1,
+      "synthesis":"<why scores differ and which evidence is stronger>",
+      "evidence_ref":["<all source review bundle refs>"]}}],
+    "strongest_reject_reason": {{"status":"fatal|repairable|none","reason":"<strongest case>",
+      "source_personas":["<persona>"],"evidence_ref":["<source review refs>"]}},
+    "fatal_gaps": [{{"gap_id":"F1","trigger_id":"<omit when none>","reason":"<why fatal>",
+      "evidence_ref":["<ref>"],"responsible_stage":"DESIGN|EXECUTE|ANALYZE|VERIFY"}}],
+    "repairable_gaps": [{{"gap_id":"R1","trigger_id":"<omit when none>",
+      "reason":"<fixable weakness>","evidence_ref":["<ref>"],
+      "responsible_stage":"DESIGN|EXECUTE|ANALYZE|VERIFY"}}],
+    "repair_sequence": [{{"priority":1,"gap_id":"R1","action":"<specific repair>",
+      "responsible_stage":"<stage>","verification":"<objective re-check>"}}],
+    "human_gates": ["/venue-pick","/venue-decide"], "advisory_only": true
+  }}
+}}
+Every disagreement and gap must be represented; every gap needs a repair-sequence step."""
+
+
+def _model_for_judgment(model_policy: str) -> str:
+    # Compatibility workload tier; runtime provider/model selection is handled elsewhere.
+    return "opus"
+
+
+def _profile_worker(run_dir: str, request: str, model: str) -> dict:
+    out = str(Path(run_dir) / PROFILE_BUNDLE_REL).replace("\\", "/")
+    return {
+        "label": "venue-selector", "model": model, "output": out,
+        "prompt": _PROFILE_WORKER_PROMPT.format(
+            request=request, north_star_block=_shared.north_star_block(run_dir), out=out,
+        ),
+    }
+
+
+def _config_worker(run_dir: str, request: str, model: str) -> dict:
+    out = str(Path(run_dir) / CONFIG_BUNDLE_REL).replace("\\", "/")
+    return {
+        "label": "venue-review-configurator", "model": model, "output": out,
+        "prompt": _CONFIG_WORKER_PROMPT.format(
+            request=request, run_dir=str(run_dir), out=out,
+            profile_candidate=PROFILE_BUNDLE_REL.as_posix(),
+            north_star_block=_shared.north_star_block(run_dir),
+        ),
+    }
+
+
+def _review_worker(run_dir: str, request: str, model: str, persona: str,
+                   profile: dict, receipt: dict) -> dict:
+    output_ref = protocol.review_ref(persona)
+    out = str(Path(run_dir) / output_ref).replace("\\", "/")
+    return {
+        "label": f"venue-reviewer-{persona}", "model": model, "output": out,
+        "depends_on": ["freeze-venue-precommit"],
+        "read_scope": list(receipt["allowed_reviewer_inputs"]),
+        "forbidden_read_scope": list(receipt["forbidden_reviewer_inputs"]),
+        "prompt": _BLIND_REVIEW_PROMPT.format(
+            request=request, persona=persona, venue_id=profile["venue_id"], out=out,
+            north_star_block=_shared.north_star_block(run_dir),
+            profile_ref=PROFILE_REF, config_ref=CONFIG_REF, precommit_ref=PRECOMMIT_REF,
+            precommit_hash=receipt["precommit_hash"], protocol_version=PROTOCOL_VERSION,
+            output_ref=output_ref,
+        ),
+    }
+
+
+def _meta_worker(run_dir: str, request: str, model: str, precommit: dict,
+                 panel_receipt: dict) -> dict:
+    out = str(Path(run_dir) / META_BUNDLE_REL).replace("\\", "/")
+    return {
+        "label": "area-chair-synthesizer", "model": model, "output": out,
+        "depends_on": ["freeze-blind-review-panel"],
+        "read_scope": [PRECOMMIT_REF, PANEL_RECEIPT_REF, *panel_receipt["review_refs"].values()],
+        "forbidden_read_scope": [PROFILE_BUNDLE_REL.as_posix(), CONFIG_BUNDLE_REL.as_posix()],
+        "prompt": _META_WORKER_PROMPT.format(
+            request=request, out=out, protocol_version=PROTOCOL_VERSION,
+            north_star_block=_shared.north_star_block(run_dir),
+            precommit_hash=precommit["precommit_hash"], precommit_ref=PRECOMMIT_REF,
+            panel_receipt_ref=PANEL_RECEIPT_REF,
+            review_hashes_json=json.dumps(panel_receipt["review_hashes"], sort_keys=True),
+        ),
+    }
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
              model_policy: str = "max_quality") -> Optional[dict]:
-    """The LLM workers to dispatch for a stage (None = the stage is purely deterministic).
-
-    VERIFY is a MULTI-WORKER stage: the venue-selector (profile) worker runs FIRST and writes the
-    venue_profile bundle; the three persona reviewers run AFTER it (they read its bundle), ideally
-    in parallel. Reviewing is a judgment task with asymmetric cost — BOTH model policies pick opus
-    (a misjudged venue-readiness verdict wastes a whole submission cycle), so the tier is opus
-    regardless of `model_policy`."""
+    """Return only the next legal worker wave; future-wave prompts stay unavailable."""
     if stage != "VERIFY":
-        return None  # REPORT is deterministic
-    nsb = _shared.north_star_block(run_dir)
-    profile_out = f"{run_dir}/inbox/VERIFY.profile.bundle.json"
-    # judgment task: opus in BOTH policies (the ternary documents the deliberate non-branch).
-    model = "opus" if model_policy == "max_quality" else "opus"
-    w_profile = {
-        "label": "venue-selector", "model": model, "output": profile_out,
-        "prompt": _PROFILE_WORKER_PROMPT.format(request=request, north_star_block=nsb, out=profile_out),
-    }
-    workers = [w_profile]
-    for persona in PERSONAS:
-        out = f"{run_dir}/inbox/{_persona_filename_stub(persona)}.bundle.json"
-        clause = (_ADVERSARIAL_CLAUSE if persona == "adversarial"
-                  else _NONADVERSARIAL_CLAUSE.format(persona=persona))
-        workers.append({
-            "label": f"venue-reviewer-{persona}", "model": model, "output": out,
-            "prompt": _PERSONA_WORKER_PROMPT.format(
-                request=request, persona=persona, venue_hint="the chosen venue", run_dir=run_dir,
-                north_star_block=nsb, adversarial_clause=clause, out=out),
-        })
-    return {
-        "label": "venue-panel", "workers": workers,
-        "note": "spawn the profile worker FIRST; the three persona workers run AFTER it "
-                "(they read its bundle), ideally in parallel",
-    }
+        return None
+    run_path = Path(run_dir)
+    model = _model_for_judgment(model_policy)
+    if not (run_path / PROFILE_BUNDLE_REL).exists():
+        return _profile_worker(run_dir, request, model)
+    if not (run_path / CONFIG_BUNDLE_REL).exists():
+        return _config_worker(run_dir, request, model)
 
+    if (run_path / PRECOMMIT_RECEIPT_REL).exists():
+        profile, _config, precommit = protocol.load_precommit(run_dir)
+    else:
+        precommit = protocol.prepare_review_precommit(run_dir)
+        profile, _config, precommit = protocol.load_precommit(run_dir)
 
-# --------------------------------------------------------------------------- bundle loaders
+    missing = [persona for persona in PERSONAS if not protocol.review_path(run_dir, persona).exists()]
+    if missing:
+        workers = [
+            _review_worker(run_dir, request, model, persona, profile, precommit)
+            for persona in missing
+        ]
+        return {
+            "label": "venue-blind-review-panel", "workers": workers,
+            "panel_note": "Spawn this wave concurrently. Every seat reads the same frozen "
+                          f"precommit {precommit['precommit_hash']} and no reviewer output.",
+            "protocol_version": PROTOCOL_VERSION,
+            "precommit_hash": precommit["precommit_hash"],
+        }
 
-def _load_profile_bundle(run_dir) -> dict:
-    p = Path(run_dir) / "inbox" / "VERIFY.profile.bundle.json"
-    if not p.exists():
-        raise GateBlock(
-            "venue VERIFY: the venue-selector (profile) worker bundle is missing at "
-            f"{p} — dispatch the profile worker FIRST (it must run before the persona reviewers)")
-    return json.loads(p.read_text(encoding="utf-8"))
+    panel_receipt = protocol.prepare_review_panel_receipt(run_dir)
+    if not (run_path / META_BUNDLE_REL).exists():
+        return _meta_worker(run_dir, request, model, precommit, panel_receipt)
+    return None
 
-
-def _load_review_bundle(run_dir, persona) -> dict:
-    p = Path(run_dir) / "inbox" / f"{_persona_filename_stub(persona)}.bundle.json"
-    if not p.exists():
-        raise GateBlock(
-            f"venue VERIFY: the {persona!r} persona reviewer bundle is missing at {p} — the panel "
-            "needs all of methodology/domain/adversarial; re-dispatch the missing reviewer")
-    return json.loads(p.read_text(encoding="utf-8"))
-
-
-# --------------------------------------------------------------------------- deterministic gates + derivation
 
 def _review_text(review: dict) -> str:
-    """The text basis for the independence check: overall + every dimension note + each fired
-    trigger's locus/required_fix (the substantive prose a reviewer authored)."""
     bits: List[str] = [str(review.get("overall") or "")]
-    for ds in (review.get("dimension_scores") or {}).values():
-        if isinstance(ds, dict) and ds.get("notes"):
-            bits.append(str(ds["notes"]))
-    for t in (review.get("reject_triggers_fired") or []):
-        bits.append(str(t.get("locus") or ""))
-        bits.append(str(t.get("required_fix") or ""))
-    return " ".join(b for b in bits if b)
+    for score in (review.get("dimension_scores") or {}).values():
+        if isinstance(score, dict) and score.get("notes"):
+            bits.append(str(score["notes"]))
+    for trigger in review.get("reject_triggers_fired") or []:
+        bits.extend([str(trigger.get("locus") or ""), str(trigger.get("required_fix") or "")])
+    return " ".join(bit for bit in bits if bit)
 
 
 def _independence(reviews: List[dict], personas: List[str]) -> dict:
-    """Deterministic pairwise lexical independence over the review texts.
-
-    verdict 'degraded' iff any pair's similarity >= the echo-chamber threshold — derive_meets_bar
-    honours BOTH the explicit verdict label AND the per-pair / max_sim shape (defence in depth)."""
     pairs = []
     max_sim = 0.0
-    for i in range(len(reviews)):
-        for j in range(i + 1, len(reviews)):
-            sim = round(lexical_similarity(_review_text(reviews[i]), _review_text(reviews[j])), 4)
-            pairs.append({"a": personas[i], "b": personas[j], "sim": sim})
-            max_sim = max(max_sim, sim)
-    return {"pairs": pairs, "max_sim": round(max_sim, 4),
-            "verdict": "degraded" if max_sim >= INDEPENDENCE_SIM_THRESHOLD else "ok"}
+    for left in range(len(reviews)):
+        for right in range(left + 1, len(reviews)):
+            similarity = round(
+                lexical_similarity(_review_text(reviews[left]), _review_text(reviews[right])), 4
+            )
+            pairs.append({"a": personas[left], "b": personas[right], "sim": similarity})
+            max_sim = max(max_sim, similarity)
+    return {
+        "pairs": pairs,
+        "max_sim": round(max_sim, 4),
+        "verdict": "degraded" if max_sim >= INDEPENDENCE_SIM_THRESHOLD else "ok",
+    }
 
 
-def _verify_dets(run_dir, ts) -> tuple:
-    paths: List[str] = []
+def _rel(run_dir: str, path: str) -> str:
+    try:
+        return str(Path(path).resolve().relative_to(Path(run_dir).resolve())).replace("\\", "/")
+    except (ValueError, OSError):
+        return Path(path).name
 
-    # 1. profile bundle -> venue_profile artifact (write_artifact self-validates the schema)
-    pb = _load_profile_bundle(run_dir)
-    _shared.require_bundle_keys(pb, ["venue_profile"], stage="VERIFY", mode="venue_readiness")
-    profile = pb["venue_profile"]
-    profile_path = write_artifact(run_dir, "VERIFY", "venue-profile.artifact.json",
-                                  "venue_profile", "venue-selector", profile, ts)
-    paths.append(profile_path)
-    venue_id = str(profile.get("venue_id") or "")
 
-    # 2. the three persona reviews -> venue_review artifacts + structural consistency gates
-    reviews: List[dict] = []
-    review_paths: List[str] = []
+def _verify_dets(run_dir: str, ts: str) -> tuple:
+    run_path = Path(run_dir)
+    profile, config, precommit = protocol.load_precommit(run_dir)
+    panel_receipt = protocol.prepare_review_panel_receipt(run_dir)
+    reviews_by_persona: Dict[str, dict] = {}
     for persona in PERSONAS:
-        rb = _load_review_bundle(run_dir, persona)
-        _shared.require_bundle_keys(rb, ["venue_review"], stage="VERIFY", mode="venue_readiness")
-        review = rb["venue_review"]
-        if str(review.get("persona") or "") != persona:
-            raise GateBlock(
-                f"venue VERIFY: the {persona!r} reviewer bundle declares persona "
-                f"{review.get('persona')!r} — the persona field must match the file's reviewer slot")
-        if str(review.get("venue_id") or "") != venue_id:
-            raise GateBlock(
-                f"venue VERIFY: {persona!r} review venue_id {review.get('venue_id')!r} != profile "
-                f"venue_id {venue_id!r} — every reviewer must be calibrated to the chosen venue")
-        rp = write_artifact(run_dir, "VERIFY", f"review-{persona}.artifact.json",
-                            "venue_review", "venue-reviewer-persona", review, ts)
-        reviews.append(review)
-        review_paths.append(rp)
-        paths.append(rp)
+        review, _attestation, _bundle = protocol.load_review_bundle_strict(
+            run_dir, persona, profile, config, precommit,
+        )
+        reviews_by_persona[persona] = review
+    meta = protocol.load_meta_review(run_dir, reviews_by_persona, panel_receipt)
 
-    # 3. router guardrail (VERIFY blocking gate): every persona the profile DECLARED must be present
-    #    AND the adversarial seat is mandatory (a panel without an adversary cannot judge a venue).
-    declared = list(profile.get("personas") or [])
-    present = {str(r.get("persona")) for r in reviews}
-    missing = [p for p in declared if p not in present]
-    if missing:
-        raise GateBlock(
-            f"venue VERIFY: profile declares personas {declared} but the panel is missing {missing} "
-            "— every declared reviewer seat must be filled before a readiness verdict")
-    if "adversarial" not in present:
-        raise GateBlock(
-            "venue VERIFY: no adversarial reviewer in the panel — the adversarial seat is mandatory "
-            "(it owns the eval-code re-derivation that catches leakage / unfair baselines)")
+    paths: List[str] = [
+        str(run_path / PROFILE_ARTIFACT_REL),
+        str(run_path / CONFIG_ARTIFACT_REL),
+    ]
+    paths.append(write_artifact(
+        run_dir, "VERIFY", "venue-meta-review.artifact.json", "venue_meta_review",
+        "area-chair-synthesizer", meta, ts,
+    ))
+    review_paths: List[str] = []
+    reviews = [reviews_by_persona[persona] for persona in PERSONAS]
+    for persona, review in zip(PERSONAS, reviews):
+        path = write_artifact(
+            run_dir, "VERIFY", f"review-{persona}.artifact.json", "venue_review",
+            "venue-reviewer-persona", review, ts,
+        )
+        paths.append(path)
+        review_paths.append(path)
 
-    # 4. deterministic independence (an echo chamber must not reach a publication verdict)
+    present = {str(review.get("persona")) for review in reviews}
+    if set(profile.get("personas") or []) != present or present != set(PERSONAS):
+        raise GateBlock("venue VERIFY: frozen personas do not match the completed blind panel")
+
     independence = _independence(reviews, list(PERSONAS))
+    verdict = derive_meets_bar(reviews, profile, independence)
+    verdict["evidence_ref"] = [_rel(run_dir, path) for path in review_paths]
+    verdict["independence_ref"] = (
+        f"{PRECOMMIT_REF} + {PANEL_RECEIPT_REF}; same_profile_hash="
+        f"{precommit['profile_hash']}; lexical_max_sim={independence['max_sim']}"
+    )
+    paths.append(write_artifact(
+        run_dir, "VERIFY", "venue-readiness-verdict.artifact.json",
+        "venue_readiness_verdict", "area-chair-synthesizer", verdict, ts,
+    ))
 
-    # 5. derive the verdict (the SINGLE source of truth) and bind REAL evidence refs.
-    #    derive_meets_bar returns evidence_ref as a placeholder — replace it with the real review
-    #    artifact paths (relative to the run dir, so the trace is portable).
-    verdict_payload = derive_meets_bar(reviews, profile, independence)
-    rel_review_refs = [_rel(run_dir, rp) for rp in review_paths]
-    verdict_payload["evidence_ref"] = rel_review_refs
-    verdict_payload["independence_ref"] = (
-        f"(deterministic pairwise lexical independence; max_sim={independence['max_sim']})")
-    verdict_path = write_artifact(run_dir, "VERIFY", "venue-readiness-verdict.artifact.json",
-                                  "venue_readiness_verdict", "area-chair-synthesizer",
-                                  verdict_payload, ts)
-    paths.append(verdict_path)
-
-    # 6. north-star drift gate over the substantive review text + verdict (audit H2)
-    drift_texts = [venue_id]
-    drift_texts += [_review_text(r) for r in reviews]
-    drift_texts.append(str(verdict_payload["verdict"]))
-    dpath, _facts = _shared.run_drift_gate(run_dir, "VERIFY", ts, drift_texts)
-    paths.append(dpath)
+    strongest = meta.get("strongest_reject_reason") or {}
+    drift_texts = [
+        str(profile.get("venue_id") or ""),
+        *[_review_text(review) for review in reviews],
+        str(strongest.get("reason") or ""),
+        str(verdict["verdict"]),
+    ]
+    drift_path, _facts = _shared.run_drift_gate(run_dir, "VERIFY", ts, drift_texts)
+    paths.append(drift_path)
 
     unresolved = collect_unresolved_triggers(reviews)
-    report = {"verdict": verdict_payload["verdict"], "unresolved_triggers": len(unresolved),
-              "independence_max_sim": independence["max_sim"], "personas": sorted(present)}
-    return paths, report
+    venue_markdown = write_venue_readiness_markdown(run_dir, generated_at=ts)
+    return paths, {
+        "verdict": verdict["verdict"],
+        "unresolved_triggers": len(unresolved),
+        "independence_max_sim": independence["max_sim"],
+        "personas": sorted(present),
+        "precommit_hash": precommit["precommit_hash"],
+        "profile_hash": precommit["profile_hash"],
+        "meta_advisory_only": meta["advisory_only"],
+        "director_venue_readiness": venue_markdown,
+    }
 
 
-def _rel(run_dir, abs_path) -> str:
-    """A run-relative reference (evidence/VERIFY/...) for an artifact path; falls back to the
-    basename if the path is not under the run dir (never raises — refs are advisory text)."""
-    try:
-        return str(Path(abs_path).resolve().relative_to(Path(run_dir).resolve())).replace("\\", "/")
-    except (ValueError, OSError):
-        return Path(abs_path).name
+def _report(run_dir: str, ts: str) -> tuple:
+    venue_markdown = write_venue_readiness_markdown(run_dir, generated_at=ts)
+    note = {
+        "summary": "venue_readiness used a frozen profile/config, three mutually blind persona "
+                   "reviews, and a post-panel area-chair meta-review. The readiness label is "
+                   "deterministically derived and advisory only. Venue choice remains /venue-pick; "
+                   "submit/iterate/pivot remains /venue-decide.",
+        "references": [VENUE_READINESS_REL.as_posix()],
+        "produced_artifacts": [],
+        "open_questions": [],
+    }
+    path = write_artifact(
+        run_dir, "REPORT", "report-note.artifact.json", "report_note",
+        "research-orchestrator", note, ts,
+    )
+    return [path], {"director_venue_readiness": venue_markdown}
 
 
-def _report(run_dir, ts) -> tuple:
-    note = {"summary": "venue_readiness: blind 3-persona panel reviewed against the venue rubric; "
-                       "the readiness verdict is DERIVED by venue_score (never self-declared). "
-                       "Venue choice is /venue-pick, the publish decision is /venue-decide — both "
-                       "human gates; the panel only informs them.",
-            "references": [], "produced_artifacts": [], "open_questions": []}
-    return ([write_artifact(run_dir, "REPORT", "report-note.artifact.json",
-                            "report_note", "research-orchestrator", note, ts)], {})
-
-
-def run_dets(run_dir, stage, ts) -> tuple:
-    """Deterministic producers/gates for a stage -> (artifact_paths, report). Raises GateBlock on a
-    STRUCTURAL failure (missing worker / persona, venue_id mismatch, schema, drift). The readiness
-    verdict label itself is information for the director, NOT a GateBlock."""
+def run_dets(run_dir: str, stage: str, ts: str) -> tuple:
     if stage == "VERIFY":
         return _verify_dets(run_dir, ts)
     if stage == "REPORT":
@@ -343,9 +430,7 @@ def run_dets(run_dir, stage, ts) -> tuple:
     raise ValueError(f"venue_readiness has no stage {stage!r}")
 
 
-def run_dets_with_repair(run_dir, stage, ts):
-    """Bounded revise loop around the structural gates: ("ok", (paths, report)) or
-    ("retry", feedback) when a worker bundle was malformed and the budget allows another attempt;
-    re-raises the original GateBlock when the repair cap is reached (director escalation)."""
+def run_dets_with_repair(run_dir: str, stage: str, ts: str):
     return bounded_repair.attempt_with_repair(
-        run_dir, stage, _shared.budget(run_dir), ts, lambda: run_dets(run_dir, stage, ts))
+        run_dir, stage, _shared.budget(run_dir), ts, lambda: run_dets(run_dir, stage, ts)
+    )

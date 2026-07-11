@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: DESIGN
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: integration_plan
 permission_scope:
   read: [run-store evidence (DESIGN), the active domain profile, task_frame, experiment_matrix, unified_config]

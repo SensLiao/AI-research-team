@@ -25,6 +25,7 @@ from research_agent_teams.operate.artifacts import GateBlock
 from research_agent_teams.operate.modes import venue_readiness as vr
 from research_agent_teams.tools.ledger import read_events, verify_chain
 from research_agent_teams.tools.validate_artifact import validate_artifact
+from research_agent_teams.tools.venue_readiness_markdown import venue_readiness_path
 
 TS = "2026-06-13T00:00:00Z"
 VENUE = "NeurIPS-2025"
@@ -49,6 +50,22 @@ def _profile(personas=("methodology", "domain", "adversarial"), venue_id=VENUE):
         "anti_bias_suppressors": ["hasn't beaten SOTA alone"],
         "personas": list(personas),
         "evidence_ref": ["agents/references/venue-rubrics/tier1-conf-ml.md", "manuscript.pdf"],
+    }}
+
+
+def _review_config(run_ref="vr-run"):
+    return {"review_config": {
+        "run_ref": str(run_ref),
+        "lenses": [
+            {"lens": "methodology", "anchor": "D1 requires traceable soundness and D5 rerun evidence",
+             "reviewer_agent": "venue-reviewer-methodology-blind"},
+            {"lens": "domain", "anchor": "D2 requires consequential use and D6 precise communication",
+             "reviewer_agent": "venue-reviewer-domain-blind"},
+            {"lens": "adversarial", "anchor": "D3 requires a real delta and D4 equal-budget evaluation",
+             "reviewer_agent": "venue-reviewer-adversarial-blind"},
+        ],
+        "synthesis_mandate": "Surface disagreements, classify fatal versus repairable gaps, and defer human gates.",
+        "inputs_to_review": ["manuscript.pdf", "repo/eval.py", "repo/train.py"],
     }}
 
 
@@ -128,10 +145,112 @@ def _bundle(run_dir, name, payload):
     (inbox / name).write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _stage_bundles(run_dir, profile, reviews):
+def _attestation(run_dir, persona, precommit):
+    config = json.loads(
+        (Path(run_dir) / vr.CONFIG_BUNDLE_REL).read_text(encoding="utf-8")
+    )["review_config"]
+    anchors = {row["lens"]: row["anchor"] for row in config["lenses"]}
+    return {
+        "protocol_version": vr.PROTOCOL_VERSION,
+        "persona": persona,
+        "reviewer_instance_id": f"venue-reviewer-{persona}-blind",
+        "precommit_hash": precommit["precommit_hash"],
+        "profile_ref": vr.PROFILE_REF,
+        "config_ref": vr.CONFIG_REF,
+        "precommit_ref": vr.PRECOMMIT_REF,
+        "anchor_echo": anchors[persona],
+        "input_refs": [
+            "task_frame.artifact.json", vr.PROFILE_REF, vr.CONFIG_REF, vr.PRECOMMIT_REF,
+            "manuscript.pdf",
+        ],
+        "other_review_refs_seen": [],
+        "output_ref": vr._review_ref(persona),
+    }
+
+
+def _meta_review(reviews, panel_receipt):
+    by_dim = {}
+    for persona, bundle in reviews.items():
+        for dim, row in bundle["venue_review"]["dimension_scores"].items():
+            by_dim.setdefault(dim, []).append((persona, row["score"]))
+    disagreements = []
+    for dim, rows in sorted(by_dim.items()):
+        scores = [score for _persona, score in rows]
+        if len(scores) >= 2 and max(scores) != min(scores):
+            disagreements.append({
+                "dimension": dim,
+                "personas": [persona for persona, _score in rows],
+                "score_span": max(scores) - min(scores),
+                "synthesis": "The stricter score is retained until the cited protocol evidence resolves the difference.",
+                "evidence_ref": [vr._review_ref(persona) for persona, _score in rows],
+            })
+    fired = []
+    for persona, bundle in reviews.items():
+        for trigger in bundle["venue_review"].get("reject_triggers_fired") or []:
+            fired.append((persona, trigger))
+    if fired:
+        persona, trigger = fired[0]
+        strongest = {
+            "status": "repairable",
+            "reason": f"{trigger['trigger_id']} fires at {trigger['locus']} and blocks a positive submission screen.",
+            "source_personas": [persona],
+            "evidence_ref": [vr._review_ref(persona), trigger["locus"]],
+        }
+        repairable = [{
+            "gap_id": "R1", "trigger_id": trigger["trigger_id"],
+            "reason": trigger["required_fix"],
+            "evidence_ref": [vr._review_ref(persona), trigger["locus"]],
+            "responsible_stage": "EXECUTE",
+        }]
+    else:
+        strongest = {
+            "status": "repairable",
+            "reason": "The D4 evaluation protocol is the strongest remaining challenge despite no fired trigger.",
+            "source_personas": ["methodology", "adversarial"],
+            "evidence_ref": [vr._review_ref("methodology"), vr._review_ref("adversarial")],
+        }
+        repairable = [{
+            "gap_id": "R1",
+            "reason": "Reconcile the D4 scoring difference with a documented equal-budget audit.",
+            "evidence_ref": [vr._review_ref("methodology"), vr._review_ref("adversarial")],
+            "responsible_stage": "VERIFY",
+        }]
+    return {"venue_meta_review": {
+        "protocol_version": vr.PROTOCOL_VERSION,
+        "precommit_hash": panel_receipt["precommit_hash"],
+        "review_receipt_ref": vr.PANEL_RECEIPT_REF,
+        "review_hashes": panel_receipt["review_hashes"],
+        "reviewer_disagreements": disagreements,
+        "strongest_reject_reason": strongest,
+        "fatal_gaps": [],
+        "repairable_gaps": repairable,
+        "repair_sequence": [{
+            "priority": 1, "gap_id": "R1",
+            "action": repairable[0]["reason"],
+            "responsible_stage": repairable[0]["responsible_stage"],
+            "verification": "Repeat the blind D4 audit against the frozen rubric and compare evidence loci.",
+        }],
+        "human_gates": ["/venue-pick", "/venue-decide"],
+        "advisory_only": True,
+    }}
+
+
+def _stage_bundles(run_dir, profile, reviews, *, finalize=True):
     _bundle(run_dir, "VERIFY.profile.bundle.json", profile)
+    _bundle(run_dir, "VERIFY.review-config.bundle.json", _review_config(run_dir))
+    precommit = vr.prepare_review_precommit(run_dir, TS)
     for persona, payload in reviews.items():
-        _bundle(run_dir, f"VERIFY.review.{persona}.bundle.json", payload)
+        strict_payload = dict(payload)
+        strict_payload["blind_review_attestation"] = _attestation(run_dir, persona, precommit)
+        _bundle(run_dir, f"VERIFY.review.{persona}.bundle.json", strict_payload)
+    if finalize:
+        panel_receipt = vr.prepare_review_panel_receipt(run_dir, TS)
+        strict_reviews = {
+            persona: json.loads(_review_path.read_text(encoding="utf-8"))
+            for persona in reviews
+            for _review_path in [Path(run_dir) / "inbox" / f"VERIFY.review.{persona}.bundle.json"]
+        }
+        _bundle(run_dir, "VERIFY.meta.bundle.json", _meta_review(strict_reviews, panel_receipt))
 
 
 def _validate_written(paths):
@@ -161,12 +280,32 @@ def test_venue_readiness_happy_path_meets_bar(tmp_path):
     assert rep["unresolved_triggers"] == 0
     assert rep["independence_max_sim"] < vr.INDEPENDENCE_SIM_THRESHOLD
     assert rep["personas"] == ["adversarial", "domain", "methodology"]
+    assert rep["director_venue_readiness"].replace("\\", "/").endswith(
+        "director-review/venue/venue-readiness.md"
+    )
+    venue_md = venue_readiness_path(rd)
+    assert venue_md.is_file()
+    venue_text = venue_md.read_text(encoding="utf-8")
+    assert "Derived readiness verdict: `MEETS-BAR`" in venue_text
+    assert VENUE in venue_text
+    assert "## Blind Review Protocol" in venue_text
+    assert "## Reviewer Disagreements" in venue_text
+    assert "## Strongest Rejection Case" in venue_text
+    assert "## Fatal Vs Repairable" in venue_text
+    assert "## Repair Order" in venue_text
+    assert "## Human Venue Gate" in venue_text
+    assert "advisory_only: true" in venue_text
+    assert "/venue-pick" in venue_text and "/venue-decide" in venue_text
+    assert "not an acceptance fact" in venue_text
+    assert not any("director-review/venue/venue-readiness.md" in p.replace("\\", "/") for p in paths)
     assert res["gate"] == "director_signoff"
 
-    # all 4 artifacts (profile + 3 reviews) + verdict + drift are contract-valid
+    # frozen profile/config + 3 reviews + derived verdict + drift are contract-valid
     _validate_written(paths)
-    assert sum("review-" in p for p in paths) == 3
+    assert sum(any(f"review-{persona}.artifact.json" in p for persona in vr.PERSONAS) for p in paths) == 3
     assert any("venue-profile" in p for p in paths)
+    assert any("review-config" in p for p in paths)
+    assert any("venue-meta-review.artifact.json" in p for p in paths)
 
     # the verdict's evidence_ref points at the REAL review artifact paths (run-relative)
     verdict = json.loads((Path(rd) / "evidence" / "VERIFY" /
@@ -200,7 +339,7 @@ def test_venue_readiness_blocks_missing_adversarial_persona(tmp_path):
     rd = _begin(runs, "vr3")["run_dir"]
     reviews = _accept_reviews()
     del reviews["adversarial"]                                   # only 2 of 3 seats filled
-    _stage_bundles(rd, _profile(), reviews)
+    _stage_bundles(rd, _profile(), reviews, finalize=False)
     spine.open_stage(rd, "VERIFY", TS)
     with pytest.raises(GateBlock) as ei:
         vr.run_dets(rd, "VERIFY", TS)
@@ -217,7 +356,7 @@ def test_venue_readiness_blocks_venue_id_mismatch(tmp_path):
     rd = _begin(runs, "vr4")["run_dir"]
     reviews = _accept_reviews()
     reviews["domain"]["venue_review"]["venue_id"] = "ICML-2025"   # calibrated to the wrong venue
-    _stage_bundles(rd, _profile(), reviews)
+    _stage_bundles(rd, _profile(), reviews, finalize=False)
     spine.open_stage(rd, "VERIFY", TS)
     with pytest.raises(GateBlock) as ei:
         vr.run_dets(rd, "VERIFY", TS)
@@ -240,6 +379,10 @@ def test_venue_readiness_fired_trigger_is_not_yet_with_unresolved(tmp_path):
     assert verdict["unresolved_reject_triggers"] == ["RT-D4-BASELINE"]
     assert verdict["verdict"] in ("NOT-YET", "WRONG-PATH", "DEGRADED-REVIEW")
     assert verdict["gaps"]                                       # a NOT-YET populates gap-to-fix
+    venue_text = venue_readiness_path(rd).read_text(encoding="utf-8")
+    assert "Derived readiness verdict: `NOT-YET`" in venue_text
+    assert "RT-D4-BASELINE" in venue_text
+    assert "tune the baseline" in venue_text
     _validate_written(paths)
 
 
@@ -254,35 +397,134 @@ def test_venue_readiness_report_stage_emits_note(tmp_path):
     spine.commit_stage(rd, "VERIFY", paths, TS)
 
     spine.open_stage(rd, "REPORT", TS)
-    rpaths, _ = vr.run_dets(rd, "REPORT", TS)
+    rpaths, rrep = vr.run_dets(rd, "REPORT", TS)
     res = spine.commit_stage(rd, "REPORT", rpaths, TS)
     assert res["done"] is True
+    assert rrep["director_venue_readiness"].replace("\\", "/").endswith(
+        "director-review/venue/venue-readiness.md"
+    )
     note = json.loads(Path(rpaths[0]).read_text())["payload"]
     assert "venue-pick" in note["summary"] and "venue-decide" in note["summary"]
+    assert "director-review/venue/venue-readiness.md" in note["references"]
     _validate_written(rpaths)
 
 
 # --------------------------------------------------------------------------- 7. llm_step dispatch shape
 
-def test_venue_readiness_llm_step_multi_worker_shape(tmp_path):
+def test_venue_readiness_llm_step_is_a_strict_staged_state_machine(tmp_path):
     runs = tmp_path / "runs"
     rd = _begin(runs, "vr7")["run_dir"]
-    spec = vr.llm_step(rd, "VERIFY", REQUEST, model_policy="default")
-    # the venue panel: profile worker FIRST, then the three personas (they read its bundle)
-    assert spec["label"] == "venue-panel" and "FIRST" in spec["note"]
-    labels = [w["label"] for w in spec["workers"]]
-    assert labels == ["venue-selector", "venue-reviewer-methodology",
-                      "venue-reviewer-domain", "venue-reviewer-adversarial"]
-    # reviewing is judgment with asymmetric cost: opus in BOTH model policies
-    assert {w["model"] for w in spec["workers"]} == {"opus"}
-    assert vr.llm_step(rd, "VERIFY", REQUEST, model_policy="max_quality")["workers"][0]["model"] == "opus"
-    # every prompt carries the north-star block + a REPAIR clause; only the adversarial seat opens code
-    for w in spec["workers"]:
-        assert "NORTH STAR" in w["prompt"]
-    assert "REPAIR ATTEMPT" in spec["workers"][1]["prompt"]
-    assert "OPEN THE EVAL CODE" in spec["workers"][3]["prompt"]      # adversarial obligation
-    assert "OPEN THE EVAL CODE" not in spec["workers"][1]["prompt"]  # methodology stays in lens
-    # distinct output bundles; the profile worker writes the profile bundle the personas read
-    assert len({w["output"] for w in spec["workers"]}) == 4
-    assert spec["workers"][0]["output"].endswith("inbox/VERIFY.profile.bundle.json")
+    profile_step = vr.llm_step(rd, "VERIFY", REQUEST, model_policy="default")
+    assert profile_step["label"] == "venue-selector"
+    assert profile_step["output"].endswith("inbox/VERIFY.profile.bundle.json")
+    assert "NORTH STAR" in profile_step["prompt"]
+
+    _bundle(rd, "VERIFY.profile.bundle.json", _profile())
+    config_step = vr.llm_step(rd, "VERIFY", REQUEST, model_policy="max_quality")
+    assert config_step["label"] == "venue-review-configurator"
+    assert config_step["output"].endswith("inbox/VERIFY.review-config.bundle.json")
+    assert "Do not read the manuscript" in config_step["prompt"]
+
+    _bundle(rd, "VERIFY.review-config.bundle.json", _review_config(rd))
+    review_step = vr.llm_step(rd, "VERIFY", REQUEST)
+    assert review_step["label"] == "venue-blind-review-panel"
+    assert review_step["protocol_version"] == vr.PROTOCOL_VERSION
+    assert (Path(rd) / vr.PRECOMMIT_RECEIPT_REL).is_file()
+    labels = [worker["label"] for worker in review_step["workers"]]
+    assert labels == ["venue-reviewer-methodology", "venue-reviewer-domain",
+                      "venue-reviewer-adversarial"]
+    assert len({worker["output"] for worker in review_step["workers"]}) == 3
+    assert {worker["model"] for worker in review_step["workers"]} == {"opus"}
+    for worker in review_step["workers"]:
+        assert "NORTH STAR" in worker["prompt"]
+        assert review_step["precommit_hash"] in worker["prompt"]
+        assert vr.PROFILE_REF in worker["read_scope"]
+        assert "inbox/VERIFY.review.*.bundle.json" in worker["forbidden_read_scope"]
+        assert "another reviewer" in worker["prompt"]
+
+    precommit = json.loads((Path(rd) / vr.PRECOMMIT_RECEIPT_REL).read_text(encoding="utf-8"))
+    strict_reviews = {}
+    for persona, payload in _accept_reviews().items():
+        strict = {**payload, "blind_review_attestation": _attestation(rd, persona, precommit)}
+        strict_reviews[persona] = strict
+        _bundle(rd, f"VERIFY.review.{persona}.bundle.json", strict)
+    meta_step = vr.llm_step(rd, "VERIFY", REQUEST)
+    assert meta_step["label"] == "area-chair-synthesizer"
+    assert meta_step["depends_on"] == ["freeze-blind-review-panel"]
+    assert (Path(rd) / vr.PANEL_RECEIPT_REL).is_file()
+    panel_receipt = json.loads((Path(rd) / vr.PANEL_RECEIPT_REL).read_text(encoding="utf-8"))
+    _bundle(rd, "VERIFY.meta.bundle.json", _meta_review(strict_reviews, panel_receipt))
+    assert vr.llm_step(rd, "VERIFY", REQUEST) is None
     assert vr.llm_step(rd, "REPORT", REQUEST) is None
+
+
+def test_venue_precommit_blocks_any_reviewer_that_started_early(tmp_path):
+    rd = _begin(tmp_path / "runs", "vr8")["run_dir"]
+    _bundle(rd, "VERIFY.profile.bundle.json", _profile())
+    _bundle(rd, "VERIFY.review-config.bundle.json", _review_config(rd))
+    _bundle(rd, "VERIFY.review.methodology.bundle.json", _accept_reviews()["methodology"])
+    with pytest.raises(GateBlock) as exc:
+        vr.prepare_review_precommit(rd, TS)
+    assert "before the venue profile/config precommit" in str(exc.value)
+
+
+def test_venue_panel_blocks_reviewer_that_saw_another_review(tmp_path):
+    rd = _begin(tmp_path / "runs", "vr9")["run_dir"]
+    _bundle(rd, "VERIFY.profile.bundle.json", _profile())
+    _bundle(rd, "VERIFY.review-config.bundle.json", _review_config(rd))
+    precommit = vr.prepare_review_precommit(rd, TS)
+    for persona, payload in _accept_reviews().items():
+        attestation = _attestation(rd, persona, precommit)
+        if persona == "domain":
+            attestation["other_review_refs_seen"] = [vr._review_ref("methodology")]
+        _bundle(rd, f"VERIFY.review.{persona}.bundle.json", {
+            **payload, "blind_review_attestation": attestation,
+        })
+    with pytest.raises(GateBlock) as exc:
+        vr.prepare_review_panel_receipt(rd, TS)
+    assert "saw another review" in str(exc.value)
+
+
+def test_venue_panel_blocks_reviewer_read_scope_escape(tmp_path):
+    rd = _begin(tmp_path / "runs", "vr9b")["run_dir"]
+    _bundle(rd, "VERIFY.profile.bundle.json", _profile())
+    _bundle(rd, "VERIFY.review-config.bundle.json", _review_config(rd))
+    precommit = vr.prepare_review_precommit(rd, TS)
+    for persona, payload in _accept_reviews().items():
+        attestation = _attestation(rd, persona, precommit)
+        if persona == "domain":
+            attestation["input_refs"].append("undeclared/private-review-draft.md")
+        _bundle(rd, f"VERIFY.review.{persona}.bundle.json", {
+            **payload, "blind_review_attestation": attestation,
+        })
+    with pytest.raises(GateBlock) as exc:
+        vr.prepare_review_panel_receipt(rd, TS)
+    assert "exceeded its blind read scope" in str(exc.value)
+
+
+def test_venue_verify_blocks_frozen_profile_hash_tamper(tmp_path):
+    rd = _begin(tmp_path / "runs", "vr10")["run_dir"]
+    _stage_bundles(rd, _profile(), _accept_reviews())
+    profile_path = Path(rd) / vr.PROFILE_ARTIFACT_REL
+    artifact = json.loads(profile_path.read_text(encoding="utf-8"))
+    artifact["payload"]["accept_condition"] = "D1>=1"
+    profile_path.write_text(json.dumps(artifact), encoding="utf-8")
+    spine.open_stage(rd, "VERIFY", TS)
+    with pytest.raises(GateBlock) as exc:
+        vr.run_dets(rd, "VERIFY", TS)
+    assert "changed after freeze" in str(exc.value)
+
+
+def test_venue_area_chair_cannot_start_before_panel_receipt(tmp_path):
+    rd = _begin(tmp_path / "runs", "vr11")["run_dir"]
+    _bundle(rd, "VERIFY.profile.bundle.json", _profile())
+    _bundle(rd, "VERIFY.review-config.bundle.json", _review_config(rd))
+    precommit = vr.prepare_review_precommit(rd, TS)
+    _bundle(rd, "VERIFY.meta.bundle.json", {"venue_meta_review": {}})
+    for persona, payload in _accept_reviews().items():
+        _bundle(rd, f"VERIFY.review.{persona}.bundle.json", {
+            **payload, "blind_review_attestation": _attestation(rd, persona, precommit),
+        })
+    with pytest.raises(GateBlock) as exc:
+        vr.prepare_review_panel_receipt(rd, TS)
+    assert "meta bundle exists before" in str(exc.value)

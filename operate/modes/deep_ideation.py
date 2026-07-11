@@ -21,6 +21,7 @@ from typing import Optional
 from . import _deep_ideate, _shared, new_direction
 from ..artifacts import GateBlock  # noqa: F401  (re-exported for parity with new_direction's surface)
 from ..bounded_repair import attempt_with_repair
+from ...tools.idea_bet_markdown import write_idea_bet_menu
 
 STAGES = ["DISCOVER", "IDEATE", "REPORT"]
 DEFAULT_VAULT = new_direction.DEFAULT_VAULT
@@ -39,16 +40,29 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
     spawns IN ORDER (each deep worker reads the prior workers' inbox bundles). REPORT is deterministic."""
     if stage == "DISCOVER":
         deep = _deep_ideate.discover_deep_workers(run_dir, request, vault, model_policy, with_analogy=True)
-        return {"workers": [new_direction.discover_worker(run_dir, request, vault, model_policy), *deep],
-                "panel_note": "spawn IN ORDER: discover -> formalize -> mechanism -> analogy -> "
-                              "contradiction (each reads the prior inbox/*.bundle.json). deep_ideation "
-                              "adds the cross-domain analogy-mapper that new_direction omits."}
+        workers = [new_direction.discover_worker(run_dir, request, vault, model_policy), *deep]
+        return {"workers": workers,
+                "worker_order": [worker["label"] for worker in workers],
+                "parallel_groups": [
+                    ["direction-grounding-scout"],
+                    ["mathematical-formalizer", "contradiction-miner"],
+                    ["mathematical-formalizer"],
+                    ["analogy-mapper"],
+                ],
+                "panel_note": "Wave 1 grounds sources. Wave 2 runs formalization and contradiction "
+                              "mining independently. Wave 3 builds mechanisms; wave 4 maps only "
+                              "mechanism-supported cross-domain analogies."}
     if stage == "IDEATE":
-        return {"workers": [new_direction.ideate_worker(run_dir, request, vault, model_policy),
-                            new_direction.collision_step(run_dir, vault=vault, model_policy=model_policy),
-                            _deep_ideate.experiment_worker(run_dir, request, model_policy)],
-                "panel_note": "spawn IN ORDER: ideate -> novelty-collision -> experiment-architect "
-                              "(collision + experiment read inbox/IDEATE.bundle.json)."}
+        workers = [new_direction.ideate_worker(run_dir, request, vault, model_policy),
+                   new_direction.ranker_worker(run_dir, request, model_policy),
+                   new_direction.collision_step(run_dir, vault=vault, model_policy=model_policy),
+                   _deep_ideate.experiment_worker(run_dir, request, model_policy)]
+        return {"workers": workers,
+                "worker_order": [worker["label"] for worker in workers],
+                "parallel_groups": [[worker["label"]] for worker in workers],
+                "panel_note": "spawn IN ORDER: hypothesis-generator (proposer) -> idea-tournament-ranker -> "
+                              "novelty-collision-checker -> experiment-planner. Ranking, collision, "
+                              "and planning remain independent judgments with distinct bundles."}
     return None  # REPORT is deterministic
 
 
@@ -64,17 +78,19 @@ def _discover_dets(run_dir, ts) -> tuple:
 def _ideate_dets(run_dir, ts) -> tuple:
     """new_direction's proven IDEATE base (dedup -> tournament -> collision gate -> /idea-bet menu) +
     experiment sketches + idea lineage, STRICT (required=True)."""
-    paths, report = new_direction._ideate_dets(run_dir, ts, new_direction._load_bundle(run_dir, "IDEATE"))
+    paths, report = new_direction._ideate_dets(run_dir, ts, new_direction._load_ideate_bundle(run_dir))
     dpaths, frag = _deep_ideate.deep_ideate_producers(run_dir, ts, required=True)
     report.update(frag)
+    try:
+        report["director_idea_bet_menu"] = write_idea_bet_menu(run_dir, generated_at=ts)
+    except ValueError as exc:
+        raise GateBlock(str(exc))
     return paths + dpaths, report
 
 
 def _report(run_dir, ts) -> tuple:
     """new_direction's honest report-note + the REPORT-stage aggregation (scorecard + integrity + eval)."""
-    paths, report = new_direction._report(run_dir, ts)
-    paths += _deep_ideate.produce_report_quality(run_dir, ts)
-    return paths, report
+    return new_direction._report(run_dir, ts)
 
 
 def run_dets(run_dir, stage, ts) -> tuple:

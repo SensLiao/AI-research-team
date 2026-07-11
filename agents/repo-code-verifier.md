@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: DISCOVER
 kind: verifier
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: repo_verification
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the cited repo facts, the active domain profile]

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/aers_skill_candidate.schema.json",
+  "title": "AERS Skill Candidate",
+  "description": "Read-only metadata candidate from Auto-Empirical Research Skills. This is catalog metadata only, not a loaded child skill and not a vault fact.",
+  "type": "object",
+  "required": [
+    "name",
+    "path",
+    "collection",
+    "description_snippet",
+    "tags",
+    "license",
+    "commercial_use",
+    "source_url",
+    "source_confidence",
+    "security_review",
+    "quality_flags",
+    "has_references",
+    "skill_path_exists",
+    "risk_level",
+    "risk_reasons",
+    "recommendation",
+    "catalog_only"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "name": {"type": "string"},
+    "path": {
+      "type": "string",
+      "pattern": "^[^\\\\]*$",
+      "description": "Repo-relative POSIX-style path from the AERS catalog."
+    },
+    "collection": {"type": "string"},
+    "description_snippet": {"type": "string", "maxLength": 320},
+    "tags": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "string"}
+      }
+    },
+    "license": {"type": "string"},
+    "commercial_use": {"type": "string"},
+    "source_url": {"type": "string"},
+    "source_confidence": {"type": "string"},
+    "security_review": {"type": "string"},
+    "quality_score": {"type": ["integer", "null"], "minimum": 0, "maximum": 100},
+    "quality_flags": {"type": "array", "items": {"type": "string"}},
+    "line_count": {"type": ["integer", "null"], "minimum": 0},
+    "has_references": {"type": "boolean"},
+    "skill_path_exists": {"type": "boolean"},
+    "risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+    "risk_reasons": {"type": "array", "items": {"type": "string"}},
+    "recommendation": {
+      "type": "string",
+      "enum": ["safe_reference", "review_required", "do_not_use"]
+    },
+    "catalog_only": {
+      "const": true,
+      "description": "True means no child skill body was loaded or executed."
+    }
+  }
+}

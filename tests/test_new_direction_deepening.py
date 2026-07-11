@@ -72,10 +72,25 @@ def _run_full(tmp_path):
     # IDEATE (needs both IDEATE + COLLISION bundles)
     _drop(rd, "IDEATE", IDEATE_BUNDLE)
     _drop(rd, "COLLISION", COLLISION_BUNDLE)
+    new_direction.write_legacy_replay_receipt(
+        rd, source_run_id="fixture-nd", reason="exercise frozen pre-panel compatibility")
     new_direction.run_dets(rd, "IDEATE", TS)
     # REPORT
     new_direction.run_dets(rd, "REPORT", TS)
     return rd
+
+
+def test_new_direction_declares_three_wave_sparse_discover_dag(tmp_path):
+    rd = _begin(tmp_path)
+    spec = new_direction.llm_step(rd, "DISCOVER", REQ)
+    assert spec["parallel_groups"] == [
+        ["direction-grounding-scout"],
+        ["mathematical-formalizer", "contradiction-miner"],
+        ["mathematical-formalizer"],
+    ]
+    workers = spec["workers"]
+    assert workers[-1]["label"] == "contradiction-miner"
+    assert workers[-1]["depends_on"] == ["direction-grounding-scout"]
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +263,8 @@ def _run_full_deep(tmp_path):
     _drop(rd, "IDEATE", IDEATE_BUNDLE)
     _drop(rd, "COLLISION", COLLISION_BUNDLE)
     _drop(rd, "EXPERIMENT", EXPERIMENT_BUNDLE)
+    new_direction.write_legacy_replay_receipt(
+        rd, source_run_id="fixture-nd-deep", reason="exercise frozen pre-panel compatibility")
     new_direction.run_dets(rd, "IDEATE", TS)
     new_direction.run_dets(rd, "REPORT", TS)
     return rd

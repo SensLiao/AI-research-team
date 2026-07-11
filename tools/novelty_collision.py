@@ -21,8 +21,8 @@ The four honest verdicts (this IS the director's methodology, encoded):
               -> ``cut = hard_block`` + recorded to the known-prior-art ledger by the caller.
   WHITE_SPACE the combination exists but on a different application/problem, OR was proposed but
               never experimentally validated here -> KEEP + flag ◇ (the publishable sweet spot).
-  CLEAR       targeted retrieval surfaced no collision within coverage -> KEEP ✓ (honest:
-              "no collision found", not "proven novel").
+  CLEAR       the independent checker emitted an explicit per-idea clear finding after targeted
+              retrieval -> KEEP ✓ (honest: "no collision found", not "proven novel").
   UNVERIFIED  retrieval unavailable, OR a claimed collider could not be existence-verified ->
               KEEP but loudly flag; never cut on an unproven/nonexistent paper.
 
@@ -228,7 +228,8 @@ def build_collision_verdict(
     Args:
         menu_ideas: ``[{idea_id, summary, ...}]`` — EVERY idea appears exactly once in ``ideas[]``.
         findings: the checker worker's ``collision_findings`` list, matched by ``idea_id``. An idea
-            with no finding and no ledger hit is CLEAR when ``retrieval_grounded`` (else UNVERIFIED).
+            with no finding and no ledger hit is always UNVERIFIED. Grounded retrieval proves only
+            that a search channel ran; it cannot substitute for an explicit per-idea finding.
         existence_by_ref: ``ref -> state`` from ``citation_existence`` (real string ``"verified"``
             means proven-exists; the design alias ``"EXISTS"`` is also accepted). The caller
             (``run_collision_gate``) does the real lookup; this function only reads the result.
@@ -305,14 +306,15 @@ def build_collision_verdict(
 
         finding = finding_by_id.get(idea_id)
         if finding is None:
-            # Retrieval ran but the worker produced no finding for this idea -> no collision found.
+            # Fail closed: another idea's grounded finding proves neither coverage nor clearance for
+            # this one. A missing row is an incomplete audit, never implicit evidence of novelty.
             out_ideas.append({
                 "idea_id": idea_id,
-                "verdict": VERDICT_CLEAR,
+                "verdict": VERDICT_UNVERIFIED,
                 "cut": False,
                 "colliding_papers": [],
-                "reason": "no collision finding for this idea under grounded retrieval (no collision "
-                          "found, not proven novel)",
+                "reason": "targeted retrieval ran, but the collision checker emitted no finding for "
+                          "this idea; per-idea coverage is missing, so novelty remains UNVERIFIED",
                 "source": SOURCE_WORKER,
             })
             continue

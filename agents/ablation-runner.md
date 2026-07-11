@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: EXECUTE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: run_record
 permission_scope:
   read: [task_frame, run-store evidence (EXECUTE), the approved protocol_spec, the active domain profile]

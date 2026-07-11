@@ -4,13 +4,13 @@
   "title": "Research Brief",
   "description": "DISCOVER-stage artifact (absorption wave 1; open_deep_research recipe). Output of the deep_research operate mode: the supervisor decomposes the topic into perspective-split research angles (STORM-style principled split), each researcher's findings are compressed per-researcher before merging, and the brief records iterations used against the budget counters (max_iterations_without_new_evidence / max_fulltext_reads — the previously-dead budget knobs this mode wires live). Findings carry source_refs by reference only.",
   "type": "object",
-  "required": ["topic", "perspectives", "findings", "iterations_used", "saturation_reached", "evidence_ref"],
+  "required": ["topic", "perspectives", "findings", "bottom_line", "consensus", "live_disagreements", "evidence_gaps", "actionable_next_questions", "iterations_used", "saturation_reached", "evidence_ref"],
   "additionalProperties": false,
   "properties": {
     "topic": {"type": "string", "minLength": 1, "pattern": "\\S"},
     "perspectives": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 3,
       "items": {
         "type": "object",
         "required": ["perspective_id", "angle", "questions"],
@@ -24,6 +24,7 @@
     },
     "findings": {
       "type": "array",
+      "minItems": 3,
       "description": "Per-perspective COMPRESSED findings (per-researcher compression before merge — the open_deep_research lesson).",
       "items": {
         "type": "object",
@@ -35,6 +36,32 @@
           "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "DOI / arXiv / URL / [[slug]] references only."}
         }
       }
+    },
+    "bottom_line": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The director-facing one-paragraph answer: what should be believed or done now, with uncertainty."
+    },
+    "consensus": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Claims that multiple perspectives/sources agree on."
+    },
+    "live_disagreements": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Important disagreements, contradictions, or unsettled points."
+    },
+    "evidence_gaps": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Missing evidence that limits decisions."
+    },
+    "actionable_next_questions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1},
+      "description": "Next questions or experiments a researcher should run because of this brief."
     },
     "iterations_used": {"type": "integer", "minimum": 0, "description": "Search-refine iterations consumed (tracked against max_iterations_without_new_evidence)."},
     "saturation_reached": {"type": "boolean"},

@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: DESIGN
 kind: hard-gate
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: alignment_report
 permission_scope:
   read: [task_frame, run-store evidence (DESIGN), the experiment's code/config, the active domain profile]

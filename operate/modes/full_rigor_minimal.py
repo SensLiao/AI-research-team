@@ -1,45 +1,52 @@
-"""Operate recipe for the `full_rigor_minimal` mode (DESIGN->EXECUTE->ANALYZE->VERIFY->REPORT).
+"""Operated full-rigor experiment recipe.
 
-The M2 spine slice — the machine's highest-rigor chain — wired into the one-button operate layer
-(audit B1). It is the operated twin of tests/test_m2_spine_slice.py: the SAME deterministic cores
-and hard gates, driven stage-by-stage with real LLM workers in the WORK slot instead of one opaque
-agent_fn. Division of labour, per stage:
-
-  - LLM workers (sub-agents) do the design reasoning / script authoring / finding extraction that a
-    deterministic tool cannot. Each worker prompt carries the north-star block, the COMPLETE bundle
-    JSON shape, an HONESTY clause (never fabricate a slug / number / run), and a REPAIR clause.
-  - Deterministic cores do EVERY gate (never an LLM): variable-control + metric-impl + alignment +
-    preregistration (DESIGN), preflight + train-test-parity (EXECUTE), result-sanity +
-    goal-alignment + prereg-deviation (ANALYZE), adversarial-review (VERIFY), and the north-star
-    drift gate at every stage boundary. A BLOCK writes its verdict artifact (so the refusal is
-    auditable) and raises GateBlock — the run halts at that stage, never reaching the next.
-
-Cross-stage state: the CLI drives each stage as an INDEPENDENT process, so there is NO in-memory
-carry between stages. A stage that needs an upstream product re-reads it from
-`evidence/<UPSTREAM>/<name>.artifact.json` (the checkpointed, contract-valid artifact) — the same
-single source of truth the ledger pins.
-
-Honesty boundary (the EXECUTE gate): a `journal == null` bundle is the truthful "scripts emitted but
-the experiment did NOT run on a GPU" path — every run_record must then be status 'planned' (a
-provisional record with metrics but no journal is a self-claim of a run that never happened, and
-BLOCKs). A real journal unlocks the parity gate and lets run_records be 'provisional'. A result
-stays 'provisional' until the human `/promote-to-vault` gate re-derives it — this recipe never
-freezes a number.
+Every substantive stage is a real panel.  First-round seats are blind to their
+siblings; only the stage synthesizer may read their bundles.  Deterministic code
+owns all gates and all result numbers.  In particular, ANALYZE reconstructs
+findings from persisted raw result rows and provisional run records rather than
+accepting values authored by a model.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from .. import bounded_repair
-from . import _shared
 from ..artifacts import GateBlock, write_artifact
+from . import _shared
+from ._full_rigor_workers import (
+    PANEL_SPECS,
+    bundle_path as _bundle_path,
+    llm_step as _panel_llm_step,
+    load_panel as _load_panel,
+)
 from ...tools import prereg as prereg_tool
 from ...tools.alignment_checker import build_report as alignment_build
 from ...tools.compare_metric_impls import build_report as metric_build
+from ...tools.experiment_feedback import build_experiment_feedback
+from ...tools.execution_receipt_import import (
+    ExecutionReceiptError,
+    IMPORT_ARTIFACT_REL,
+    build_execution_import,
+    import_note_payload,
+    validate_records_against_import,
+    verified_binding_index,
+)
 from ...tools.experiment_planner import build_matrix
+from ...tools.full_rigor_execution_truth import (
+    ExecutionTruthError,
+    derive_numeric_evidence,
+    execution_state,
+    verified_execution_import,
+)
+from ...tools.full_rigor_markdown import (
+    EXPERIMENT_PLAN_REL,
+    RESULT_READINESS_REL,
+    write_full_rigor_markdown,
+)
 from ...tools.goal_alignment_audit import build_verdict as goal_alignment_build
 from ...tools.preflight_checker import build_report as preflight_build
 from ...tools.protocol_compiler import compile_protocol
@@ -48,469 +55,929 @@ from ...tools.review_checker import build_report as review_build
 from ...tools.sanity_checker import build_report as sanity_build
 from ...tools.variable_control_checker import build_report as vc_build
 
+
 STAGES = ["DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]
 DEFAULT_VAULT = "AI agent database/PhD-Research-OS"
 
-# Cross-stage artifact references (run-relative; the canonical names the spine slice checkpoints).
 MATRIX_REF = "evidence/DESIGN/experiment-matrix.artifact.json"
 PROTOCOL_REF = "evidence/DESIGN/protocol-spec.artifact.json"
 ALIGNMENT_REF = "evidence/DESIGN/alignment-report.artifact.json"
 PREREG_REF = "evidence/DESIGN/preregistration.artifact.json"
 
-
-# --------------------------------------------------------------------------- worker prompts (LLM WORK)
-
-_HONESTY = ("HONESTY (hard): never invent a slug / DOI / metric number / run that did not happen; a "
-            "result is 'provisional' until the human /promote gate, never frozen here; distinguish "
-            "PLANNED (scripts emitted, not executed) from PROVISIONAL (really ran on a GPU). If this "
-            "prompt carries a REPAIR ATTEMPT block, fix EXACTLY what the gate names, change nothing "
-            "else, and re-emit the COMPLETE bundle (never argue with the gate, never relax honesty).")
-
-_DESIGN_PROMPT = """You are the DESIGN worker of a full-rigor experiment run, for the request:
-
-    REQUEST: {request}
-
-{north_star_block}
-
-Design ONE clean comparison: a research question, the studied/controlled/frozen variable split, a
-baseline + treatment condition that isolate exactly the studied variable, a ranked next-run batch, a
-leakage declaration, the train + test pipeline facts, the per-condition metric implementations, and
-the PREREGISTRATION that freezes what you will measure and how (before any number exists).
-
-{honesty}
-
-Write ONLY this JSON to `{out}` (filename ends in .bundle.json, NOT .artifact.json):
-{{
-  "design": {{"rq":"<research question>",
-     "variables":{{"studied":["<v>"],"controlled":["<v>"],"frozen":["<v>"]}},
-     "conditions":[{{"id":"c0","factors":{{"<factor>":"<val>"}},"baseline":true}},
-                   {{"id":"c1","factors":{{"<factor>":"<val>"}}}}],
-     "ranked_batch":[{{"rank":1,"condition_id":"c1","hypothesis":"<falsifiable hypothesis>"}}],
-     "leakage":"<explicit leakage-safety statement>"}},
-  "train": {{"preprocessing":{{...}},"augmentation":{{"enabled":true}},"pretrained":"none|<ckpt>",
-     "precision":"fp32","inference":{{"threshold":0.5}},"label_space":["bg","fg"]}},
-  "test": {{"preprocessing":{{...}},"augmentation":{{"enabled":false}},"pretrained":"none|<ckpt>",
-     "precision":"fp32","inference":{{"threshold":0.5}},"label_space":["bg","fg"]}},
-  "shared_config": {{"optimizer":"adamw"}},
-  "metric_impls": [{{"condition_id":"c0","metric_impls":{{"Dice":{{"impl_ref":"<ref>","spacing":null,
-       "postprocess":null}}}}}},
-                   {{"condition_id":"c1","metric_impls":{{"Dice":{{"impl_ref":"<ref>","spacing":null,
-       "postprocess":null}}}}}}],
-  "prereg": {{"primary_metric":"Dice","secondary_metrics":[],"n_seeds_planned":3,
-     "stopping_rule":"fixed 3 seeds per condition","analysis_plan":"paired permutation vs baseline on \
-the primary metric, Holm-corrected, alpha=0.05"}}
-}}
-Quantities: exactly ONE baseline; ranks contiguous 1..N; metric_impls IDENTICAL across conditions \
-(same impl_ref/spacing/postprocess) or the metric gate BLOCKs; test augmentation MUST be disabled. \
-After writing, verify valid JSON. Return one line: rq + #conditions + primary_metric."""
-
-_EXECUTE_PROMPT = """You are the EXECUTE worker of a full-rigor run, for the request:
-
-    REQUEST: {request}
-
-{north_star_block}
-
-Emit the REAL runnable dataset-construction scripts (code, not prose) for the frozen design, and
-record each condition's run. CRITICAL honesty fork:
-  - If the experiment did NOT actually run on a GPU (the usual case here — no in-machine executor):
-    set `journal` to null and make EVERY run_record status "planned" (scripts emitted, not executed).
-  - If a real run happened: provide the journal (designed vs actual pipeline facts) and run_records
-    may be "provisional" with metrics.
-
-{honesty}
-
-Write ONLY this JSON to `{out}` (filename ends in .bundle.json, NOT .artifact.json):
-{{
-  "train_script": {{"split":"train","script":"def build_train():\\n    return load('train')",
-     "from_protocol_ref":"protocol_spec","data_hash_expected":"<hash>"}},
-  "test_script": {{"split":"test","script":"def build_test():\\n    return load('test')",
-     "from_protocol_ref":"protocol_spec","data_hash_expected":"<hash>",
-     "augmentation_enabled":false,"frozen":true}},
-  "journal": null,
-  "run_records": [{{"condition_id":"c1","status":"planned",
-     "provenance":{{"config_hash":"<hash>","data_hash":"<hash>","seed":<int>}}}}]
-}}
-(For a REAL run, journal = {{"condition_id":"c1","config_hash":"<h>","designed_train":{{...}},
-"designed_test":{{...}},"actual_train":{{...}},"actual_test":{{...}},"metrics_snapshot":{{...}}}} and a
-run_record may be "provisional" with "metrics".) After writing, verify valid JSON. Return one line: \
-scripts emitted + executed(yes/no) + #run_records."""
-
-_ANALYZE_PROMPT = """You are the ANALYZE worker of a full-rigor run, for the request:
-
-    REQUEST: {request}
-
-{north_star_block}
-
-Report the findings the run produced — ONLY metrics you preregistered, ONLY conditions you declared
-(an undeclared metric/condition is outcome-switching and will BLOCK; put exploratory numbers in
-`caveats` prose). If you have PER-SEED values for a condition and its baseline, include them so a
-real paired significance test can run; otherwise omit per_seed and the report will state "no
-significance computed".
-
-{honesty}
-
-Write ONLY this JSON to `{out}` (filename ends in .bundle.json, NOT .artifact.json):
-{{
-  "findings": [{{"metric":"Dice","value":0.81,"condition_id":"c1","baseline_value":0.78,
-     "baseline_condition_id":"c0"}}],
-  "per_seed": {{"c1":{{"Dice":[0.80,0.81,0.82]}},"c0":{{"Dice":[0.77,0.78,0.79]}}}},
-  "caveats": ["<any honest caveat>"]
-}}
-(Set per_seed to null when you have no per-seed data.) After writing, verify valid JSON. Return one \
-line: #findings + stats(yes/no) + primary-metric value."""
-
-_VERIFY_PROMPT = """You are the adversarial VERIFY reviewer of a full-rigor run, for the request:
-
-    REQUEST: {request}
-
-{north_star_block}
-
-Try to REFUTE the result before it can be trusted, across five checks. For EACH, investigate (open
-the eval code / data pipeline read-only) and report {{pass, evidence}} — a claimed pass with no
-evidence is treated as not-defensible (default-to-BLOCK under uncertainty).
-
-{honesty}
-
-Write ONLY this JSON to `{out}` (filename ends in .bundle.json, NOT .artifact.json):
-{{
-  "checks": {{
-    "leakage":    {{"pass":true,"evidence":"<what you verified>"}},
-    "fairness":   {{"pass":true,"evidence":"<...>"}},
-    "eval_frame": {{"pass":true,"evidence":"<...>"}},
-    "provenance": {{"pass":true,"evidence":"<...>"}},
-    "overclaim":  {{"pass":true,"evidence":"<...>"}}
-  }}
-}}
-After writing, verify valid JSON. Return one line: which checks pass + any blocking reason."""
+REVIEW_CHECKS = ("leakage", "fairness", "eval_frame", "provenance", "overclaim")
 
 
-# --------------------------------------------------------------------------- seed + cross-stage reads
+def _panel_has_started(run_dir, stage: str) -> bool:
+    spec = PANEL_SPECS[stage]
+    return any(
+        _bundle_path(run_dir, stage, seat).is_file()
+        for seat in (*spec["first"], spec["synth"])
+    )
+
+
+def _write_json_once(path: Path, payload: dict) -> None:
+    if path.is_file():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_scripts_only_analysis_panel(run_dir) -> None:
+    """Materialize the scientifically empty ANALYZE panel without model calls."""
+    failure = {
+        "hypothesis_ref": f"{MATRIX_REF}#ranked_batch/0",
+        "outcome": "inconclusive",
+        "attribution": "unknown",
+        "attribution_state": "symptom_only",
+        "implementation_valid": False,
+        "data_valid": False,
+        "evaluation_valid": False,
+        "protocol_valid": False,
+        "statistics_valid": False,
+        "counterfactual_check": "not_tested",
+        "replication_status": "not_attempted",
+        "diagnostic_intervention": None,
+        "replication_artifacts": [],
+        "summary": "No execution result exists, so no failure or success can be attributed.",
+        "next_action_hint": "stop",
+    }
+    narrative = {
+        "caveats": ["Scripts-only: no signed execution result exists to analyze."],
+        "failure_attribution": failure,
+        "claim_boundary": "Experiment design and scripts exist; no empirical result claim is admissible.",
+        "next_experiment": "Run the frozen protocol through the attested external executor.",
+    }
+    rows = {
+        "result-extractor": {"candidate_findings": [], "evidence_refs": []},
+        "statistician": {
+            "candidate_per_seed": None,
+            "assessment": {
+                "method": "not-applicable",
+                "uncertainty_limit": "No result rows exist in scripts-only state.",
+            },
+        },
+        "failure-attribution-skeptic": {
+            "failure_attribution": failure,
+            "alternative_explanations": [],
+            "claim_boundary": narrative["claim_boundary"],
+            "next_experiment": narrative["next_experiment"],
+        },
+        "analysis-synthesizer": {
+            "source_seats": list(PANEL_SPECS["ANALYZE"]["first"]),
+            "resolution_log": ["Deterministic scripts-only branch: no result evidence to reconcile."],
+            "synthesized_bundle": narrative,
+        },
+    }
+    for seat, payload in rows.items():
+        _write_json_once(_bundle_path(run_dir, "ANALYZE", seat), payload)
+
+
+def _write_scripts_only_verify_panel(run_dir) -> None:
+    """Record that result review is inapplicable until attested results exist."""
+    checks = {
+        name: {"pass": False, "evidence": "Not applicable: scripts-only, no result claim exists."}
+        for name in REVIEW_CHECKS
+    }
+    next_experiment = "Execute the frozen protocol before requesting result verification."
+    for seat in PANEL_SPECS["VERIFY"]["first"]:
+        _write_json_once(_bundle_path(run_dir, "VERIFY", seat), {
+            "checks": checks,
+            "seat_summary": "No empirical result is available for independent review.",
+            "next_experiment": next_experiment,
+        })
+    _write_json_once(_bundle_path(run_dir, "VERIFY", PANEL_SPECS["VERIFY"]["synth"]), {
+        "source_seats": list(PANEL_SPECS["VERIFY"]["first"]),
+        "checks": checks,
+        "result_ready": False,
+        "claim_boundary": "Scripts-only: no result claim may be reviewed or frozen.",
+        "next_experiment": next_experiment,
+    })
+
+
+def llm_step(run_dir: str, stage: str, request: str, vault=None,
+             model_policy: str = "max_quality"):
+    """Skip result-only panels when the external executor produced no result."""
+    if stage in {"ANALYZE", "VERIFY"} and not _panel_has_started(run_dir, stage):
+        state = execution_state(run_dir)
+        if state["label"] == "scripts-only":
+            if stage == "ANALYZE":
+                _write_scripts_only_analysis_panel(run_dir)
+            else:
+                _write_scripts_only_verify_panel(run_dir)
+            return None
+    return _panel_llm_step(
+        run_dir, stage, request, vault=vault, model_policy=model_policy,
+    )
+
+def _require_source_seats(stage: str, synth: dict) -> None:
+    expected = list(PANEL_SPECS[stage]["first"])
+    if synth.get("source_seats") != expected:
+        raise GateBlock(
+            f"{stage} synthesis source_seats must be exactly {expected}; got "
+            f"{synth.get('source_seats')!r}"
+        )
+
+
+def _require_synthesized_bundle(stage: str, panel: dict[str, dict]) -> dict:
+    synth = panel[str(PANEL_SPECS[stage]["synth"])]
+    _require_source_seats(stage, synth)
+    bundle = synth.get("synthesized_bundle")
+    if not isinstance(bundle, dict):
+        raise GateBlock(f"{stage} synthesizer missing object synthesized_bundle")
+    return bundle
+
+
+def _validate_design_panel(panel: dict[str, dict]) -> dict:
+    if not isinstance(panel["experiment-planner"].get("candidate_bundle"), dict):
+        raise GateBlock("DESIGN experiment-planner missing candidate_bundle")
+    concerns: list[tuple[str, str]] = []
+    for seat in PANEL_SPECS["DESIGN"]["first"][1:]:
+        assessment = panel[seat].get("assessment")
+        if not isinstance(assessment, dict):
+            raise GateBlock(f"DESIGN {seat} missing assessment")
+        verdict = assessment.get("verdict")
+        blocking = assessment.get("blocking_concerns")
+        if verdict not in {"PASS", "REVISE"} or not isinstance(blocking, list):
+            raise GateBlock(f"DESIGN {seat} assessment is malformed")
+        if verdict == "REVISE" and not blocking:
+            raise GateBlock(f"DESIGN {seat} says REVISE without a blocking concern")
+        concerns.extend((seat, str(item)) for item in blocking if str(item).strip())
+    synth = panel["design-synthesizer"]
+    bundle = _require_synthesized_bundle("DESIGN", panel)
+    resolutions = synth.get("resolution_log") or []
+    for seat, concern in concerns:
+        resolved = any(
+            isinstance(row, dict)
+            and row.get("seat") == seat
+            and row.get("concern") == concern
+            and str(row.get("resolution") or "").strip()
+            for row in resolutions
+        )
+        if not resolved:
+            raise GateBlock(f"DESIGN synthesis left {seat} concern unresolved: {concern}")
+    return bundle
+
+
+def _validate_execute_panel(panel: dict[str, dict]) -> dict:
+    scripts = panel["script-author"].get("script_bundle")
+    auditor = panel["execution-evidence-auditor"]
+    evidence = auditor.get("execution_evidence")
+    assessment = auditor.get("assessment")
+    if not isinstance(scripts, dict) or not isinstance(evidence, dict):
+        raise GateBlock("EXECUTE first-round seats must emit script_bundle and execution_evidence")
+    if not isinstance(assessment, dict) or assessment.get("verdict") != "PASS":
+        raise GateBlock("EXECUTE execution-evidence-auditor did not PASS the evidence handoff")
+    if assessment.get("blocking_concerns"):
+        raise GateBlock(
+            f"EXECUTE evidence auditor BLOCK: {assessment.get('blocking_concerns')}"
+        )
+    bundle = _require_synthesized_bundle("EXECUTE", panel)
+    expected = {**scripts, **evidence}
+    if bundle != expected:
+        raise GateBlock(
+            "EXECUTE synthesizer changed first-round scripts or execution evidence; synthesis may "
+            "combine but never author journal/run_record content"
+        )
+    return bundle
+
+
+def _validate_analysis_panel(panel: dict[str, dict]) -> dict:
+    extractor = panel["result-extractor"]
+    statistician = panel["statistician"]
+    skeptic = panel["failure-attribution-skeptic"]
+    if not isinstance(extractor.get("candidate_findings"), list):
+        raise GateBlock("ANALYZE result-extractor missing candidate_findings list")
+    if "candidate_per_seed" not in statistician or not isinstance(
+        statistician.get("assessment"), dict
+    ):
+        raise GateBlock("ANALYZE statistician missing candidate_per_seed or assessment")
+    for key in ("failure_attribution", "alternative_explanations", "claim_boundary", "next_experiment"):
+        if key not in skeptic:
+            raise GateBlock(f"ANALYZE failure-attribution-skeptic missing {key}")
+    failure = skeptic.get("failure_attribution")
+    if not isinstance(failure, dict):
+        raise GateBlock("ANALYZE failure-attribution-skeptic failure_attribution must be an object")
+    for key in (
+        "hypothesis_ref", "attribution_state", "implementation_valid", "data_valid",
+        "evaluation_valid", "protocol_valid", "statistics_valid", "counterfactual_check",
+        "replication_status", "diagnostic_intervention", "replication_artifacts",
+    ):
+        if key not in failure:
+            raise GateBlock(f"ANALYZE failure-attribution-skeptic missing failure_attribution.{key}")
+    bundle = _require_synthesized_bundle("ANALYZE", panel)
+    forbidden = sorted(set(bundle) & {"findings", "per_seed", "p_value", "effect_size"})
+    if forbidden:
+        raise GateBlock(
+            f"ANALYZE synthesizer may not author numeric result fields: {forbidden}"
+        )
+    for key in ("caveats", "failure_attribution", "claim_boundary", "next_experiment"):
+        if key not in bundle:
+            raise GateBlock(f"ANALYZE synthesized_bundle missing {key}")
+    if bundle["failure_attribution"] != failure:
+        raise GateBlock(
+            "ANALYZE synthesizer changed the skeptic's failure attribution; causal state may not "
+            "be upgraded during synthesis"
+        )
+    return bundle
+
+
+def _merge_verify_checks(panel: dict[str, dict]) -> tuple[dict, dict]:
+    synth = panel["verify-synthesizer"]
+    _require_source_seats("VERIFY", synth)
+    merged = {}
+    for check_name in REVIEW_CHECKS:
+        rows = []
+        for seat in PANEL_SPECS["VERIFY"]["first"]:
+            checks = panel[seat].get("checks")
+            if not isinstance(checks, dict) or not isinstance(checks.get(check_name), dict):
+                raise GateBlock(f"VERIFY {seat} did not investigate {check_name}")
+            row = checks[check_name]
+            if not isinstance(row.get("pass"), bool):
+                raise GateBlock(f"VERIFY {seat}/{check_name} pass must be boolean")
+            rows.append((seat, row))
+        passed = all(row["pass"] for _seat, row in rows)
+        evidence = " | ".join(
+            f"{seat}: {str(row.get('evidence') or 'no evidence').strip()}" for seat, row in rows
+        )
+        merged[check_name] = {"pass": passed, "evidence": evidence}
+
+        synth_row = (synth.get("checks") or {}).get(check_name)
+        if not isinstance(synth_row, dict) or synth_row.get("pass") is not passed:
+            raise GateBlock(
+                f"VERIFY synthesis overrode independent verdict for {check_name}; expected pass={passed}"
+            )
+    if not isinstance(synth.get("result_ready"), bool):
+        raise GateBlock("VERIFY synthesis result_ready must be boolean")
+    return synth, merged
+
 
 def _run_id(run_dir) -> str:
     return str(_shared.task_frame(run_dir)["payload"].get("task_id") or Path(run_dir).name)
 
 
 def _seed(run_dir) -> int:
-    """A deterministic per-run seed derived from the run_id (no wall clock) — threaded into the
-    permutation / bootstrap RNGs so the same run yields byte-identical statistics."""
     return int(hashlib.sha256(_run_id(run_dir).encode("utf-8")).hexdigest()[:8], 16)
 
 
 def _read_payload(run_dir, ref: str) -> dict:
-    """Read an upstream artifact's payload from its run-relative path (the cross-stage carry).
-    A missing upstream artifact is a readable GateBlock (the stage was driven out of order)."""
-    p = Path(run_dir) / ref
-    if not p.is_file():
+    path = Path(run_dir) / ref
+    if not path.is_file():
         raise GateBlock(
-            f"full_rigor: required upstream artifact {ref} is missing — the producing stage must "
-            "complete (and checkpoint) before this stage runs")
-    return json.loads(p.read_text(encoding="utf-8"))["payload"]
+            f"full_rigor required upstream artifact {ref} is missing; complete its producing stage first"
+        )
+    return json.loads(path.read_text(encoding="utf-8"))["payload"]
 
 
 def _direction_anchor(run_dir) -> List[str]:
-    """The run's direction-bearing text (the frozen DESIGN research_question + hypotheses) that a
-    downstream stage carries into its drift check. EXECUTE/ANALYZE/VERIFY emit thin, code-shaped
-    output (condition ids, metric names) that holds no north-star vocabulary on its own; pairing it
-    with the rq the stage is SERVING lets the drift gate's zero-coverage rule judge real direction
-    (a stage executing the run's rq is on-direction), while its out-of-scope-topic rule still fires
-    on any injected off-direction term in the stage's own output."""
     try:
         matrix = _read_payload(run_dir, MATRIX_REF)
     except GateBlock:
         return []
-    bits = [str(matrix.get("research_question") or "")]
-    bits += [str(r.get("hypothesis") or "") for r in (matrix.get("ranked_batch") or [])]
-    return [b for b in bits if b]
+    texts = [str(matrix.get("research_question") or "")]
+    texts.extend(str(row.get("hypothesis") or "") for row in matrix.get("ranked_batch") or [])
+    return [text for text in texts if text]
 
 
-# --------------------------------------------------------------------------- stage plan (what the skill spawns)
-
-def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
-    """The single LLM worker to dispatch for a stage (REPORT is deterministic -> None).
-
-    Tier: max_quality -> all-opus; default -> task-appropriate (DESIGN = the heavy judgment, opus;
-    EXECUTE script authoring + ANALYZE extraction = sonnet; VERIFY adversarial review = opus)."""
-    prompts = {"DESIGN": _DESIGN_PROMPT, "EXECUTE": _EXECUTE_PROMPT,
-               "ANALYZE": _ANALYZE_PROMPT, "VERIFY": _VERIFY_PROMPT}
-    if stage not in prompts:
-        return None
-    out = f"{run_dir}/inbox/{stage}.bundle.json"
-    if model_policy == "max_quality":
-        model = "opus"
-    else:
-        model = "sonnet" if stage in ("EXECUTE", "ANALYZE") else "opus"
-    labels = {"DESIGN": "design-worker", "EXECUTE": "execute-worker",
-              "ANALYZE": "analyze-worker", "VERIFY": "adversarial-reviewer"}
-    return {"label": labels[stage], "model": model, "output": out,
-            "prompt": prompts[stage].format(
-                request=request, north_star_block=_shared.north_star_block(run_dir),
-                honesty=_HONESTY, out=out)}
-
-
-def _load_bundle(run_dir, stage) -> dict:
-    p = Path(run_dir) / "inbox" / f"{stage}.bundle.json"
-    if not p.exists():
-        raise FileNotFoundError(
-            f"{stage} worker bundle missing at {p} — dispatch the {stage} LLM worker first (see llm_step).")
-    return json.loads(p.read_text(encoding="utf-8"))
-
-
-# --------------------------------------------------------------------------- DESIGN
-
-def _design_dets(run_dir, ts, b) -> tuple:
-    _shared.require_bundle_keys(b, ["design", "train", "test", "shared_config", "metric_impls",
-                                    "prereg"], stage="DESIGN", mode="full_rigor_minimal")
-    prof = _shared.domain_profile(run_dir)
+def _design_dets(run_dir, ts, panel) -> tuple:
+    bundle = _validate_design_panel(panel)
+    _shared.require_bundle_keys(
+        bundle,
+        ["design", "train", "test", "shared_config", "metric_impls", "prereg"],
+        stage="DESIGN",
+        mode="full_rigor_minimal",
+    )
+    profile = _shared.domain_profile(run_dir)
     paths: List[str] = []
-    d = b["design"]
+    design = bundle["design"]
     try:
-        matrix = build_matrix(d["rq"], d["variables"], d["conditions"], d["ranked_batch"], d["leakage"])
-    except ValueError as e:  # design-hygiene guard (e.g. zero/two baselines, bad ranks) -> readable gate
-        raise GateBlock(f"experiment-matrix design-hygiene BLOCK: {e}")
+        matrix = build_matrix(
+            design["rq"],
+            design["variables"],
+            design["conditions"],
+            design["ranked_batch"],
+            design["leakage"],
+        )
+    except ValueError as exc:
+        raise GateBlock(f"experiment-matrix design-hygiene BLOCK: {exc}") from exc
 
-    vc = vc_build(matrix, profile=prof)                                      # HARD GATE 1
-    paths.append(write_artifact(run_dir, "DESIGN", "variable-control-report.artifact.json",
-                                "variable_control_report", "variable-control-auditor", vc, ts,
-                                "blocked" if vc["verdict"] == "BLOCK" else "approved"))
-    if vc["verdict"] == "BLOCK":
-        raise GateBlock(f"variable-control BLOCK: {vc['violations']}")
+    variable_control = vc_build(matrix, profile=profile)
+    paths.append(write_artifact(
+        run_dir,
+        "DESIGN",
+        "variable-control-report.artifact.json",
+        "variable_control_report",
+        "variable-control-auditor",
+        variable_control,
+        ts,
+        "blocked" if variable_control["verdict"] == "BLOCK" else "approved",
+    ))
+    if variable_control["verdict"] == "BLOCK":
+        raise GateBlock(f"variable-control BLOCK: {variable_control['violations']}")
 
-    mi = metric_build(b["metric_impls"], profile=prof)                       # HARD GATE 2
-    paths.append(write_artifact(run_dir, "DESIGN", "metric-impl-report.artifact.json",
-                                "metric_impl_report", "metric-implementation-auditor", mi, ts,
-                                "blocked" if mi["verdict"] == "BLOCK" else "approved"))
-    if mi["verdict"] == "BLOCK":
-        raise GateBlock(f"metric-impl BLOCK: {mi['violations']}")
+    metric_report = metric_build(bundle["metric_impls"], profile=profile)
+    paths.append(write_artifact(
+        run_dir,
+        "DESIGN",
+        "metric-impl-report.artifact.json",
+        "metric_impl_report",
+        "metric-implementation-auditor",
+        metric_report,
+        ts,
+        "blocked" if metric_report["verdict"] == "BLOCK" else "approved",
+    ))
+    if metric_report["verdict"] == "BLOCK":
+        raise GateBlock(f"metric-impl BLOCK: {metric_report['violations']}")
 
-    proto = compile_protocol(matrix, from_matrix_ref=MATRIX_REF, shared=b["shared_config"],
-                             seed=_seed(run_dir))
-    paths.append(write_artifact(run_dir, "DESIGN", "protocol-spec.artifact.json",
-                                "protocol_spec", "protocol-compiler", proto, ts))
+    protocol = compile_protocol(
+        matrix, from_matrix_ref=MATRIX_REF, shared=bundle["shared_config"], seed=_seed(run_dir)
+    )
+    paths.append(write_artifact(
+        run_dir, "DESIGN", "protocol-spec.artifact.json", "protocol_spec",
+        "protocol-compiler", protocol, ts
+    ))
 
-    al = alignment_build(b["train"], b["test"], profile=prof,                # HARD GATE 3
-                         train_ref="train-pipeline", test_ref="test-pipeline")
-    paths.append(write_artifact(run_dir, "DESIGN", "alignment-report.artifact.json",
-                                "alignment_report", "train-test-alignment-auditor", al, ts,
-                                "blocked" if al["verdict"] == "BLOCK" else "approved"))
-    if al["verdict"] == "BLOCK":
-        raise GateBlock(f"alignment BLOCK: {al['violations']}")
+    alignment = alignment_build(
+        bundle["train"], bundle["test"], profile=profile,
+        train_ref="train-pipeline", test_ref="test-pipeline"
+    )
+    paths.append(write_artifact(
+        run_dir,
+        "DESIGN",
+        "alignment-report.artifact.json",
+        "alignment_report",
+        "train-test-alignment-auditor",
+        alignment,
+        ts,
+        "blocked" if alignment["verdict"] == "BLOCK" else "approved",
+    ))
+    if alignment["verdict"] == "BLOCK":
+        raise GateBlock(f"alignment BLOCK: {alignment['violations']}")
 
-    try:                                                                     # HARD GATE 4 (freeze)
-        prereg_payload = prereg_tool.build_prereg(matrix, **b["prereg"])
-    except ValueError as e:  # an unfrozen analysis contract is fail-loud -> readable gate
-        raise GateBlock(f"preregistration BLOCK (analysis contract not frozen): {e}")
-    paths.append(write_artifact(run_dir, "DESIGN", "preregistration.artifact.json",
-                                "preregistration", "experiment-planner", prereg_payload, ts))
+    try:
+        prereg = prereg_tool.build_prereg(matrix, **bundle["prereg"])
+    except ValueError as exc:
+        raise GateBlock(f"preregistration BLOCK (analysis contract not frozen): {exc}") from exc
+    paths.append(write_artifact(
+        run_dir, "DESIGN", "preregistration.artifact.json", "preregistration",
+        "experiment-planner", prereg, ts
+    ))
 
-    # north-star drift gate over the run's substantive design vocabulary (rq + hypotheses + ids)
-    drift_texts = [d["rq"]]
-    drift_texts += [str(r.get("hypothesis") or "") for r in matrix["ranked_batch"]]
-    drift_texts += [str(c.get("id") or "") for c in matrix["conditions"]]
-    dpath, _f = _shared.run_drift_gate(run_dir, "DESIGN", ts, drift_texts)
-    paths.append(dpath)
+    drift_texts = [design["rq"]]
+    drift_texts.extend(str(row.get("hypothesis") or "") for row in matrix["ranked_batch"])
+    drift_texts.extend(str(row.get("id") or "") for row in matrix["conditions"])
+    drift_path, _ = _shared.run_drift_gate(run_dir, "DESIGN", ts, drift_texts)
+    paths.append(drift_path)
+    paths.append(write_artifact(
+        run_dir, "DESIGN", "experiment-matrix.artifact.json", "experiment_matrix",
+        "experiment-planner", matrix, ts
+    ))
+    write_full_rigor_markdown(run_dir, generated_at=ts)
+    return paths, {
+        "vc_gate": variable_control["verdict"],
+        "metric_gate": metric_report["verdict"],
+        "alignment_gate": alignment["verdict"],
+        "prereg_frozen": True,
+        "n_conditions": len(matrix["conditions"]),
+    }
 
-    paths.append(write_artifact(run_dir, "DESIGN", "experiment-matrix.artifact.json",   # exit
-                                "experiment_matrix", "experiment-planner", matrix, ts))
-    report = {"vc_gate": vc["verdict"], "metric_gate": mi["verdict"], "alignment_gate": al["verdict"],
-              "prereg_frozen": True, "n_conditions": len(matrix["conditions"])}
-    return paths, report
 
-
-# --------------------------------------------------------------------------- EXECUTE
-
-def _execute_dets(run_dir, ts, b) -> tuple:
-    _shared.require_bundle_keys(b, ["train_script", "test_script", "journal", "run_records"],
-                                stage="EXECUTE", mode="full_rigor_minimal")
-    prof = _shared.domain_profile(run_dir)
+def _execute_dets(run_dir, ts, panel) -> tuple:
+    bundle = _validate_execute_panel(panel)
+    _shared.require_bundle_keys(
+        bundle,
+        [
+            "train_script",
+            "test_script",
+            "journal",
+            "run_records",
+            "executor_receipt_refs",
+        ],
+        stage="EXECUTE", mode="full_rigor_minimal"
+    )
+    profile = _shared.domain_profile(run_dir)
     paths: List[str] = []
+    paths.append(write_artifact(
+        run_dir, "EXECUTE", "trainset-script.artifact.json", "dataset_script_record",
+        "trainset-builder", bundle["train_script"], ts
+    ))
+    paths.append(write_artifact(
+        run_dir, "EXECUTE", "testset-script.artifact.json", "dataset_script_record",
+        "testset-builder", bundle["test_script"], ts
+    ))
 
-    # 1. dataset scripts (schema self-checks: test must be frozen + augmentation off)
-    paths.append(write_artifact(run_dir, "EXECUTE", "trainset-script.artifact.json",
-                                "dataset_script_record", "trainset-builder", b["train_script"], ts))
-    paths.append(write_artifact(run_dir, "EXECUTE", "testset-script.artifact.json",
-                                "dataset_script_record", "testset-builder", b["test_script"], ts))
-
-    # 2. preflight (reads the DESIGN protocol + alignment payloads — the cross-stage carry)
     protocol = _read_payload(run_dir, PROTOCOL_REF)
     alignment = _read_payload(run_dir, ALIGNMENT_REF)
-    pf = preflight_build(b["train_script"], b["test_script"], protocol, alignment,   # HARD GATE 1
-                         profile=prof, protocol_ref=PROTOCOL_REF, alignment_ref=ALIGNMENT_REF)
-    paths.append(write_artifact(run_dir, "EXECUTE", "preflight-report.artifact.json",
-                                "preflight_report", "preflight-checker", pf, ts,
-                                "blocked" if pf["verdict"] == "BLOCK" else "approved"))
-    if pf["verdict"] == "BLOCK":
-        raise GateBlock(f"preflight BLOCK: {pf['violations']}")
+    preflight = preflight_build(
+        bundle["train_script"],
+        bundle["test_script"],
+        protocol,
+        alignment,
+        profile=profile,
+        protocol_ref=PROTOCOL_REF,
+        alignment_ref=ALIGNMENT_REF,
+        file_identity_manifests=bundle.get("file_identity_manifests"),
+    )
+    paths.append(write_artifact(
+        run_dir,
+        "EXECUTE",
+        "preflight-report.artifact.json",
+        "preflight_report",
+        "preflight-checker",
+        preflight,
+        ts,
+        "blocked" if preflight["verdict"] == "BLOCK" else "approved",
+    ))
+    if preflight["verdict"] == "BLOCK":
+        raise GateBlock(f"preflight BLOCK: {preflight['violations']}")
 
-    journal = b["journal"]
-    run_records = b["run_records"] or []
+    journal = bundle["journal"]
+    records = bundle["run_records"] or []
+    receipt_refs = bundle["executor_receipt_refs"]
+    if not isinstance(receipt_refs, list) or not all(
+        isinstance(ref, str) and ref.strip() for ref in receipt_refs
+    ):
+        raise GateBlock("executor_receipt_refs must be a list of non-empty relative paths")
+    for record in records:
+        status = record.get("status")
+        metrics = record.get("metrics") or {}
+        if status == "planned" and metrics:
+            raise GateBlock(
+                f"planned run_record carries metrics for {record.get('condition_id')!r}; "
+                "planned is not numeric execution evidence"
+            )
+        if journal is None and status != "planned":
+            raise GateBlock(
+                "no journal = no real run: every run_record must be planned and metric-free"
+            )
+
+    provisional = any(record.get("status") == "provisional" for record in records)
+    if provisional:
+        try:
+            execution_import = build_execution_import(
+                run_dir,
+                receipt_refs,
+                run_id=_run_id(run_dir),
+                created_at=ts,
+            )
+            validate_records_against_import(records, execution_import)
+        except ExecutionReceiptError as exc:
+            raise GateBlock(f"executor receipt/import BLOCK: {exc}") from exc
+        paths.append(write_artifact(
+            run_dir,
+            "EXECUTE",
+            IMPORT_ARTIFACT_REL.name,
+            "note",
+            "execution-receipt-importer",
+            import_note_payload(execution_import),
+            ts,
+        ))
+    elif receipt_refs:
+        raise GateBlock(
+            "executor receipts were supplied without provisional run_records; execution state is ambiguous"
+        )
+
     if journal is None:
-        # Honest "scripts emitted, NOT executed" path: no journal == no real run == no real metrics.
-        # Every run_record must be planned; a provisional record (esp. with metrics) is a self-claim
-        # of a run that never happened -> BLOCK. Parity is SKIPPED (nothing ran to re-verify).
-        for rr in run_records:
-            if rr.get("status") != "planned":
-                raise GateBlock(
-                    "no journal = no real run = no metrics: run_record "
-                    f"{rr.get('condition_id')!r} is {rr.get('status')!r}, but without a journal "
-                    "every run_record must be 'planned' (scripts emitted, the experiment did not run)")
         parity_label = "SKIPPED(no real run)"
         executed = False
     else:
-        # Real run: journal artifact + parity gate; run_records may be provisional.
-        paths.append(write_artifact(run_dir, "EXECUTE", "journal-entry.artifact.json",
-                                    "journal_entry", "experiment-journaler", journal, ts))
-        from ...tools.parity_checker import build_report as parity_build         # HARD GATE 2
-        pv = parity_build(journal, alignment, profile=prof,
-                          journal_ref="journal_entry", alignment_ref=ALIGNMENT_REF)
-        paths.append(write_artifact(run_dir, "EXECUTE", "parity-verdict.artifact.json",
-                                    "parity_verdict", "train-test-parity-verifier", pv, ts,
-                                    "blocked" if pv["verdict"] == "BLOCK" else "approved"))
-        if pv["verdict"] == "BLOCK":
-            raise GateBlock(f"parity BLOCK: {pv['violations']}")
-        parity_label = "PASS"
-        executed = True
+        paths.append(write_artifact(
+            run_dir, "EXECUTE", "journal-entry.artifact.json", "journal_entry",
+            "experiment-journaler", journal, ts
+        ))
+        from ...tools.parity_checker import build_report as parity_build
 
-    # 3. run_record artifacts (condition_id + notes feed the drift gate; the script CODE body does not)
-    drift_texts: List[str] = list(_direction_anchor(run_dir))   # the rq this run is serving
-    for i, rr in enumerate(run_records):
-        paths.append(write_artifact(run_dir, "EXECUTE", f"run-record-{i + 1}.artifact.json",
-                                    "run_record", "ablation-runner", rr, ts))
-        drift_texts.append(str(rr.get("condition_id") or ""))
-        if rr.get("notes"):
-            drift_texts.append(str(rr["notes"]))
-    dpath, _f = _shared.run_drift_gate(run_dir, "EXECUTE", ts, drift_texts)
-    paths.append(dpath)
+        parity = parity_build(
+            journal, alignment, profile=profile,
+            journal_ref="journal_entry", alignment_ref=ALIGNMENT_REF
+        )
+        paths.append(write_artifact(
+            run_dir,
+            "EXECUTE",
+            "parity-verdict.artifact.json",
+            "parity_verdict",
+            "train-test-parity-verifier",
+            parity,
+            ts,
+            "blocked" if parity["verdict"] == "BLOCK" else "approved",
+        ))
+        if parity["verdict"] == "BLOCK":
+            raise GateBlock(f"parity BLOCK: {parity['violations']}")
+        executed = provisional
+        parity_label = "PASS" if executed else "PASS(no completed run_records)"
 
-    report = {"preflight_gate": pf["verdict"], "parity_gate": parity_label,
-              "scripts_emitted": True, "executed": executed}
-    return paths, report
+    drift_texts = list(_direction_anchor(run_dir))
+    for index, record in enumerate(records, start=1):
+        paths.append(write_artifact(
+            run_dir, "EXECUTE", f"run-record-{index}.artifact.json", "run_record",
+            "ablation-runner", record, ts
+        ))
+        drift_texts.append(str(record.get("condition_id") or ""))
+        if record.get("notes"):
+            drift_texts.append(str(record["notes"]))
+    drift_path, _ = _shared.run_drift_gate(run_dir, "EXECUTE", ts, drift_texts)
+    paths.append(drift_path)
+    write_full_rigor_markdown(run_dir, generated_at=ts)
+    return paths, {
+        "preflight_gate": preflight["verdict"],
+        "parity_gate": parity_label,
+        "scripts_emitted": True,
+        "executed": executed,
+        "executor_receipts_verified": len(receipt_refs) if executed else 0,
+    }
 
 
-# --------------------------------------------------------------------------- ANALYZE
+def _candidate_findings_match(candidate: list[dict], canonical: list[dict]) -> None:
+    def index(rows):
+        out = {}
+        for row in rows:
+            key = (str(row.get("condition_id") or ""), str(row.get("metric") or "").casefold())
+            if key in out:
+                raise GateBlock(f"duplicate candidate finding for {key}")
+            out[key] = row
+        return out
 
-def _analyze_dets(run_dir, ts, b) -> tuple:
-    _shared.require_bundle_keys(b, ["findings", "per_seed", "caveats"],
-                                stage="ANALYZE", mode="full_rigor_minimal")
-    prof = _shared.domain_profile(run_dir)
+    proposed = index(candidate)
+    expected = index(canonical)
+    if set(proposed) != set(expected):
+        raise GateBlock(
+            "candidate finding set does not match traceable execution evidence: "
+            f"candidate={sorted(proposed)} evidence={sorted(expected)}"
+        )
+    for key, truth in expected.items():
+        row = proposed[key]
+        for field in ("value", "baseline_value"):
+            truth_value = truth.get(field)
+            candidate_value = row.get(field)
+            if truth_value is None and candidate_value is None:
+                continue
+            if (
+                isinstance(candidate_value, bool)
+                or not isinstance(candidate_value, (int, float))
+                or not math.isclose(float(candidate_value), float(truth_value), rel_tol=0.0, abs_tol=1e-9)
+            ):
+                raise GateBlock(
+                    "candidate finding does not match traceable execution evidence: "
+                    f"{key} {field} candidate={candidate_value!r} evidence={truth_value!r}"
+                )
+        if row.get("baseline_condition_id") != truth.get("baseline_condition_id"):
+            raise GateBlock(
+                f"candidate finding baseline trace mismatch for {key}: "
+                f"{row.get('baseline_condition_id')!r} != {truth.get('baseline_condition_id')!r}"
+            )
+
+
+def _candidate_per_seed_match(candidate, canonical) -> None:
+    if not canonical:
+        if candidate not in (None, {}):
+            raise GateBlock("candidate per_seed has no traceable execution evidence")
+        return
+    if not isinstance(candidate, dict):
+        raise GateBlock("candidate per_seed omitted traceable seeded execution evidence")
+    if set(candidate) != set(canonical):
+        raise GateBlock(
+            f"candidate per_seed condition set does not match execution evidence: "
+            f"{sorted(candidate)} != {sorted(canonical)}"
+        )
+    for condition_id, metrics in canonical.items():
+        proposed_metrics = candidate.get(condition_id)
+        if not isinstance(proposed_metrics, dict) or set(proposed_metrics) != set(metrics):
+            raise GateBlock(
+                f"candidate per_seed metrics do not match execution evidence for {condition_id}"
+            )
+        for metric, values in metrics.items():
+            proposed_values = proposed_metrics[metric]
+            if not isinstance(proposed_values, list) or len(proposed_values) != len(values):
+                raise GateBlock(
+                    f"candidate per_seed vector length does not match evidence for {condition_id}/{metric}"
+                )
+            for proposed, truth in zip(proposed_values, values):
+                if (
+                    isinstance(proposed, bool)
+                    or not isinstance(proposed, (int, float))
+                    or not math.isclose(float(proposed), float(truth), rel_tol=0.0, abs_tol=1e-9)
+                ):
+                    raise GateBlock(
+                        "candidate per_seed value does not match execution evidence for "
+                        f"{condition_id}/{metric}: {proposed!r} != {truth!r}"
+                    )
+
+
+def _analysis_drift(run_dir, ts, matrix: dict, texts: list[str]) -> str:
+    drift_texts = [str(matrix.get("research_question") or "")]
+    drift_texts.extend(str(row.get("hypothesis") or "") for row in matrix.get("ranked_batch") or [])
+    drift_texts.extend(str(text) for text in texts if str(text).strip())
+    path, _ = _shared.run_drift_gate(run_dir, "ANALYZE", ts, drift_texts)
+    return path
+
+
+def _primary_hypothesis_ref(matrix: dict, result: dict) -> str:
+    tested_conditions = {
+        str(row.get("condition_id") or "") for row in result.get("findings") or []
+        if str(row.get("condition_id") or "")
+    }
+    for index, row in enumerate(matrix.get("ranked_batch") or []):
+        condition_id = str(row.get("condition_id") or "")
+        if condition_id in tested_conditions and str(row.get("hypothesis") or "").strip():
+            return f"{MATRIX_REF}#ranked_batch/{index}"
+    raise GateBlock(
+        "failure-attribution BLOCK: no tested result condition maps to a concrete ranked hypothesis"
+    )
+
+
+def _analyze_dets(run_dir, ts, panel) -> tuple:
+    narrative = _validate_analysis_panel(panel)
+    extractor = panel["result-extractor"]
+    statistician = panel["statistician"]
+    skeptic = panel["failure-attribution-skeptic"]
+    matrix = _read_payload(run_dir, MATRIX_REF)
+    prereg = _read_payload(run_dir, PREREG_REF)
+    state = execution_state(run_dir)
     paths: List[str] = []
-    findings = b["findings"] or []
-    caveats = list(b["caveats"] or [])
-    per_seed = b["per_seed"]
 
-    if per_seed:
-        rs = build_result_summary_with_stats(findings, per_seed, seed=_seed(run_dir), caveats=caveats)
-        stats_computed = bool(rs.get("stats", {}).get("n_findings_tested"))
+    if not state["executed"]:
+        if state["label"] != "scripts-only":
+            raise GateBlock(f"ANALYZE execution state is {state['label']}: {state['summary']}")
+        if extractor["candidate_findings"] or statistician["candidate_per_seed"] not in (None, {}):
+            raise GateBlock(
+                "scripts-only numeric analysis BLOCK: findings/per_seed are forbidden when journal "
+                "is null or every run_record is planned"
+            )
+        paths.append(_analysis_drift(
+            run_dir,
+            ts,
+            matrix,
+            [
+                *list(narrative.get("caveats") or []),
+                str(narrative.get("claim_boundary") or ""),
+                str(narrative.get("next_experiment") or ""),
+            ],
+        ))
+        write_full_rigor_markdown(run_dir, generated_at=ts)
+        return paths, {
+            "analysis_status": "SKIPPED(scripts-only)",
+            "stats_computed": False,
+            "result_summary_emitted": False,
+        }
+
+    try:
+        truth = derive_numeric_evidence(run_dir, matrix, prereg)
+    except ExecutionTruthError as exc:
+        raise GateBlock(f"ANALYZE execution-evidence BLOCK: {exc}") from exc
+    _candidate_findings_match(extractor["candidate_findings"], truth["findings"])
+    _candidate_per_seed_match(statistician["candidate_per_seed"], truth["per_seed"])
+
+    caveats = list(narrative.get("caveats") or []) + list(truth["caveats"])
+    if truth["per_seed"]:
+        result = build_result_summary_with_stats(
+            truth["findings"], truth["per_seed"], seed=_seed(run_dir), caveats=caveats
+        )
+        stats_computed = bool(result.get("stats", {}).get("n_findings_tested"))
     else:
-        rs = build_result_summary(findings,
-                                  caveats=caveats + ["no significance computed — no per-seed data"])
+        if not any("no significance computed" in caveat for caveat in caveats):
+            caveats.append("no significance computed - no paired per-seed execution evidence")
+        result = build_result_summary(truth["findings"], caveats=caveats)
         stats_computed = False
 
-    sv = sanity_build(rs, profile=prof)                                      # HARD GATE 1
-    paths.append(write_artifact(run_dir, "ANALYZE", "sanity-verdict.artifact.json",
-                                "sanity_verdict", "result-sanity-checker", sv, ts,
-                                "blocked" if sv["verdict"] == "BLOCK" else "approved"))
-    if sv["verdict"] == "BLOCK":
-        raise GateBlock(f"sanity BLOCK: {sv['violations']}")
+    profile = _shared.domain_profile(run_dir)
+    sanity = sanity_build(result, profile=profile)
+    paths.append(write_artifact(
+        run_dir,
+        "ANALYZE",
+        "sanity-verdict.artifact.json",
+        "sanity_verdict",
+        "result-sanity-checker",
+        sanity,
+        ts,
+        "blocked" if sanity["verdict"] == "BLOCK" else "approved",
+    ))
+    if sanity["verdict"] == "BLOCK":
+        raise GateBlock(f"sanity BLOCK: {sanity['violations']}")
 
-    matrix = _read_payload(run_dir, MATRIX_REF)
-    ga = goal_alignment_build(matrix, rs, profile=prof)                      # HARD GATE 2 (audit W2)
-    paths.append(write_artifact(run_dir, "ANALYZE", "goal-alignment-verdict.artifact.json",
-                                "analysis_check_verdict", "goal-alignment-checker", ga, ts,
-                                "blocked" if not ga["pass"] else "approved"))
-    if not ga["pass"]:
-        raise GateBlock(f"goal-alignment BLOCK: {ga['violations']}")
+    goal = goal_alignment_build(matrix, result, profile=profile)
+    paths.append(write_artifact(
+        run_dir,
+        "ANALYZE",
+        "goal-alignment-verdict.artifact.json",
+        "analysis_check_verdict",
+        "goal-alignment-checker",
+        goal,
+        ts,
+        "blocked" if not goal["pass"] else "approved",
+    ))
+    if not goal["pass"]:
+        raise GateBlock(f"goal-alignment BLOCK: {goal['violations']}")
 
-    prereg_payload = _read_payload(run_dir, PREREG_REF)
-    dv = prereg_tool.build_deviation_verdict(prereg_payload, rs)             # HARD GATE 3 (outcome-switch)
-    paths.append(write_artifact(run_dir, "ANALYZE", "prereg-deviation-verdict.artifact.json",
-                                "analysis_check_verdict", "compliance-auditor", dv, ts,
-                                "blocked" if not dv["pass"] else "approved"))
-    if not dv["pass"]:
-        raise GateBlock(f"prereg-deviation BLOCK: {dv['violations']}")
+    deviation = prereg_tool.build_deviation_verdict(prereg, result)
+    paths.append(write_artifact(
+        run_dir,
+        "ANALYZE",
+        "prereg-deviation-verdict.artifact.json",
+        "analysis_check_verdict",
+        "compliance-auditor",
+        deviation,
+        ts,
+        "blocked" if not deviation["pass"] else "approved",
+    ))
+    if not deviation["pass"]:
+        raise GateBlock(f"prereg-deviation BLOCK: {deviation['violations']}")
 
-    # drift gate over the run's direction (rq) + the findings' metric/condition vocabulary + caveats
-    drift_texts: List[str] = [str(matrix.get("research_question") or "")]
-    drift_texts += [str(r.get("hypothesis") or "") for r in (matrix.get("ranked_batch") or [])]
-    for f in findings:
-        drift_texts.append(str(f.get("metric") or ""))
-        drift_texts.append(str(f.get("condition_id") or ""))
-    drift_texts += [str(c) for c in caveats]
-    dpath, _f = _shared.run_drift_gate(run_dir, "ANALYZE", ts, drift_texts)
-    paths.append(dpath)
+    drift_texts = []
+    for finding in result["findings"]:
+        drift_texts.extend([str(finding["metric"]), str(finding["condition_id"])])
+    drift_texts.extend(str(caveat) for caveat in caveats)
+    drift_texts.extend([
+        str(narrative.get("claim_boundary") or ""),
+        str(narrative.get("next_experiment") or ""),
+    ])
+    paths.append(_analysis_drift(run_dir, ts, matrix, drift_texts))
+    result_ref = "evidence/ANALYZE/result-summary.artifact.json"
+    paths.append(write_artifact(
+        run_dir, "ANALYZE", "result-summary.artifact.json", "result_summary",
+        "result-analyzer", result, ts
+    ))
 
-    paths.append(write_artifact(run_dir, "ANALYZE", "result-summary.artifact.json",   # exit
-                                "result_summary", "result-analyzer", rs, ts))
-    report = {"sanity_gate": sv["verdict"], "goal_alignment_gate": "PASS" if ga["pass"] else "BLOCK",
-              "prereg_deviation_gate": "PASS" if dv["pass"] else "BLOCK",
-              "stats_computed": stats_computed}
-    return paths, report
+    attribution = narrative.get("failure_attribution")
+    if not isinstance(attribution, dict):
+        raise GateBlock("ANALYZE synthesis failure_attribution must be an object")
+    alternatives = [
+        str(item).strip() for item in (skeptic.get("alternative_explanations") or [])
+        if str(item).strip()
+    ]
+    summary = str(attribution.get("summary") or "").strip()
+    if alternatives:
+        summary += " Alternative explanations: " + "; ".join(alternatives) + "."
+    summary += " Next experiment: " + str(narrative.get("next_experiment") or "").strip()
+    metric_deltas = [
+        {
+            "name": f"{finding['metric']}@{finding['condition_id']}",
+            "before": finding.get("baseline_value"),
+            "after": finding.get("value"),
+        }
+        for finding in result["findings"]
+        if finding.get("baseline_value") is not None
+    ]
+    evidence_refs = [
+        f"evidence/EXECUTE/run-record-{index}.artifact.json"
+        for index in range(1, len(state["records"]) + 1)
+    ] + [truth["execution_import_ref"], result_ref]
+    expected_hypothesis_ref = _primary_hypothesis_ref(matrix, result)
+    if attribution.get("hypothesis_ref") != expected_hypothesis_ref:
+        raise GateBlock(
+            "failure-attribution BLOCK: hypothesis_ref does not match the tested ranked hypothesis; "
+            f"expected {expected_hypothesis_ref!r}"
+        )
+    try:
+        execution_import = verified_execution_import(run_dir, state["records"])
+    except ExecutionReceiptError as exc:
+        raise GateBlock(f"failure-attribution execution binding BLOCK: {exc}") from exc
+    try:
+        feedback = build_experiment_feedback(
+            result_ref,
+            str(attribution.get("outcome") or ""),
+            str(attribution.get("attribution") or ""),
+            summary,
+            evidence_refs,
+            hypothesis_ref=expected_hypothesis_ref,
+            next_action_hint=attribution.get("next_action_hint"),
+            metrics_delta=metric_deltas,
+            attribution_state=attribution.get("attribution_state"),
+            validity={key: attribution.get(key) for key in (
+                "implementation_valid", "data_valid", "evaluation_valid", "protocol_valid",
+                "statistics_valid",
+            )},
+            counterfactual_check=attribution.get("counterfactual_check"),
+            replication_status=attribution.get("replication_status"),
+            diagnostic_intervention=attribution.get("diagnostic_intervention"),
+            replication_artifacts=attribution.get("replication_artifacts"),
+            verified_execution_bindings=verified_binding_index(execution_import),
+        )
+    except ValueError as exc:
+        raise GateBlock(f"failure-attribution BLOCK: {exc}") from exc
+    paths.append(write_artifact(
+        run_dir, "ANALYZE", "failure-attribution.artifact.json", "experiment_feedback",
+        "analysis-synthesizer", feedback, ts
+    ))
+    write_full_rigor_markdown(run_dir, generated_at=ts)
+    return paths, {
+        "sanity_gate": sanity["verdict"],
+        "goal_alignment_gate": "PASS" if goal["pass"] else "BLOCK",
+        "prereg_deviation_gate": "PASS" if deviation["pass"] else "BLOCK",
+        "stats_computed": stats_computed,
+        "evidence_bound": True,
+        "raw_result_rows": truth["raw_result_row_count"],
+        "executor_receipts": truth["executor_receipt_count"],
+    }
 
 
-# --------------------------------------------------------------------------- VERIFY
-
-def _verify_dets(run_dir, ts, b) -> tuple:
-    _shared.require_bundle_keys(b, ["checks"], stage="VERIFY", mode="full_rigor_minimal")
+def _verify_dets(run_dir, ts, panel) -> tuple:
+    synth, checks = _merge_verify_checks(panel)
+    state = execution_state(run_dir)
     paths: List[str] = []
-    review = review_build(b["checks"])                                       # HARD GATE
-    paths.append(write_artifact(run_dir, "VERIFY", "review-report.artifact.json",
-                                "review_report", "adversarial-reviewer", review, ts,
-                                "blocked" if review["verdict"] == "BLOCK" else "approved"))
+
+    if not state["executed"]:
+        if synth.get("result_ready") is True:
+            raise GateBlock(
+                "VERIFY scripts-only BLOCK: a result cannot be ready when every run_record is planned"
+            )
+        drift_texts = list(_direction_anchor(run_dir))
+        drift_texts.extend([
+            str(synth.get("claim_boundary") or ""),
+            str(synth.get("next_experiment") or ""),
+        ])
+        path, _ = _shared.run_drift_gate(run_dir, "VERIFY", ts, drift_texts)
+        paths.append(path)
+        write_full_rigor_markdown(run_dir, generated_at=ts)
+        return paths, {"review_gate": "SKIPPED(scripts-only)"}
+
+    _read_payload(run_dir, "evidence/ANALYZE/result-summary.artifact.json")
+    expected_ready = all(row["pass"] for row in checks.values())
+    if synth.get("result_ready") is not expected_ready:
+        raise GateBlock(
+            f"VERIFY result_ready must be derived from all independent checks "
+            f"({expected_ready}), not self-declared"
+        )
+    review = review_build(checks)
+    paths.append(write_artifact(
+        run_dir,
+        "VERIFY",
+        "review-report.artifact.json",
+        "review_report",
+        "verify-synthesizer",
+        review,
+        ts,
+        "blocked" if review["verdict"] == "BLOCK" else "approved",
+    ))
     if review["verdict"] == "BLOCK":
         raise GateBlock(f"adversarial-review BLOCK: {review['blocking_reasons']}")
 
-    drift_texts = list(_direction_anchor(run_dir))      # the rq this review is judging
-    drift_texts.append(str(review["verdict"]))
-    for name, c in (b["checks"] or {}).items():
-        drift_texts.append(str(name))
-        if isinstance(c, dict) and c.get("evidence"):
-            drift_texts.append(str(c["evidence"]))
-    dpath, _f = _shared.run_drift_gate(run_dir, "VERIFY", ts, drift_texts)
-    paths.append(dpath)
+    drift_texts = list(_direction_anchor(run_dir))
+    drift_texts.extend([
+        str(review["verdict"]),
+        str(synth.get("claim_boundary") or ""),
+        str(synth.get("next_experiment") or ""),
+    ])
+    for name, row in checks.items():
+        drift_texts.extend([name, str(row.get("evidence") or "")])
+    path, _ = _shared.run_drift_gate(run_dir, "VERIFY", ts, drift_texts)
+    paths.append(path)
+    write_full_rigor_markdown(run_dir, generated_at=ts)
     return paths, {"review_gate": review["verdict"]}
 
 
-# --------------------------------------------------------------------------- REPORT
-
 def _report(run_dir, ts) -> tuple:
-    # Honest executed-vs-scripts-only distinction, read from the EXECUTE run-record statuses.
-    executed = _was_executed(run_dir)
-    ran = ("the experiment really ran (journal present)" if executed
-           else "scripts were emitted but the experiment did NOT run on a GPU (run_records 'planned')")
-    note = {"summary": f"full_rigor_minimal complete: {ran}. Every DESIGN/EXECUTE/ANALYZE/VERIFY hard "
-                       "gate passed. The result stays PROVISIONAL until the human /promote-to-vault "
-                       "gate re-derives it — this run never freezes a number.",
-            "references": [], "produced_artifacts": [], "open_questions": []}
-    return ([write_artifact(run_dir, "REPORT", "report-note.artifact.json",
-                            "report_note", "research-orchestrator", note, ts)], {})
+    state = execution_state(run_dir)
+    sidecars = write_full_rigor_markdown(run_dir, generated_at=ts)
+    references = [EXPERIMENT_PLAN_REL.as_posix()]
+    if "result_readiness" in sidecars:
+        references.append(RESULT_READINESS_REL.as_posix())
+
+    if state["executed"]:
+        summary = (
+            "full_rigor_minimal real-run review completed. Numeric findings were reconstructed from "
+            "matching raw result rows and provisional run records, all deterministic gates passed, "
+            "and the result remains provisional/non-citable until /promote-to-vault re-derives it."
+        )
+    else:
+        summary = (
+            "full_rigor_minimal experiment plan only: scripts were emitted but no completed execution "
+            "records exist. ANALYZE produced no result summary, VERIFY issued no freeze review, and "
+            "the director-facing output contains no result readiness claim."
+        )
+    note = {
+        "summary": summary,
+        "references": references,
+        "produced_artifacts": [],
+        "open_questions": [],
+    }
+    paths = [write_artifact(
+        run_dir, "REPORT", "report-note.artifact.json", "report_note",
+        "research-orchestrator", note, ts
+    )]
+    report = {"director_experiment_plan": sidecars["experiment_plan"]}
+    if "result_readiness" in sidecars:
+        report["director_result_readiness"] = sidecars["result_readiness"]
+    return paths, report
 
 
 def _was_executed(run_dir) -> bool:
-    """True iff the EXECUTE stage recorded a real journal (any run_record is 'provisional')."""
-    return (Path(run_dir) / "evidence" / "EXECUTE" / "journal-entry.artifact.json").is_file()
+    return bool(execution_state(run_dir)["executed"])
 
-
-# --------------------------------------------------------------------------- dispatch
 
 def run_dets(run_dir, stage, ts) -> tuple:
-    """Deterministic producers/gates for a stage -> (artifact_paths, report). Raises GateBlock when a
-    hard gate refuses (the run halts; the stage is NOT committed; the next stage is never reached)."""
     if stage == "DESIGN":
-        return _design_dets(run_dir, ts, _load_bundle(run_dir, "DESIGN"))
+        return _design_dets(run_dir, ts, _load_panel(run_dir, "DESIGN"))
     if stage == "EXECUTE":
-        return _execute_dets(run_dir, ts, _load_bundle(run_dir, "EXECUTE"))
+        return _execute_dets(run_dir, ts, _load_panel(run_dir, "EXECUTE"))
     if stage == "ANALYZE":
-        return _analyze_dets(run_dir, ts, _load_bundle(run_dir, "ANALYZE"))
+        return _analyze_dets(run_dir, ts, _load_panel(run_dir, "ANALYZE"))
     if stage == "VERIFY":
-        return _verify_dets(run_dir, ts, _load_bundle(run_dir, "VERIFY"))
+        return _verify_dets(run_dir, ts, _load_panel(run_dir, "VERIFY"))
     if stage == "REPORT":
         return _report(run_dir, ts)
     raise ValueError(f"full_rigor_minimal has no stage {stage!r}")
 
 
 def run_dets_with_repair(run_dir, stage, ts):
-    """Bounded revise loop around a stage's hard gates: ("ok", (paths, report)) or
-    ("retry", feedback) when blocked and the budget allows another in-stage attempt; re-raises the
-    original GateBlock when the repair cap is reached (director escalation)."""
     return bounded_repair.attempt_with_repair(
-        run_dir, stage, _shared.budget(run_dir), ts, lambda: run_dets(run_dir, stage, ts))
+        run_dir, stage, _shared.budget(run_dir), ts, lambda: run_dets(run_dir, stage, ts)
+    )

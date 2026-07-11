@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_note_verification.schema.json",
+  "title": "Paper Note Verification",
+  "type": "object",
+  "required": ["verdict", "legacy_unverified", "independent_verifier", "source_ref",
+    "snapshot_ref", "snapshot_fingerprint", "snapshot_locally_verified", "claim_findings", "n_claims_submitted",
+    "n_claims_retained", "dropped_claims", "dropped_fields", "summary_verdict",
+    "summary_reason", "section_confusion_detected", "section_confusion_reasons",
+    "deep_read_reasons"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {"type": "string", "enum": ["PASS", "NEEDS_DEEP_READ", "LEGACY_UNVERIFIED"]},
+    "legacy_unverified": {"type": "boolean"},
+    "independent_verifier": {"type": "boolean"},
+    "source_ref": {"type": "string"},
+    "snapshot_ref": {"type": "string"},
+    "snapshot_fingerprint": {"type": "string"},
+    "snapshot_locally_verified": {"type": "boolean"},
+    "claim_findings": {"type": "array", "items": {"type": "object"}},
+    "n_claims_submitted": {"type": "integer", "minimum": 0},
+    "n_claims_retained": {"type": "integer", "minimum": 0},
+    "dropped_claims": {"type": "array", "items": {"type": "object"}},
+    "dropped_fields": {"type": "array", "items": {"type": "object"}},
+    "summary_verdict": {"type": "string"},
+    "summary_reason": {"type": "string"},
+    "section_confusion_detected": {"type": "boolean"},
+    "section_confusion_reasons": {"type": "array", "items": {"type": "string"}},
+    "deep_read_reasons": {"type": "array", "items": {"type": "string"}}
+  }
+}

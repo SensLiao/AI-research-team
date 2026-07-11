@@ -65,9 +65,10 @@ def test_dead_via_worker_when_verified_paper_does_same_and_ran():
     cp = e["colliding_papers"][0]
     assert cp == {"ref": "arXiv:2407.01517", "existence": "verified",
                   "experimentally_validated": True}
-    # the other two ideas (no finding) are CLEAR under grounded retrieval and survive
+    # The other two ideas survive, but another idea's finding cannot silently clear them.
     assert v["survivors"] == ["IDEA-2", "IDEA-3"]
-    assert _by_id(v)["IDEA-2"]["verdict"] == VERDICT_CLEAR
+    assert _by_id(v)["IDEA-2"]["verdict"] == VERDICT_UNVERIFIED
+    assert "per-idea coverage is missing" in _by_id(v)["IDEA-2"]["reason"]
 
 
 def test_dead_via_worker_accepts_the_design_alias_EXISTS():
@@ -138,6 +139,16 @@ def test_clear_with_retrieval_grounded_is_clear():
     e = _by_id(v)["IDEA-1"]
     assert e["verdict"] == VERDICT_CLEAR
     assert e["cut"] is False
+
+
+def test_grounded_retrieval_missing_per_idea_finding_is_unverified_never_clear():
+    findings = [_finding("IDEA-1", WORKER_CLEAR, [])]
+    verdict = build_collision_verdict(IDEAS, findings, {}, {}, retrieval_grounded=True)
+    assert _by_id(verdict)["IDEA-1"]["verdict"] == VERDICT_CLEAR
+    for idea_id in ("IDEA-2", "IDEA-3"):
+        row = _by_id(verdict)[idea_id]
+        assert row["verdict"] == VERDICT_UNVERIFIED
+        assert row["cut"] is False
 
 
 def test_clear_without_retrieval_grounded_is_unverified():

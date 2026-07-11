@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RAT Capability Catalog",
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "productMaturity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "reason",
+        "evidence_refs",
+        "target_markdown",
+        "minimum_worker_pipeline",
+        "productization_gaps"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["engine_tested_spec_only", "registry_routable_spec_only"]
+        },
+        "reason": { "$ref": "#/$defs/nonEmptyString" },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonEmptyString" }
+        },
+        "target_markdown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "purpose", "required_sections"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^director-review/.+\\.md$"
+            },
+            "purpose": { "$ref": "#/$defs/nonEmptyString" },
+            "required_sections": {
+              "type": "array",
+              "minItems": 3,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/nonEmptyString" }
+            }
+          }
+        },
+        "minimum_worker_pipeline": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum_distinct_workers", "stages"],
+          "properties": {
+            "minimum_distinct_workers": { "type": "integer", "minimum": 2 },
+            "stages": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "workers", "produces"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/nonEmptyString" },
+                  "workers": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": { "$ref": "#/$defs/nonEmptyString" }
+                  },
+                  "produces": { "$ref": "#/$defs/nonEmptyString" }
+                }
+              }
+            }
+          }
+        },
+        "productization_gaps": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonEmptyString" }
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_from", "summary", "validation", "modes"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.1.0" },
+    "generated_from": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode_registry", "operate_registry", "plan_catalog", "agent_connectivity"],
+      "properties": {
+        "mode_registry": { "type": "string", "minLength": 1 },
+        "operate_registry": { "type": "string", "minLength": 1 },
+        "plan_catalog": { "type": "string", "minLength": 1 },
+        "agent_connectivity": { "type": "string", "minLength": 1 }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_modes",
+        "operated_modes",
+        "spec_only_modes",
+        "spec_only_product_contracts",
+        "spec_only_engine_tested_modes",
+        "spec_only_registry_routable_modes",
+        "director_signoff_modes",
+        "record_only_modes",
+        "auto_modes",
+        "execute_stage_modes",
+        "server_gated_modes",
+        "operated_agent_count",
+        "non_control_agent_count",
+        "vault_write",
+        "external_skill_execution",
+        "aers_import_policy"
+      ],
+      "properties": {
+        "total_modes": { "type": "integer", "minimum": 0 },
+        "operated_modes": { "type": "integer", "minimum": 0 },
+        "spec_only_modes": { "type": "integer", "minimum": 0 },
+        "spec_only_product_contracts": { "type": "integer", "minimum": 0 },
+        "spec_only_engine_tested_modes": { "type": "integer", "minimum": 0 },
+        "spec_only_registry_routable_modes": { "type": "integer", "minimum": 0 },
+        "director_signoff_modes": { "type": "integer", "minimum": 0 },
+        "record_only_modes": { "type": "integer", "minimum": 0 },
+        "auto_modes": { "type": "integer", "minimum": 0 },
+        "execute_stage_modes": { "type": "integer", "minimum": 0 },
+        "server_gated_modes": { "type": "integer", "minimum": 0 },
+        "operated_agent_count": { "type": "integer", "minimum": 0 },
+        "non_control_agent_count": { "type": "integer", "minimum": 0 },
+        "vault_write": { "type": "boolean", "const": false },
+        "external_skill_execution": { "type": "boolean", "const": false },
+        "aers_import_policy": { "type": "string", "const": "reference_only" }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode_registry_errors", "operate_registry_drift", "agent_connectivity_summary"],
+      "properties": {
+        "mode_registry_errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "operate_registry_drift": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "agent_connectivity_summary": { "type": "object" }
+      }
+    },
+    "modes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "status",
+          "runnable_surface",
+          "entry_stage",
+          "stage_path",
+          "agent_count",
+          "agents",
+          "gate_level",
+          "human_gates",
+          "requires_director_signoff",
+          "max_agent_hops",
+          "cost_band",
+          "operate_recipe_present",
+          "execute_stage_present",
+          "requires_server_for_real_experiment",
+          "product_maturity",
+          "intents",
+          "honesty_notes"
+        ],
+        "properties": {
+          "mode": { "type": "string", "minLength": 1 },
+          "status": {
+            "type": "string",
+            "enum": [
+              "operated",
+              "spec_only",
+              "claimed_operated_without_recipe",
+              "recipe_without_operated_flag"
+            ]
+          },
+          "runnable_surface": {
+            "type": "string",
+            "enum": [
+              "one_button_operate",
+              "registry_defined_not_one_button",
+              "drift_requires_repair"
+            ]
+          },
+          "entry_stage": { "type": "string", "minLength": 1 },
+          "stage_path": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "agent_count": { "type": "integer", "minimum": 0 },
+          "agents": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "gate_level": {
+            "type": "string",
+            "enum": ["auto", "record_only", "director_signoff"]
+          },
+          "human_gates": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "requires_director_signoff": { "type": "boolean" },
+          "max_agent_hops": { "type": "integer", "minimum": 0 },
+          "cost_band": { "type": "string", "enum": ["light", "medium", "heavy"] },
+          "operate_recipe_present": { "type": "boolean" },
+          "execute_stage_present": { "type": "boolean" },
+          "requires_server_for_real_experiment": { "type": "boolean" },
+          "product_maturity": {
+            "oneOf": [
+              { "type": "null" },
+              { "$ref": "#/$defs/productMaturity" }
+            ]
+          },
+          "intents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["intent", "tier"],
+              "properties": {
+                "intent": { "type": "string", "minLength": 1 },
+                "tier": { "type": "string" }
+              }
+            }
+          },
+          "honesty_notes": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "status": { "const": "spec_only" } },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "product_maturity": { "$ref": "#/$defs/productMaturity" }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "status": { "const": "operated" } },
+              "required": ["status"]
+            },
+            "then": {
+              "properties": {
+                "product_maturity": { "type": "null" }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/venue_review.schema.json",
   "title": "Venue Review",
-  "description": "VERIFY-stage producer artifact. One persona's blind review of a manuscript against a specific venue's 7-dim rubric. This is a reviewer's evidentiary record only — it carries NO verdict, meets_bar, decision, status, or accept field. Reviewers never self-decide; only area-chair-synthesizer (calling venue_score.py) derives the readiness verdict. additionalProperties:false makes any self-decision field structurally impossible.",
+  "description": "VERIFY-stage producer artifact. One persona's mutually blind review of a manuscript against a frozen venue rubric. This is evidentiary advice only: it carries no verdict, meets_bar, decision, status, or accept field. After all reviews finish, the area chair emits venue_meta_review and the deterministic layer derives an advisory readiness screen. additionalProperties:false makes reviewer self-decision structurally impossible.",
   "type": "object",
   "required": [
     "persona",

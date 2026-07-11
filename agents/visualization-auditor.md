@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: ANALYZE
 kind: auditor
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: viz_audit_report
 permission_scope:
   read: [task_frame, run-store evidence (ANALYZE), the figure_spec_bundle, the active domain profile]

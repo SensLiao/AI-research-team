@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/citation_attribution_report.schema.json",
+  "title": "Citation Attribution Report",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "verdict",
+    "legacy_replay",
+    "violations",
+    "unverified_reasons",
+    "citation_correctness",
+    "claim_completeness",
+    "citation_f1",
+    "n_claims",
+    "n_loci",
+    "claim_results",
+    "mechanical_verification",
+    "evidence_ref"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {"type": "string", "const": "citation-attribution/v1"},
+    "verdict": {"type": "string", "enum": ["PASS", "PASS_WITH_CAVEATS", "BLOCK", "UNVERIFIED"]},
+    "legacy_replay": {"type": "boolean"},
+    "violations": {"type": "array", "items": {"type": "string"}},
+    "unverified_reasons": {"type": "array", "items": {"type": "string"}},
+    "citation_correctness": {"type": "number", "minimum": 0, "maximum": 1},
+    "claim_completeness": {"type": "number", "minimum": 0, "maximum": 1},
+    "citation_f1": {"type": "number", "minimum": 0, "maximum": 1},
+    "n_claims": {"type": "integer", "minimum": 0},
+    "n_loci": {"type": "integer", "minimum": 0},
+    "claim_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "claim_id",
+          "verdict",
+          "locator_verified",
+          "verified_locus_ids",
+          "unsupported_locus_ids",
+          "notes"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "claim_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "verdict": {"type": "string", "enum": ["entails", "partial", "contradicts", "insufficient"]},
+          "locator_verified": {"type": "boolean"},
+          "verified_locus_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "unsupported_locus_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "mechanical_verification": {
+      "type": "object",
+      "required": ["n_verified", "n_unverified", "n_blocked", "locus_results"],
+      "additionalProperties": false,
+      "properties": {
+        "n_verified": {"type": "integer", "minimum": 0},
+        "n_unverified": {"type": "integer", "minimum": 0},
+        "n_blocked": {"type": "integer", "minimum": 0},
+        "locus_results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "claim_id",
+              "locus_id",
+              "verdict",
+              "snapshot_ref",
+              "hash_verified",
+              "locator_verified",
+              "quote_verified",
+              "details"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "claim_id": {"type": "string"},
+              "locus_id": {"type": "string"},
+              "verdict": {"type": "string", "enum": ["PASS", "BLOCK", "UNVERIFIED"]},
+              "snapshot_ref": {"type": "string"},
+              "hash_verified": {"type": "boolean"},
+              "locator_verified": {"type": "boolean"},
+              "quote_verified": {"type": "boolean"},
+              "details": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    },
+    "evidence_ref": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "pattern": "\\S"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"verdict": {"const": "PASS"}}, "required": ["verdict"]},
+      "then": {
+        "properties": {
+          "legacy_replay": {"const": false},
+          "violations": {"maxItems": 0},
+          "unverified_reasons": {"maxItems": 0},
+          "mechanical_verification": {
+            "properties": {"n_unverified": {"const": 0}, "n_blocked": {"const": 0}}
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"legacy_replay": {"const": true}}, "required": ["legacy_replay"]},
+      "then": {"properties": {"verdict": {"const": "UNVERIFIED"}}}
+    }
+  ]
+}

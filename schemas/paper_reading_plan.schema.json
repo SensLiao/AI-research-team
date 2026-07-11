@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_reading_plan.schema.json",
+  "title": "Paper Reading Plan",
+  "description": "Pre-read contract for a deep paper read: why this paper is being read, which project decision it should inform, and what questions must be answered before the read can be useful.",
+  "type": "object",
+  "required": ["reading_objective", "decision_need", "key_questions", "required_outputs"],
+  "additionalProperties": false,
+  "properties": {
+    "source_hint": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Paper identifier or file hint when known before ingest."
+    },
+    "reading_objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_need": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The research/project decision this read should inform."
+    },
+    "key_questions": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required_outputs": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "reread_triggers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "not_for": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "specialist_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Conservative paper-type-aware activation. Omitted means run every specialist.",
+      "properties": {
+        "visual_audit": {"type": "string", "enum": ["required", "skip"]},
+        "result_audit": {"type": "string", "enum": ["required", "skip"]},
+        "math_audit": {"type": "string", "enum": ["required", "skip"]},
+        "lineage_trend": {"type": "string", "enum": ["required", "skip"]},
+        "reproducibility_audit": {"type": "string", "enum": ["required", "skip"]}
+      }
+    }
+  }
+}

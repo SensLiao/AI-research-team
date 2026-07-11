@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: staleness_report
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the active domain profile, evidence_table, paper_note artifacts, source_quality_report]

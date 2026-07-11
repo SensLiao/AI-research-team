@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: DESIGN
 kind: hard-gate
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: metric_impl_report
 permission_scope:
   read: [task_frame, run-store evidence (DESIGN), the active domain profile, unified_config, protocol_spec, experiment_matrix]

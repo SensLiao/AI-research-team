@@ -45,12 +45,12 @@ def test_dry_run_walks_full_spine_to_done(tmp_path):
                  budget_override={"max_agent_hops": 10})
     assert m["status"] == "done"
     assert m["next_step"] is None
-    assert [c["stage"] for c in m["completed_work"]] == ["DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]
+    assert [c["stage"] for c in m["completed_work"]] == ["DESIGN", "REPORT"]
 
     run_dir = runs / "r1"
     assert verify_chain(read_events(run_dir / "ledger.jsonl")) == []   # tamper-proof history intact
     assert classify_status(run_dir) == "done"
-    assert len(read_logs(run_dir / "obs.jsonl")) == 5                  # every stage observed
+    assert len(read_logs(run_dir / "obs.jsonl")) == 2                  # every driven stage observed
 
 
 def test_resume_after_crash_completes(tmp_path):

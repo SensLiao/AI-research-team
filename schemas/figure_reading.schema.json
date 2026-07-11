@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/figure_reading.schema.json",
   "title": "Figure Reading",
-  "description": "Pass-2 structured figure reading of a read paper. For each figure that carries weight: its axes, the controls and error bars present (or honestly null when absent), the single take-home, and what to distrust about it. source_ref-anchored; rendered into the DB paper page. A reading aid — never a governed gate.",
+  "description": "Structured visual reading of a paper. Text or captions alone never count as visual inspection: inspected items point to a hash-verified page render; otherwise visual_input_status/inspection_status must be UNREAD_VISUAL.",
   "type": "object",
   "required": ["source_ref", "figures"],
   "additionalProperties": false,
@@ -10,11 +10,21 @@
     "source_ref": {
       "type": "string",
       "minLength": 1,
-      "description": "the paper these figures come from (matches the paper_note / DB page source_ref)"
+      "description": "The paper these figures come from."
+    },
+    "visual_input_status": {
+      "type": "string",
+      "enum": ["INSPECTED_VISUAL", "UNREAD_VISUAL", "NOT_APPLICABLE"],
+      "description": "INSPECTED_VISUAL only when actual page-render assets were opened."
+    },
+    "visual_manifest_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Run-relative path to inbox/paper-visual-manifest.json."
     },
     "figures": {
       "type": "array",
-      "description": "one entry per read figure; figure_ref + take_home are the minimum a figure reading must carry",
+      "description": "One entry per figure or table selected for close reading.",
       "items": {
         "type": "object",
         "required": ["figure_ref", "take_home"],
@@ -22,30 +32,46 @@
         "properties": {
           "figure_ref": {
             "type": "string",
-            "description": "human-readable figure label, e.g. 'Figure 3', 'Fig. 2b', 'Table 4'"
+            "description": "Human-readable label such as Figure 3 or Table 4."
+          },
+          "inspection_status": {
+            "type": "string",
+            "enum": ["INSPECTED_VISUAL", "UNREAD_VISUAL", "NOT_APPLICABLE"]
+          },
+          "page": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "default": null
+          },
+          "visual_asset_ref": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Run-relative PNG/JPG path actually inspected."
+          },
+          "visual_asset_sha256": {
+            "type": ["string", "null"],
+            "pattern": "^[a-f0-9]{64}$",
+            "default": null
           },
           "axes": {
             "type": "string",
-            "description": "what the x/y axes (or rows/columns) actually measure"
+            "description": "What the axes, rows, or columns actually measure."
           },
           "controls": {
             "type": ["string", "null"],
-            "default": null,
-            "description": "the controls / ablations / baselines present in the figure, or null when none are shown"
+            "default": null
           },
           "error_bars": {
             "type": ["string", "null"],
-            "default": null,
-            "description": "the error bars / variance / confidence shown, or null when the figure reports point estimates with no spread"
+            "default": null
           },
           "take_home": {
             "type": "string",
-            "description": "the single thing this figure is meant to convince you of"
+            "description": "The narrow conclusion supported by this visual."
           },
           "distrust": {
             "type": ["string", "null"],
-            "default": null,
-            "description": "what to be skeptical of in this figure: cherry-picked example, truncated axis, missing baseline, no variance, or null when nothing stands out"
+            "default": null
           }
         }
       }

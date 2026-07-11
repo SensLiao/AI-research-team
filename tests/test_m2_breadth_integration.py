@@ -125,12 +125,12 @@ def test_every_agent_spec_is_wellformed():
 
 
 def test_every_breadth_agent_produces_a_registered_type():
-    # The 41 breadth worker agents each emit ONE typed artifact — its `produces` must be a registered
-    # artifact_type, or the engine could never contract-validate that agent's output at runtime.
+    # Breadth worker agents emit one or more typed artifacts; every declared `produces` entry must
+    # be a registered artifact_type, or the engine could never contract-validate that agent's output at runtime.
     for name in BREADTH_AGENTS:
         fm = _frontmatter(AGENTS_DIR / f"{name}.md")
-        produces = fm.get("produces")
-        assert produces in PAYLOAD_SCHEMAS, f"{name}: produces {produces!r} is not a registered artifact_type"
+        for produces in _produces_types(fm.get("produces")):
+            assert produces in PAYLOAD_SCHEMAS, f"{name}: produces {produces!r} is not a registered artifact_type"
 
 
 # Control / run-infra agents whose `produces:` frontmatter is free-text prose describing run-store

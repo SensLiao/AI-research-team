@@ -1,6 +1,6 @@
 """Spine engine — ties the whole control plane together and drives a task through the stages.
 
-This is the testable core of the orchestrator (the SKILL.md is a thin Claude-Code wrapper around it).
+This is the testable core of the orchestrator (the SKILL.md is a thin harness wrapper around it).
 For each stage from entry -> REPORT it runs the per-stage micro-protocol:
   WORK (agent_fn writes an artifact) -> scope-check -> VERIFY (contract-validate) -> RECORD
   (obslog + checkpoint to the hash-chained run-store) -> REVIEW (director gate) ; budget enforced.
@@ -15,7 +15,11 @@ import json
 from pathlib import Path
 from typing import Callable, Optional
 
-from research_agent_teams.orchestrator.model_policy import load_agent_models, safe_resolve_model
+from research_agent_teams.orchestrator.model_policy import (
+    codex_runtime_fields,
+    load_agent_models,
+    safe_resolve_model,
+)
 from research_agent_teams.orchestrator.router import resolve_task, validate_routing
 from research_agent_teams.tools.budget_tracker import assert_within
 from research_agent_teams.tools.obslog import append_log
@@ -100,8 +104,10 @@ def _drive(run_dir, task_frame, start_stage_name, agent_fn, gate_fn, ts, vault_r
         if not ok:
             raise PermissionError(f"scope violation at {stage}: {reason}")
         _validate_artifact_file(art_path)                   # VERIFY (contract)
-        append_log(obs, {"agent_name": lead or "stub", "task_id": p["task_id"], "stage": stage,
-                         "started_at": ts, "tool_calls": 1, "model": lead_model})  # observability
+        obs_event = {"agent_name": lead or "stub", "task_id": p["task_id"], "stage": stage,
+                     "started_at": ts, "tool_calls": 1, "model": lead_model}
+        obs_event.update(codex_runtime_fields(lead_model))
+        append_log(obs, obs_event)  # observability
         if gate_level == "director_signoff":                # REVIEW (director gate) — BEFORE the checkpoint
             decision = gate_fn(stage, task_frame) or "approved"
             record_gate(run_dir, stage, decision, ts)       # durable, tamper-evident signoff (the veto fix)

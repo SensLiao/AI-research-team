@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: VERIFY
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: contribution_ledger
 permission_scope:
   read: [task_frame, run-store evidence (VERIFY/ANALYZE), the active domain profile, result_summary, experiment_matrix, panel_synthesis, panel_reviews]

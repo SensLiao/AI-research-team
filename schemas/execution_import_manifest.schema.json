@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/execution_import_manifest.schema.json",
+  "title": "Verified Execution Import Manifest",
+  "description": "Deterministic import result derived from signed executor receipts and freshly verified files. Stored inside a checkpointed note artifact; never authored by a reasoning worker.",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "source_boundary",
+    "run_id",
+    "created_at",
+    "import_id",
+    "receipts"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "verifiedFile": {
+      "type": "object",
+      "required": ["path", "sha256", "size_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "size_bytes": {"type": "integer", "minimum": 0},
+        "role": {"type": "string"},
+        "media_type": {"type": "string"}
+      }
+    }
+  },
+  "properties": {
+    "manifest_version": {"const": "execution-import/v1"},
+    "source_boundary": {"const": "attested-non-llm-executor"},
+    "run_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"},
+    "import_id": {"$ref": "#/$defs/sha256"},
+    "receipts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "receipt_ref",
+          "receipt_sha256",
+          "job_id",
+          "condition_id",
+          "seed",
+          "command_hash",
+          "code_hash",
+          "config_hash",
+          "data_hash",
+          "exit_status",
+          "started_at",
+          "finished_at",
+          "attestation_key_id",
+          "stdout",
+          "stderr",
+          "result_files"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "receipt_ref": {"type": "string", "minLength": 1},
+          "receipt_sha256": {"$ref": "#/$defs/sha256"},
+          "job_id": {"type": "string", "minLength": 1},
+          "condition_id": {"type": "string", "minLength": 1},
+          "seed": {"type": ["integer", "null"]},
+          "command_hash": {"$ref": "#/$defs/sha256"},
+          "code_hash": {"$ref": "#/$defs/sha256"},
+          "config_hash": {"$ref": "#/$defs/sha256"},
+          "data_hash": {"$ref": "#/$defs/sha256"},
+          "exit_status": {"type": "integer"},
+          "started_at": {"type": "string", "format": "date-time"},
+          "finished_at": {"type": "string", "format": "date-time"},
+          "attestation_key_id": {"type": "string", "minLength": 1},
+          "stdout": {"$ref": "#/$defs/verifiedFile"},
+          "stderr": {"$ref": "#/$defs/verifiedFile"},
+          "result_files": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/verifiedFile"}
+          }
+        }
+      }
+    }
+  }
+}

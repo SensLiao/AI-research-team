@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/reproducibility_materials_audit.schema.json",
+  "title": "Reproducibility Materials Audit",
+  "description": "Audit of whether the paper exposes enough code, data, configuration, environment, and licensing detail to support reproduction or local reimplementation.",
+  "type": "object",
+  "required": ["source_ref", "code_availability", "data_availability", "config_availability", "reproducibility_risk"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {"type": "string", "minLength": 1},
+    "code_availability": {"type": "string", "minLength": 1},
+    "data_availability": {"type": "string", "minLength": 1},
+    "config_availability": {"type": "string", "minLength": 1},
+    "environment": {"type": ["string", "null"], "default": null},
+    "license_or_access_constraints": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "reproduction_steps": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "missing_materials": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "reproducibility_risk": {"type": "string", "enum": ["low", "medium", "high"]}
+  }
+}
