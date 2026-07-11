@@ -308,6 +308,8 @@ def test_split_worker_bundles_render_complete_bet_memos_and_staged_ladder(tmp_pa
     menu = Path(rd, "director-review", "ideas", "idea-bet-menu.md")
     text = menu.read_text(encoding="utf-8")
     assert lint_idea_bet_menu(rd) == []
+    assert "## Portfolio Execution Map" in text
+    assert "| Rank | Idea | First decisive stage | Primary kill criterion |" in text
     for label in (
         "Research question",
         "Mechanism hypothesis",

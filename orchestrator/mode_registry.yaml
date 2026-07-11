@@ -43,6 +43,12 @@ modes:
     agent_subset: [paper-note-extractor, source-claim-verifier]
     gate_level: record_only           # reading = draft knowledge; the human gate is /promote-to-vault. Drift gate + paper_note schema contract still fire as deterministic cores.
     budget: {max_agent_hops: 4}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: ingest-paper/v1
+      primary_markdown: director-review/papers/ingest-paper.md
+      reusable_artifacts: [paper-note.artifact.json, paper-note-verification.artifact.json]
+      accepts: []
   read_paper_deep:
     entry_stage: DISCOVER
     operated: true   # wired in operate/modes/__init__.py::REGISTRY (paper-reading upgrade 2026-06-26; wiring test enforces the mirror)
@@ -57,6 +63,12 @@ modes:
                    paper-markdown-writer]   # blind branch joins the primary chain only at reconciler; Markdown writer renders director-facing card
     gate_level: record_only           # reading = draft knowledge; the human gate is /promote-to-vault. LIVE hard gates (north-star drift + citation-integrity + citation-existence) fire as deterministic cores regardless of gate_level; the evidence-verifier SATURATION gate is N/A for a single source and is honestly omitted (never listed-then-skipped)
     budget: {max_agent_hops: 20, max_supplement_agent_hops: 12, max_debug_retries_per_run: 3}  # normal panel and supplements are budgeted independently
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: paper-reading/v2
+      primary_markdown: director-review/papers/<paper>.md
+      reusable_artifacts: [paper-note.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, paper-reading-quality.artifact.json]
+      accepts: [ingest-paper/v1]
   evidence_review:
     entry_stage: DISCOVER
     operated: true   # wired in operate/modes/__init__.py::REGISTRY (audit B1/B3; wiring test enforces the mirror)
@@ -66,6 +78,12 @@ modes:
                    evidence-verifier, citation-integrity-auditor]
     gate_level: director_signoff
     budget: {max_agent_hops: 6}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: evidence-brief/v2
+      primary_markdown: director-review/evidence/evidence-brief.md
+      reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json]
+      accepts: [ingest-paper/v1, paper-reading/v2]
   gap_scan:
     entry_stage: DISCOVER
     stage_path: [DISCOVER, REPORT]
@@ -275,6 +293,12 @@ modes:
                    adversarial-reviewer, verify-synthesizer]
     gate_level: director_signoff     # keeps all DESIGN hard gates mandatory (router guardrail 1); EXECUTE+ANALYZE gates live in-stage
     budget: {max_agent_hops: 24}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: full-rigor/v2
+      primary_markdown: director-review/experiments/full-rigor-report.md
+      reusable_artifacts: [experiment-plan.artifact.json, protocol.artifact.json, execution-import-manifest.artifact.json, analysis-summary.artifact.json, verify-summary.artifact.json]
+      accepts: [idea-investment-memo/v1]
   # --- M2 breadth modes ---
   evidence_deep:
     entry_stage: DISCOVER
@@ -286,6 +310,12 @@ modes:
                    staleness-auditor, citation-integrity-auditor, landscape-mapper, evidence-verifier]
     gate_level: director_signoff     # both DISCOVER hard gates (evidence-verifier + citation-integrity-auditor) mandatory
     budget: {max_agent_hops: 10}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: evidence-deep/v2
+      primary_markdown: director-review/evidence/evidence-deep-brief.md
+      reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, landscape-map.artifact.json]
+      accepts: [ingest-paper/v1, paper-reading/v2, evidence-brief/v2]
   m2_accept:
     entry_stage: DESIGN
     stage_path: [DESIGN, EXECUTE, ANALYZE, VERIFY, REPORT]   # M2 breadth acceptance: spine tail + the new DESIGN gate live
@@ -342,6 +372,12 @@ modes:
                    novelty-collision-checker, experiment-planner]
     gate_level: director_signoff     # a new direction commits GPU+writing time (high-stakes): both DISCOVER hard gates (evidence-verifier + citation-integrity-auditor) fire so ideation is grounded in VERIFIED evidence (router guardrail 1). The director gate fires at each stage; the IDEATE boundary IS the /idea-bet review (a reject = "none of these — pivot"). idea_backlog has NO self-bet field (structural); the chosen bet is recorded by the human /idea-bet slash as an adr. Downstream experiment rigor (DESIGN..VERIFY hard gates) fires only AFTER a bet.
     budget: {max_agent_hops: 10}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: idea-investment-memo/v1
+      primary_markdown: director-review/ideas/idea-bet-menu.md
+      reusable_artifacts: [idea-backlog.artifact.json, idea-tournament.artifact.json, novelty-collision-verdict.artifact.json]
+      accepts: [paper-reading/v2, evidence-brief/v2, evidence-deep/v2, research-brief/v2, gap-dossier/v1]
   # --- RAT-2 Wave-3 (2026-06-19) — deep_ideation: the FULL deep-ideation chain (IDEATE-v2) ---
   deep_ideation:
     entry_stage: DISCOVER
@@ -365,6 +401,12 @@ modes:
                    novelty-collision-checker, experiment-planner, quality-controller, integrity-refusal-recommender]
     gate_level: director_signoff
     budget: {max_agent_hops: 9}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: idea-investment-memo/v1
+      primary_markdown: director-review/ideas/idea-bet-menu.md
+      reusable_artifacts: [idea-backlog.artifact.json, idea-lineage.artifact.json, idea-tournament.artifact.json, novelty-collision-verdict.artifact.json]
+      accepts: [paper-reading/v2, evidence-brief/v2, evidence-deep/v2, research-brief/v2, gap-dossier/v1]
   # --- M3-c (gap-hunting breadth) — the differentiation engine, focused scan ---
   gap_breadth:
     entry_stage: DISCOVER
@@ -375,6 +417,12 @@ modes:
                    gap-quality-auditor, gap-classifier, novelty-scorer]
     gate_level: record_only          # a focused gap-hunt scan (cheap, no commitment): all 5 hunters -> classify (7-type) -> novelty (SCORE-ONLY, never a cut). Each hunter's items ARE classify_gap signals; novelty drops none.
     budget: {max_agent_hops: 10}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: gap-dossier/v1
+      primary_markdown: director-review/gaps/gap-scan.md
+      reusable_artifacts: [gap-dossier.artifact.json, gap-classification.artifact.json, gap-quality-audit.artifact.json]
+      accepts: [paper-reading/v2, evidence-brief/v2, evidence-deep/v2, research-brief/v2]
   # --- M3-f (IDEATE-ring completion) — the full ring as a focused mode ---
   ideate_ring:
     entry_stage: IDEATE
@@ -646,6 +694,12 @@ modes:
                    evidence-verifier, citation-integrity-auditor]
     gate_level: director_signoff     # both DISCOVER hard gates fire (router guardrail 1); the brief feeds bets/designs downstream
     budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 3, max_fulltext_reads: 20, max_debug_retries_per_run: 3}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: research-brief/v2
+      primary_markdown: director-review/research/research-brief.md
+      reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, landscape-map.artifact.json]
+      accepts: [ingest-paper/v1, paper-reading/v2, evidence-brief/v2, evidence-deep/v2]
   # --- M3-d (VR-1 venue-targeted peer-review) — VERIFY-entry, reuses the M2 panel + venue agents ---
   venue_readiness:
     entry_stage: VERIFY
@@ -657,3 +711,9 @@ modes:
                    adversarial-reviewer, scientific-critic, baseline-scout, sub-domain-historian]
     gate_level: director_signoff     # "is this good enough for venue X" — the VERIFY hard gate (adversarial-reviewer) fires (router guardrail 1); reviewers never self-decide (venue_review has no verdict field) and never write (no Write tool); the area-chair verdict is DERIVED by venue_score.py; venue choice (/venue-pick) and publish (/venue-decide) are human gates.
     budget: {max_agent_hops: 6}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: venue-readiness/v2
+      primary_markdown: director-review/venue/venue-readiness.md
+      reusable_artifacts: [venue-readiness-verdict.artifact.json, venue-meta-review.artifact.json]
+      accepts: [full-rigor/v2]

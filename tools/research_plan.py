@@ -21,6 +21,7 @@ is a bounded composition over a frozen, human-authored menu — not a free-form 
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -32,6 +33,7 @@ _CATALOG_PATH = _PKG / "orchestrator" / "plan_catalog.yaml"
 _REGISTRY_PATH = _PKG / "orchestrator" / "mode_registry.yaml"
 
 UPSTREAM_GROUNDING_FILE = "upstream-grounding.json"              # under <run>/inbox/
+HANDOFF_CONTRACT_VERSION = "mode-handoff/v2"
 
 # Cost bands (sum of the chain's modes' max_agent_hops) — drives the "fastest/cheapest" labelling.
 _BAND_LIGHT_MAX = 6
@@ -225,7 +227,86 @@ def _read_json(path: Path) -> Optional[dict]:
         return None
 
 
-def upstream_grounding(prev_run_dirs: List[str]) -> dict:
+def _read_yaml(path: Path) -> Optional[dict]:
+    try:
+        value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, yaml.YAMLError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def _mode_handoff(mode: str) -> dict:
+    spec = ((load_mode_registry().get("modes") or {}).get(mode) or {}).get("handoff") or {}
+    return dict(spec) if isinstance(spec, dict) else {}
+
+
+def _manifest_item(path: Path, run_dir: Path) -> dict:
+    raw = _read_json(path) or {}
+    try:
+        relative = path.resolve().relative_to(run_dir.resolve()).as_posix()
+    except ValueError:
+        relative = path.name
+    return {
+        "path": str(path.resolve()),
+        "run_relative_path": relative,
+        "sha256": _sha256_file(path),
+        "artifact_type": str(raw.get("artifact_type") or "retrieval_bundle"),
+        "schema_version": str(raw.get("schema_version") or "unversioned"),
+        "status": str(raw.get("status") or "available"),
+    }
+
+
+def validate_upstream_grounding(grounding: dict) -> list[str]:
+    """Verify only transport integrity and declared contract compatibility.
+
+    This deliberately does not re-review upstream science. It prevents a
+    downstream mode from silently consuming a replaced or missing file.
+    """
+    errors: list[str] = []
+    if grounding.get("handoff_contract_version") != HANDOFF_CONTRACT_VERSION:
+        errors.append(
+            f"unsupported handoff contract {grounding.get('handoff_contract_version')!r}; "
+            f"expected {HANDOFF_CONTRACT_VERSION!r}"
+        )
+    for run in grounding.get("upstream_runs") or []:
+        for item in run.get("artifact_manifest") or []:
+            path = Path(str(item.get("path") or ""))
+            if not path.is_file():
+                errors.append(f"{run.get('run_id')}: missing handoff file {path}")
+                continue
+            expected = str(item.get("sha256") or "")
+            actual = _sha256_file(path)
+            if expected != actual:
+                errors.append(
+                    f"{run.get('run_id')}: handoff hash mismatch for "
+                    f"{item.get('run_relative_path') or path.name}"
+                )
+    return errors
+
+
+def _validate_downstream_compatibility(runs: list[dict], downstream_mode: Optional[str]) -> None:
+    if not downstream_mode:
+        return
+    downstream = _mode_handoff(downstream_mode)
+    accepted = {str(value) for value in downstream.get("accepts") or []}
+    for run in runs:
+        product = str((run.get("product_contract") or {}).get("product_version") or "")
+        if product and product not in accepted:
+            raise ValueError(
+                f"mode handoff mismatch: {downstream_mode!r} accepts {sorted(accepted)}, "
+                f"but upstream {run.get('run_id')!r} provides {product!r}"
+            )
+
+
+def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] = None) -> dict:
     """Compact handoff extracted from each completed upstream link (mode + request + REPORT summary +
     any ranked idea backlog + the on-disk key artifacts to read by reference). Robust to missing
     files — a link with nothing readable contributes an empty-but-named entry, never an exception."""
@@ -234,17 +315,35 @@ def upstream_grounding(prev_run_dirs: List[str]) -> dict:
         d = Path(rd)
         entry: dict = {"run_id": d.name, "run_dir": str(d.resolve()), "mode": "",
                        "request": "", "summary": "", "top_ideas": [],
-                       "key_artifacts": [], "reusable_inputs": []}
+                       "key_artifacts": [], "reusable_inputs": [],
+                       "artifact_manifest": [], "run_status": "unknown",
+                       "delivery_status": "UNKNOWN", "project": "",
+                       "product_contract": {}}
         tf = _read_json(d / "task_frame.artifact.json")
         if tf:
             payload = tf.get("payload") or {}
             entry["mode"] = payload.get("mode") or ""
             entry["request"] = payload.get("request_text") or ""
             entry["run_id"] = payload.get("task_id") or d.name
+            entry["project"] = payload.get("project") or ""
+        manifest = _read_yaml(d / "manifest.yaml") or {}
+        entry["run_status"] = str(manifest.get("status") or "unknown")
+        handoff = _mode_handoff(str(entry["mode"]))
+        entry["product_contract"] = {
+            "contract_version": str(handoff.get("contract_version") or HANDOFF_CONTRACT_VERSION),
+            "product_version": str(handoff.get("product_version") or "unversioned"),
+            "primary_markdown": str(handoff.get("primary_markdown") or ""),
+        }
         report = d / "evidence" / "REPORT" / "report-note.artifact.json"
         rn = _read_json(report)
         if rn:
-            entry["summary"] = ((rn.get("payload") or {}).get("summary")) or ""
+            report_payload = rn.get("payload") or {}
+            entry["summary"] = report_payload.get("summary") or ""
+            entry["delivery_status"] = str(
+                report_payload.get("markdown_delivery_status")
+                or report_payload.get("delivery_status")
+                or ("USABLE" if entry["run_status"] == "done" else "UNKNOWN")
+            )
             entry["key_artifacts"].append(str(report))
         backlog = d / "evidence" / "IDEATE" / "idea-backlog.artifact.json"
         bl = _read_json(backlog)
@@ -267,17 +366,30 @@ def upstream_grounding(prev_run_dirs: List[str]) -> dict:
         entry["reusable_inputs"] = [
             str(path.resolve()) for path in reusable_candidates if path.is_file()
         ]
+        manifested_paths = []
+        for raw_path in entry["key_artifacts"] + entry["reusable_inputs"]:
+            path = Path(raw_path)
+            if path.is_file() and path.resolve() not in manifested_paths:
+                manifested_paths.append(path.resolve())
+                entry["artifact_manifest"].append(_manifest_item(path, d))
         runs.append(entry)
-    return {"upstream_runs": runs}
+    _validate_downstream_compatibility(runs, downstream_mode)
+    return {
+        "handoff_contract_version": HANDOFF_CONTRACT_VERSION,
+        "downstream_mode": downstream_mode or "",
+        "upstream_runs": runs,
+    }
 
 
-def write_upstream_grounding(new_run_dir: str, prev_run_dirs: List[str]) -> str:
+def write_upstream_grounding(new_run_dir: str, prev_run_dirs: List[str],
+                             downstream_mode: Optional[str] = None) -> str:
     """Write the downstream run's `inbox/upstream-grounding.json` from the upstream links. Returns
     the path. Called by `operate begin --upstream-run <prev>` before the first worker is built."""
     inbox = Path(new_run_dir) / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     out = inbox / UPSTREAM_GROUNDING_FILE
-    out.write_text(json.dumps(upstream_grounding(prev_run_dirs), ensure_ascii=False, indent=2),
+    out.write_text(json.dumps(upstream_grounding(prev_run_dirs, downstream_mode),
+                              ensure_ascii=False, indent=2),
                    encoding="utf-8")
     return str(out)
 
@@ -334,6 +446,9 @@ def augment_worker_with_upstream(worker: Optional[dict], run_dir: str) -> Option
     grounding = _read_json(p)
     if not grounding or not (grounding.get("upstream_runs")):
         return worker
+    integrity_errors = validate_upstream_grounding(grounding)
+    if integrity_errors:
+        raise ValueError("upstream handoff integrity failed: " + "; ".join(integrity_errors))
     block = _grounding_block(run_dir, grounding)
     pointer = _grounding_pointer_block(run_dir)
     if "workers" in worker and isinstance(worker.get("workers"), list):
