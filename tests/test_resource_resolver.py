@@ -8,10 +8,9 @@ from research_agent_teams.tools.resource_resolver import ResourceDenied, Resourc
 
 
 @pytest.fixture()
-def resolver(tmp_path, monkeypatch):
-    # REAL shipped registry/policy + REAL project bindings; isolate the lease store to tmp.
+def resolver(tmp_path, monkeypatch, resource_projects_root):
+    # Real shipped registry/policy + hermetic bindings; isolate the lease store to tmp.
     monkeypatch.delenv("RAT_RESOURCES_ROOT", raising=False)
-    monkeypatch.delenv("RAT_PROJECTS_ROOT", raising=False)
     return ResourceResolver(workspace_root=str(tmp_path / "ws"))
 
 
@@ -43,9 +42,10 @@ def test_resolve_denies_wrong_stage(resolver):
                          capability="paper_search", stage="EXECUTE")
 
 
-def test_server_resolve_flags_approval_and_leaks_no_secret(tmp_path, monkeypatch):
+def test_server_resolve_flags_approval_and_leaks_no_secret(
+    tmp_path, monkeypatch, resource_projects_root
+):
     monkeypatch.delenv("RAT_RESOURCES_ROOT", raising=False)
-    monkeypatch.delenv("RAT_PROJECTS_ROOT", raising=False)
     # sentinel secret in the environment — must NEVER surface in the resolved object / lease / audit
     monkeypatch.setenv("RAT_SERVER_HOST", "lab.example.edu")
     monkeypatch.setenv("RAT_SERVER_USER", "user01")
@@ -75,10 +75,9 @@ def test_denied_request_is_audited(tmp_path, monkeypatch):
     assert '"decision": "denied"' in audit
 
 
-def test_ttl_capped_by_policy(tmp_path, monkeypatch):
+def test_ttl_capped_by_policy(tmp_path, monkeypatch, resource_projects_root):
     """A caller asking for a longer TTL than the policy max gets capped at the policy ceiling."""
     monkeypatch.delenv("RAT_RESOURCES_ROOT", raising=False)
-    monkeypatch.delenv("RAT_PROJECTS_ROOT", raising=False)
     resolver = ResourceResolver(workspace_root=str(tmp_path / "ws"))
     # api.semantic_scholar policy max is 3600s; ask for 999999 -> lease window must be <= 3600s
     r = resolver.resolve(project="iac-cbct-seg", run_id="r1", alias_or_resource="paper_api",

@@ -151,9 +151,8 @@ def test_live_status_full_run_injected_executor(monkeypatch):
     assert "Server status — LIVE" in md and "SENTINEL-SECRET-NO-LEAK" not in md
 
 
-def test_live_status_with_project_leases_and_audits(tmp_path, monkeypatch):
+def test_live_status_with_project_leases_and_audits(tmp_path, monkeypatch, resource_projects_root):
     monkeypatch.delenv("RAT_RESOURCES_ROOT", raising=False)
-    monkeypatch.delenv("RAT_PROJECTS_ROOT", raising=False)
     from research_agent_teams.tools.resource_resolver import ResourceResolver
     resolver = ResourceResolver(workspace_root=str(tmp_path / "ws"))
     st = mon.live_status(executor=FakeSSH(), cfg=_cfg(), project="iac-cbct-seg", run_id="r1",
