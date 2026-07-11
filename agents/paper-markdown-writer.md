@@ -1,6 +1,6 @@
 ---
 name: paper-markdown-writer
-spec_version: "1.0.0"
+spec_version: "2.0.0"
 model: opus
 stage: DISCOVER
 kind: producer
@@ -24,25 +24,35 @@ Before any work, read the run's `task_frame.artifact.json` — `payload.north_st
 
 ## What You Write
 
-The Markdown must include:
+The Markdown must follow the human-first `paper-reading/v3` product contract:
 
-1. One-paragraph thesis relevance.
-2. Paper identity and canonical source.
-3. What the paper actually claims.
-4. Evidence table: claim -> locus -> support -> risk.
-5. Method teardown.
-6. Figure/table reading.
-7. Critical appraisal.
-8. Domain transfer boundary.
-9. What this paper supports for our project and what it must not be used to claim.
-10. Reviewer attack points and required reread/validation items.
-11. Blind-reader versus primary-reader reconciliation, including accepted limitations and any
-    director warning.
+1. One-screen decision summary in natural language.
+2. Paper identity, problem, contributions, and canonical source.
+3. Data/research-design reconstruction before project relevance.
+4. Method/theory reconstruction with training, inference, assumptions, and failure conditions.
+5. Three to seven natural-language conclusion-evidence packages when the paper supports that many;
+   each binds the author claim, source locus, key numbers/conditions, what it supports, what it does
+   not support, strongest alternative explanation, and confidence rationale.
+6. Numeric/fairness audit, visual evidence reading, robustness/failure boundaries, validity analysis,
+   and layered reproducibility.
+7. Literature position and novelty boundary.
+8. Blind-reader versus primary-reader reconciliation, accepted limitations, and director warning.
+9. Only after the paper-intrinsic analysis: domain/project transfer assumptions, what is directly
+   supported, indirectly suggested, or unusable, and next decision actions.
+
+Use semantic headings. Put stable claim ids in HTML comments such as
+`<!-- claim_key: C-01 -->`; do not make internal ids, worker names, bundle names, scores, hashes, or
+workflow state the visible reading entry.
 
 ## Quality Bar
 
 - Do not add new claims beyond the evidence artifacts.
 - Prefer direct, useful research prose over schema narration.
+- Inspect every load-bearing visual named by the validated figure-reading artifacts. If a stable image
+  asset exists, embed it by relative path. If it does not, write a clearly labelled `Visual evidence
+  (image not embedded)` block that states source/page/ref, axes or table structure, key observations and
+  numbers, what it supports, and what it cannot support. Missing image storage is not a delivery block;
+  pretending to have seen an unread visual is.
 - If the quality auditor says `NEEDS_SUPPLEMENT` or `BLOCK`, make that visible near the top.
 - Do not rely on `covered_*` declarations as proof. The operate layer checks the actual Markdown body
   for every claim id, load-bearing figure/table ref, method component, key numeric comparison,

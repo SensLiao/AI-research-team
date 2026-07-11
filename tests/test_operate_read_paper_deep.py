@@ -19,6 +19,7 @@ from research_agent_teams.operate.artifacts import GateBlock
 from research_agent_teams.operate.modes import ingest_paper, read_paper_deep
 from research_agent_teams.operate.panel_scheduler import schedule_next_wave
 from research_agent_teams.tools import fulltext_qa
+from research_agent_teams.tools.paper_markdown_quality import audit_paper_markdown
 from research_agent_teams.tools.validate_artifact import validate_artifact, validate_payload
 
 TS = "2026-06-26T12:00:00Z"
@@ -769,7 +770,11 @@ def test_read_paper_deep_writes_all_nineteen_artifacts_and_gates_approve(tmp_pat
     assert report["project_relevance"] == "A-core"
     assert report["transfer_level"] == "direct"
     assert Path(report["director_markdown_card"]).is_file()
-    assert "Reviewer attack points" in Path(report["director_markdown_card"]).read_text(encoding="utf-8")
+    rendered_markdown = Path(report["director_markdown_card"]).read_text(encoding="utf-8")
+    assert "Reviewer attack points" in rendered_markdown
+    assert "![" not in rendered_markdown, (
+        "a complete text equivalent must remain PASS-capable when no stable copied image is embedded"
+    )
     attribution = _load(paths, "citation-attribution-report")
     assert attribution["payload"]["mechanical_verification"]["n_verified"] == 2
     assert attribution["payload"]["verdict"] == "PASS"
@@ -1274,6 +1279,17 @@ def test_markdown_body_numeric_method_caveat_and_heading_gaps_are_advisory(tmp_p
     assert "omits method component: persistent homology auxiliary penalty" in message
     assert "omits key audited result: Table 2" in message
     assert "pediatric cone-beam CT without calibration" in message
+
+
+def test_markdown_visual_ref_without_visual_content_explanation_is_advisory(tmp_path):
+    b = _with_page_anchors(_good_bundle())
+    audit = audit_paper_markdown(
+        "# Paper\n\nFigure 4 and Table 2 were inspected; see the source visuals.\n",
+        b,
+    )
+    assert any(
+        "does not explain its visual content" in row for row in audit["errors"]
+    )
 
 
 def test_markdown_body_missing_saturation_disclaimer_is_advisory(tmp_path):

@@ -83,7 +83,7 @@
               "strongest_rejection_case"
             ],
             "additionalProperties": false,
-            "description": "Optional on legacy artifacts; required by the strict idea-investment-memo/v1 operated contract. Transparent components preserve why the menu was ordered.",
+            "description": "Optional on legacy artifacts; required by the strict idea-investment-memo/v2 operated contract. Transparent components preserve why the menu was ordered.",
             "properties": {
               "score": {"type": "number", "minimum": 0, "maximum": 1},
               "scientific_merit": {"type": "number", "minimum": 0, "maximum": 1},

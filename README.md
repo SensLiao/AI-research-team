@@ -35,6 +35,7 @@ are supporting machinery, not the definition of research quality.
 
 - [Paper reading standard and Markdown template](docs/PAPER-READING-STANDARD-CN.md)
 - [Idea card and scientific-investment template](docs/IDEA-CARD-STANDARD-CN.md)
+- [Research and paper progress-report standard](docs/RESEARCH-PROGRESS-REPORT-STANDARD-CN.md)
 - [Storage, mode handoff, versioning, and promotion rules](docs/STORAGE-PIPELINE-AND-PROMOTION-CN.md)
 
 Cross-mode reuse uses `mode-handoff/v2`: each operated mode declares its semantic
@@ -81,7 +82,7 @@ needs the director's wired server. Direction-finding runs now expose a human
 Markdown idea-bet page before the human gate. See `PLATFORM-FACTS.md` for the
 current by-the-numbers status.
 
-Current local verification on 2026-07-11: `3058 passed`. The historical business-output
+Current local verification on 2026-07-11: `3062 passed`. The historical business-output
 scoreboard remains deliberately blocked: 45 completed operated runs predate the current
 mode-specific Markdown and scientific-truth contracts and must be rerun, not cosmetically upgraded.
 

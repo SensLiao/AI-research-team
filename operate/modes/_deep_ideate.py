@@ -194,7 +194,7 @@ COMPLETE bundle.
 
 Write ONLY this JSON to `{out}`:
 {{
-  "memo_contract_version":"idea-investment-memo/v1",
+  "memo_contract_version":"idea-investment-memo/v2",
   "sketches":[{{
     "sketch_id":"ES-1","idea_ref":"IDEA-1",
     "experiment":"<minimum experiment that can falsify the core claim>",
@@ -210,6 +210,9 @@ Write ONLY this JSON to `{out}`:
       "time":"<time to first falsification>","dependencies":["<missing or available dependency>"]}},
     "main_risks":[{{"risk":"<largest validity/execution risk>","mitigation":"<specific mitigation>"}}],
     "execution_order":["<first action>","<next action conditional on prior result>"],
+    "expected_figures":[{{"figure":"<problem/main/mechanism/robustness/failure/cost figure>",
+      "question":"<question the figure answers>","claim":"<conditional paper claim>",
+      "minimum_evidence":"<minimum fair evidence needed>"}}],
     "stages":[{{"stage_id":"S1","stage_type":"direct|oracle_upper_bound|learned_model|end_to_end",
       "name":"<stage name>","purpose":"<question this stage retires>","setup":"<minimal setup>",
       "baselines":["<stage baseline>"],"controls":["<stage control>"],
@@ -497,7 +500,7 @@ def deep_discover_producers(run_dir, ts, *, required: bool) -> Tuple[List[str], 
 
 # --------------------------------------------------------------------------- IDEATE deep producers
 
-_MEMO_VERSION = "idea-investment-memo/v1"
+_MEMO_VERSION = "idea-investment-memo/v2"
 _MEMO_SKETCH_LIST_FIELDS = (
     "baselines", "controls", "metrics", "observable_signals", "success_thresholds",
     "failure_thresholds", "kill_criteria", "main_risks", "execution_order", "stages",
