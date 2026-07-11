@@ -12,6 +12,7 @@ A test that wants the real behaviour overrides the module attributes itself (e.g
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from research_agent_teams.operate.modes import _shared
 from research_agent_teams.tools.scholar_clients import ScholarLookupError
@@ -26,3 +27,39 @@ def hermetic_gates(monkeypatch):
     monkeypatch.setattr(_shared, "EXISTENCE_TRANSPORT", _offline_transport)
     monkeypatch.setattr(_shared, "VAULT_ROOT_OVERRIDE", False)
     yield
+
+
+@pytest.fixture()
+def resource_projects_root(tmp_path, monkeypatch):
+    """Provide hermetic resource bindings without publishing a private project workspace."""
+    projects_root = tmp_path / "projects"
+    binding_path = projects_root / "iac-cbct-seg" / "resource_bindings.yaml"
+    binding_path.parent.mkdir(parents=True, exist_ok=True)
+    binding_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 1,
+                "project": "iac-cbct-seg",
+                "bindings": [
+                    {
+                        "alias": "paper_api",
+                        "resource_ref": "api.semantic_scholar",
+                        "allowed_capabilities": ["paper_search", "citation_existence"],
+                        "allowed_stages": ["DISCOVER", "VERIFY"],
+                    },
+                    {
+                        "alias": "primary_gpu",
+                        "resource_ref": "server.honor.gpu",
+                        "allowed_capabilities": ["query_status", "pull_logs"],
+                        "allowed_stages": ["EXECUTE", "ANALYZE", "VERIFY"],
+                        "allowed_skills": ["server-query"],
+                        "requires_human_approval": True,
+                    },
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RAT_PROJECTS_ROOT", str(projects_root))
+    return projects_root

@@ -95,9 +95,8 @@ def test_live_manifest_refused_without_authorization(monkeypatch):
         hm.live_manifest(["x"])
 
 
-def test_live_manifest_with_pull_logs_lease(tmp_path, monkeypatch):
+def test_live_manifest_with_pull_logs_lease(tmp_path, monkeypatch, resource_projects_root):
     monkeypatch.delenv("RAT_RESOURCES_ROOT", raising=False)
-    monkeypatch.delenv("RAT_PROJECTS_ROOT", raising=False)
     from research_agent_teams.tools.resource_resolver import ResourceResolver
 
     resolver = ResourceResolver(workspace_root=str(tmp_path / "ws"))
