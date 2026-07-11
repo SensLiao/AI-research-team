@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from research_agent_teams.tools import research_plan as rp
+from research_agent_teams.tools import runstore
 
 
 # --------------------------------------------------------------------------- catalog integrity
@@ -221,6 +222,24 @@ def test_upstream_grounding_extracts_summary_and_ideas(tmp_path):
                for row in up["artifact_manifest"])
 
 
+def test_pinned_upstream_product_version_wins_over_current_registry(tmp_path):
+    prev = Path(_fake_prev_run(tmp_path, mode="deep_research"))
+    frame = json.loads((prev / "task_frame.artifact.json").read_text(encoding="utf-8"))
+    frame["payload"]["product_contract"] = {
+        "contract_version": rp.HANDOFF_CONTRACT_VERSION,
+        "product_version": "research-brief/v1-historical",
+        "primary_markdown": "director-review/research/research-brief.md",
+        "reusable_artifacts": [],
+        "accepts": [],
+    }
+    (prev / "task_frame.artifact.json").write_text(json.dumps(frame), encoding="utf-8")
+
+    upstream = rp.upstream_grounding([str(prev)])["upstream_runs"][0]
+    assert upstream["product_contract"]["product_version"] == "research-brief/v1-historical"
+    assert upstream["product_contract"]["contract_pinned"] is True
+    assert upstream["product_contract"]["contract_source"] == "task_frame"
+
+
 def test_handoff_compatibility_accepts_declared_chain_and_rejects_mismatch(tmp_path):
     prev = _fake_prev_run(tmp_path, mode="deep_research")
     good = rp.upstream_grounding([prev], downstream_mode="deep_ideation")
@@ -237,6 +256,34 @@ def test_handoff_hash_change_blocks_downstream_reuse(tmp_path):
     report = Path(prev) / "evidence" / "REPORT" / "report-note.artifact.json"
     report.write_text('{"payload":{"summary":"replaced after handoff"}}', encoding="utf-8")
     with pytest.raises(ValueError, match="handoff integrity failed"):
+        rp.augment_worker_with_upstream({"prompt": "BODY"}, str(new_run))
+
+
+def test_handoff_manifest_itself_is_ledger_pinned(tmp_path):
+    prev = _fake_prev_run(tmp_path)
+    runs = tmp_path / "runs"
+    runstore.create_run(runs, "nd-ledger", "deep_ideation", "DISCOVER", "2026-07-11T00:00:00Z",
+                        project="proj")
+    new_run = runs / "proj" / "nd-ledger"
+    (new_run / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "deep_ideation",
+        "product_contract": {
+            "contract_version": rp.HANDOFF_CONTRACT_VERSION,
+            "product_version": "idea-investment-memo/v1",
+            "primary_markdown": "director-review/ideas/idea-bet-menu.md",
+            "reusable_artifacts": [],
+            "accepts": ["research-brief/v2"],
+        },
+    }}), encoding="utf-8")
+    handoff_path = rp.write_upstream_grounding(
+        str(new_run), [prev], downstream_mode="deep_ideation")
+    runstore.pin_upstream_grounding(new_run, handoff_path, "2026-07-11T00:00:01Z")
+    assert rp.augment_worker_with_upstream({"prompt": "BODY"}, str(new_run))
+
+    handoff = json.loads(Path(handoff_path).read_text(encoding="utf-8"))
+    handoff["downstream_mode"] = "tampered-mode"
+    Path(handoff_path).write_text(json.dumps(handoff), encoding="utf-8")
+    with pytest.raises(ValueError, match="manifest hash does not match its ledger pin"):
         rp.augment_worker_with_upstream({"prompt": "BODY"}, str(new_run))
 
 

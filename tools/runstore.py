@@ -142,6 +142,29 @@ def pin_task_frame(run_dir, ts: str) -> dict:
                         ts)
 
 
+def pin_upstream_grounding(run_dir, grounding_path, ts: str) -> dict:
+    """Anchor a cross-mode handoff manifest into the downstream run ledger.
+
+    Artifact hashes protect the referenced upstream files; this additional pin protects the
+    transport manifest itself, so paths, product versions, and expected hashes cannot be edited
+    together after the downstream run starts.
+    """
+    path = Path(grounding_path)
+    grounding = json.loads(path.read_text(encoding="utf-8"))
+    upstream = grounding.get("upstream_runs") or []
+    return append_event(
+        _ledger_path(run_dir),
+        "upstream_handoff_pinned",
+        {
+            "grounding_sha256": hash_file(path),
+            "contract_version": grounding.get("handoff_contract_version"),
+            "downstream_mode": grounding.get("downstream_mode"),
+            "upstream_run_ids": [str(row.get("run_id") or "") for row in upstream],
+        },
+        ts,
+    )
+
+
 def start_stage(run_dir, stage: str, ts: str, agent_subset: Optional[List[str]] = None) -> dict:
     append_event(_ledger_path(run_dir), "stage_started", {"stage": stage}, ts)
     manifest = read_manifest(run_dir)
@@ -219,6 +242,7 @@ def classify_status(run_dir) -> str:
         "stage_started": "crashed_mid_stage",
         "run_started": "ready",
         "task_frame_pinned": "ready",
+        "upstream_handoff_pinned": "ready",
         "resume": "ready",
         "gate_resolved": "ready",
         "gate_pending": "awaiting",

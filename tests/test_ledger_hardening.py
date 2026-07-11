@@ -40,3 +40,7 @@ def test_task_frame_pinned_is_a_first_class_event_type(tmp_path):
                      {"task_frame_sha256": "sha256:abc", "mode": "m", "north_star_statement": "s"}, TS)
     assert validate_against("ledger_event.schema.json", e) == []
     assert verify_chain(read_events(lp)) == []
+
+
+def test_upstream_handoff_pinned_is_a_first_class_event_type():
+    assert "upstream_handoff_pinned" in EVENT_TYPES
