@@ -456,12 +456,18 @@ reproducibility, not just a loose list of complaints.
 Task: write the final human-readable Markdown paper card from prior evidence only.
 Output shape: {"paper_markdown_card": {source_ref,title,markdown,evidence_refs,covered_claim_ids,
 covered_figure_refs,covered_sections,quality_verdict}}.
-The Markdown must be useful to a human researcher and include claims, loci, method, figures,
-appraisal, result-table audit, algorithm/math audit, reproducibility materials, project alignment,
-independent critique, transfer boundary, medical-imaging checklist/transfer matrix when present,
-blind-primary reconciliation, repair plan when the read is not PASS, and next actions. Mention that
-multi-source evidence saturation was not assessed. Minimum 500 characters. `covered_*` fields are
-advisory only; a deterministic checker audits the actual Markdown body.
+Follow the human-first paper-reading/v3 order: one-screen decision summary; paper problem and
+contributions; data/research design; method/theory reconstruction; 3-7 natural-language
+conclusion-evidence packages when scientifically applicable; numeric/fairness, visual, robustness,
+failure, validity, and reproducibility audits; literature position; blind-primary reconciliation;
+then domain/project transfer and next actions. Put stable claim ids in HTML comments, never in visible
+headings or first-column reading entries. Include medical-imaging checklist/transfer matrix when
+present and a repair plan when the read is not PASS. Mention that multi-source evidence saturation was
+not assessed. For each load-bearing visual, use a relative image only when a stable asset exists;
+otherwise write a labelled text equivalent with source/page/ref, axes/table structure, key numbers,
+what it supports, and what it cannot support. Missing image storage is not a delivery block; claiming
+to have inspected an unread visual is. Minimum 500 characters. `covered_*` fields are advisory only;
+a deterministic checker audits the actual Markdown body.
 For every partial, insufficient, or complete-document absence claim, name the claim id and explain
 exactly what the paper does not establish. Never turn those caveats into direct source evidence.
 """,

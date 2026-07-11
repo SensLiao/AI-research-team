@@ -116,7 +116,7 @@ claim_support "strong" ONLY for a paper that centrally and directly supports the
 counts with weak or speculative gaps — fewer, sharper, defensible gaps beat a long shallow list.
 After writing, verify it is valid JSON. Return one line: pages read + counts + the highest-novelty gap."""
 
-MEMO_CONTRACT_VERSION = "idea-investment-memo/v1"
+MEMO_CONTRACT_VERSION = "idea-investment-memo/v2"
 LEGACY_REPLAY_CONTRACT_VERSION = "idea-legacy-replay/v1"
 LEGACY_REPLAY_RECEIPT_NAME = "IDEA-LEGACY-REPLAY.json"
 LEGACY_REPLAY_LIMITATIONS = frozenset({
@@ -153,7 +153,7 @@ COMPLETE bundle.
 
 Write ONLY this JSON to `{out}`:
 {{
-  "memo_contract_version": "idea-investment-memo/v1",
+  "memo_contract_version": "idea-investment-memo/v2",
   "hypotheses": [{{"hypothesis_id":"IH1","statement":"<falsifiable hypothesis>",
      "falsifiable_prediction":"<metric + numeric threshold + dataset/condition>",
      "evidence_needed":["<what would test it>"],"evidence_ref":["GAP-1","[[<slug>]]"]}}],
@@ -162,12 +162,15 @@ Write ONLY this JSON to `{out}`:
      "research_question":"<one answerable question ending in ?>",
      "mechanism_hypothesis":"<why the intervention should change the outcome>",
      "causal_chain":["<intervention -> mediator>","<mediator -> measurable outcome>"],
+     "problem_evidence":["<source/result showing the problem is real>"],
+     "independent_scientific_value":"<why this matters even outside the current project>",
+     "expected_contributions":["<conditional problem/method/mechanism/evaluation contribution>"],
      "intended_contribution":"<specific delta over the closest known approach>",
      "why_now":"<new data/tool/evidence/cost condition that makes this timely>",
      "feasibility":{{"compute":"low|medium|high","data":"available|restricted|unavailable",
         "time":"short|medium|long"}}}}]
 }}
-Emit 3-5 hypotheses and 3-5 ideas. Every idea must carry all five memo fields shown above;
+Emit 3-5 hypotheses and 3-5 ideas. Every idea must carry the human-first scientific case shown above;
 `causal_chain` must contain at least two ordered links. Each prediction must name a metric, numeric
 threshold, and evaluation condition. Each idea must be runnable next quarter, not a research programme.
 After writing, verify valid JSON. Return only the hypothesis and idea counts; do not self-rank."""
@@ -188,7 +191,7 @@ COMPLETE bundle.
 
 Write ONLY this JSON to `{out}`:
 {{
-  "memo_contract_version": "idea-investment-memo/v1",
+  "memo_contract_version": "idea-investment-memo/v2",
   "tournament": [{{"round":1,"pair_a":"IDEA-1","pair_b":"IDEA-2","winner":"IDEA-1",
      "rationale":"<decisive comparison naming both ideas>"}}],
   "evolved": [{{"idea_id":"EV-1","summary":"<stronger mutation or recombination>",
@@ -196,6 +199,9 @@ Write ONLY this JSON to `{out}`:
      "evidence_ref":["IDEA-1","GAP-1"],"research_question":"<answerable question>",
      "mechanism_hypothesis":"<mechanism claim>",
      "causal_chain":["<cause -> mediator>","<mediator -> outcome>"],
+     "problem_evidence":["<source/result showing the problem is real>"],
+     "independent_scientific_value":"<why the problem matters beyond this project>",
+     "expected_contributions":["<conditional contribution if evidence succeeds>"],
      "intended_contribution":"<delta over prior work>","why_now":"<timing case>",
      "feasibility":{{"compute":"low|medium|high","data":"available|restricted|unavailable",
         "time":"short|medium|long"}}}}],
@@ -232,7 +238,7 @@ evaluation, data, or control regime; "this is novel" is not a difference.
 
 Write ONLY this JSON to `{out}`:
 {{
-  "memo_contract_version": "idea-investment-memo/v1",
+  "memo_contract_version": "idea-investment-memo/v2",
   "findings": [{{
     "idea_id":"IDEA-1","method_combination":"<combined methods>",
     "application":"<problem>","domain":"<field>","queries":["<targeted query>"],
@@ -244,11 +250,17 @@ Write ONLY this JSON to `{out}`:
     "closest_prior_art":[{{"ref":"<real ref>","title":"<title>",
       "relationship":"<collision|adjacent|precursor>","difference":"<specific delta>"}}],
     "difference_from_prior_art":"<precise surviving delta or already-done statement>",
+    "visual_evidence":[{{"source_ref":"<paper/page/figure or table actually inspected>",
+      "asset_ref":"<optional stable relative image path or null>",
+      "content":"<axes/table structure and comparison>","key_observation":"<numbers/trend>",
+      "supports":"<narrow conclusion>","does_not_support":"<boundary>"}}],
     "confidence":"high|medium|low","retrieval_note":"<coverage limits>"
   }}],
   "evidence_ref":["inbox/COLLISION.bundle.json"]
 }}
 `colliding_papers` must be empty for `clear`; `closest_prior_art` may still name verified adjacent work.
+Emit `visual_evidence` only after actual visual inspection; otherwise use an empty list and do not infer
+image content from captions or OCR.
 Emit exactly one finding per candidate and verify the JSON before returning."""
 
 
@@ -482,7 +494,7 @@ def _require_worker_boundaries(proposal: dict, ranking: dict, collision: dict,
 def _load_ideate_bundle(run_dir) -> dict:
     """Load a fail-closed current panel or an explicitly authorized historical replay.
 
-    Current runs must provide four distinct ``idea-investment-memo/v1`` bundles. A historical merged
+    Current runs must provide four distinct ``idea-investment-memo/v2`` bundles. A historical merged
     bundle is replayable only when a separate receipt binds its exact SHA-256 and acknowledges that it
     cannot earn a current scientific rank/PASS. Merely omitting the version is therefore never a bypass.
     """
@@ -834,7 +846,7 @@ def _report(run_dir, ts) -> tuple:
             )
             note["open_questions"].append(
                 "legacy replay only: rerun the independent proposer, ranker, collision checker, and "
-                "experiment planner under idea-investment-memo/v1 before betting"
+                "experiment planner under idea-investment-memo/v2 before betting"
             )
     # Honesty (director lock "必须检查"): a run that could not verify novelty, or that cut ideas for
     # prior art, must say so to the director — never present a silently-clean menu.

@@ -28,7 +28,7 @@ from research_agent_teams.tools.idea_bet_markdown import lint_idea_bet_menu
 from research_agent_teams.tools.research_output_quality import audit_markdown_text
 
 
-MEMO_VERSION = "idea-investment-memo/v1"
+MEMO_VERSION = "idea-investment-memo/v2"
 
 
 def _rich_split_bundles():
@@ -309,9 +309,14 @@ def test_split_worker_bundles_render_complete_bet_memos_and_staged_ladder(tmp_pa
     text = menu.read_text(encoding="utf-8")
     assert lint_idea_bet_menu(rd) == []
     assert "## Portfolio Execution Map" in text
-    assert "| Rank | Idea | First decisive stage | Primary kill criterion |" in text
+    assert "| Rank | Research direction | First decisive stage | Primary kill criterion |" in text
+    assert "### Direction 1 |" in text
+    assert "<!-- idea_key: IDEA-1 -->" in text
+    assert "### Rank 1 - IDEA-1" not in text
+    assert "## Internal Keys And Ranking Appendix" in text
     for label in (
         "Research question",
+        "Independent scientific value",
         "Mechanism hypothesis",
         "Causal chain",
         "Difference from prior art",
@@ -326,7 +331,6 @@ def test_split_worker_bundles_render_complete_bet_memos_and_staged_ladder(tmp_pa
         "Resource and data feasibility",
         "Main risks",
         "Execution order",
-        "Scientific investment score",
         "Strongest rejection case",
     ):
         assert text.count(f"**{label}:**") == 2

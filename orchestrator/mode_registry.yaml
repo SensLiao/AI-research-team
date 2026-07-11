@@ -65,7 +65,7 @@ modes:
     budget: {max_agent_hops: 20, max_supplement_agent_hops: 12, max_debug_retries_per_run: 3}  # normal panel and supplements are budgeted independently
     handoff:
       contract_version: mode-handoff/v2
-      product_version: paper-reading/v2
+      product_version: paper-reading/v3
       primary_markdown: director-review/papers/<paper>.md
       reusable_artifacts: [paper-note.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, paper-reading-quality.artifact.json]
       accepts: [ingest-paper/v1]
@@ -83,7 +83,7 @@ modes:
       product_version: evidence-brief/v2
       primary_markdown: director-review/evidence/evidence-brief.md
       reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json]
-      accepts: [ingest-paper/v1, paper-reading/v2]
+      accepts: [ingest-paper/v1, paper-reading/v2, paper-reading/v3]
   gap_scan:
     entry_stage: DISCOVER
     stage_path: [DISCOVER, REPORT]
@@ -298,7 +298,7 @@ modes:
       product_version: full-rigor/v2
       primary_markdown: director-review/experiments/full-rigor-report.md
       reusable_artifacts: [experiment-plan.artifact.json, protocol.artifact.json, execution-import-manifest.artifact.json, analysis-summary.artifact.json, verify-summary.artifact.json]
-      accepts: [idea-investment-memo/v1]
+      accepts: [idea-investment-memo/v1, idea-investment-memo/v2]
   # --- M2 breadth modes ---
   evidence_deep:
     entry_stage: DISCOVER
@@ -315,7 +315,7 @@ modes:
       product_version: evidence-deep/v2
       primary_markdown: director-review/evidence/evidence-deep-brief.md
       reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, landscape-map.artifact.json]
-      accepts: [ingest-paper/v1, paper-reading/v2, evidence-brief/v2]
+      accepts: [ingest-paper/v1, paper-reading/v2, paper-reading/v3, evidence-brief/v2]
   m2_accept:
     entry_stage: DESIGN
     stage_path: [DESIGN, EXECUTE, ANALYZE, VERIFY, REPORT]   # M2 breadth acceptance: spine tail + the new DESIGN gate live
@@ -374,10 +374,10 @@ modes:
     budget: {max_agent_hops: 10}
     handoff:
       contract_version: mode-handoff/v2
-      product_version: idea-investment-memo/v1
+      product_version: idea-investment-memo/v2
       primary_markdown: director-review/ideas/idea-bet-menu.md
       reusable_artifacts: [idea-backlog.artifact.json, idea-tournament.artifact.json, novelty-collision-verdict.artifact.json]
-      accepts: [paper-reading/v2, evidence-brief/v2, evidence-deep/v2, research-brief/v2, gap-dossier/v1]
+      accepts: [paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2, research-brief/v2, gap-dossier/v1]
   # --- RAT-2 Wave-3 (2026-06-19) — deep_ideation: the FULL deep-ideation chain (IDEATE-v2) ---
   deep_ideation:
     entry_stage: DISCOVER
@@ -403,10 +403,10 @@ modes:
     budget: {max_agent_hops: 9}
     handoff:
       contract_version: mode-handoff/v2
-      product_version: idea-investment-memo/v1
+      product_version: idea-investment-memo/v2
       primary_markdown: director-review/ideas/idea-bet-menu.md
       reusable_artifacts: [idea-backlog.artifact.json, idea-lineage.artifact.json, idea-tournament.artifact.json, novelty-collision-verdict.artifact.json]
-      accepts: [paper-reading/v2, evidence-brief/v2, evidence-deep/v2, research-brief/v2, gap-dossier/v1]
+      accepts: [paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2, research-brief/v2, gap-dossier/v1]
   # --- M3-c (gap-hunting breadth) — the differentiation engine, focused scan ---
   gap_breadth:
     entry_stage: DISCOVER
@@ -422,7 +422,7 @@ modes:
       product_version: gap-dossier/v1
       primary_markdown: director-review/gaps/gap-scan.md
       reusable_artifacts: [gap-dossier.artifact.json, gap-classification.artifact.json, gap-quality-audit.artifact.json]
-      accepts: [paper-reading/v2, evidence-brief/v2, evidence-deep/v2, research-brief/v2]
+      accepts: [paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2, research-brief/v2]
   # --- M3-f (IDEATE-ring completion) — the full ring as a focused mode ---
   ideate_ring:
     entry_stage: IDEATE
@@ -699,7 +699,7 @@ modes:
       product_version: research-brief/v2
       primary_markdown: director-review/research/research-brief.md
       reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, landscape-map.artifact.json]
-      accepts: [ingest-paper/v1, paper-reading/v2, evidence-brief/v2, evidence-deep/v2]
+      accepts: [ingest-paper/v1, paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2]
   # --- M3-d (VR-1 venue-targeted peer-review) — VERIFY-entry, reuses the M2 panel + venue agents ---
   venue_readiness:
     entry_stage: VERIFY
