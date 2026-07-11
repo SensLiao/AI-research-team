@@ -15,7 +15,7 @@ There are currently 10 operated modes:
 
 | Mode | Shape | Honest use |
 |---|---|---|
-| `new_direction` | `DISCOVER -> IDEATE -> REPORT` | Eight-seat grounding/proposal/ranking/collision/planning path. Current runs require an `idea-investment-memo/v1`; missing prior-art coverage is `UNVERIFIED`, never silently clear. Human product: `director-review/ideas/idea-bet-menu.md`. |
+| `new_direction` | `DISCOVER -> IDEATE -> REPORT` | Eight-seat grounding/proposal/ranking/collision/planning path. Current runs require an `idea-investment-memo/v2`; missing prior-art coverage is `UNVERIFIED`, never silently clear. Human product: `director-review/ideas/idea-bet-menu.md`. |
 | `deep_ideation` | `DISCOVER -> IDEATE -> REPORT` | Nine-seat extension with formalization and cross-domain mechanism/analogy work, followed by the same independent investment pipeline and `/idea-bet` product. |
 | `gap_breadth` | `DISCOVER -> REPORT` | Five blind hunters, then gap prosecutor, mechanism synthesizer, and quality auditor. A gap can be `CLOSED` only from hash-bound exact full-text scope/result spans. |
 | `evidence_review` | `DISCOVER -> REPORT` | Six workers: source set, methodology-derived source quality and claims, semantic search moderator, exact-span linker, and independent citation auditor. |
@@ -170,7 +170,7 @@ python -m pytest tests -q
 ```
 
 Current local verification after the 2026-07-11 quality-first performance upgrade:
-`3045 passed in 134.61s`.
+`3062 passed in 157.91s`.
 
 Additional deterministic evaluations on the same checkout:
 

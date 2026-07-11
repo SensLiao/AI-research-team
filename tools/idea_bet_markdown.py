@@ -20,7 +20,7 @@ from .scientific_investment_score import validate_assessments
 
 
 IDEA_BET_REL = Path("director-review") / "ideas" / "idea-bet-menu.md"
-MEMO_CONTRACT_VERSION = "idea-investment-memo/v1"
+MEMO_CONTRACT_VERSION = "idea-investment-memo/v2"
 REQUIRED_HEADINGS = [
     "## Decision Snapshot",
     "## Portfolio Execution Map",
@@ -28,10 +28,12 @@ REQUIRED_HEADINGS = [
     "## Cut Before Betting",
     "## Evidence And Quality",
     "## Next Actions",
+    "## Internal Keys And Ranking Appendix",
     "## Technical Pointers",
 ]
 REQUIRED_MEMO_LABELS = [
     "Research question",
+    "Independent scientific value",
     "Mechanism hypothesis",
     "Causal chain",
     "Difference from prior art",
@@ -46,7 +48,6 @@ REQUIRED_MEMO_LABELS = [
     "Resource and data feasibility",
     "Main risks",
     "Execution order",
-    "Scientific investment score",
     "Strongest rejection case",
 ]
 
@@ -362,6 +363,7 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
     else:
         novelty_line = "no prior-art collision verdict was found"
 
+    appendix_rows: list[str] = []
     lines: list[str] = [
         "---",
         f"run_id: {run_id}",
@@ -373,19 +375,18 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         "json_evidence_root: ../../evidence",
         "---",
         "",
-        f"# Idea Bet Menu - {run_id}",
+        "# Research Idea Portfolio",
+        f"<!-- run_key: {run_id} -->",
         "",
         "## Decision Snapshot",
         "",
-        f"- Project: `{project}`; mode: `{mode}`.",
         f"- North star: {_one_line(statement, limit=420)}",
         f"- Candidate menu: {len(ranked)} idea(s); cut before betting: {len(cut)}; unverified novelty flags: {len(unverified)}.",
         (
-            f"- Current top scientific-investment rank: `{top.get('idea_id')}` with score "
-            f"`{top_investment.get('score')}` ({top_investment.get('confidence')})."
+            f"- Current first-ranked direction: {_one_line((proposal_by.get(str(top.get('idea_id'))) or top).get('summary'), limit=260)}. "
+            "The machine score is supporting metadata in the appendix, not the investment decision."
             if top_investment else
-            f"- Legacy feasibility-only rank: `{top.get('idea_id')}` with score "
-            f"`{(top.get('feasibility') or {}).get('score')}`; rerun under the strict memo contract "
+            f"- Legacy feasibility-only first direction: {_one_line((proposal_by.get(str(top.get('idea_id'))) or top).get('summary'), limit=260)}; rerun under the strict memo contract "
             "before treating this as a scientific priority."
         ),
         f"- Novelty status: {novelty_line}.",
@@ -396,7 +397,7 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         "",
         "This is a scan-first dependency view, not a machine-selected bet.",
         "",
-        "| Rank | Idea | First decisive stage | Primary kill criterion | Recovery / next branch |",
+        "| Rank | Research direction | First decisive stage | Primary kill criterion | Recovery / next branch |",
         "|---:|---|---|---|---|",
     ]
 
@@ -410,7 +411,7 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         kill = (sketch.get("kill_criteria") or [first_stage.get("kill_criteria") or "not recorded"])[0]
         branch = sketch.get("next_branch") or "advance only after the declared threshold passes"
         lines.append(
-            f"| {idea.get('rank')} | `{iid}` {_table_cell(proposal.get('summary'), limit=70)} "
+            f"| {idea.get('rank')} | {_table_cell(proposal.get('summary'), limit=90)} "
             f"| {_table_cell(first)} | {_table_cell(kill)} | {_table_cell(branch)} |"
         )
 
@@ -459,6 +460,12 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
             proposal.get("why_now"),
             "The timing case was not separately recorded in this legacy run.",
         )
+        independent_value = _text(
+            proposal.get("independent_scientific_value"),
+            "Not separately recorded; project fit cannot substitute for independent scientific value.",
+        )
+        problem_evidence = _values(proposal.get("problem_evidence"))
+        expected_contributions = _values(proposal.get("expected_contributions"))
         investment_case = _text(
             assessment.get("investment_case"),
             "The independent ranker did not record a prose investment case in this legacy run.",
@@ -474,6 +481,9 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
             "No explicit prior-art delta was recorded; novelty remains unresolved.",
         )
         closest = raw_collision.get("closest_prior_art") or raw_collision.get("colliding_papers") or []
+        visual_evidence = [
+            row for row in (raw_collision.get("visual_evidence") or []) if isinstance(row, dict)
+        ]
         baselines = sketch.get("baselines") or []
         if not baselines and sketch.get("controls"):
             baselines = ["Comparator embedded in the controls; separate it before preregistration."]
@@ -489,21 +499,21 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         caveats = idea.get("caveats") or []
 
         lines.extend([
-            f"### Rank {idea.get('rank')} - {iid}",
-            "",
-            summary,
+            f"### Direction {idea.get('rank')} | {summary}",
+            f"<!-- idea_key: {iid} -->",
             "",
             "#### Research bet memo",
             "",
             f"- **Research question:** {research_question}",
+            f"- **Independent scientific value:** {independent_value}",
+            f"- **Problem evidence:** {_plain_list(problem_evidence, 'not separately recorded; verify the phenomenon before investing')}",
             f"- **Mechanism hypothesis:** {mechanism}",
             f"- **Causal chain:** {' -> '.join(causal_chain)}",
             f"- **Intended contribution:** {intended}",
+            f"- **Expected conditional contributions:** {_plain_list(expected_contributions, 'not separately recorded; no contribution may be stated as achieved')}",
             f"- **Why now:** {why_now}",
             f"- **Independent investment case:** {investment_case}",
             f"- **Rank rationale:** {rank_rationale}",
-            f"- **Scientific investment score:** {_text(investment.get('score'), 'legacy run; not computed')}; "
-            f"confidence `{investment.get('confidence', 'legacy')}`.",
             f"- **Strongest rejection case:** {_text(investment.get('strongest_rejection_case') or assessment.get('strongest_rejection_case'), 'not recorded')}",
             "",
             "#### Prior art and novelty",
@@ -511,6 +521,27 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
             f"- **Novelty status:** `{novelty_status}`; {_text(crow.get('reason'), 'coverage caveat not recorded')}",
             f"- **Difference from prior art:** {prior_delta}",
             f"- **Closest prior art:** {_prior_art_line(closest)}",
+            "",
+            "##### Prior-art visual evidence",
+            "",
+        ])
+        if visual_evidence:
+            for row in visual_evidence:
+                asset = _text(row.get("asset_ref"), "image not embedded")
+                lines.extend([
+                    f"- **Source:** {_text(row.get('source_ref'), 'not recorded')}; asset: `{asset}`.",
+                    f"  - Content: {_text(row.get('content'), 'not recorded')}",
+                    f"  - Key observation: {_text(row.get('key_observation'), 'not recorded')}",
+                    f"  - Supports: {_text(row.get('supports'), 'not recorded')}",
+                    f"  - Does not support: {_text(row.get('does_not_support'), 'not recorded')}",
+                ])
+        else:
+            lines.append(
+                "- No prior-art visual was independently inspected in this bundle. Do not infer image "
+                "content from captions or OCR; keep this as a visible pre-investment gap when it could "
+                "change the bet."
+            )
+        lines.extend([
             "",
             "#### Minimal experiment sketch and falsification plan",
             "",
@@ -542,6 +573,40 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         if sketch.get("next_branch"):
             lines.append(f"- **Recovery branch:** {_one_line(sketch.get('next_branch'), limit=420)}")
 
+        expected_figures = [
+            row for row in (sketch.get("expected_figures") or []) if isinstance(row, dict)
+        ]
+        lines.extend([
+            "",
+            "#### Paper evidence ladder and expected figures",
+            "",
+            "- The staged experiment ladder above is the current evidence plan.",
+        ])
+        if expected_figures:
+            lines.extend([
+                "",
+                "| Expected figure/table | Question | Conditional claim | Minimum evidence |",
+                "|---|---|---|---|",
+            ])
+            for row in expected_figures:
+                lines.append(
+                    f"| {_table_cell(row.get('figure'))} | {_table_cell(row.get('question'))} "
+                    f"| {_table_cell(row.get('claim'))} | {_table_cell(row.get('minimum_evidence'))} |"
+                )
+        else:
+            lines.append(
+                "- No explicit paper-figure plan was recorded. Before full execution, map phenomenon, "
+                "mechanism, main effect, robustness, failure boundary, and cost to figures/tables."
+            )
+        lines.extend([
+            "- If that mapping cannot be made without relying on a single best-score table, treat the direction as an implementation idea rather than a paper-ready research direction.",
+            "",
+            "#### Current project relation (after the independent scientific case)",
+            "",
+            f"- This direction was generated under the pinned north star: {_one_line(statement, limit=420)}",
+            "- Project fit does not establish novelty or mechanism validity; the minimum falsification experiment must stand on its own.",
+        ])
+
         signal_bits = [f"feasibility={feas.get('score')}"]
         if investment:
             signal_bits.extend(
@@ -559,8 +624,7 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
             signal_bits.extend(f"{key}={scores.get(key)}" for key in (
                 "depth", "breadth", "refutation", "falsifiability", "novelty"
             ) if key in scores)
-        lines.append(f"- **Decision signals:** {'; '.join(signal_bits)}")
-        lines.append(f"- **Evidence refs:** {_csv(idea.get('evidence_ref'), limit=8)}")
+        lineage_text = ""
         if lin:
             lin_bits = []
             for key in ("problem_ref", "mechanism_graph_ref", "hypothesis_ref", "experiment_sketch_ref"):
@@ -569,7 +633,12 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
             if lin.get("gap_refs"):
                 lin_bits.append("gap_refs " + _csv(lin.get("gap_refs"), limit=5))
             if lin_bits:
-                lines.append("- **Lineage:** " + "; ".join(lin_bits))
+                lineage_text = "; ".join(lin_bits)
+        appendix_rows.append(
+            f"| `{iid}` | {idea.get('rank')} | {_table_cell('; '.join(signal_bits), limit=360)} "
+            f"| {_table_cell(_csv(idea.get('evidence_ref'), limit=8), limit=220)} "
+            f"| {_table_cell(lineage_text or 'not recorded', limit=260)} |"
+        )
         for caveat in caveats[:5]:
             lines.append(f"- **Caveat:** {_one_line(caveat, limit=360)}")
         lines.append("")
@@ -582,10 +651,16 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         for row in cut:
             papers = row.get("colliding_papers") or []
             paper_refs = [p.get("ref") for p in papers if isinstance(p, dict) and p.get("ref")]
+            cut_id = str(row.get("idea_id") or "")
+            cut_summary = _text(
+                (proposal_by.get(cut_id) or {}).get("summary"),
+                "A candidate direction",
+            )
             lines.append(
-                f"- `{row.get('idea_id')}` was cut as `{row.get('verdict')}`: "
+                f"- {cut_summary} was cut as `{row.get('verdict')}`: "
                 f"{_one_line(row.get('reason'), limit=460)} Colliders: {_csv(paper_refs, limit=4)}."
             )
+            lines.append(f"  <!-- cut_idea_key: {cut_id} -->")
     else:
         lines.append("- No idea was cut by an existence-verified prior-art collision.")
 
@@ -593,11 +668,9 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         "",
         "## Evidence And Quality",
         "",
-        f"- Backlog evidence: `evidence/IDEATE/idea-backlog.artifact.json`.",
-        f"- Tournament evidence: `evidence/IDEATE/idea-tournament.artifact.json` ({len(tournament.get('matchups') or [])} matchup(s)).",
-        f"- Collision evidence: `evidence/IDEATE/novelty-collision-verdict.artifact.json`; retrieval_grounded=`{retrieval_grounded}`.",
-        f"- Grounding evidence: `evidence/IDEATE/idea-grounding-report.artifact.json`.",
-        f"- Quality source: {'REPORT artifact' if (run_path / 'evidence' / 'REPORT' / 'idea-quality-eval.artifact.json').is_file() else 'pre-bet preview computed from typed artifacts'}.",
+        f"- Prior-art retrieval grounding: `{retrieval_grounded}`. If false or unknown, novelty remains unverified.",
+        f"- Independent tournament coverage: {len(tournament.get('matchups') or [])} matchup(s); ranking is decision support, not a bet.",
+        f"- Candidate quality basis: {'post-run quality review' if (run_path / 'evidence' / 'REPORT' / 'idea-quality-eval.artifact.json').is_file() else 'pre-bet typed-evidence preview'}.",
         "- Strict runs are ordered by the transparent scientific-investment composite. Feasibility is only one component, and the rank is not a research bet.",
         "",
         "## Next Actions",
@@ -607,9 +680,19 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         "3. After a human bet, send the chosen idea into `full_rigor_minimal` or the relevant experiment-design mode for preregistered design.",
         "4. Promote nothing to the database until `/promote-to-vault` re-derives a frozen, citable result.",
         "",
+        "## Internal Keys And Ranking Appendix",
+        "",
+        "This appendix preserves machine traceability. It is not the scientific narrative and does not record a bet.",
+        "",
+        "| Internal idea key | Rank | Machine signals | Evidence refs | Lineage |",
+        "|---|---:|---|---|---|",
+        *appendix_rows,
+        "",
         "## Technical Pointers",
         "",
         f"- This Markdown page lives at `{IDEA_BET_REL.as_posix()}`.",
+        "- Backlog: `evidence/IDEATE/idea-backlog.artifact.json`; tournament: `evidence/IDEATE/idea-tournament.artifact.json`.",
+        "- Collision: `evidence/IDEATE/novelty-collision-verdict.artifact.json`; grounding: `evidence/IDEATE/idea-grounding-report.artifact.json`.",
         "- JSON evidence remains under `evidence/`; this page is the human reading layer.",
         "- The run's pinned request is in `task_frame.artifact.json` and the gate trace is in `ledger.jsonl`.",
     ])
@@ -617,10 +700,10 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
 
 
 def _candidate_block(text: str, idea_id: str) -> str:
-    match = re.search(rf"^### Rank \d+ - {re.escape(idea_id)}\s*$", text, flags=re.MULTILINE)
+    match = re.search(rf"^<!-- idea_key: {re.escape(idea_id)} -->\s*$", text, flags=re.MULTILINE)
     if not match:
         return ""
-    next_candidate = re.search(r"^### Rank \d+ - ", text[match.end():], flags=re.MULTILINE)
+    next_candidate = re.search(r"^<!-- idea_key: ", text[match.end():], flags=re.MULTILINE)
     cut_heading = re.search(r"^## Cut Before Betting\s*$", text[match.end():], flags=re.MULTILINE)
     ends = [m.start() for m in (next_candidate, cut_heading) if m]
     end = match.end() + min(ends) if ends else len(text)

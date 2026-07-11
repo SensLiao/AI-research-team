@@ -10,6 +10,10 @@
 
 GitHub 发布只包含 machine 代码、agents、modes、schemas、tests、profiles、模板和文档。绝不包含实际 runs、projects、PDF、真实 vault 内容或 credentials。
 
+跨 run 的科研进展报告放在 `projects/<project>/reports/progress/<period>/progress.md`。它可以引用多个
+run 的 frozen handoff，但仍属于项目工作区；普通周报、临时图和运行索引不进入 vault。只有人类确认具有长期价值的
+结论、决策或冻结结果，才通过 `/promote-to-vault` 转为永久知识页。
+
 ## 2. 一个 run 的标准目录
 
 ```text
@@ -28,7 +32,7 @@ runs/<project>/<run_id>/
 ## 3. 三个不同的版本号
 
 1. `schema_version`：单个 artifact payload/envelope 的结构版本。
-2. `product_version`：一个 mode 对下游承诺的科研产品版本，例如 `paper-reading/v2`、`research-brief/v2`、`idea-investment-memo/v1`。
+2. `product_version`：一个 mode 对下游承诺的科研产品版本，例如 `paper-reading/v3`、`research-brief/v2`、`idea-investment-memo/v2`。
 3. `mode-handoff/v2`：跨 run/mode 的运输合同，记录路径、相对路径、SHA-256、artifact type、schema version、run status 和 delivery status。
 
 三者不能混用。schema 相同不代表产品语义兼容；文件名相同也不代表 hash 相同。
@@ -63,10 +67,10 @@ handoff:
 推荐主线：
 
 ```text
-paper-reading/v2
+paper-reading/v3
   -> evidence-deep/v2 or research-brief/v2
   -> gap-dossier/v1
-  -> idea-investment-memo/v1
+  -> idea-investment-memo/v2
   -> /idea-bet ADR
   -> full-rigor/v2
   -> venue-readiness/v2

@@ -269,7 +269,7 @@ def test_handoff_manifest_itself_is_ledger_pinned(tmp_path):
         "mode": "deep_ideation",
         "product_contract": {
             "contract_version": rp.HANDOFF_CONTRACT_VERSION,
-            "product_version": "idea-investment-memo/v1",
+            "product_version": "idea-investment-memo/v2",
             "primary_markdown": "director-review/ideas/idea-bet-menu.md",
             "reusable_artifacts": [],
             "accepts": ["research-brief/v2"],

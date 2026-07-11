@@ -20,15 +20,15 @@ _STOP = {
 }
 
 _SECTION_ALIASES = {
-    "decision-need": ("decision need", "decision question", "reading objective", "决策问题", "阅读目的"),
+    "decision-need": ("decision need", "decision question", "reading objective", "decision summary", "决策问题", "阅读目的", "一屏决策摘要", "阅读判断"),
     "project-alignment": ("project alignment", "thesis relevance", "项目关联", "课题关联"),
-    "claims-and-evidence": ("claims and evidence", "claim evidence", "主张与证据", "证据映射"),
+    "claims-and-evidence": ("claims and evidence", "claim evidence", "conclusions and evidence", "主张与证据", "关键结论与证据", "证据映射"),
     "method-or-theory": ("method reconstruction", "method teardown", "method", "algorithm and math", "方法", "理论"),
     "numeric-results": ("numeric results", "result audit", "quantitative results", "数值结果", "结果审计"),
     "figures-and-tables": ("figure table reading", "figures and tables", "figure/table reading", "图表解读", "图表"),
     "critical-appraisal": ("critical appraisal", "appraisal and transfer", "reviewer appraisal", "批判性评价", "局限性"),
     "reproducibility": ("reproducibility", "复现", "可复现性"),
-    "domain-transfer": ("domain transfer", "appraisal and transfer", "transfer boundary", "跨域迁移", "迁移边界"),
+    "domain-transfer": ("domain transfer", "appraisal and transfer", "transfer boundary", "跨域迁移", "项目迁移", "迁移边界"),
     "independent-critique": ("independent critique", "second reader", "blind reader", "独立复核", "盲读"),
     "next-actions": ("next actions", "next steps", "下一步", "后续行动"),
     "medical-imaging-checklist": ("medical imaging checklist", "医学影像检查表"),
@@ -100,6 +100,7 @@ def audit_paper_markdown(markdown: str, bundles: dict, *, medical: bool = False)
     coverage = {
         "claims": [],
         "visual_refs": [],
+        "visual_content": [],
         "method_components": [],
         "numeric_results": [],
         "limitations_and_transfer": [],
@@ -140,6 +141,29 @@ def audit_paper_markdown(markdown: str, bundles: dict, *, medical: bool = False)
         coverage["visual_refs"].append({"ref": ref, "covered": covered})
         if not covered:
             errors.append(f"Markdown body omits load-bearing visual reference: {ref}")
+
+    readings = {
+        _normalize(item.get("figure_ref")): item
+        for item in (bundles.get("figure_reading") or {}).get("figures") or []
+        if isinstance(item, dict) and item.get("figure_ref")
+    }
+    for ref in _unique_text(visual_refs):
+        item = readings.get(_normalize(ref)) or {}
+        axes = str(item.get("axes") or "").strip()
+        take_home = str(item.get("take_home") or "").strip()
+        distrust = str(item.get("distrust") or "").strip()
+        content_covered = bool(
+            axes and take_home
+            and _semantic_covered(body, axes, ratio=0.3, cap=3)
+            and _semantic_covered(body, take_home, ratio=0.35, cap=3)
+            and (not distrust or _semantic_covered(body, distrust, ratio=0.35, cap=3))
+        )
+        coverage["visual_content"].append({"ref": ref, "covered": content_covered})
+        if not content_covered:
+            errors.append(
+                f"Markdown body names {ref} but does not explain its visual content, supported "
+                "conclusion, and distrust boundary"
+            )
 
     method = bundles.get("method_teardown") or {}
     method_targets = [method.get("representation"), method.get("training_flow"), method.get("inference_flow")]

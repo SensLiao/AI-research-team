@@ -40,10 +40,13 @@ Do not collapse these concepts:
   type and project decision.
 - Load-bearing figures/tables have `INSPECTED_VISUAL` records whose paths/hashes resolve in the visual
   manifest. Otherwise visual coverage is `unread` or `partial`, and verdict cannot be `PASS`.
+- The human Markdown explains the inspected content, key numbers/trends, support, and non-support for
+  every load-bearing visual. Embedding a copied image asset is preferred but optional; a complete text
+  equivalent is acceptable. A caption-only or OCR-only guess is not.
 - The blind reader's provenance excludes primary bundles.
 - The reconciliation compares primary and blind reads; every repair-required disagreement has a
   repair-ledger item and no unresolved repair remains for `PASS`.
-- The planned Markdown can expose claims, numeric results, visual refs, limitations, reconciliation,
+- The planned Markdown can expose natural-language claims, numeric results, visual content, limitations, reconciliation,
   and next actions without opening JSON. A deterministic body audit runs after the writer.
 
 ## Medical/Core Reading Lens
