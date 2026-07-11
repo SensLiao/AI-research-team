@@ -1,5 +1,0 @@
-# Dependencies for 06-scripts/
-# Install: pip install -r requirements.txt
-
-python-frontmatter>=1.1.0
-pyyaml>=6.0
