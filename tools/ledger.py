@@ -20,7 +20,7 @@ from typing import Any, List, Optional
 from research_agent_teams.tools.hash_artifact import canonical_json, chain_hash
 
 EVENT_TYPES = {
-    "run_started", "task_frame_pinned", "stage_started", "step_done", "boundary",
+    "run_started", "task_frame_pinned", "upstream_handoff_pinned", "stage_started", "step_done", "boundary",
     "resume", "gate_pending", "gate_resolved", "promote",
 }
 

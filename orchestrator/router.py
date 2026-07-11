@@ -51,6 +51,18 @@ def resolve_task(request_text: str, mode: str, run_id: str, ts: str,
         "domain_profile_ref": domain_profile_ref,
         "budget": dict(spec["budget"]),
     }
+    handoff = spec.get("handoff") or {}
+    if isinstance(handoff, dict) and handoff:
+        # Freeze the product contract into the task frame. The task frame is hash-pinned in the
+        # ledger, so a future mode_registry upgrade cannot silently relabel an old run as a newer
+        # scientific product version.
+        payload["product_contract"] = {
+            "contract_version": str(handoff.get("contract_version") or ""),
+            "product_version": str(handoff.get("product_version") or ""),
+            "primary_markdown": str(handoff.get("primary_markdown") or ""),
+            "reusable_artifacts": [str(x) for x in (handoff.get("reusable_artifacts") or [])],
+            "accepts": [str(x) for x in (handoff.get("accepts") or [])],
+        }
     if spec.get("stage_path"):                       # a mode may declare its true forward-only shape
         payload["stage_path"] = list(spec["stage_path"])
     if project is not None:                          # the run's research project (groups the run-store)

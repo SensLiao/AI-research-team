@@ -165,9 +165,10 @@ def cmd_begin(a) -> None:
     # block into the first worker's prompt so it builds ON the upstream result instead of restarting.
     upstream = _resolve_upstream_dirs(a.runs_dir, a.upstream_run)
     if upstream:
-        research_plan.write_upstream_grounding(
+        grounding_path = research_plan.write_upstream_grounding(
             plan["run_dir"], upstream, downstream_mode=mode
         )
+        runstore.pin_upstream_grounding(plan["run_dir"], grounding_path, ts)
     worker, schedule = _schedule_or_exit(
         plan["run_dir"], first, a.request, mod, vault=vault,
         model_policy=a.model_policy, ts=ts,

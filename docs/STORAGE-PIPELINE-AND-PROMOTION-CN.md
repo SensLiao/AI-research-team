@@ -33,6 +33,10 @@ runs/<project>/<run_id>/
 
 三者不能混用。schema 相同不代表产品语义兼容；文件名相同也不代表 hash 相同。
 
+新 run 会把完整 `product_contract` 冻结进 `task_frame.artifact.json`，并随 task frame 一起进入
+hash-chained ledger。后续 registry 升级不能把历史 run 重新解释为新产品版本。旧 run 没有冻结合同时，
+只能使用显式标记为 `registry_fallback_for_legacy_run` 的兼容回退，不能伪装成已冻结。
+
 ## 4. 跨 Mode 接口
 
 每个 operated mode 在 `orchestrator/mode_registry.yaml` 声明：
@@ -50,9 +54,11 @@ handoff:
 
 1. 检查上游 `product_version` 是否在下游 `accepts` 中。
 2. 生成 `upstream-grounding.json`。
-3. 下游读取前重新计算 SHA-256；missing/replaced file 直接停止连接，不重跑上游。
-4. 下游复用上游 artifact，不重复检索和总结。
-5. 科研内容是否正确由上游自己的 quality status 负责；handoff 只验证运输完整性和语义版本。
+3. 把 `upstream-grounding.json` 自身的 SHA-256 记录进下游 ledger；防止路径、版本与期望 hash 被一起替换。
+4. 下游读取前重新计算每个上游文件 SHA-256；missing/replaced file 直接停止连接，不重跑上游。
+5. 按 registry 的 `reusable_artifacts` 实际解析文件；缺失项进入 `missing_declared_artifacts`，不再只写声明不执行。
+6. 下游复用上游 artifact，不重复检索和总结。
+7. 科研内容是否正确由上游自己的 quality status 负责；handoff 只验证运输完整性和语义版本。
 
 推荐主线：
 
@@ -103,6 +109,8 @@ paper-reading/v2
 
 ## 7. 当前判断
 
-旧规则的主要问题是跨 mode 依赖绝对路径与文件名，缺少产品语义版本和 hash manifest。`mode-handoff/v2` 已修复这一点，并保持旧的 `key_artifacts`/`reusable_inputs` 字段，现有 worker prompt 不需要重写。
+旧规则的主要问题是跨 mode 依赖绝对路径与文件名，缺少产品语义版本、冻结合同和 hash manifest。
+`mode-handoff/v2` 已修复这一点：产品合同随 task frame 冻结，handoff manifest 自身进入 ledger，声明的
+reusable artifacts 会被实际解析；同时保留旧的 `key_artifacts`/`reusable_inputs` 字段，现有 worker prompt 不需要重写。
 
 后续如升级产品语义，应增加新 `product_version` 并显式声明兼容关系；不要原地改变同一版本的含义。

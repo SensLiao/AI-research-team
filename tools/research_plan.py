@@ -28,6 +28,8 @@ from typing import Dict, List, Optional, Tuple
 
 import yaml
 
+from research_agent_teams.tools.ledger import last_of_type, read_events
+
 _PKG = Path(__file__).resolve().parents[1]                       # research_agent_teams/
 _CATALOG_PATH = _PKG / "orchestrator" / "plan_catalog.yaml"
 _REGISTRY_PATH = _PKG / "orchestrator" / "mode_registry.yaml"
@@ -248,6 +250,45 @@ def _mode_handoff(mode: str) -> dict:
     return dict(spec) if isinstance(spec, dict) else {}
 
 
+def _normalise_contract(raw: dict, *, pinned: bool) -> dict:
+    return {
+        "contract_version": str(raw.get("contract_version") or HANDOFF_CONTRACT_VERSION),
+        "product_version": str(raw.get("product_version") or "unversioned"),
+        "primary_markdown": str(raw.get("primary_markdown") or ""),
+        "reusable_artifacts": [str(x) for x in (raw.get("reusable_artifacts") or [])],
+        "accepts": [str(x) for x in (raw.get("accepts") or [])],
+        "contract_pinned": pinned,
+        "contract_source": "task_frame" if pinned else "registry_fallback_for_legacy_run",
+    }
+
+
+def _contract_for_run(payload: dict, mode: str) -> dict:
+    pinned = payload.get("product_contract") or {}
+    if isinstance(pinned, dict) and pinned.get("product_version"):
+        return _normalise_contract(pinned, pinned=True)
+    return _normalise_contract(_mode_handoff(mode), pinned=False)
+
+
+def _declared_files(run_dir: Path, contract: dict) -> tuple[list[Path], list[str]]:
+    """Resolve the product contract to actual files without guessing a stage path."""
+    found: list[Path] = []
+    missing: list[str] = []
+    primary = str(contract.get("primary_markdown") or "")
+    if primary:
+        matches = sorted(p for p in run_dir.glob(primary.replace("<paper>", "*")) if p.is_file())
+        if matches:
+            found.extend(matches)
+        else:
+            missing.append(primary)
+    for name in contract.get("reusable_artifacts") or []:
+        matches = sorted(p for p in (run_dir / "evidence").glob(f"**/{name}") if p.is_file())
+        if matches:
+            found.extend(matches)
+        else:
+            missing.append(name)
+    return found, missing
+
+
 def _manifest_item(path: Path, run_dir: Path) -> dict:
     raw = _read_json(path) or {}
     try:
@@ -289,13 +330,25 @@ def validate_upstream_grounding(grounding: dict) -> list[str]:
                     f"{run.get('run_id')}: handoff hash mismatch for "
                     f"{item.get('run_relative_path') or path.name}"
                 )
+    downstream = grounding.get("downstream_contract") or {}
+    accepted = {str(value) for value in downstream.get("accepts") or []}
+    if grounding.get("downstream_mode") and downstream and not downstream.get("contract_pinned"):
+        errors.append("downstream product contract is not pinned in the task frame")
+    for run in grounding.get("upstream_runs") or []:
+        product = str((run.get("product_contract") or {}).get("product_version") or "")
+        if accepted and product and product not in accepted:
+            errors.append(
+                f"mode handoff mismatch: downstream accepts {sorted(accepted)}, "
+                f"but upstream {run.get('run_id')!r} provides {product!r}"
+            )
     return errors
 
 
-def _validate_downstream_compatibility(runs: list[dict], downstream_mode: Optional[str]) -> None:
+def _validate_downstream_compatibility(runs: list[dict], downstream_mode: Optional[str],
+                                       downstream_contract: Optional[dict] = None) -> None:
     if not downstream_mode:
         return
-    downstream = _mode_handoff(downstream_mode)
+    downstream = downstream_contract or _normalise_contract(_mode_handoff(downstream_mode), pinned=False)
     accepted = {str(value) for value in downstream.get("accepts") or []}
     for run in runs:
         product = str((run.get("product_contract") or {}).get("product_version") or "")
@@ -306,7 +359,8 @@ def _validate_downstream_compatibility(runs: list[dict], downstream_mode: Option
             )
 
 
-def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] = None) -> dict:
+def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] = None,
+                       downstream_contract: Optional[dict] = None) -> dict:
     """Compact handoff extracted from each completed upstream link (mode + request + REPORT summary +
     any ranked idea backlog + the on-disk key artifacts to read by reference). Robust to missing
     files — a link with nothing readable contributes an empty-but-named entry, never an exception."""
@@ -318,7 +372,8 @@ def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] 
                        "key_artifacts": [], "reusable_inputs": [],
                        "artifact_manifest": [], "run_status": "unknown",
                        "delivery_status": "UNKNOWN", "project": "",
-                       "product_contract": {}}
+                       "product_contract": {}, "missing_declared_artifacts": []}
+        payload: dict = {}
         tf = _read_json(d / "task_frame.artifact.json")
         if tf:
             payload = tf.get("payload") or {}
@@ -328,12 +383,7 @@ def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] 
             entry["project"] = payload.get("project") or ""
         manifest = _read_yaml(d / "manifest.yaml") or {}
         entry["run_status"] = str(manifest.get("status") or "unknown")
-        handoff = _mode_handoff(str(entry["mode"]))
-        entry["product_contract"] = {
-            "contract_version": str(handoff.get("contract_version") or HANDOFF_CONTRACT_VERSION),
-            "product_version": str(handoff.get("product_version") or "unversioned"),
-            "primary_markdown": str(handoff.get("primary_markdown") or ""),
-        }
+        entry["product_contract"] = _contract_for_run(payload, str(entry["mode"]))
         report = d / "evidence" / "REPORT" / "report-note.artifact.json"
         rn = _read_json(report)
         if rn:
@@ -352,7 +402,7 @@ def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] 
             entry["top_ideas"] = [{"idea_id": i.get("idea_id"), "summary": i.get("summary")}
                                   for i in ranked[:5] if isinstance(i, dict)]
             entry["key_artifacts"].append(str(backlog))
-        reusable_candidates = (
+        fallback_candidates = (
             d / "inbox" / "search-results.json",
             d / "evidence" / "DISCOVER" / "evidence-table.artifact.json",
             d / "evidence" / "DISCOVER" / "source-quality-report.artifact.json",
@@ -363,8 +413,14 @@ def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] 
             d / "evidence" / "DISCOVER" / "landscape-map.artifact.json",
             d / "evidence" / "DISCOVER" / "gap-dossier.artifact.json",
         )
+        declared, missing = _declared_files(d, entry["product_contract"])
+        entry["missing_declared_artifacts"] = missing
+        primary = str(entry["product_contract"].get("primary_markdown") or "")
+        for path in declared:
+            if primary and path.match(primary.replace("<paper>", "*")):
+                entry["key_artifacts"].append(str(path.resolve()))
         entry["reusable_inputs"] = [
-            str(path.resolve()) for path in reusable_candidates if path.is_file()
+            str(path.resolve()) for path in declared + list(fallback_candidates) if path.is_file()
         ]
         manifested_paths = []
         for raw_path in entry["key_artifacts"] + entry["reusable_inputs"]:
@@ -373,10 +429,13 @@ def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] 
                 manifested_paths.append(path.resolve())
                 entry["artifact_manifest"].append(_manifest_item(path, d))
         runs.append(entry)
-    _validate_downstream_compatibility(runs, downstream_mode)
+    if downstream_mode and downstream_contract is None:
+        downstream_contract = _normalise_contract(_mode_handoff(downstream_mode), pinned=False)
+    _validate_downstream_compatibility(runs, downstream_mode, downstream_contract)
     return {
         "handoff_contract_version": HANDOFF_CONTRACT_VERSION,
         "downstream_mode": downstream_mode or "",
+        "downstream_contract": downstream_contract or {},
         "upstream_runs": runs,
     }
 
@@ -388,7 +447,10 @@ def write_upstream_grounding(new_run_dir: str, prev_run_dirs: List[str],
     inbox = Path(new_run_dir) / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     out = inbox / UPSTREAM_GROUNDING_FILE
-    out.write_text(json.dumps(upstream_grounding(prev_run_dirs, downstream_mode),
+    task_frame = _read_json(Path(new_run_dir) / "task_frame.artifact.json") or {}
+    payload = task_frame.get("payload") or {}
+    pinned_downstream = _contract_for_run(payload, str(payload.get("mode") or downstream_mode or ""))
+    out.write_text(json.dumps(upstream_grounding(prev_run_dirs, downstream_mode, pinned_downstream),
                               ensure_ascii=False, indent=2),
                    encoding="utf-8")
     return str(out)
@@ -447,6 +509,13 @@ def augment_worker_with_upstream(worker: Optional[dict], run_dir: str) -> Option
     if not grounding or not (grounding.get("upstream_runs")):
         return worker
     integrity_errors = validate_upstream_grounding(grounding)
+    ledger_path = Path(run_dir) / "ledger.jsonl"
+    if ledger_path.is_file():
+        pin = last_of_type(read_events(ledger_path), "upstream_handoff_pinned")
+        if pin is None:
+            integrity_errors.append("upstream handoff manifest is not pinned in the run ledger")
+        elif str((pin.get("payload") or {}).get("grounding_sha256") or "") != _sha256_file(p):
+            integrity_errors.append("upstream handoff manifest hash does not match its ledger pin")
     if integrity_errors:
         raise ValueError("upstream handoff integrity failed: " + "; ".join(integrity_errors))
     block = _grounding_block(run_dir, grounding)
