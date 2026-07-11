@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: landscape_map
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the active domain profile, evidence_table, claim_list, paper_note artifacts, source_quality_report, staleness_report artifacts, contradiction_report]

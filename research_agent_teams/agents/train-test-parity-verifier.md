@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: EXECUTE
 kind: hard-gate
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: parity_verdict
 permission_scope:
   read: [task_frame, run-store evidence (EXECUTE), the journal_entry, the DESIGN-stage alignment_report, the run_record, the active domain profile]

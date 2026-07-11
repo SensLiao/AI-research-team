@@ -4,7 +4,7 @@ spec_version: "1.2.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: paper_note
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the selected paper by reference, the active domain profile]

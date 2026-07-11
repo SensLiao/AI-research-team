@@ -1,6 +1,6 @@
 # AI Research Agent Teams + PhD-Research-OS
 
-A bespoke, **domain-general** AI research system you drive from [Claude Code](https://claude.com/claude-code). It is two cooperating systems joined at exactly **one seam**:
+A bespoke, **domain-general** AI research system for Codex or Claude Code. It is two cooperating systems joined at exactly **one seam**:
 
 | System | Directory | Role |
 |---|---|---|
@@ -21,22 +21,29 @@ This is a **framework / template** to fork and run on *your own* research. It sh
 - `research_agent_teams/` — the full machine: engine, worker agents, tools, modes, profiles, and schemas.
 - `AI agent database/PhD-Research-OS/` — the **knowledge-base skeleton**: system docs (`00-system/`), page templates (`04-templates/`), blank registries (`05-registry/`), scripts (`06-scripts/`), and the empty `01-raw/` · `02-wiki/` · `03-views/` folder taxonomy with `.gitkeep` placeholders.
 - `.claude/` — the Claude Code entry point: the `research-orchestrator` skill, slash commands (human gates + workspace palette), and project settings.
+- `.agents/` + `.Codex/` + `AGENTS.md` — the Codex entry point and command/skill surface.
+- `research_agent_teams/tests/` and `research_agent_teams/_design/` — executable verification and current design/audit records.
+- `research_agent_teams/docs/` — paper-card, idea-card, storage, versioning, and cross-mode handoff standards.
 
 **NOT included (on purpose)**
 - ❌ The author's actual research pages (the `02-wiki/` knowledge — private data).
 - ❌ Any secrets / server credentials. `.env` is gitignored; only `.env.example` placeholders ship.
 - ❌ The ephemeral run-store (`runs/`) and per-project workspaces (`projects/`).
-- ❌ Internal design-of-record docs (`_design/`).
-- ❌ The unit test suite (`research_agent_teams/tests/`) — not part of this template export.
 
 ---
 
 ## Quickstart
 
-1. Install [Claude Code](https://claude.com/claude-code) and open this folder.
-2. The project-level `.claude/CLAUDE.md` auto-loads — it is the operating manual.
-3. **Entry point:** the `research-orchestrator` skill. It parses a request into a `task_frame` and drives it through the fixed 7-stage spine — **PARSE → RECALL → WORK → VERIFY → RECORD → REPORT** — pausing at your human gates.
+1. Open the folder in Codex or install [Claude Code](https://claude.com/claude-code).
+2. Codex reads `AGENTS.md`; Claude Code reads `.claude/CLAUDE.md`.
+3. **Entry point:** the `research-orchestrator` skill. It parses a request into a `task_frame` and drives it through the fixed 7-stage spine — **PARSE → RECALL → WORK → VERIFY → RECORD → REVIEW → REPORT** — pausing at your human gates.
 4. Stand up your own knowledge base via `AI agent database/PhD-Research-OS/BOOTSTRAP.md`.
+
+Research product contracts:
+
+- `research_agent_teams/docs/PAPER-READING-STANDARD-CN.md`
+- `research_agent_teams/docs/IDEA-CARD-STANDARD-CN.md`
+- `research_agent_teams/docs/STORAGE-PIPELINE-AND-PROMOTION-CN.md`
 
 ### What runs with no GPU (today)
 Gap-hunting, ideation (Elo-tournament-judged), evidence / deep research, venue-readiness (mock blind review), and experiment **design** (emits runnable scripts as artifacts) — every run anti-drift-gated and grounding-gated, recorded in a tamper-evident run-store. Plus: ingest papers, recall, promote-to-vault.

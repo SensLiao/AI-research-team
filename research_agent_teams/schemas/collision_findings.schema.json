@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/collision_findings.schema.json",
   "title": "Collision Findings",
-  "description": "IDEATE-stage artifact (novelty-collision-upgrade). The independent novelty-collision-checker worker's per-idea prior-art findings: it decomposes each idea into method×application×domain, emits targeted queries, runs real retrieval, and judges each near-hit. SEMANTIC-JUDGMENT-ONLY: this bundle records what the worker found and claims; it NEVER decides a cut. The deterministic gate (tools/novelty_collision.build_collision_verdict) decides — and a collision CUTS only on an existence-verified paper (citation_existence must pass), never on a vaguely-similar or unconfirmable one. A worker 'collision' whose papers fail existence becomes UNVERIFIED, never DEAD.",
+  "description": "IDEATE-stage artifact (novelty-collision-upgrade; see _design/novelty-collision-upgrade-LEDGER.md). The independent novelty-collision-checker worker's per-idea prior-art findings: it decomposes each idea into method×application×domain, emits targeted queries, runs real retrieval, and judges each near-hit. SEMANTIC-JUDGMENT-ONLY: this bundle records what the worker found and claims; it NEVER decides a cut. The deterministic gate (tools/novelty_collision.build_collision_verdict) decides — and a collision CUTS only on an existence-verified paper (citation_existence must pass), never on a vaguely-similar or unconfirmable one. A worker 'collision' whose papers fail existence becomes UNVERIFIED, never DEAD.",
   "type": "object",
   "required": ["findings", "evidence_ref"],
   "additionalProperties": false,
@@ -17,8 +17,8 @@
         "properties": {
           "idea_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
           "method_combination": {"type": "string", "minLength": 1, "description": "The decomposed method / technique combination under test (e.g. 'Tversky + boundary loss on a frozen foundation model')."},
-          "application": {"type": "string", "minLength": 1, "description": "The application / problem the idea targets (the 'on what' — e.g. 'thin-structure segmentation')."},
-          "domain": {"type": "string", "minLength": 1, "description": "The research domain / field the idea sits in (e.g. 'medical imaging', 'NLP')."},
+          "application": {"type": "string", "minLength": 1, "description": "The application / problem the idea targets (the 'on what' — e.g. 'inferior-alveolar-canal segmentation')."},
+          "domain": {"type": "string", "minLength": 1, "description": "The research domain / field the idea sits in (e.g. 'dental CBCT', 'NLP')."},
           "queries": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "The targeted retrieval queries the worker issued to hunt for prior art."},
           "verdict": {"type": "string", "enum": ["collision", "adjacent", "clear"], "description": "collision = a paper did this method×problem (gate fact-checks existence before any cut); adjacent = exists on a different application/problem or proposed-only (white space); clear = no collision found within coverage."},
           "colliding_papers": {

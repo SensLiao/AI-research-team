@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/evidence_search_trace.schema.json",
+  "title": "Evidence Search Trace",
+  "description": "Current search/question trace used to derive semantic completion. It records query rounds and source-grounded findings; it does not contain a worker-set saturation verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "search_contract_version", "research_question", "critical_claims",
+    "representativeness_dimensions", "rounds", "stop_reason", "budget_exhausted"
+  ],
+  "properties": {
+    "search_contract_version": {"const": "evidence-search-trace/v1"},
+    "research_question": {"type": "string", "minLength": 1},
+    "critical_claims": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "question", "importance"],
+        "properties": {
+          "claim_id": {"type": "string", "minLength": 1},
+          "question": {"type": "string", "minLength": 1},
+          "importance": {"type": "string", "enum": ["critical", "major", "supporting"]}
+        }
+      }
+    },
+    "representativeness_dimensions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "rounds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "round_index", "questions", "source_hits", "claim_ids_addressed",
+          "contradiction_claim_ids_queried", "representativeness_dimensions_queried",
+          "findings"
+        ],
+        "properties": {
+          "round_index": {"type": "integer", "minimum": 0},
+          "questions": {
+            "type": "array", "minItems": 1,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "source_hits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source_ref"],
+              "properties": {
+                "source_ref": {"type": "string", "minLength": 1},
+                "source_hash": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}
+              }
+            }
+          },
+          "claim_ids_addressed": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "contradiction_claim_ids_queried": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "representativeness_dimensions_queried": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["finding_id", "source_refs", "claim_ids", "finding_kind"],
+              "properties": {
+                "finding_id": {"type": "string", "minLength": 1},
+                "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+                "claim_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "finding_kind": {"type": "string", "enum": ["supportive", "contradictory", "boundary", "null"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    "stop_reason": {
+      "type": "string",
+      "enum": ["semantic_complete", "budget_exhausted", "source_access_blocked", "human_stop", "inconclusive"]
+    },
+    "budget_exhausted": {"type": "boolean"}
+  }
+}

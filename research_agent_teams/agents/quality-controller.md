@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: REPORT
 kind: aggregator
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: global_quality_scorecard
 permission_scope:
   read: [task_frame, run-store per-stage gate verdicts (the EXISTING analysis_check_verdict / drift / grounding outcomes across DISCOVER..VERIFY), the active domain profile, run provenance]

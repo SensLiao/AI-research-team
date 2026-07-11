@@ -5,7 +5,7 @@ rq_exempt: true
 model: sonnet
 stage: DESIGN
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: unified_config
 permission_scope:
   read: [run-store evidence (DESIGN), the active domain profile, task_frame, protocol_spec, data_protocol, experiment_matrix]

@@ -627,7 +627,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--source", required=True, help="path to the source wiki/ directory")
     p.add_argument("--target-vault-root", required=True,
                    help="path to the PhD-Research-OS root (contains 02-wiki/ + 05-registry/)")
-    p.add_argument("--project", default="my-project", help="project slug to inject")
+    p.add_argument("--project", default="iac-cbct-seg", help="project slug to inject")
     p.add_argument("--dry-run", action="store_true", help="dry-run (write MIGRATE pages to --out)")
     p.add_argument("--out", help="temp output directory for dry-run writes")
     # real-vault write path — triple-gated, NOT used by the migration task

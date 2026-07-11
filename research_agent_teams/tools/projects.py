@@ -113,7 +113,7 @@ def require_project(slug: str, vault_root=None) -> dict:
     slug = (slug or "").strip()
     if not PROJECT_SLUG_RE.match(slug) or len(slug) > MAX_SLUG_LEN:
         raise ValueError(
-            f"invalid project slug {slug!r}: must be lowercase-kebab (e.g. 'my-project'), "
+            f"invalid project slug {slug!r}: must be lowercase-kebab (e.g. 'iac-cbct-seg'), "
             f"max {MAX_SLUG_LEN} chars")
     registered = load_registered_projects(vault_root)
     if not registered:

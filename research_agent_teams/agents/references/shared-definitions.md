@@ -98,7 +98,7 @@ Used by review-panel agents (`methodology-reviewer`, `domain-reviewer`, `scienti
 |---|---|---|
 | Artifact path | When referencing a run artifact produced in this run | `runs/<run>/evidence/DISCOVER/evidence-table.artifact.json` |
 | Artifact ID | When the artifact's `artifact_id` field is known | `evidence-table-20260612-abc123` |
-| `[[slug]]` + sha | When referencing a DB knowledge page (vault) by its slug | `[[example-ablation-2026]]+sha:a1b2c3` |
+| `[[slug]]` + sha | When referencing a DB knowledge page (vault) by its slug | `[[medsam3-ablation-2026]]+sha:a1b2c3` |
 | DOI / arXiv ID | When referencing an external paper | `10.1234/example` or `arXiv:2409.04109` |
 | URL | Fallback for web sources with no DOI | Full URL, stable if possible |
 

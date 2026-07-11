@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: ANALYZE
 kind: check-panel
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: analysis_check_verdict
 deterministic_checker: tools/goal_alignment_audit.py
 permission_scope:

@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: VERIFY
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: threats_report
 permission_scope:
   read: [task_frame, run-store evidence (VERIFY/ANALYZE), the active domain profile, experiment_matrix, protocol_spec, result_summary, panel_reviews, critic_memo]

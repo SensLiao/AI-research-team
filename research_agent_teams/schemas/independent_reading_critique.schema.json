@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/independent_reading_critique.schema.json",
+  "title": "Independent Reading Critique",
+  "description": "Blind second-reader memo. Its first pass may consume only task/source/fulltext/visual snapshots and must not see primary analyst bundles. Comparison belongs to paper_reading_reconciliation.",
+  "type": "object",
+  "required": [
+    "source_ref",
+    "reading_mode",
+    "primary_analysis_seen",
+    "allowed_input_classes",
+    "consumed_inputs",
+    "independent_summary",
+    "verdict",
+    "disagreements",
+    "overclaim_risks",
+    "required_repairs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {"type": "string", "minLength": 1},
+    "reading_mode": {"const": "blind_second_read"},
+    "primary_analysis_seen": {"const": false},
+    "allowed_input_classes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["task_frame", "source_document", "fulltext_snapshot", "visual_snapshot"]
+      },
+      "minItems": 2,
+      "uniqueItems": true
+    },
+    "consumed_inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["input_class", "ref"],
+        "additionalProperties": false,
+        "properties": {
+          "input_class": {
+            "type": "string",
+            "enum": ["task_frame", "source_document", "fulltext_snapshot", "visual_snapshot"]
+          },
+          "ref": {"type": "string", "minLength": 1}
+        }
+      },
+      "minItems": 2
+    },
+    "independent_summary": {
+      "type": "object",
+      "required": ["claims", "method", "key_results", "limitations"],
+      "additionalProperties": false,
+      "properties": {
+        "claims": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "method": {"type": "string", "minLength": 1},
+        "key_results": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "limitations": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+      }
+    },
+    "verdict": {"type": "string", "enum": ["PASS", "PASS_WITH_CAVEATS", "NEEDS_SUPPLEMENT", "BLOCK"]},
+    "disagreements": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Must be empty in the blind phase because the primary read has not been seen."
+    },
+    "missed_claims": {"type": "array", "items": {"type": "string"}, "default": []},
+    "overclaim_risks": {"type": "array", "items": {"type": "string"}, "default": []},
+    "alternative_interpretations": {"type": "array", "items": {"type": "string"}, "default": []},
+    "required_repairs": {"type": "array", "items": {"type": "string"}, "default": []},
+    "director_warning": {"type": ["string", "null"], "default": null}
+  }
+}

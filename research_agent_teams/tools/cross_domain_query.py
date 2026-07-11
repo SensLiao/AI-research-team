@@ -12,7 +12,7 @@ Whether any retrieved paper is actually a transferable solution is the scout's j
 Domain-general by construction: there is NO hardcoded single research domain. The mechanism
 verbs and the distant-field list are deliberately field-agnostic (segmentation, forecasting,
 ranking, control, generation, classification, retrieval, …), so the same generator works for
-NLP, vision, RL, graphs, speech, etc. — thin-structure image segmentation is merely one example
+NLP, vision, RL, graphs, speech, etc. — image/canal segmentation (IAC) is merely one example
 the scout might feed in. The output is deterministic given the same input (no network, no clock,
 no randomness): the same problem + same ``k`` always yields the same ordered query list.
 
@@ -32,7 +32,7 @@ from typing import List
 # them leaves the underlying mechanism verbs/relations. The list is intentionally broad and
 # cross-field — never a single research domain.
 _DOMAIN_NOUNS = frozenset({
-    # medical / vision objects (one example domain among many)
+    # medical / vision objects (IAC is just one example domain)
     "canal", "nerve", "tooth", "teeth", "dental", "mandibular", "vessel", "vessels",
     "vascular", "airway", "tubular", "organ", "tumor", "lesion", "cell", "cells",
     "ct", "cbct", "mri", "scan", "scans", "radiograph", "image", "images", "imaging",
@@ -114,11 +114,11 @@ def abstract_problem(problem: str) -> str:
     """Strip domain-specific nouns from ``problem`` to a mechanism-level phrasing.
 
     Keeps mechanism verbs (segment/predict/rank/…) and difficulty-regime qualifiers
-    (thin/sparse/few-shot/…); drops concrete objects of study (organ/text/graph/CT/…).
+    (thin/sparse/few-shot/…); drops concrete objects of study (canal/text/graph/CT/…).
     Deterministic and field-agnostic. Falls back gracefully so the result is never empty.
 
-    Examples (illustrative — the vocab is domain-general):
-        "segment the thin tubular structure in 3D scans" -> "segment thin structure"
+    Examples (illustrative — the vocab is domain-general, IAC is just one case):
+        "segment the inferior alveolar canal in CBCT scans" -> "segment thin structure"
         "few-shot classification of rare text documents"     -> "few-shot classify rare"
     """
     if not (problem or "").strip():

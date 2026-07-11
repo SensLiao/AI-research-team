@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: ANALYZE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: figure_critique
 permission_scope:
   read: [run-store evidence (ANALYZE), figure_spec_bundle, viz_audit_report, domain_profile, task_frame]

@@ -12,11 +12,29 @@ alignment_report); this checker — not the LLM — decides PASS/BLOCK, so the g
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Iterable, List, Optional
+
+from research_agent_teams.tools.hash_manifest_validator import validate_manifest
+
+
+def build_file_identity_checks(file_identity_manifests: Optional[Iterable[dict]]) -> List[dict]:
+    """Validate optional sha256 manifests supplied as preflight evidence."""
+    checks: List[dict] = []
+    if not file_identity_manifests:
+        return checks
+    for idx, item in enumerate(file_identity_manifests):
+        item = item or {}
+        checks.append(validate_manifest(
+            item.get("manifest") or {},
+            item.get("required_paths") or [],
+            manifest_ref=item.get("manifest_ref") or f"file_identity_manifests[{idx}]",
+        ))
+    return checks
 
 
 def check_preflight(train_script: dict, test_script: dict, protocol_spec: dict,
-                    alignment_report: dict, profile: Optional[dict] = None) -> List[str]:
+                    alignment_report: dict, profile: Optional[dict] = None,
+                    file_identity_manifests: Optional[Iterable[dict]] = None) -> List[str]:
     """Return preflight violations; empty == cleared to run."""
     violations: List[str] = []
 
@@ -42,18 +60,28 @@ def check_preflight(train_script: dict, test_script: dict, protocol_spec: dict,
         if test_script.get("augmentation_enabled") is True:
             violations.append("test set has augmentation enabled (must be off before the run)")
 
+    for check in build_file_identity_checks(file_identity_manifests):
+        violations.extend([f"{check['manifest_ref']}: {v}" for v in check["violations"]])
+
     return violations
 
 
 def build_report(train_script: dict, test_script: dict, protocol_spec: dict, alignment_report: dict,
                  profile: Optional[dict] = None, protocol_ref: Optional[str] = None,
-                 alignment_ref: Optional[str] = None) -> dict:
+                 alignment_ref: Optional[str] = None,
+                 file_identity_manifests: Optional[Iterable[dict]] = None) -> dict:
     """Build a preflight_report payload (verdict derived from violations — never set by hand)."""
-    violations = check_preflight(train_script, test_script, protocol_spec, alignment_report, profile)
+    file_identity_checks = build_file_identity_checks(file_identity_manifests)
+    violations = check_preflight(
+        train_script, test_script, protocol_spec, alignment_report, profile, file_identity_manifests)
+    checks = ["data_hash", "config_frozen", "alignment_pass", "test_freeze"]
+    if file_identity_checks:
+        checks.append("file_identity_manifest")
     return {
         "verdict": "BLOCK" if violations else "PASS",
         "violations": violations,
-        "checks_performed": ["data_hash", "config_frozen", "alignment_pass", "test_freeze"],
+        "checks_performed": checks,
         "protocol_ref": protocol_ref,
         "alignment_ref": alignment_ref,
+        "file_identity_checks": file_identity_checks,
     }

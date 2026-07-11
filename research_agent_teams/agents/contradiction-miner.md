@@ -1,11 +1,11 @@
 ---
 name: contradiction-miner
-spec_version: "1.1.0"
+spec_version: "1.1.1"
 model: opus
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
-produces: contradiction_report
+tools: [Read, Glob, Grep]
+produces: [contradiction_report, invalidation_record]
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the active domain profile, claim_list, claim_evidence_map]
   write: [runs/<run>/evidence/DISCOVER/ only]

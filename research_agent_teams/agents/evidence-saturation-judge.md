@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: evidence_saturation_report
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the DISCOVER search history / round log, the evidence_table, the active domain profile]

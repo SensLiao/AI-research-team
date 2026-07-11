@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: EXECUTE
 kind: checker
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: variable_touch_verdict
 permission_scope:
   read: [task_frame, run-store evidence (EXECUTE), the debug_session or experiment_tree under review, the experiment_matrix]

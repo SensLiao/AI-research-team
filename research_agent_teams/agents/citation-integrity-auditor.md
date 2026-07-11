@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: DISCOVER
 kind: hard-gate
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: citation_integrity_verdict
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the active domain profile, claim_list, claim_evidence_map, evidence_table]

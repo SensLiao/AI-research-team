@@ -2,43 +2,155 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/source_quality_report.schema.json",
   "title": "Source Quality Report",
-  "description": "DISCOVER-stage typed artifact. Output of source-quality-ranker. Ranks gathered sources by venue tier, methodological rigor, and recency. Derived from rank_sources.py; peer-reviewed venues always rank above preprints for the same recency.",
+  "description": "Backwards-compatible source ranking. Current reports declare source-methodology/v1 and provide inspectable categorical methodology review. rigor_score is a legacy ordering hint and cannot establish source strength by itself.",
   "type": "object",
   "required": ["ranked_sources", "ranking_rationale"],
   "additionalProperties": false,
   "properties": {
+    "quality_contract_version": {
+      "type": "string",
+      "enum": ["source-methodology/v1", "LEGACY_UNVERIFIED"]
+    },
+    "review_status": {
+      "type": "string",
+      "enum": ["CURRENT", "LEGACY_UNVERIFIED"]
+    },
     "ranked_sources": {
       "type": "array",
       "minItems": 1,
-      "items": {
-        "type": "object",
-        "required": ["source_ref", "rank", "tier", "rigor_score"],
-        "additionalProperties": false,
-        "properties": {
-          "source_ref": {"type": "string", "minLength": 1, "description": "ID or ref from the evidence_table"},
-          "rank": {"type": "integer", "minimum": 1, "description": "1-based rank; 1 = highest quality"},
-          "tier": {
-            "type": "string",
-            "enum": ["peer-reviewed", "preprint", "workshop", "technical-report", "blog", "other"],
-            "description": "venue tier"
-          },
-          "rigor_score": {
-            "type": "number",
-            "minimum": 0.0,
-            "maximum": 1.0,
-            "description": "composite score in [0,1] used by rank_sources.py to order sources"
-          },
-          "year": {"type": ["integer", "null"], "default": null},
-          "venue": {"type": ["string", "null"], "default": null},
-          "rank_notes": {"type": "string", "default": ""}
-        }
-      }
+      "items": {"$ref": "#/$defs/rankedSource"}
     },
     "ranking_rationale": {
       "type": "string",
-      "minLength": 1,
-      "description": "brief prose describing which tier/rigor/recency factors dominated the ranking"
+      "minLength": 1
     },
     "n_sources_ranked": {"type": ["integer", "null"], "minimum": 0, "default": null}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"quality_contract_version": {"const": "source-methodology/v1"}},
+        "required": ["quality_contract_version"]
+      },
+      "then": {
+        "required": ["review_status"],
+        "properties": {
+          "review_status": {"const": "CURRENT"},
+          "ranked_sources": {
+            "items": {"$ref": "#/$defs/currentRankedSource"}
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "qualityLevel": {
+      "type": "string",
+      "enum": ["strong", "adequate", "weak", "unclear", "not-applicable"]
+    },
+    "methodologyReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "design_appropriateness",
+        "bias_control",
+        "measurement_validity",
+        "statistical_validity",
+        "reproducibility"
+      ],
+      "properties": {
+        "design_appropriateness": {"$ref": "#/$defs/qualityLevel"},
+        "bias_control": {"$ref": "#/$defs/qualityLevel"},
+        "measurement_validity": {"$ref": "#/$defs/qualityLevel"},
+        "statistical_validity": {"$ref": "#/$defs/qualityLevel"},
+        "reproducibility": {"$ref": "#/$defs/qualityLevel"}
+      }
+    },
+    "sampleEvaluationReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_adequacy",
+        "evaluation_independence",
+        "comparator_fairness",
+        "uncertainty_reporting"
+      ],
+      "properties": {
+        "sample_adequacy": {"$ref": "#/$defs/qualityLevel"},
+        "evaluation_independence": {"$ref": "#/$defs/qualityLevel"},
+        "comparator_fairness": {"$ref": "#/$defs/qualityLevel"},
+        "uncertainty_reporting": {"$ref": "#/$defs/qualityLevel"}
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_ref", "locator"],
+      "properties": {
+        "evidence_ref": {"type": "string", "minLength": 1},
+        "locator": {"type": "string", "minLength": 1},
+        "exact_quote": {"type": "string"},
+        "reported_result": {"type": "string"}
+      },
+      "anyOf": [
+        {"required": ["exact_quote"], "properties": {"exact_quote": {"minLength": 1}}},
+        {"required": ["reported_result"], "properties": {"reported_result": {"minLength": 1}}}
+      ]
+    },
+    "rankedSource": {
+      "type": "object",
+      "required": ["source_ref", "rank", "tier", "rigor_score"],
+      "additionalProperties": false,
+      "properties": {
+        "source_ref": {"type": "string", "minLength": 1},
+        "rank": {"type": "integer", "minimum": 1},
+        "tier": {
+          "type": "string",
+          "enum": ["peer-reviewed", "preprint", "workshop", "technical-report", "blog", "other"]
+        },
+        "rigor_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Legacy ordering hint. Ignored by current source-strength derivation."
+        },
+        "year": {"type": ["integer", "null"], "default": null},
+        "venue": {"type": ["string", "null"], "default": null},
+        "rank_notes": {"type": "string", "default": ""},
+        "review_status": {"type": "string", "enum": ["VERIFIED", "PARTIAL", "UNVERIFIED"]},
+        "directness": {"type": "string", "enum": ["direct", "indirect", "background"]},
+        "study_design": {
+          "type": "string",
+          "enum": [
+            "randomized-controlled-trial", "controlled-experiment", "prospective-cohort",
+            "retrospective-cohort", "observational", "benchmark", "systematic-review",
+            "meta-analysis", "simulation", "methods-paper", "qualitative", "repository",
+            "documentation", "other"
+          ]
+        },
+        "methodology_review": {"$ref": "#/$defs/methodologyReview"},
+        "sample_evaluation_review": {"$ref": "#/$defs/sampleEvaluationReview"},
+        "applicability": {"type": "string", "enum": ["direct", "partial", "indirect", "unclear"]},
+        "evidence_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/evidenceRef"}
+        },
+        "limitations": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "currentRankedSource": {
+      "allOf": [
+        {"$ref": "#/$defs/rankedSource"},
+        {
+          "required": [
+            "review_status", "directness", "study_design", "methodology_review",
+            "sample_evaluation_review", "applicability", "evidence_refs"
+          ],
+          "properties": {
+            "evidence_refs": {"minItems": 1}
+          }
+        }
+      ]
+    }
   }
 }

@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: EXECUTE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: debug_session
 permission_scope:
   read: [task_frame, run-store evidence (EXECUTE), the failed run_record, the triage_report, the experiment_matrix, the active domain profile]

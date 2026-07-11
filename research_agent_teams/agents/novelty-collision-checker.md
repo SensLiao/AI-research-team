@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: IDEATE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: collision_findings
 permission_scope:
   read: [run-store evidence (IDEATE), inbox/IDEATE.bundle.json, inbox/search-results.json, the active domain profile, task_frame]
@@ -60,14 +60,14 @@ SAME problem this run is about, not merely on a superficially similar topic.)
    - `method_combination` — the specific technique stack the idea proposes (e.g.
      "Tversky-α FP-suppression + boundary loss on a frozen foundation-model encoder"). Not the
      idea's marketing sentence — the actual combination of mechanisms.
-   - `application` — the concrete task/problem the idea solves (e.g. "thin-structure
-     segmentation in 3D medical scans"). This is the axis the north star anchors.
+   - `application` — the concrete task/problem the idea solves (e.g. "inferior-alveolar-canal
+     segmentation in CBCT"). This is the axis the north star anchors.
    - `domain` — the field (e.g. "medical image segmentation"). Used to recognize when a near-hit
      is in a *different* application/domain (→ adjacent, the white-space, not a collision).
 
 3. **Construct TARGETED queries — method + problem, never the idea summary verbatim.** A good
    collision query pairs the *mechanism* with the *problem* so it surfaces the specific paper that
-   did this exact thing (e.g. `"Tversky loss frozen SAM thin-structure segmentation"`,
+   did this exact thing (e.g. `"Tversky loss frozen SAM canal segmentation"`,
    `"boundary loss foundation model tubular structure recall"`), plus a *method-only* probe to
    catch the same combination applied elsewhere (that result is adjacent, not a collision). Pasting
    the idea's summary as one query is a known failure mode — it retrieves topically-similar papers,

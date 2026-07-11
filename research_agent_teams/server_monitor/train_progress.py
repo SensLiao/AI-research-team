@@ -32,10 +32,10 @@ from typing import Optional
 # To support a new training script whose summary line doesn't fit any existing
 # pattern, add one compiled regex to EPOCH_PATTERNS. Required named groups:
 #   loss, lr, time        (always)
-#   dice                  (optional — ExampleModel-D-style scripts that only log loss)
+#   dice                  (optional — VISTA3D-style scripts that only log loss)
 # Unnamed groups 1/2 must be current_epoch / total_epochs.
 
-# A. colon-separated, no train_ prefix, explicit time=      (ExampleModel-v2, ExampleModel)
+# A. colon-separated, no train_ prefix, explicit time=      (MedSAM2, MedSAM3)
 #    Epoch 9/80: loss=0.3105 dice=0.6995 frames=11628 lr=9.96e-05 time=3618.3s
 RE_EPOCH_COLON = re.compile(
     r"Epoch\s+(\d+)\s*/\s*(\d+)\s*:\s*"
@@ -44,7 +44,7 @@ RE_EPOCH_COLON = re.compile(
     r"\s+time=(?P<time>[\d.]+)s?"
 )
 
-# B. pipe-separated, train_ prefix, bare trailing time      (ExampleModel-B, ExampleModel-C)
+# B. pipe-separated, train_ prefix, bare trailing time      (SAM-Med3D, SegVol)
 #    Epoch 11/80 | train_loss=X train_dice=Y [| val_... ] | lr=E | 5667.2s
 RE_EPOCH_PIPED = re.compile(
     r"Epoch\s+(\d+)\s*/\s*(\d+)\s*\|\s*"
@@ -54,7 +54,7 @@ RE_EPOCH_PIPED = re.compile(
     r"\s*\|\s*(?P<time>[\d.]+)s"
 )
 
-# C. em-dash separated, comma-delimited, no train dice      (ExampleModel-D)
+# C. em-dash separated, comma-delimited, no train dice      (VISTA3D)
 #    Epoch 1/80 — loss=0.4000, lr=9.50e-05, time=2500.0s, samples=384
 RE_EPOCH_DASH = re.compile(
     r"Epoch\s+(\d+)\s*/\s*(\d+)\s*[—\-]\s*"
@@ -72,9 +72,9 @@ EPOCH_PATTERNS: tuple[re.Pattern, ...] = (
 
 # Best-val / resume markers (work across all current scripts) ----------------
 
-# Standard "New best val_dice=..." (ExampleModel-v2/ExampleModel, ExampleModel-B, ExampleModel-C)
+# Standard "New best val_dice=..." (MedSAM2/MedSAM3, SAM-Med3D, SegVol)
 RE_NEW_BEST = re.compile(r"New\s+best!?\s+val_dice\s*=\s*(?P<val>[\d.]+)")
-# ExampleModel-D alternative: "Epoch 10 — val Dice=0.7400 (best=0.7400 at epoch 10)"
+# VISTA3D alternative: "Epoch 10 — val Dice=0.7400 (best=0.7400 at epoch 10)"
 RE_VISTA_VAL_BEST = re.compile(
     r"Epoch\s+(?P<ep>\d+)\s*[—\-]\s*val\s+Dice\s*=\s*(?P<val>[\d.]+)"
     r".*?best\s*=\s*(?P<best>[\d.]+)\s+at\s+epoch\s+(?P<best_ep>\d+)"
@@ -86,9 +86,9 @@ RE_RESUMED = re.compile(r"Resumed:\s+start_epoch=(?P<ep>\d+),\s+best_val_dice=(?
 # Inference-sweep markers (logs that have no epochs but multiple inference runs).
 # Generic — matches any "[<Word>-<Word>]" tag prefix; no model name hardcoded.
 # Examples covered:
-#   --- [3/5] ExampleModel + text ---
-#   [ExampleModel-Point] Found 48 prompt files.
-#   [ExampleModel-B-Box] Done. 48 cases processed.
+#   --- [3/5] MedSAM3 + text ---
+#   [MedSAM3-Point] Found 48 prompt files.
+#   [SegVol-Box] Done. 48 cases processed.
 RE_SWEEP_HEADER = re.compile(
     r"---\s+\[(\d+)\s*/\s*(\d+)\]\s+(.+?)\s+---"
 )
@@ -186,7 +186,7 @@ class GpuSnapshot:
 @dataclass(frozen=True)
 class SweepRunRecord:
     """One inference run inside a multi-run sweep (e.g. cross-prompt or click-eff)."""
-    tag: str               # generic "[Tag]" prefix (e.g. "ExampleModel-Point", "ExampleModel-B-Box")
+    tag: str               # generic "[Tag]" prefix (e.g. "MedSAM3-Point", "SegVol-Box")
     state: str             # "starting" | "done"
     n_cases: Optional[int] = None  # cases-found (starting) or cases-processed (done)
 
@@ -338,15 +338,19 @@ def _extract_run_name(cmd: str) -> str:
 # for callers that want to decorate or filter. Adding a new model here is
 # purely cosmetic — parsing works regardless.
 _FAMILY_HINTS: tuple[tuple[str, str], ...] = (
-    ("examplemodel", "ExampleModel"),
-    ("trainer_a", "ExampleModel"),
-    ("examplemodel_b", "ExampleModel-B"),
-    ("examplemodel_c", "ExampleModel-C"),
-    ("examplemodel_d", "ExampleModel-D"),
-    ("examplemodel_e", "ExampleModel-E"),
+    ("medsam3", "MedSAM3"),
+    ("train_lora_tracker", "MedSAM3"),
+    ("sam_med3d", "SAM-Med3D"),
+    ("sam-med3d", "SAM-Med3D"),
+    ("sam3d_root", "SAM-Med3D"),
+    ("segvol", "SegVol"),
+    ("vista3d", "VISTA3D"),
+    ("medsam2", "MedSAM2"),
     ("nnunet", "nnU-Net"),
     ("transunet", "TransUNet"),
     ("unetr", "UNETR"),
+    ("sam_med2d", "SAM-Med2D"),
+    ("sam-med2d", "SAM-Med2D"),
 )
 
 
@@ -389,11 +393,11 @@ def _parse_summary_block(text: str) -> tuple[list[EpochRecord], Optional[tuple[f
     Parse the filtered summary block; return (epochs, (best_val, best_epoch)?, resumed_epoch?).
 
     Handles three distinct "best val" signals:
-      - "New best val_dice=X"              (ExampleModel/ExampleModel-v2, ExampleModel-B, ExampleModel-C)
-      - "Epoch N — val Dice=X (best=Y at epoch Z)"  (ExampleModel-D)
+      - "New best val_dice=X"              (MedSAM2/3, SAM-Med3D, SegVol)
+      - "Epoch N — val Dice=X (best=Y at epoch Z)"  (VISTA3D)
       - fallback: last preceding epoch number pairs with the New-best marker
 
-    dice may be missing for scripts that only log train loss (e.g. ExampleModel-D).
+    dice may be missing for scripts that only log train loss (e.g. VISTA3D).
     """
     epochs: list[EpochRecord] = []
     best_val: Optional[float] = None
@@ -420,7 +424,7 @@ def _parse_summary_block(text: str) -> tuple[list[EpochRecord], Optional[tuple[f
                 pass
             continue
 
-        # ExampleModel-D val line carries best_val AND best_epoch explicitly
+        # VISTA3D val line carries best_val AND best_epoch explicitly
         mv = RE_VISTA_VAL_BEST.search(line)
         if mv:
             try:
@@ -454,7 +458,7 @@ def _parse_sweep_block(text: str) -> tuple[Optional[tuple[int, int, str]], list[
     """Parse inference-sweep markers from the same filtered summary block.
 
     Returns (latest_run_header, list_of_per_tag_records). Each tag (e.g.
-    "ExampleModel-Point") collapses to one record reflecting its latest known
+    "MedSAM3-Point") collapses to one record reflecting its latest known
     state ("starting" -> "done"). Generic — never matches model names
     explicitly; works for any sweep that emits the standard tag format.
     """

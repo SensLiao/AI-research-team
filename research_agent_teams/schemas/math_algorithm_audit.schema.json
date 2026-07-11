@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/math_algorithm_audit.schema.json",
+  "title": "Math Algorithm Audit",
+  "description": "Audit of equations, algorithm flow, pseudo-code, complexity, and implementation assumptions for method/theory papers.",
+  "type": "object",
+  "required": ["source_ref", "applicability", "algorithm_flow", "equation_consistency", "overall"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {"type": "string", "minLength": 1},
+    "applicability": {"type": "string", "enum": ["applicable", "not-applicable"]},
+    "formal_objects": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "algorithm_flow": {"type": "string", "minLength": 1},
+    "equation_consistency": {"type": "string", "minLength": 1},
+    "complexity_or_cost": {"type": ["string", "null"], "default": null},
+    "implementation_assumptions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "red_flags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "overall": {"type": "string", "enum": ["strong", "mixed", "weak", "not-applicable"]}
+  }
+}

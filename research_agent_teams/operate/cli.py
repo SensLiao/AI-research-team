@@ -20,14 +20,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from . import spine
-from .artifacts import GateBlock
+from .artifacts import GateBlock, TargetedGateBlock
 from .modes import REGISTRY
+from .panel_scheduler import PanelContractError, schedule_next_wave
+from ..orchestrator.model_policy import decorate_worker_runtime
 from ..tools import execution_registry as exreg
 from ..tools import lifecycle as lifecycle_tool
 from ..tools import projects as projects_tool
@@ -36,10 +39,13 @@ from ..tools import resources as rp
 from ..tools import runstore
 from ..tools import workspace as ws_tool
 from ..tools.budget_tracker import BudgetExceeded
+from ..tools.director_packet import lint_packet, write_packet
+from ..tools.idea_bet_markdown import write_idea_bet_menu
+from ..tools.research_business_standard import decorate_worker_quality
 from ..tools.runstore import find_run_dir
 from ..tools.scope_guard import discover_vault_root
 
-DEFAULT_RUNS_DIR = "research_agent_teams/runs"
+DEFAULT_RUNS_DIR = str(Path(__file__).resolve().parents[1] / "runs")
 DEFAULT_PROJECTS_DIR = "research_agent_teams/projects"
 
 
@@ -99,6 +105,37 @@ def _resolve_upstream_dirs(runs_dir: str, upstream_run_ids) -> list:
     return dirs
 
 
+def _schedule_stage_worker(run_dir: str, stage: str, request: str, mod, *, vault,
+                           model_policy: str, ts: str, authorize: bool = True) -> tuple:
+    """Open the current stage and expose only its next scheduler-authorized wave."""
+    spine.open_stage(run_dir, stage, ts)
+    raw = mod.llm_step(run_dir, stage, request, vault=vault, model_policy=model_policy)
+    raw = research_plan.augment_worker_with_upstream(raw, run_dir)
+    decision = schedule_next_wave(run_dir, stage, raw, ts=ts, authorize=authorize)
+    dispatch = decision.get("dispatch")
+    if dispatch is not None and authorize:
+        dispatch = decorate_worker_quality(dispatch, stage)
+        dispatch = decorate_worker_runtime(dispatch)
+    return dispatch, decision
+
+
+def _schedule_or_exit(run_dir: str, stage: str, request: str, mod, *, vault,
+                      model_policy: str, ts: str, authorize: bool = True) -> tuple:
+    try:
+        return _schedule_stage_worker(
+            run_dir, stage, request, mod, vault=vault, model_policy=model_policy,
+            ts=ts, authorize=authorize,
+        )
+    except BudgetExceeded as exc:
+        _emit({"stage": stage, "halted": True, "budget_stop": True, "reason": str(exc),
+               "note": "Actual worker dispatch reached max_agent_hops; no partial wave was authorized."})
+        sys.exit(4)
+    except (PanelContractError, ValueError) as exc:
+        _emit({"stage": stage, "halted": True, "scheduler_block": True, "reason": str(exc),
+               "note": "Panel scheduling refused an invalid order, label, predecessor, or read scope."})
+        sys.exit(2)
+
+
 def cmd_begin(a) -> None:
     mode = a.mode
     run_id = a.run_id or f"{mode}-{_ts().replace(':', '').replace('-', '')}"
@@ -128,14 +165,20 @@ def cmd_begin(a) -> None:
     # block into the first worker's prompt so it builds ON the upstream result instead of restarting.
     upstream = _resolve_upstream_dirs(a.runs_dir, a.upstream_run)
     if upstream:
-        research_plan.write_upstream_grounding(plan["run_dir"], upstream)
-    worker = (mod.llm_step(plan["run_dir"], first, a.request, vault=vault, model_policy=a.model_policy)
-              if hasattr(mod, "llm_step") else None)
-    if upstream:
-        worker = research_plan.augment_worker_with_upstream(worker, plan["run_dir"])
+        research_plan.write_upstream_grounding(
+            plan["run_dir"], upstream, downstream_mode=mode
+        )
+    worker, schedule = _schedule_or_exit(
+        plan["run_dir"], first, a.request, mod, vault=vault,
+        model_policy=a.model_policy, ts=ts,
+    )
     out = {"run_id": run_id, "run_dir": plan["run_dir"], "mode": mode, "project": a.project,
            "project_check": check, "stages": plan["stages"], "north_star": plan.get("north_star"),
-           "gate_level": plan["gate_level"], "first_stage": first, "next_worker": worker}
+           "gate_level": plan["gate_level"], "first_stage": first, "next_worker": worker,
+           "schedule": schedule}
+    if worker:
+        out["runtime_note"] = ("Spawn on any provider/model that satisfies capability_requirements; "
+                               "concrete runtime fields are optional deployment bindings.")
     if upstream:
         out["upstream_runs"] = upstream
     if hasattr(mod, "pre_search"):
@@ -166,17 +209,22 @@ def cmd_worker(a) -> None:
     vault = a.vault or getattr(mod, "DEFAULT_VAULT", None)
     request = _pinned_request(a.runs_dir, a.run_id, a.request)
     rd = _run_dir(a.runs_dir, a.run_id)
-    worker = mod.llm_step(rd, a.stage, request, vault=vault,
-                          model_policy=_policy_from_run(a.runs_dir, a.run_id))
-    # Carry the chain context into every downstream stage too (no-op for a single-mode run).
-    worker = research_plan.augment_worker_with_upstream(worker, rd)
+    worker, schedule = _schedule_or_exit(
+        rd, a.stage, request, mod, vault=vault,
+        model_policy=_policy_from_run(a.runs_dir, a.run_id), ts=a.ts or _ts(),
+    )
+    if schedule.get("status") == "blocked_missing_predecessor":
+        _emit({"run_id": a.run_id, "stage": a.stage, "worker": None, "schedule": schedule,
+               "note": "No legal worker wave: predecessor evidence is missing."})
+        sys.exit(3)
     multi = bool(worker) and "workers" in worker
-    _emit({"run_id": a.run_id, "stage": a.stage, "worker": worker,
+    _emit({"run_id": a.run_id, "stage": a.stage, "worker": worker, "schedule": schedule,
            "note": ("no LLM worker for this stage (deterministic-only) — go straight to run-dets"
                     if not worker else
-                    ("spawn EVERY sub-agent in 'workers' (see the panel note for ordering); each "
-                     "writes its own bundle; then run-dets" if multi else
-                     "spawn this sub-agent (model + prompt); it writes the bundle to 'output'; then run-dets"))})
+                    ("spawn EVERY sub-agent in this scheduler-authorized wave concurrently; "
+                     "then call worker again for the next legal wave" if multi else
+                    "spawn this sub-agent using capability_requirements + prompt; "
+                     "it writes the bundle to 'output'; then call worker again"))})
 
 
 def cmd_pre_search(a) -> None:
@@ -203,10 +251,60 @@ def cmd_pre_search(a) -> None:
                    "Zero records + source_errors = offline degrade (honest, vault-only run)."})
 
 
+def _copy_docs_to_run_scratch(run_dir: str, doc_paths) -> list:
+    dest_dir = Path(run_dir) / "inbox" / "fulltext-docs"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    copied = []
+    for i, raw in enumerate(doc_paths or [], start=1):
+        src = Path(raw).expanduser().resolve()
+        if not src.is_file():
+            _emit({"error": f"document does not exist or is not a file: {raw}"})
+            sys.exit(2)
+        stem = src.stem or f"doc-{i}"
+        suffix = src.suffix or ".pdf"
+        dst = dest_dir / f"{i:02d}-{stem}{suffix}"
+        shutil.copy2(src, dst)
+        copied.append(str(dst))
+    return copied
+
+
+def cmd_fulltext_pre(a) -> None:
+    """Copy local docs/PDFs into run scratch, then write inbox/fulltext-qa.json."""
+    rd = _run_dir(a.runs_dir, a.run_id)
+    ts = a.ts or _ts()
+    mod = _mode_module(_mode_from_run(a.runs_dir, a.run_id))
+    fn = getattr(mod, "fulltext_pre", None)
+    if fn is None:
+        _emit({"run_id": a.run_id,
+               "error": f"mode {_mode_from_run(a.runs_dir, a.run_id)!r} has no fulltext_pre step"})
+        sys.exit(2)
+    question = (a.question or _pinned_request(a.runs_dir, a.run_id, a.request)).strip()
+    docs = _copy_docs_to_run_scratch(rd, a.doc)
+    report_path = fn(rd, question, docs, ts)
+    if report_path is None:
+        _emit({"run_id": a.run_id, "error": "fulltext_pre wrote nothing; no documents supplied"})
+        sys.exit(2)
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    _emit({"run_id": a.run_id, "bundle": report_path, "copied_docs": docs,
+           "available": report.get("available"), "n_contexts": len(report.get("contexts") or []),
+           "reason": report.get("reason") or "",
+           "note": "page-anchored full-text bundle written; the DISCOVER worker reads it by reference."})
+
+
 def cmd_run_dets(a) -> None:
     rd = _run_dir(a.runs_dir, a.run_id)
     ts = a.ts or _ts()
     mod = _mode_module(_mode_from_run(a.runs_dir, a.run_id))
+    request = _pinned_request(a.runs_dir, a.run_id, None)
+    _unused, schedule = _schedule_or_exit(
+        rd, a.stage, request, mod, vault=getattr(mod, "DEFAULT_VAULT", None),
+        model_policy=_policy_from_run(a.runs_dir, a.run_id), ts=ts, authorize=False,
+    )
+    if schedule.get("status") != "complete":
+        _emit({"run_id": a.run_id, "stage": a.stage, "halted": True,
+               "workers_incomplete": True, "schedule": schedule,
+               "note": "run-dets cannot bypass the panel scheduler; finish the next legal wave first."})
+        sys.exit(2)
     # Absorption wave 1: a mode that exposes `run_dets_with_repair` carries the OpenScholar bounded
     # revise loop — use it so a recoverable gate BLOCK feeds back to the worker instead of halting on
     # the first failure. `--no-repair` forces the bare single-pass path (debugging / legacy parity).
@@ -215,18 +313,25 @@ def cmd_run_dets(a) -> None:
         if repair is not None and not a.no_repair:
             outcome = repair(rd, a.stage, ts)
             if outcome[0] == "retry":
+                packet = write_packet(rd, generated_at=ts)
                 _emit({"run_id": a.run_id, "stage": a.stage, "retry": True, "repair_feedback": outcome[1],
-                       "note": "HARD GATE refused, but the bounded-repair budget allows another in-stage "
-                               "attempt. Re-dispatch THIS stage's worker with 'repair_feedback' appended to "
-                               "its prompt, then run-dets again. Stage NOT committed; do NOT escalate yet."})
+                       "delivery_status": "NEEDS_SUPPLEMENT",
+                       "director_review_packet": str(packet),
+                       "note": "A readable working packet is available now. The scheduler will dispatch only "
+                               "the targeted supplement; completed analysis remains preserved."})
                 return
             paths, report = outcome[1]
         else:
             paths, report = mod.run_dets(rd, a.stage, ts)
     except GateBlock as gb:
-        _emit({"run_id": a.run_id, "stage": a.stage, "halted": True, "gate": "BLOCK", "reason": str(gb),
-               "note": "HARD GATE refused (repair budget exhausted if a repair loop ran) — run halts here, "
-                       "stage NOT committed. Report the BLOCK to the director honestly."})
+        packet = write_packet(rd, generated_at=ts)
+        hard = isinstance(gb, TargetedGateBlock) and gb.verdict == "BLOCK"
+        _emit({"run_id": a.run_id, "stage": a.stage, "halted": hard,
+               "gate": "BLOCK" if hard else "NEEDS_SUPPLEMENT", "reason": str(gb),
+               "delivery_status": "BLOCK" if hard else "USABLE_WITH_CAVEATS",
+               "director_review_packet": str(packet),
+               "note": "The current readable result remains available. Only truth, safety, execution, or "
+                       "permission failures are hard blocks; other gaps remain explicit supplements."})
         sys.exit(3)
     except BudgetExceeded as be:
         _emit({"run_id": a.run_id, "stage": a.stage, "halted": True, "budget_stop": True, "reason": str(be),
@@ -282,6 +387,20 @@ def cmd_status(a) -> None:
     _emit(spine.status(_run_dir(a.runs_dir, a.run_id)))
 
 
+def cmd_packet(a) -> None:
+    rd = _run_dir(a.runs_dir, a.run_id)
+    ts = a.ts or _ts()
+    try:
+        path = write_packet(rd, generated_at=ts)
+        errors = lint_packet(rd)
+    except Exception as exc:
+        _emit({"run_id": a.run_id, "packet": "BLOCKED", "error": str(exc),
+               "note": "director-review packet was not generated; do not treat REPORT as human-ready"})
+        sys.exit(3)
+    _emit({"run_id": a.run_id, "director_review_packet": str(path),
+           "lint_errors": errors, "note": "Markdown packet is the director-facing entry; JSON remains evidence"})
+
+
 def cmd_project_init(a) -> None:
     try:
         check = projects_tool.require_project(a.project, a.vault or discover_vault_root())
@@ -312,10 +431,30 @@ def cmd_project_delete(a) -> None:
 
 def cmd_menu(a) -> None:
     mod = _mode_module(_mode_from_run(a.runs_dir, a.run_id))
-    rows = mod.menu(_run_dir(a.runs_dir, a.run_id)) if hasattr(mod, "menu") else []
-    _emit({"run_id": a.run_id, "menu": rows})
+    rd = _run_dir(a.runs_dir, a.run_id)
+    rows = mod.menu(rd) if hasattr(mod, "menu") else []
+    cuts = mod.cut_for_prior_art(rd) if hasattr(mod, "cut_for_prior_art") else []
+    md_path = None
+    md_error = None
+    if rows:
+        try:
+            md_path = write_idea_bet_menu(rd, generated_at=a.ts or _ts())
+        except ValueError as exc:
+            md_error = str(exc)
+    payload = {"run_id": a.run_id, "menu": rows, "cut_for_prior_art": cuts}
+    if md_path:
+        payload["director_idea_bet_menu"] = md_path
+    if md_error:
+        payload["director_idea_bet_menu_error"] = md_error
+    _emit(payload)
     if rows:
         print("\n=== /idea-bet MENU (the director chooses; the machine never self-bets) ===", file=sys.stderr)
+        if md_path:
+            print(f"  Markdown decision page: {md_path}", file=sys.stderr)
+        if cuts:
+            print("  Cut before menu for evidenced prior art:", file=sys.stderr)
+            for c in cuts:
+                print(f"    {c['idea_id']}  {c['verdict']}  {c.get('reason', '')}", file=sys.stderr)
         for r in rows:
             elo = f"  elo#{r['elo_rank']}({r['elo']})" if r.get("elo_rank") else ""
             print(f"  #{r['rank']}  {r['idea_id']}  (feasibility {r['score']}){elo}  {r['summary']}",
@@ -430,6 +569,19 @@ def cmd_dashboard(a) -> None:
     _emit(ws_tool.dashboard(a.project, projects_root=a.projects_dir, runs_dir=a.runs_dir, vault_root=a.vault))
 
 
+def cmd_scoreboard(a) -> None:
+    """Director-facing one-button health panel over capability, eval, and runs."""
+    from ..tools.quality_scoreboard import build_quality_scoreboard
+
+    board = build_quality_scoreboard(
+        runs_dir=a.runs_dir,
+        aers_root=a.aers_root,
+        include_manual=not a.no_manual,
+        run_limit=a.run_limit,
+    )
+    _emit(board)
+
+
 def cmd_index(a) -> None:
     rows = ws_tool.project_index(projects_root=a.projects_dir, runs_dir=a.runs_dir, vault_root=a.vault,
                                  include_hidden=a.include_hidden)
@@ -509,6 +661,61 @@ def cmd_resource_bind(a) -> None:
                    "(the credential stays a .env reference on the resource)"})
 
 
+def cmd_aers_reference_approve(a) -> None:
+    """Human gate for approving/rejecting an AERS reference candidate.
+
+    It can only approve reference use; it never enables external execution or
+    vault writes. The palette entry is disable-model-invocation.
+    """
+    from ..tools import external_skill_review as review
+
+    registry = review.load_registry(a.registry)
+    entry = review.apply_gate_decision(
+        registry,
+        a.review_id,
+        decision=a.decision,
+        reviewed_by=a.reviewed_by,
+        decision_note=a.decision_note,
+        confirm_review_id=a.confirm_review_id,
+        ts=a.ts or _ts(),
+        allow_review_required=a.allow_review_required,
+    )
+    exported = None
+    if a.export_run_dir and entry.get("reference_allowed"):
+        exported = review.export_run_inbox_reference(entry, a.export_run_dir)
+    review.save_registry(registry, a.out or a.registry)
+    _emit({
+        **review.summarize_registry(registry),
+        "gate": "/aers-reference-approve",
+        "decision": a.decision,
+        "review_id": a.review_id,
+        "exported_reference": exported,
+        "note": "human gate recorded; reference approval never grants execution or vault write",
+    })
+
+
+def cmd_numeric_benchmark(a) -> None:
+    """Recompute claimed metrics from result rows + journal/hash evidence."""
+    from ..tools.numeric_benchmark_adapter import build_report_from_files
+    from ..tools.path_boundaries import assert_not_vault_path
+
+    report = build_report_from_files(
+        run_records_path=a.run_records,
+        result_artifact_paths=a.result_artifact,
+        hash_manifest_path=a.hash_manifest,
+        journal_path=a.journal,
+        required_paths=a.required_path,
+        tolerance=a.tolerance,
+    )
+    if a.out:
+        out = assert_not_vault_path(a.out, purpose="write numeric benchmark report")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _emit(report)
+    if report["verdict"] != "PASS":
+        sys.exit(1)
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)         # shared opts available AFTER the subcommand
     common.add_argument("--runs-dir", default=DEFAULT_RUNS_DIR)
@@ -528,8 +735,9 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--run-id", default=None)
     b.add_argument("--profile", default=None, help="domain_profile_ref (pointer, recorded for provenance)")
     b.add_argument("--model-policy", default="max_quality", choices=["default", "max_quality"],
-                   help="governed research runs default to max_quality (all-opus) per director lock "
-                        "2026-06-09 ('优化到最好'); pass --model-policy default for a cheaper run")
+                   help="research runs default to max_quality: all reasoning seats request frontier "
+                        "capability from whichever runtime is available; pass --model-policy default "
+                        "for a mixed strong/frontier workload profile")
     b.add_argument("--north-star", default=None,
                    help="the run's ONE-sentence direction contract (defaults to the request verbatim); "
                         "pinned immutably + hash-chained; every stage is drift-gated against it")
@@ -562,6 +770,16 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--request", default=None, help="optional; must match the pinned task_frame request")
     ps.set_defaults(func=cmd_pre_search)
 
+    fp = sub.add_parser("fulltext-pre", parents=[common],
+                        help="copy local PDFs/docs into run scratch and write inbox/fulltext-qa.json")
+    fp.add_argument("--run-id", required=True)
+    fp.add_argument("--doc", action="append", required=True,
+                    help="local PDF/doc path to copy into run scratch before extraction (repeatable)")
+    fp.add_argument("--question", default=None,
+                    help="optional extraction question; defaults to the pinned task_frame request")
+    fp.add_argument("--request", default=None, help="optional; must match the pinned task_frame request")
+    fp.set_defaults(func=cmd_fulltext_pre)
+
     r = sub.add_parser("run-dets", parents=[common], help="run the deterministic producers/gates for a stage")
     r.add_argument("--run-id", required=True)
     r.add_argument("--stage", required=True)
@@ -584,6 +802,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("status", parents=[common], help="run progress snapshot")
     s.add_argument("--run-id", required=True)
     s.set_defaults(func=cmd_status)
+
+    pkt = sub.add_parser("packet", parents=[common],
+                         help="generate/regenerate the director-facing Markdown packet for a run")
+    pkt.add_argument("--run-id", required=True)
+    pkt.set_defaults(func=cmd_packet)
 
     m = sub.add_parser("menu", parents=[common], help="print the ranked idea_backlog (the /idea-bet menu)")
     m.add_argument("--run-id", required=True)
@@ -651,6 +874,14 @@ def build_parser() -> argparse.ArgumentParser:
     dsh.add_argument("--vault", default=None)
     dsh.set_defaults(func=cmd_dashboard)
 
+    scb = sub.add_parser("scoreboard", parents=[common],
+                         help="director one-button health panel: capability catalog + evals + run manifests")
+    scb.add_argument("--aers-root", default=None)
+    scb.add_argument("--run-limit", type=int, default=200)
+    scb.add_argument("--no-manual", action="store_true",
+                     help="omit manual release-readiness rows (for machine-only CI checks)")
+    scb.set_defaults(func=cmd_scoreboard)
+
     idx = sub.add_parser("index", parents=[common],
                          help="all projects with lifecycle status + current stage (richer than project-list)")
     idx.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
@@ -716,6 +947,32 @@ def build_parser() -> argparse.ArgumentParser:
                     help="mark the binding as needing human approval at lease time")
     rb.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
     rb.set_defaults(func=cmd_resource_bind)
+
+    ara = sub.add_parser("aers-reference-approve", parents=[common],
+                         help="HUMAN GATE: approve/reject one AERS reference candidate; never execution/vault")
+    ara.add_argument("--registry", required=True)
+    ara.add_argument("--out", default=None, help="optional output registry path (defaults to --registry)")
+    ara.add_argument("--review-id", required=True)
+    ara.add_argument("--decision", required=True, choices=["approve", "reject"])
+    ara.add_argument("--reviewed-by", required=True)
+    ara.add_argument("--decision-note", required=True)
+    ara.add_argument("--confirm-review-id", required=True,
+                     help="must exactly equal --review-id; typed human confirmation")
+    ara.add_argument("--allow-review-required", action="store_true")
+    ara.add_argument("--export-run-dir", default=None,
+                     help="optional run dir to receive inbox/external-skill-references/<id>.json")
+    ara.set_defaults(func=cmd_aers_reference_approve)
+
+    nb = sub.add_parser("numeric-benchmark", parents=[common],
+                        help="verify claimed metrics by recomputing from result rows + journal/hash evidence")
+    nb.add_argument("--run-records", required=True)
+    nb.add_argument("--result-artifact", action="append", required=True)
+    nb.add_argument("--hash-manifest", required=True)
+    nb.add_argument("--journal", required=True)
+    nb.add_argument("--required-path", action="append", default=None)
+    nb.add_argument("--tolerance", type=float, default=1e-9)
+    nb.add_argument("--out", default=None)
+    nb.set_defaults(func=cmd_numeric_benchmark)
     return p
 
 

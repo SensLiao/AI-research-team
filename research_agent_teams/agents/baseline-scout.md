@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: VERIFY
 kind: reviewer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: panel_review
 permission_scope:
   read: [task_frame, runs/<run>/evidence/ (all stages), the manuscript / synthesis under review, the active domain profile, agents/references/venue-rubrics/]

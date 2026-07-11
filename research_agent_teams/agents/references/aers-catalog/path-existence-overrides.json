@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "source": "Auto-Empirical-Research-Skills catalog snapshot",
+  "mode": "metadata_only_internal_snapshot",
+  "missing_skill_paths": [
+    "skills/69-Paper-WorkFlow/SKILL.md"
+  ],
+  "notes": [
+    "The internal snapshot intentionally stores catalog metadata only.",
+    "Child AERS SKILL.md bodies are not copied, loaded, or executed by default.",
+    "Paths not listed here are treated as present according to skill-audit.json records."
+  ]
+}

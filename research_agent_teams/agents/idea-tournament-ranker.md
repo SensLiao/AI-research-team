@@ -1,11 +1,11 @@
 ---
 name: idea-tournament-ranker
-spec_version: "1.1.0"
+spec_version: "1.1.1"
 model: sonnet
 stage: IDEATE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
-produces: idea_tournament
+tools: [Read, Glob, Grep]
+produces: [idea_tournament, elo_tournament]
 permission_scope:
   read: [run-store evidence (IDEATE), the active domain profile, task_frame, hypothesis_set, novelty_score, idea_backlog]
   write: [runs/<run>/evidence/IDEATE/ only]

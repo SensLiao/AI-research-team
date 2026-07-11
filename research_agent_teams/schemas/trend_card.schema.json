@@ -10,7 +10,7 @@
     "scope": {
       "type": "string",
       "minLength": 1,
-      "description": "the sub-area / thread this trend covers (e.g. 'foundation-model adaptation for thin-structure 3D segmentation')"
+      "description": "the sub-area / thread this trend covers (e.g. 'foundation-model adaptation for thin-structure CBCT segmentation')"
     },
     "shifts": {
       "type": "array",

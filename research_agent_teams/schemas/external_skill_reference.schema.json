@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "External Skill Run Inbox Reference",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "reference_type",
+    "review_id",
+    "source",
+    "candidate",
+    "intended_use",
+    "rat_stage",
+    "constraints"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "reference_type": { "type": "string", "const": "aers_skill_reference" },
+    "review_id": { "type": "string", "pattern": "^aers-[a-f0-9]{16}$" },
+    "source": { "type": "string", "const": "Auto-Empirical-Research-Skills" },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "path",
+        "collection",
+        "license",
+        "commercial_use",
+        "source_url",
+        "source_confidence",
+        "recommendation",
+        "risk_level",
+        "risk_reasons",
+        "skill_path_exists",
+        "catalog_only"
+      ],
+      "properties": {
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "collection": { "type": "string" },
+        "license": { "type": "string" },
+        "commercial_use": { "type": "string" },
+        "source_url": { "type": "string" },
+        "source_confidence": { "type": "string" },
+        "recommendation": {
+          "type": "string",
+          "enum": ["safe_reference", "review_required", "do_not_use"]
+        },
+        "risk_level": { "type": "string", "enum": ["low", "medium", "high"] },
+        "risk_reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "skill_path_exists": { "type": "boolean" },
+        "catalog_only": { "type": "boolean", "const": true }
+      }
+    },
+    "intended_use": { "type": "string" },
+    "rat_stage": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ]
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalog_only",
+        "child_skill_body_read",
+        "execution_allowed",
+        "vault_write",
+        "run_inbox_only"
+      ],
+      "properties": {
+        "catalog_only": { "type": "boolean", "const": true },
+        "child_skill_body_read": { "type": "boolean", "const": false },
+        "execution_allowed": { "type": "boolean", "const": false },
+        "vault_write": { "type": "boolean", "const": false },
+        "run_inbox_only": { "type": "boolean", "const": true }
+      }
+    }
+  }
+}

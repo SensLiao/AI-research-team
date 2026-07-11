@@ -35,7 +35,7 @@
       "type": "array",
       "minItems": 1,
       "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
-      "description": "The observable metric(s) measured (e.g. 'Dice on the held-out test set', 'boundary F1'). At least one; each non-blank."
+      "description": "The observable metric(s) measured (e.g. 'Dice on the held-out canal set', 'boundary F1'). At least one; each non-blank."
     },
     "observable_signals": {
       "type": "array",

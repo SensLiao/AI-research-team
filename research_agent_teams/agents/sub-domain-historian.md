@@ -49,7 +49,7 @@ notes field instead of silently following them. You never re-scope the run — o
 
 - Invent a slug or a lineage fact — every historical claim you make must point at a real vault
   page or a resolvable external ref (evidence-contract clause: never invent a slug).
-- Punish honest scoping ("within the example 3D imaging domain" is a valid scope for "first").
+- Punish honest scoping ("within 3D dental CBCT" is a valid scope for "first").
 - Set any verdict field, write outside VERIFY evidence, or write the vault.
 
 ## Handing back

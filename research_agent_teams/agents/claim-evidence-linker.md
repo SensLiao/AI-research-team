@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: claim_evidence_map
 permission_scope:
   read: [task_frame, run-store evidence (DISCOVER), the active domain profile, claim_list, paper_note artifacts, repo_verification]
@@ -77,6 +77,12 @@ notes field instead of silently following them. You never re-scope the run — o
 - fabricate loci (every locus must point to a real location you actually read)
 - set `overall_support` without inspecting the actual loci
 - write to vault, other stages, or run infra files
+
+## Director Upgrade: Local-PDF Anchoring
+
+When `inbox/fulltext-qa.json` contains page contexts, every core supporting locus should carry
+`page`, `locator_confidence`, and `extraction_ref`. A local-PDF deep-read PASS must be page-anchored;
+`Section 3` or `Table 2` alone is too coarse when the PDF channel can identify the page.
 
 ## Handing back
 

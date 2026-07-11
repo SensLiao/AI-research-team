@@ -5,7 +5,7 @@ rq_exempt: true
 model: sonnet
 stage: EXECUTE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: monitor_alert
 permission_scope:
   read: [run-store (EXECUTE evidence, manifests, ledger), run_record, run_manifest, task_frame]

@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: ANALYZE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: failure_inventory
 permission_scope:
   read: [task_frame, run-store evidence (ANALYZE), the result_summary, run_records, the active domain profile]

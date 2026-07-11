@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/numeric_benchmark_report.schema.json",
+  "title": "Numeric Benchmark Report",
+  "description": "RAT benchmark adapter report. Metrics are recomputed from result artifacts and checked against run_records, live hash manifest, and run journal evidence.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "adapter",
+    "verdict",
+    "input_refs",
+    "summary",
+    "hash_check",
+    "journal_check",
+    "metric_checks",
+    "violations",
+    "trust_boundary"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "adapter": {"type": "string", "const": "numeric_benchmark_adapter"},
+    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+    "input_refs": {
+      "type": "object",
+      "required": ["run_records_ref", "result_artifact_refs", "hash_manifest_ref", "journal_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "run_records_ref": {"type": ["string", "null"]},
+        "result_artifact_refs": {"type": "array", "items": {"type": "string"}},
+        "hash_manifest_ref": {"type": ["string", "null"]},
+        "journal_ref": {"type": ["string", "null"]}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "run_record_count",
+        "result_row_count",
+        "claimed_metric_count",
+        "recomputed_metric_count",
+        "matched_metric_count",
+        "mismatch_count",
+        "required_machine_failures"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "run_record_count": {"type": "integer", "minimum": 0},
+        "result_row_count": {"type": "integer", "minimum": 0},
+        "claimed_metric_count": {"type": "integer", "minimum": 0},
+        "recomputed_metric_count": {"type": "integer", "minimum": 0},
+        "matched_metric_count": {"type": "integer", "minimum": 0},
+        "mismatch_count": {"type": "integer", "minimum": 0},
+        "required_machine_failures": {"type": "integer", "minimum": 0}
+      }
+    },
+    "hash_check": {
+      "type": "object",
+      "required": ["verdict", "violations", "manifest_ref", "required_paths", "covered_paths", "line_count", "stdout_sha256"],
+      "additionalProperties": true,
+      "properties": {
+        "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+        "violations": {"type": "array", "items": {"type": "string"}},
+        "manifest_ref": {"type": ["string", "null"]},
+        "required_paths": {"type": "array", "items": {"type": "string"}},
+        "covered_paths": {"type": "array", "items": {"type": "string"}},
+        "line_count": {"type": "integer", "minimum": 0},
+        "stdout_sha256": {"type": ["string", "null"]}
+      }
+    },
+    "journal_check": {
+      "type": "object",
+      "required": ["verdict", "violations", "journal_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {"type": "string", "enum": ["PASS", "BLOCK"]},
+        "violations": {"type": "array", "items": {"type": "string"}},
+        "journal_ref": {"type": ["string", "null"]}
+      }
+    },
+    "metric_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "condition_id",
+          "metric",
+          "claimed_value",
+          "recomputed_value",
+          "source_row_count",
+          "tolerance",
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "condition_id": {"type": "string"},
+          "metric": {"type": "string"},
+          "claimed_value": {"type": ["number", "string", "boolean", "null"]},
+          "recomputed_value": {"type": ["number", "null"]},
+          "source_row_count": {"type": "integer", "minimum": 0},
+          "tolerance": {"type": "number", "minimum": 0},
+          "status": {
+            "type": "string",
+            "enum": ["match", "mismatch", "missing_result_rows", "invalid_claim"]
+          }
+        }
+      }
+    },
+    "violations": {"type": "array", "items": {"type": "string"}},
+    "trust_boundary": {
+      "type": "object",
+      "required": [
+        "prose_summaries_trusted",
+        "requires_result_rows",
+        "requires_live_hash_manifest",
+        "requires_run_journal",
+        "vault_write"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "prose_summaries_trusted": {"type": "boolean", "const": false},
+        "requires_result_rows": {"type": "boolean", "const": true},
+        "requires_live_hash_manifest": {"type": "boolean", "const": true},
+        "requires_run_journal": {"type": "boolean", "const": true},
+        "vault_write": {"type": "boolean", "const": false}
+      }
+    }
+  }
+}

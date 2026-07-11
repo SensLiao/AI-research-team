@@ -128,6 +128,10 @@
             "cochrane_rob2",
             "strobe",
             "tripod_ai",
+            "claim",
+            "stard_ai",
+            "consort_ai",
+            "spirit_ai",
             "prisma",
             "consort",
             "none"
@@ -157,6 +161,63 @@
               }
             }
           }
+        }
+      }
+    },
+    "medical_imaging_checklist": {
+      "type": ["object", "null"],
+      "default": null,
+      "additionalProperties": false,
+      "description": "Optional high-value medical imaging / clinical AI appraisal checklist for imaging papers. Used by read_paper_deep PASS checks when the active domain profile is medical imaging.",
+      "properties": {
+        "standard_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["claim", "tripod_ai", "stard_ai", "consort_ai", "spirit_ai", "strobe", "prisma", "neurips", "casp", "cochrane_rob2", "other"]
+          },
+          "default": []
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["category", "status", "evidence_ref"],
+            "additionalProperties": false,
+            "properties": {
+              "category": {
+                "type": "string",
+                "enum": [
+                  "patient_split",
+                  "external_validation",
+                  "annotation_protocol",
+                  "inter_reader_variability",
+                  "scanner_site_shift",
+                  "metric_direction",
+                  "statistical_uncertainty",
+                  "clinical_claim_boundary",
+                  "preprocessing_leakage",
+                  "failure_case_analysis",
+                  "other"
+                ]
+              },
+              "standard_ref": {
+                "type": "string",
+                "enum": ["claim", "tripod_ai", "stard_ai", "consort_ai", "spirit_ai", "strobe", "prisma", "neurips", "casp", "cochrane_rob2", "cross_standard", "other"],
+                "default": "cross_standard"
+              },
+              "item_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Local item-bank id, e.g. CLAIM-MI-01 or CROSS-MI-LEAKAGE."
+              },
+              "status": {"type": "string", "enum": ["met", "partial", "unmet", "na"]},
+              "evidence_ref": {"type": "string", "minLength": 1},
+              "risk": {"type": "string", "enum": ["low", "medium", "high"], "default": "medium"},
+              "required_fix": {"type": "string"}
+            }
+          },
+          "default": []
         }
       }
     },

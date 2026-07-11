@@ -5,7 +5,7 @@ rq_exempt: true
 model: opus
 stage: VERIFY
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: review_config
 permission_scope:
   read: [run-store evidence (VERIFY), the active domain profile, experiment_matrix, protocol_spec, result_summary]

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/paper_structure.schema.json",
+  "title": "Paper Structure",
+  "description": "Full-paper coverage map for a deep read: section inventory, figure/table inventory, supplement status, and explicit coverage gaps. This is a business-quality guard against shallow reading.",
+  "type": "object",
+  "required": ["source_ref", "sections", "figures", "tables"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["section_ref", "role", "read_status"],
+        "additionalProperties": false,
+        "properties": {
+          "section_ref": {"type": "string", "minLength": 1},
+          "role": {"type": "string", "minLength": 1},
+          "read_status": {"type": "string", "enum": ["read", "skimmed", "not-available", "not-relevant"]},
+          "key_points": {"type": "array", "items": {"type": "string"}, "default": []}
+        }
+      },
+      "default": []
+    },
+    "figures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["figure_ref", "read_status", "load_bearing"],
+        "additionalProperties": false,
+        "properties": {
+          "figure_ref": {"type": "string", "minLength": 1},
+          "read_status": {"type": "string", "enum": ["read", "not-read", "not-available"]},
+          "load_bearing": {"type": "boolean"},
+          "reason": {"type": "string"}
+        }
+      },
+      "default": []
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["table_ref", "read_status", "load_bearing"],
+        "additionalProperties": false,
+        "properties": {
+          "table_ref": {"type": "string", "minLength": 1},
+          "read_status": {"type": "string", "enum": ["read", "not-read", "not-available"]},
+          "load_bearing": {"type": "boolean"},
+          "reason": {"type": "string"}
+        }
+      },
+      "default": []
+    },
+    "supplements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref", "read_status"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {"type": "string", "minLength": 1},
+          "read_status": {"type": "string", "enum": ["read", "not-read", "not-available"]},
+          "reason": {"type": "string"}
+        }
+      },
+      "default": []
+    },
+    "coverage_gaps": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "fulltext_available": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

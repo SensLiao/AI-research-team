@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: opus
 stage: IDEATE
 kind: producer
-tools: [Read, Glob, Grep, Bash]
+tools: [Read, Glob, Grep]
 produces: hypothesis_set
 permission_scope:
   read: [run-store evidence (IDEATE), the active domain profile, task_frame, gap_classification, novelty_score]

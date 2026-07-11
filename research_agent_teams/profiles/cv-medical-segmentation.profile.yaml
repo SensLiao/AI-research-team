@@ -1,5 +1,5 @@
 # Domain profile: 3D medical image segmentation (ONE example domain — NOT the system's target).
-# The system is AI/CS-research-general; this profile just specializes it for one example domain.
+# The system is AI/CS-research-general; this profile just specializes it for the director's PhD domain.
 # Validates against schemas/domain_profile.schema.json (payload).
 profile_id: cv-medical-segmentation
 display_name: "3D medical image segmentation (incl. fine tubular anatomy, interactive, foundation-vs-scratch)"
@@ -53,3 +53,8 @@ hard_invariants:
   - "all compared methods identical preprocessing unless explicitly studied"
   - "all metrics on same postprocessed spacing"
   - "foundation/pretrained weights explicitly declared; from-scratch baselines grep-clean for pretrained loads"
+reading:
+  paper_type_default: method
+  reporting_standards: ["claim", "tripod_ai", "stard_ai", "consort_ai", "strobe", "neurips"]
+  appraisal_checklist: "medical_imaging_ai_deep_read_v1"
+  notes: "For imaging AI reads, explicitly audit patient-level split, external/site/scanner validation, annotation protocol, inter-reader variability, preprocessing leakage, metric direction (Dice vs HD95/topology errors), statistical uncertainty, failure cases, and clinical-claim boundary."

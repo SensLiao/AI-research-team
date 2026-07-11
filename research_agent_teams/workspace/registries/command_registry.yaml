@@ -9,6 +9,11 @@ commands:
     description: "Open the workspace: dashboard + project picker, then route the request to a mode"
     handler: "operate dashboard / operate index"
     model_invocable: true
+  - command: scoreboard
+    description: "One-button director health panel: capability catalog + eval scorecard + run manifest status"
+    handler: "operate scoreboard"
+    args: [--aers-root, --run-limit, --no-manual]
+    model_invocable: true
   - command: project-new
     description: "Registry-check + create a project's machine-side workspace (projects/<slug>/)"
     handler: "operate project-init"
@@ -31,7 +36,7 @@ commands:
     handler: "operate project-restore"
     args: [--project]
   - command: run-mode
-    description: "Start a full mode run (the 7 wired modes: new_direction / gap_breadth / evidence_* / venue_readiness / full_rigor_minimal)"
+    description: "Start a full operated mode run (10 modes: new_direction / deep_ideation / gap_breadth / evidence_* / deep_research / venue_readiness / full_rigor_minimal / ingest_paper / read_paper_deep)"
     handler: "operate begin"
     args: [--mode, --project, --request]
   - command: run-stage
@@ -58,3 +63,13 @@ commands:
     description: "Read-only GPU server status (delegates to the server-query skill; live SSH gated by RAT_SERVER_QUERY_AUTHORIZED)"
     handler: "skill server-query  /  python -m research_agent_teams.server_monitor"
     args: [--project, --live]
+  - command: aers-reference-approve
+    description: "HUMAN GATE: approve or reject a staged AERS reference; never grants execution, child-body read, or vault write"
+    handler: "operate aers-reference-approve"
+    args: [--registry, --review-id, --decision, --reviewed-by, --decision-note, --confirm-review-id, --export-run-dir]
+    disable_model_invocation: true
+  - command: numeric-benchmark
+    description: "Recompute claimed metrics from run_records + result rows + journal + live hash manifest"
+    handler: "operate numeric-benchmark"
+    args: [--run-records, --result-artifact, --hash-manifest, --journal, --required-path, --out]
+    model_invocable: true

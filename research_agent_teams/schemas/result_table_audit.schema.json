@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/result_table_audit.schema.json",
+  "title": "Result Table Audit",
+  "description": "Deep reading audit of numeric result tables and plots: metric direction, ours/baseline binding, variance, split hygiene, and whether the headline comparison is actually supported.",
+  "type": "object",
+  "required": ["source_ref", "applicability", "metric_direction_checks", "baseline_binding_checks", "statistical_reporting", "overall"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "applicability": {
+      "type": "string",
+      "enum": ["applicable", "not-applicable"]
+    },
+    "audited_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["item_ref", "claim_id", "metric", "audit"],
+        "additionalProperties": false,
+        "properties": {
+          "item_ref": {"type": "string", "minLength": 1},
+          "claim_id": {"type": "string", "minLength": 1},
+          "metric": {"type": "string", "minLength": 1},
+          "direction": {"type": "string", "enum": ["higher-is-better", "lower-is-better", "other", "unclear"]},
+          "reported_comparison": {"type": "string"},
+          "audit": {"type": "string", "minLength": 1},
+          "risk": {"type": "string", "enum": ["low", "medium", "high"], "default": "medium"}
+        }
+      },
+      "default": []
+    },
+    "metric_direction_checks": {
+      "type": "string",
+      "minLength": 1
+    },
+    "baseline_binding_checks": {
+      "type": "string",
+      "minLength": 1
+    },
+    "statistical_reporting": {
+      "type": "string",
+      "minLength": 1
+    },
+    "leakage_or_split_risks": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "medical_segmentation_audit": {
+      "type": ["object", "null"],
+      "default": null,
+      "additionalProperties": false,
+      "description": "Domain-specific result audit for medical image segmentation / interactive correction papers. It checks whether headline numbers are actually usable for clinical-imaging research decisions, not merely reported.",
+      "properties": {
+        "task_context": {
+          "type": "string",
+          "enum": ["organ_segmentation", "lesion_segmentation", "tubular_structure", "interactive_correction", "autopet_petct", "other"]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["category", "status", "evidence_ref"],
+            "additionalProperties": false,
+            "properties": {
+              "category": {
+                "type": "string",
+                "enum": [
+                  "patient_or_case_level_split",
+                  "metric_direction_and_unit",
+                  "baseline_binding",
+                  "statistical_uncertainty",
+                  "per_case_failure_analysis",
+                  "lesion_level_recall",
+                  "false_positive_count",
+                  "volume_overlap_metric",
+                  "boundary_surface_metric",
+                  "topology_or_connectivity_metric",
+                  "scanner_site_split",
+                  "prompt_protocol_parity",
+                  "correction_budget",
+                  "oracle_vs_learned_fairness",
+                  "baseline_tuning_parity",
+                  "other"
+                ]
+              },
+              "status": {"type": "string", "enum": ["met", "partial", "unmet", "na"]},
+              "evidence_ref": {"type": "string", "minLength": 1},
+              "risk": {"type": "string", "enum": ["low", "medium", "high"], "default": "medium"},
+              "required_fix": {"type": "string"}
+            }
+          },
+          "default": []
+        }
+      }
+    },
+    "overall": {
+      "type": "string",
+      "enum": ["supports-headline", "mixed", "weak", "not-applicable"]
+    }
+  }
+}

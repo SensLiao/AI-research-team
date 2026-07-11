@@ -1,0 +1,126 @@
+{
+  "version": "medical-imaging-ai-minimum-item-bank-v1",
+  "purpose": "Minimum local audit items for A-core medical-imaging AI paper reads. These are paraphrased decision-audit items, not reproduced guideline text.",
+  "source_guidelines": [
+    {
+      "standard_ref": "claim",
+      "name": "CLAIM / Checklist for Artificial Intelligence in Medical Imaging",
+      "official_or_primary_url": "https://www.equator-network.org/reporting-guidelines/checklist-for-artificial-intelligence-in-medical-imaging-claim-a-guide-for-authors-and-reviewers/"
+    },
+    {
+      "standard_ref": "tripod_ai",
+      "name": "TRIPOD+AI",
+      "official_or_primary_url": "https://www.equator-network.org/reporting-guidelines/tripod-statement/"
+    },
+    {
+      "standard_ref": "stard_ai",
+      "name": "STARD-AI",
+      "official_or_primary_url": "https://www.equator-network.org/reporting-guidelines/the-stard-ai-reporting-guideline-for-diagnostic-accuracy-studies-using-artificial-intelligence/"
+    },
+    {
+      "standard_ref": "consort_ai",
+      "name": "CONSORT-AI",
+      "official_or_primary_url": "https://www.equator-network.org/reporting-guidelines/consort-artificial-intelligence/"
+    },
+    {
+      "standard_ref": "spirit_ai",
+      "name": "SPIRIT-AI",
+      "official_or_primary_url": "https://www.turing.ac.uk/research/research-projects/spirit-ai-and-consort-ai-initiative"
+    }
+  ],
+  "minimum_item_ids": [
+    "CLAIM-MI-01",
+    "CLAIM-MI-02",
+    "CLAIM-MI-03",
+    "CLAIM-MI-04",
+    "CLAIM-MI-05",
+    "CLAIM-MI-06",
+    "CLAIM-MI-07",
+    "TRIPODAI-MI-01",
+    "STARDAI-MI-01",
+    "CROSS-MI-LEAKAGE",
+    "CROSS-MI-READER",
+    "CROSS-MI-CLINICAL-BOUNDARY"
+  ],
+  "items": [
+    {
+      "item_id": "CLAIM-MI-01",
+      "standard_ref": "claim",
+      "category": "patient_split",
+      "question": "Does the paper make the train/validation/test split unit explicit and prevent slice, patch, image, or derived-volume leakage across patients/cases?"
+    },
+    {
+      "item_id": "CLAIM-MI-02",
+      "standard_ref": "claim",
+      "category": "scanner_site_shift",
+      "question": "Does the paper describe acquisition source, scanner/site heterogeneity, and external or cross-site evaluation limits?"
+    },
+    {
+      "item_id": "CLAIM-MI-03",
+      "standard_ref": "claim",
+      "category": "annotation_protocol",
+      "question": "Does the paper describe the reference annotation process, expert roles, consensus/adjudication, and label inclusion/exclusion boundaries?"
+    },
+    {
+      "item_id": "CLAIM-MI-04",
+      "standard_ref": "claim",
+      "category": "metric_direction",
+      "question": "Are all reported imaging metrics interpretable with the correct direction, unit, aggregation level, and denominator?"
+    },
+    {
+      "item_id": "CLAIM-MI-05",
+      "standard_ref": "claim",
+      "category": "statistical_uncertainty",
+      "question": "Does the paper report uncertainty, repeated runs, confidence intervals, fold variance, or significance tests adequate for its headline claim?"
+    },
+    {
+      "item_id": "CLAIM-MI-06",
+      "standard_ref": "claim",
+      "category": "failure_case_analysis",
+      "question": "Does the paper show or discuss failure cases, subgroup weakness, and clinically meaningful error modes instead of only favorable examples?"
+    },
+    {
+      "item_id": "CLAIM-MI-07",
+      "standard_ref": "claim",
+      "category": "external_validation",
+      "question": "Does the paper separate internal validation from external validation and state the limit of generalization?"
+    },
+    {
+      "item_id": "TRIPODAI-MI-01",
+      "standard_ref": "tripod_ai",
+      "category": "clinical_claim_boundary",
+      "question": "If the paper frames a prediction or decision-support claim, is the intended-use population, target, timing, and deployment boundary clear?"
+    },
+    {
+      "item_id": "STARDAI-MI-01",
+      "standard_ref": "stard_ai",
+      "category": "annotation_protocol",
+      "question": "If the paper frames diagnostic accuracy, does it distinguish the AI test, reference standard, reader workflow, and diagnostic target?"
+    },
+    {
+      "item_id": "CROSS-MI-LEAKAGE",
+      "standard_ref": "cross_standard",
+      "category": "preprocessing_leakage",
+      "question": "Could preprocessing, patch extraction, normalization, registration, augmentation, or postprocessing leak test information or alter metric fairness?"
+    },
+    {
+      "item_id": "CROSS-MI-READER",
+      "standard_ref": "cross_standard",
+      "category": "inter_reader_variability",
+      "question": "Does the paper quantify or bound inter-reader variability where labels, reference standards, or reader-AI workflows affect interpretation?"
+    },
+    {
+      "item_id": "CROSS-MI-CLINICAL-BOUNDARY",
+      "standard_ref": "cross_standard",
+      "category": "clinical_claim_boundary",
+      "question": "Does the paper avoid upgrading retrospective technical metrics into unsupported clinical benefit, safety, or deployment claims?"
+    }
+  ],
+  "autopet_interactive_minimum_categories": [
+    "lesion_level_recall",
+    "false_positive_count",
+    "prompt_protocol_parity",
+    "correction_budget",
+    "oracle_vs_learned_fairness"
+  ]
+}

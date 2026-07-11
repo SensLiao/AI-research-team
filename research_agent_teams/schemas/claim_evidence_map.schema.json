@@ -2,11 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/claim_evidence_map.schema.json",
   "title": "Claim Evidence Map",
-  "description": "DISCOVER-stage typed artifact. Output of claim-evidence-linker. Maps each claim to the concrete evidence loci (table cell, figure, code block, dataset row) that support or refute it. Every mapping must have at least one non-empty locus — a claim with no locus cannot be citation-checked. Optional per-locus `directness` records HOW the evidence relates to the claim (direct / indirect / proxy / assumed); optional per-mapping `claim_risk` flags the risk that the claim is wrong or overstated (level + note). Both are advisory reading aids — they do not change citation-checking, which still keys on each locus's `supports_claim`.",
+  "description": "DISCOVER-stage typed artifact. Current operated runs must declare claim-span/v1 and bind every locus to a local immutable snapshot plus an exact locator. Versionless maps are historical data only and may be replayed solely with an explicit citation-legacy-replay/v1 marker; they can never earn PASS. A citation existing is never sufficient evidence that it entails the claim.",
   "type": "object",
   "required": ["mappings"],
   "additionalProperties": false,
   "properties": {
+    "attribution_contract_version": {
+      "type": "string",
+      "enum": ["claim-span/v1"],
+      "description": "Required for every current operated run. Omission is accepted by the storage schema only so explicitly marked historical replays remain readable; deterministic current-run gates reject omission."
+    },
     "mappings": {
       "type": "array",
       "items": {
@@ -40,6 +45,62 @@
                   "type": ["string", "null"],
                   "description": "The actual value or statement found at this locus. The claim-evidence-linker READS this to decide supports_claim for the locus (true = supports the claim, false = contradicts it). There is NO automatic numeric comparison: contradiction detection is the linker's explicit supports_claim decision, enforced deterministically by the gate. Always populate this for table cells, figures, and code comments so the linker can judge support correctly."
                 },
+                "page": {
+                  "type": ["integer", "null"],
+                  "minimum": 1,
+                  "default": null,
+                  "description": "Page number when the source was read from a local PDF/fulltext channel. A PASS deep read over an available local PDF should page-anchor core loci."
+                },
+                "locator_confidence": {
+                  "type": "string",
+                  "enum": ["high", "medium", "low"],
+                  "default": "medium",
+                  "description": "How confidently this locator points to the exact paper locus rather than a broad section."
+                },
+                "extraction_ref": {
+                  "type": ["string", "null"],
+                  "default": null,
+                  "description": "Optional pointer to the fulltext context, table extraction, or figure read used to locate this evidence."
+                },
+                "support_relation": {
+                  "type": "string",
+                  "enum": ["entails", "partial", "contradicts", "insufficient"],
+                  "description": "Required by claim-span/v1. Preserves partial support and contradiction instead of collapsing all semantics into a boolean."
+                },
+                "span_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "description": "Stable identifier for this exact evidence span or visual/table locus."
+                },
+                "snapshot_ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "description": "Reference to the immutable source snapshot or extracted fulltext used by both linker and independent auditor."
+                },
+                "document_hash": {
+                  "type": "string",
+                  "pattern": "^[a-fA-F0-9]{64}$",
+                  "description": "SHA-256 of the source snapshot bytes/text normalization used for this locator."
+                },
+                "parser_version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "char_start": {"type": "integer", "minimum": 0},
+                "char_end": {"type": "integer", "minimum": 1},
+                "exact_quote": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 600,
+                  "pattern": "\\S",
+                  "description": "Short exact support excerpt used for locator verification, never a replacement for the source."
+                },
+                "block_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+                "table_cell_ref": {"type": "string", "minLength": 1, "pattern": "\\S"},
+                "figure_region_ref": {"type": "string", "minLength": 1, "pattern": "\\S"},
                 "supports_claim": {
                   "type": "boolean",
                   "description": "REQUIRED. The linker must explicitly decide per locus: true = this locus supports the claim; false = this locus contradicts the claim (reports the opposite). No default — omitting this field causes citation_checker.py to conservatively BLOCK (cannot verify the claim)."
@@ -76,5 +137,57 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["attribution_contract_version"],
+        "properties": {
+          "attribution_contract_version": {"const": "claim-span/v1"}
+        }
+      },
+      "then": {
+        "properties": {
+          "mappings": {
+            "items": {
+              "properties": {
+                "loci": {
+                  "items": {
+                    "required": [
+                      "locus_id",
+                      "source_ref",
+                      "location",
+                      "kind",
+                      "reported_result",
+                      "supports_claim",
+                      "support_relation",
+                      "span_id",
+                      "snapshot_ref",
+                      "document_hash",
+                      "parser_version",
+                      "exact_quote"
+                    ],
+                    "anyOf": [
+                      {"required": ["char_start", "char_end"]},
+                      {"required": ["table_cell_ref"]},
+                      {"required": ["figure_region_ref"]}
+                    ],
+                    "allOf": [
+                      {
+                        "if": {
+                          "required": ["kind"],
+                          "properties": {"kind": {"const": "figure"}}
+                        },
+                        "then": {"required": ["figure_region_ref"]}
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

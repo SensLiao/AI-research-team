@@ -1,0 +1,274 @@
+catalog_version: rat-research-patterns/v1
+generated_at: 2026-07-10
+purpose: >-
+  Primary-source pattern catalog for strengthening scientific work. Entries are
+  mechanisms to absorb, not packages that RAT claims to reproduce. All adoption
+  remains model-provider agnostic and evidence-bound.
+
+evidence_grades:
+  A: peer-reviewed paper plus official implementation or benchmark
+  B: official preprint plus public implementation and reported experiments
+  C: official implementation/documentation without independent scientific evaluation
+
+systems:
+  - id: auto-empirical-research-skills
+    evidence_grade: C
+    sources:
+      - https://github.com/brycewang-stanford/Auto-Empirical-Research-Skills
+    absorb:
+      - explicit method playbooks
+      - mandatory output tables and figures
+      - known-trap evaluation scenarios
+      - numeric benchmark contracts
+    do_not_claim:
+      - catalog size implies evaluated quality
+      - runtime adapters are an internal multi-agent research team
+    rat_mapping: [DESIGN, ANALYZE, REPORT, EVAL]
+
+  - id: storm-costorm
+    evidence_grade: A
+    sources:
+      - https://github.com/stanford-oval/storm
+      - https://aclanthology.org/2024.naacl-long.347/
+      - https://aclanthology.org/2024.emnlp-main.554/
+    absorb:
+      - perspective-conditioned question generation
+      - iterative question-answer-question trace
+      - moderator intervention on stalled or imbalanced inquiry
+      - dynamic concept map for human intervention
+    reject:
+      - wikipedia-derived perspectives as universal scientific coverage
+      - fixed turn count as semantic completion
+      - source-level citation as precise claim attribution
+    rat_mapping: [DISCOVER, RECALL, REPORT]
+
+  - id: paperqa2
+    evidence_grade: B
+    sources:
+      - https://github.com/Future-House/paper-qa
+      - https://arxiv.org/abs/2409.13740
+    absorb:
+      - search-gather-answer-citation-traversal decomposition
+      - query-conditioned evidence context while retaining original text and page
+      - DOI/reference/citer traversal
+      - abstention when evidence is absent
+    reject:
+      - generated contextual summaries as citable evidence
+      - chunk retrieval alone as exact span verification
+    rat_mapping: [DISCOVER, READ, ATTRIBUTION]
+
+  - id: openscholar
+    evidence_grade: A
+    sources:
+      - https://github.com/AkariAsai/OpenScholar
+      - https://www.nature.com/articles/s41586-025-10072-4
+      - https://github.com/AkariAsai/ScholarQABench
+    absorb:
+      - feedback-led re-retrieval for content gaps
+      - citation correctness and completeness as separate metrics
+      - long-form correctness relevance organization evaluation
+      - representative-source and staleness audits
+    reject:
+      - post-hoc citation insertion as proof a prior claim was grounded
+      - self-feedback as independent verification
+      - one opaque judge score as scientific truth
+    rat_mapping: [DISCOVER, REPORT, EVAL]
+
+  - id: microsoft-graphrag
+    evidence_grade: B
+    sources:
+      - https://github.com/microsoft/graphrag
+      - https://microsoft.github.io/graphrag/index/overview/
+      - https://microsoft.github.io/graphrag/query/global_search/
+      - https://microsoft.github.io/graphrag/query/local_search/
+      - https://microsoft.github.io/graphrag/query/drift_search/
+    absorb:
+      - span-backed entity relationship and claim graph
+      - community summaries for global routing
+      - local return to original text units
+      - DRIFT-style global-to-local follow-up questions
+    reject:
+      - community summary as citable evidence
+      - inferred graph edge without source span
+      - fixed graph depth as completion
+    rat_mapping: [RECALL, DISCOVER, CROSS_DOMAIN]
+
+  - id: sciagents
+    evidence_grade: B
+    sources:
+      - https://github.com/lamm-mit/SciAgentsDiscovery
+      - https://arxiv.org/abs/2409.05556
+      - https://doi.org/10.1002/adma.202413523
+    absorb:
+      - typed ontological path exploration
+      - non-shortest paths for bridge discovery
+      - hypothesis mechanism design experiment chain
+      - explicit blocking assumptions and required adaptations
+    reject:
+      - random path plausibility as experimental validation
+      - title or abstract proximity as novelty proof
+      - invented expected effect sizes
+    rat_mapping: [IDEATE, CROSS_DOMAIN, DESIGN]
+
+  - id: ai-scientist-v2
+    evidence_grade: A
+    sources:
+      - https://github.com/SakanaAI/AI-Scientist-v2
+      - https://arxiv.org/abs/2504.08066
+      - https://www.nature.com/articles/s41586-026-10265-5
+    absorb:
+      - progressive experiment stages
+      - branch journal and best-first candidate exploration
+      - bounded debug depth
+      - replication and ablation as later stages
+    reject:
+      - model-selected best leaf as scientific validity
+      - budget exhaustion as semantic completion
+      - paper-like output as proof experiments ran
+    rat_mapping: [IDEATE, DESIGN, EXECUTE, ANALYZE]
+
+  - id: rd-agent
+    evidence_grade: B
+    sources:
+      - https://github.com/microsoft/RD-Agent
+      - https://arxiv.org/abs/2505.14738
+      - https://www.microsoft.com/en-us/research/articles/rd-agent-an-open-source-solution-for-smarter-rd/
+    absorb:
+      - researcher and developer role separation
+      - hypothesis-experiment-feedback trace
+      - historical branch comparison
+      - user intervention at hypothesis and feedback points
+    reject:
+      - engineering benchmark gain as hypothesis confirmation
+      - unconsumed feedback fields as a closed loop
+      - retry count as failure attribution
+    rat_mapping: [IDEATE, EXECUTE, FAILURE_ATTRIBUTION]
+
+  - id: aide
+    evidence_grade: A
+    sources:
+      - https://github.com/WecoAI/aideml
+      - https://arxiv.org/abs/2502.13138
+      - https://openai.com/index/mle-bench/
+    absorb:
+      - one atomic code or experimental intervention per parent-child edge
+      - draft-debug-improve branch types
+      - metric-guided pruning with retained lineage
+      - executable branch records
+    reject:
+      - single scalar metric as scientific objective
+      - best-only greedy search
+      - fixed number of steps as knowledge saturation
+    rat_mapping: [EXECUTE, DEBUG, TREE_SEARCH]
+
+  - id: open-coscientist
+    evidence_grade: C
+    sources:
+      - https://github.com/jataware/open-coscientist
+    absorb:
+      - generate-reflect-review-rank-meta-review-evolve sequence
+      - AB and BA pairwise comparison
+      - hypothesis proximity deduplication
+      - provider-agnostic runtime binding
+    reject:
+      - sparse Elo as complete comparison
+      - evolved hypothesis retaining stale grounding
+      - fixed max iterations as scientific stop
+    rat_mapping: [IDEATE, REFINE]
+
+  - id: agent-laboratory
+    evidence_grade: B
+    sources:
+      - https://github.com/SamuelSchmidgall/AgentLaboratory
+      - https://aclanthology.org/2025.findings-emnlp.320/
+    absorb:
+      - phased literature experiment report work
+      - approve repeat note and resume checkpoints
+      - role boundaries among research engineering and review
+    reject:
+      - claimed execution without journal evidence
+      - model paper reward as scientific success
+      - unrestricted execution or autonomous stage approval
+    rat_mapping: [HUMAN_GATE, EXECUTE, REPORT]
+
+  - id: agentrxiv
+    evidence_grade: B
+    sources:
+      - https://agentrxiv.github.io/
+      - https://agentrxiv.github.io/resources/agentrxiv.pdf
+    absorb:
+      - cross-run retrieval of validated prior attempts
+      - multi-lab asynchronous accumulation
+    reject:
+      - generated manuscript as shared scientific knowledge
+      - placeholder or synthetic result propagation
+      - unverified report entering the vault
+    rat_mapping: [PROJECT_MEMORY, RECALL]
+
+  - id: dowhy
+    evidence_grade: A
+    sources:
+      - https://github.com/py-why/dowhy
+      - https://www.pywhy.org/dowhy/v0.14/user_guide/refuting_causal_estimates/index.html
+      - https://www.jmlr.org/papers/v25/22-1258.html
+    absorb:
+      - model-identify-estimate-refute discipline
+      - explicit assumptions and estimands
+      - placebo negative-control and sensitivity refuters
+      - graphical causal model root-cause and counterfactual contracts
+    reject:
+      - refuter pass as proof the causal graph is correct
+      - causal language without admissible design and assumptions
+      - counterfactual claim without structural model boundary
+    rat_mapping: [DESIGN, CAUSAL_ATTRIBUTION, VERIFY]
+
+  - id: causal-learn
+    evidence_grade: A
+    sources:
+      - https://github.com/py-why/causal-learn
+      - https://www.jmlr.org/papers/v25/23-0970.html
+    absorb:
+      - multiple causal discovery algorithms
+      - CPDAG and PAG uncertainty
+      - background knowledge constraints
+      - bootstrap stability as hypothesis evidence
+    reject:
+      - discovered equivalence class as the true DAG
+      - forced edge orientation without domain review
+      - direct causal estimation from an unaudited discovered graph
+    rat_mapping: [CAUSAL_HYPOTHESIS, VERIFY]
+
+benchmarks:
+  - id: scholarqabench
+    source: https://github.com/AkariAsai/ScholarQABench
+    measures: [long_form_correctness, citation_precision, citation_recall, coverage, organization]
+    does_not_measure: [experiment_execution, causal_validity]
+  - id: litqa2
+    source: https://github.com/Future-House/paper-qa
+    measures: [full_text_retrieval, scientific_question_answering, abstention]
+    does_not_measure: [long_form_citation_completeness, research_novelty]
+  - id: scienceagentbench
+    source: https://github.com/OSU-NLP-Group/ScienceAgentBench
+    measures: [scientific_code_task_correctness, execution_result, cost]
+    does_not_measure: [end_to_end_scientific_discovery]
+  - id: mle-bench
+    source: https://github.com/openai/mle-bench
+    measures: [ml_engineering, fixed_budget_execution, recovery]
+    does_not_measure: [citation_quality, causal_validity, scientific_novelty]
+
+adoption_order:
+  P0:
+    - exact citation span and independent semantic audit
+    - scientific investment ranking instead of feasibility ranking
+    - real journal binding and experiment/failure attribution
+    - blind perspective and blind review protocols
+    - mode-specific Markdown business-quality gates
+  P1:
+    - question trace and semantic completion gate
+    - evidence graph with span-backed typed edges
+    - atomic experiment tree and failure repair state machine
+    - causal claim admissibility and refutation suite
+  P2:
+    - cross-run validated research memory
+    - external benchmark suite and planted-error evals
+    - typed cross-domain path exploration with re-grounding
