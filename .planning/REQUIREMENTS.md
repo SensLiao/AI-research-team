@@ -31,7 +31,7 @@
 
 ### LaTeX and Assets
 
-- [ ] **LATX-01**: The run produces a native LaTeX project containing `main.tex`, `refs.bib`, section files, figure/table manifests, build metadata, and a deterministic quality report.
+- [x] **LATX-01**: The run produces a native LaTeX project containing `main.tex`, `refs.bib`, section files, figure/table manifests, build metadata, and a deterministic quality report.
 - [x] **LATX-02**: The run detects an available LaTeX engine and builds a real PDF when possible; otherwise it reports `TOOLCHAIN_MISSING`, delivers the complete source project, and never claims that a PDF was compiled.
 - [x] **ASST-01**: Every included figure and table has provenance, caption/label ownership, source/result references, and either a local source asset or reproducible generation/rendering command, without silently overwriting director-owned assets.
 
@@ -89,7 +89,7 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | EVID-03 | Phase 1 | Pending |
 | ORCH-01 | Phase 1 | Complete |
 | ORCH-02 | Phase 1 | Complete |
-| LATX-01 | Phase 1 | Pending |
+| LATX-01 | Phase 1 | Complete |
 | LATX-02 | Phase 1 | Complete |
 | ASST-01 | Phase 1 | Complete |
 | AUDT-01 | Phase 1 | Complete |
