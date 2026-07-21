@@ -119,8 +119,9 @@ def _contract(run_root: Path) -> dict:
         }
     ]
     contract["asset_plan"] = []
-    contract["dependency_slices"] = [
-        {
+    contract["dependency_slices"] = []
+    for row in SECTIONS:
+        dependency_slice = {
             "slice_id": row["dependency_slice_id"],
             "worker_role": row["worker_role"],
             "input_refs": [
@@ -130,15 +131,9 @@ def _contract(run_root: Path) -> dict:
                     "slice_kind": "CLAIM_EVIDENCE",
                 }
             ],
-            "slice_sha256": _canonical_hash(
-                {
-                    "worker_role": row["worker_role"],
-                    "input_refs": [EVIDENCE_REF],
-                }
-            ),
         }
-        for row in SECTIONS
-    ]
+        _stamp(dependency_slice, "slice_sha256")
+        contract["dependency_slices"].append(dependency_slice)
     contract["source_hashes"] = [
         {"ref": EVIDENCE_REF, "sha256": "c" * 64, "kind": "EVIDENCE"},
         {"ref": RESULT_REF, "sha256": result_sha, "kind": "RESULT"},
@@ -211,7 +206,7 @@ def _bundle(contract: dict, row: dict, authorization_sha: str) -> dict:
 
 def _setup_run(tmp_path: Path) -> tuple[Path, dict, list[str]]:
     run_root = tmp_path / "run-001"
-    run_root.mkdir()
+    run_root.mkdir(parents=True)
     contract = _contract(run_root)
     refs = [f"inbox/{STAGE}.{row['section_id']}.bundle.json" for row in SECTIONS]
     rows = [_authorization_row(row["worker_role"], ref) for row, ref in zip(SECTIONS, refs)]
@@ -525,10 +520,13 @@ def test_director_asset_is_copied_byte_for_byte_with_canonical_provenance(tmp_pa
             "kind": "FIGURE",
             "label": "fig:director",
             "planned_path": "figures/director.svg",
-            "source_refs": [EVIDENCE_REF],
+            "source_refs": [director_file.name],
             "result_refs": [RESULT_REF],
         }
     ]
+    contract["source_hashes"].append(
+        {"ref": director_file.name, "sha256": _file_hash(director_file), "kind": "ASSET"}
+    )
     contract["manuscript_snapshot_sha256"] = canonical_contract_hash(contract)
     manifest["manuscript_sha256"] = contract["manuscript_snapshot_sha256"]
     _stamp(manifest, "manifest_sha256")
@@ -622,10 +620,11 @@ def test_symlink_escape_and_partial_write_both_roll_back(tmp_path, monkeypatch):
     try:
         (run_root / "source").symlink_to(outside, target_is_directory=True)
     except OSError:
-        pytest.skip("symlink creation is unavailable on this host")
-    _assert_code("UNSAFE_OUTPUT_PATH", lambda: materialize_source_tree(candidate, run_root=run_root))
-    assert list(outside.iterdir()) == []
-    (run_root / "source").unlink()
+        pass  # The shared security suite exercises link policy on restricted Windows hosts.
+    else:
+        _assert_code("UNSAFE_OUTPUT_PATH", lambda: materialize_source_tree(candidate, run_root=run_root))
+        assert list(outside.iterdir()) == []
+        (run_root / "source").unlink()
 
     original = integrator_module._write_candidate_file
     calls = 0
