@@ -24,40 +24,22 @@ COVERAGE_AXES = (
 )
 
 _PROVIDER_PORTS = {
-    "ARXIV": "arxiv",
-    "OPENALEX": "openalex",
-    "CROSSREF": "crossref",
-    "SEMANTIC_SCHOLAR": "s2",
+    "ARXIV": "arxiv", "OPENALEX": "openalex",
+    "CROSSREF": "crossref", "SEMANTIC_SCHOLAR": "s2",
 }
 _PORT_PROVIDERS = {port: provider for provider, port in _PROVIDER_PORTS.items()}
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_REFERENCE_RE = re.compile(
-    r"^(?!/)(?![A-Za-z]:)(?!.*\.\.)(?!.*\\)[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
-)
+_REFERENCE_RE = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*\.\.)(?!.*\\)[A-Za-z0-9][A-Za-z0-9._:/#-]*$")
 _DEFICIT_RE = re.compile(r"^DEF-[A-Za-z0-9._-]+$")
-_SENSITIVE_ASSIGNMENT_RE = re.compile(
-    r"(?i)\b(?:api[_-]?key|access[_-]?token|token|credential|secret|password)\s*="
-)
+_SENSITIVE_ASSIGNMENT_RE = re.compile(r"(?i)\b(?:api[_-]?key|access[_-]?token|token|credential|secret|password)\s*=")
 _URL_RE = re.compile(r"https?://", re.IGNORECASE)
 _REPARSE_POINT = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 _PLAN_KEYS = {
-    "contract_version",
-    "plan_id",
-    "coverage_id",
-    "manuscript_snapshot_sha256",
-    "axis",
-    "deficit_id",
-    "created_at",
-    "query",
-    "exhaustive",
-    "search_port",
-    "metadata_only",
-    "attempt_order",
-    "attempts",
-    "plan_sha256",
+    "contract_version", "plan_id", "coverage_id", "manuscript_snapshot_sha256",
+    "axis", "deficit_id", "created_at", "query", "exhaustive", "search_port",
+    "metadata_only", "attempt_order", "attempts", "plan_sha256",
 }
 _ATTEMPT_KEYS = {"provider", "source", "query", "query_sha256"}
-
 
 class LiteratureCoverageError(ValueError):
     """Stable fail-closed error for literature coverage contracts."""
@@ -65,7 +47,6 @@ class LiteratureCoverageError(ValueError):
     def __init__(self, code: str, detail: str) -> None:
         self.code = code
         super().__init__(f"{code}: {detail}")
-
 
 def _fail(code: str, detail: str) -> None:
     raise LiteratureCoverageError(code, detail)
@@ -145,9 +126,8 @@ def _is_link_or_reparse(path: Path) -> bool:
         metadata = path.lstat()
     except OSError:
         return False
-    return path.is_symlink() or bool(
-        getattr(metadata, "st_file_attributes", 0) & _REPARSE_POINT
-    )
+    attributes = getattr(metadata, "st_file_attributes", 0)
+    return path.is_symlink() or bool(attributes & _REPARSE_POINT)
 
 
 def _assert_recall_surface_is_unlinked(root: Path) -> None:
@@ -652,13 +632,32 @@ def _execute_query_plan(
             )
             if not isinstance(result, Mapping):
                 raise TypeError("metadata search returned a non-mapping result")
-            raw_records = result.get("records") or []
+            required_response_fields = {"queries", "records", "source_errors"}
+            if not required_response_fields.issubset(result):
+                raise ValueError("INVALID_SEARCH_RESPONSE: required fields are missing")
+            if result["queries"] != [specification["query"]]:
+                raise ValueError("INVALID_SEARCH_RESPONSE: query binding mismatches attempt")
+            raw_records = result["records"]
             if not isinstance(raw_records, Sequence) or isinstance(raw_records, (str, bytes)):
                 raise TypeError("metadata search records are not a sequence")
-            records = [row for row in raw_records if isinstance(row, Mapping)]
+            if not isinstance(result["source_errors"], Mapping):
+                raise TypeError("metadata search source_errors are not a mapping")
+            if not all(isinstance(row, Mapping) for row in raw_records):
+                raise TypeError("metadata search contains a non-mapping record")
+            expected_source = specification["source"]
+            for row in raw_records:
+                found_in = row.get("found_in")
+                if (
+                    str(row.get("source") or "").lower() != expected_source
+                    or not isinstance(found_in, Sequence)
+                    or isinstance(found_in, (str, bytes))
+                    or expected_source not in found_in
+                ):
+                    raise ValueError("INVALID_SEARCH_RESPONSE: provider binding mismatches attempt")
+            records = list(raw_records)
             source_errors = {
                 str(key): sanitize_scholar_error(value)
-                for key, value in dict(result.get("source_errors") or {}).items()
+                for key, value in result["source_errors"].items()
             }
         except Exception as exc:
             error = sanitize_scholar_error(exc)

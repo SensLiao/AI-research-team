@@ -461,6 +461,41 @@ def test_provider_errors_and_request_urls_are_redacted_before_return(tmp_path: P
     assert "https://api.openalex.org/works" in serialized
 
 
+@pytest.mark.parametrize(
+    "malformed_response",
+    [
+        {},
+        {
+            "queries": ["a different unbound query"],
+            "records": [],
+            "source_errors": {},
+        },
+    ],
+    ids=["empty-mapping", "query-binding-mismatch"],
+)
+def test_malformed_search_response_can_never_prove_exhaustive_absence(
+    tmp_path: Path, malformed_response: dict
+):
+    coverage, _, _ = _coverage(tmp_path, empty_axis="related_comparison")
+    plan = _plan(coverage, providers=("OPENALEX",))
+
+    routed = route_coverage_deficits(
+        coverage,
+        query_plans=(plan,),
+        search_many_fn=lambda *args, **kwargs: copy.deepcopy(malformed_response),
+        transport=object(),
+    )
+
+    authorization = routed["coverage"]["axes"]["related_comparison"][
+        "query_authorization"
+    ]
+    assert authorization["outcome"] == "PROVIDER_FAILURE"
+    assert authorization["outcome"] != "NO_EVIDENCE_AFTER_VALID_SEARCH"
+    assert routed["search_traces"][0]["attempts"][
+        "attempt-related-comparison-openalex"
+    ]["terminal"]["status"] == "PROVIDER_FAILURE"
+
+
 def test_unapproved_or_linked_vault_roots_fail_before_recall(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
