@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -88,10 +89,31 @@ def _five_layer_voice() -> dict:
         "project": "measured",
         "run": "direct",
     }
-    return {
+    layers = {
         layer: _layer_document(layer, {"voice": _entry(value, layer=layer)})
         for layer, value in values.items()
     }
+    hard_values = {
+        "no_fabrication": True,
+        "claim_traceability": "claim-number-citation-closure",
+        "terminology_consistency": "frozen-glossary-and-notation",
+        "asset_provenance": "hashed-source-and-result-refs",
+        "compile_integrity": "references-and-cross-references-must-resolve",
+        "no_shell_escape": True,
+    }
+    layers["base"]["tokens"].update(
+        {
+            token: _entry(
+                value,
+                layer="base",
+                classification="HARD",
+                weakenable=False,
+            )
+            for token, value in hard_values.items()
+        }
+    )
+    layers["base"]["mandatory_tokens"] = list(hard_values)
+    return layers
 
 
 def _venue_requires_pdf(value: bool) -> dict:
@@ -105,7 +127,7 @@ def _token_source_hashes() -> list[dict]:
             "sha256": _sha(layer),
             "kind": "TOKEN_OVERLAY",
         }
-        for layer in ("base", "paper_type", "project", "run")
+        for layer in TOKEN_LAYERS
     ]
 
 
@@ -165,12 +187,22 @@ def _valid_frozen_contract(*, requires_pdf: bool = True) -> dict:
 
 
 def _freeze(payload: dict, tmp_path: Path, *, name: str = "contract.json") -> dict:
+    def verified_result(row: dict) -> dict:
+        return {
+            "verified": True,
+            "result_ref": row["ref"],
+            "result_sha256": row["sha256"],
+            "receipt_ref": row["receipt_ref"],
+            "receipt_sha256": row["receipt_sha256"],
+        }
+
     return freeze_manuscript_contract(
         payload,
         Path("state") / name,
         run_root=tmp_path,
         now=NOW,
         max_official_age=MAX_OFFICIAL_AGE,
+        result_receipt_verifier=verified_result,
     )
 
 
@@ -284,6 +316,44 @@ def test_unknown_mandatory_token_is_rejected():
     }
 
     with pytest.raises(ManuscriptContractError, match="UNKNOWN_MANDATORY_TOKEN"):
+        resolve_paper_design_tokens(layers)
+
+
+def test_style_token_cannot_self_declare_hard_even_in_base_layer():
+    layers = {
+        "base": _layer_document(
+            "base",
+            {
+                "voice": _entry(
+                    "mandatory-voice",
+                    layer="base",
+                    classification="HARD",
+                    weakenable=False,
+                )
+            },
+        )
+    }
+
+    with pytest.raises(ManuscriptContractError, match="UNAUTHORIZED_HARD_TOKEN"):
+        resolve_paper_design_tokens(layers)
+
+
+def test_reserved_truth_token_cannot_be_downgraded_to_advisory():
+    layers = {
+        "base": _layer_document(
+            "base",
+            {
+                "no_fabrication": _entry(
+                    False,
+                    layer="base",
+                    classification="ADVISORY",
+                    weakenable=True,
+                )
+            },
+        )
+    }
+
+    with pytest.raises(ManuscriptContractError, match="BASE_HARD_POLICY"):
         resolve_paper_design_tokens(layers)
 
 
@@ -452,6 +522,86 @@ def test_freeze_rejects_mutated_dependency_slice(tmp_path: Path):
         _freeze(payload, tmp_path)
 
 
+def test_freeze_rejects_schema_only_or_tampered_token_resolution(tmp_path: Path):
+    schema_only = _valid_frozen_contract()
+    schema_only["resolved_tokens"] = schema_only["resolved_tokens"]["resolved_tokens"]
+    with pytest.raises(ManuscriptContractError, match="TOKEN_RESOLUTION_ATTESTATION"):
+        _freeze(schema_only, tmp_path, name="schema-only.json")
+
+    tampered = _valid_frozen_contract()
+    voice = next(
+        row for row in tampered["resolved_tokens"]["tokens"] if row["token"] == "voice"
+    )
+    voice.update(classification="HARD", weakenable=False)
+    with pytest.raises(ManuscriptContractError, match="TOKEN_RESOLUTION_TAMPERED"):
+        _freeze(tampered, tmp_path, name="tampered.json")
+
+
+def test_freeze_requires_injected_verified_result_and_receipt_facts(tmp_path: Path):
+    payload = _valid_frozen_contract()
+    with pytest.raises(ManuscriptContractError, match="RESULT_VERIFIER_REQUIRED"):
+        freeze_manuscript_contract(
+            payload,
+            "state/no-verifier.json",
+            run_root=tmp_path,
+            now=NOW,
+            max_official_age=MAX_OFFICIAL_AGE,
+        )
+
+    def forged_facts(row: dict) -> dict:
+        return {
+            "verified": True,
+            "result_ref": row["ref"],
+            "result_sha256": row["sha256"],
+            "receipt_ref": row["receipt_ref"],
+            "receipt_sha256": "f" * 64,
+        }
+
+    with pytest.raises(ManuscriptContractError, match="RESULT_RECEIPT_UNVERIFIED"):
+        freeze_manuscript_contract(
+            payload,
+            "state/forged-verifier.json",
+            run_root=tmp_path,
+            now=NOW,
+            max_official_age=MAX_OFFICIAL_AGE,
+            result_receipt_verifier=forged_facts,
+        )
+
+    def truthy_but_not_verified(row: dict) -> dict:
+        return {
+            "verified": 1,
+            "result_ref": row["ref"],
+            "result_sha256": row["sha256"],
+            "receipt_ref": row["receipt_ref"],
+            "receipt_sha256": row["receipt_sha256"],
+        }
+
+    with pytest.raises(ManuscriptContractError, match="RESULT_RECEIPT_UNVERIFIED"):
+        freeze_manuscript_contract(
+            payload,
+            "state/truthy-verifier.json",
+            run_root=tmp_path,
+            now=NOW,
+            max_official_age=MAX_OFFICIAL_AGE,
+            result_receipt_verifier=truthy_but_not_verified,
+        )
+
+
+def test_freeze_rejects_venue_hard_token_without_official_source(tmp_path: Path):
+    payload = _valid_frozen_contract()
+    layers = copy.deepcopy(payload["resolved_tokens"]["source_layers"])
+    layers["venue"]["tokens"]["anonymity"] = _entry(
+        "double-blind",
+        layer="venue",
+        classification="HARD",
+        weakenable=False,
+    )
+    payload["resolved_tokens"] = resolve_paper_design_tokens(layers)
+
+    with pytest.raises(ManuscriptContractError, match="VENUE_HARD_SOURCE"):
+        _freeze(payload, tmp_path, name="unofficial-venue-hard.json")
+
+
 def test_freeze_is_idempotent_but_never_overwrites_a_different_snapshot(tmp_path: Path):
     payload = _valid_frozen_contract()
     first = _freeze(payload, tmp_path)
@@ -464,6 +614,27 @@ def test_freeze_is_idempotent_but_never_overwrites_a_different_snapshot(tmp_path
     assert json.loads((tmp_path / "state" / "contract.json").read_text("utf-8")) == first
 
 
+def test_concurrent_freeze_is_create_once_and_leaves_no_temporary_files(tmp_path: Path):
+    first = _valid_frozen_contract()
+    second = _valid_frozen_contract()
+    second["north_star"] = "A concurrent but different immutable contract."
+
+    def attempt(payload: dict):
+        try:
+            return _freeze(payload, tmp_path, name="concurrent.json")
+        except ManuscriptContractError as exc:
+            return exc.code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(attempt, (first, second)))
+
+    assert sum(isinstance(outcome, dict) for outcome in outcomes) == 1
+    assert outcomes.count("FROZEN_CONTRACT_CONFLICT") == 1
+    written = json.loads((tmp_path / "state" / "concurrent.json").read_text("utf-8"))
+    assert written in [outcome for outcome in outcomes if isinstance(outcome, dict)]
+    assert list((tmp_path / "state").glob("*.tmp")) == []
+
+
 def test_freeze_rejects_output_path_outside_injected_run_root(tmp_path: Path):
     outside = tmp_path.parent / "outside-contract.json"
 
@@ -474,6 +645,13 @@ def test_freeze_rejects_output_path_outside_injected_run_root(tmp_path: Path):
             run_root=tmp_path,
             now=NOW,
             max_official_age=MAX_OFFICIAL_AGE,
+            result_receipt_verifier=lambda row: {
+                "verified": True,
+                "result_ref": row["ref"],
+                "result_sha256": row["sha256"],
+                "receipt_ref": row["receipt_ref"],
+                "receipt_sha256": row["receipt_sha256"],
+            },
         )
 
 
@@ -488,6 +666,13 @@ def test_freeze_applies_shared_secret_scan_before_persistence(tmp_path: Path):
             run_root=tmp_path,
             now=NOW,
             max_official_age=MAX_OFFICIAL_AGE,
+            result_receipt_verifier=lambda row: {
+                "verified": True,
+                "result_ref": row["ref"],
+                "result_sha256": row["sha256"],
+                "receipt_ref": row["receipt_ref"],
+                "receipt_sha256": row["receipt_sha256"],
+            },
             secret_sentinels={"fixture": "FIXTURE_ONLY_NOT_A_REAL_SECRET_0111"},
         )
     assert not (tmp_path / "state" / "contract.json").exists()
