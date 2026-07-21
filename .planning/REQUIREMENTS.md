@@ -55,7 +55,7 @@
 - [x] **VERI-02**: Automated tests prove sufficient local evidence suppresses online search, explicit deficits activate only the existing search engine, search failures remain explicit, and no OpenAlex download code path exists.
 - [x] **VERI-03**: Automated tests prove token cascade precedence and hard-rule versus advisory-rule separation.
 - [x] **VERI-04**: Negative-path tests reject or surface unsupported citations/numbers, false execution claims, database writes, unsafe paths, missing required roles, inconsistent terminology/labels, secret leakage, and false PDF claims at the correct gate.
-- [ ] **VERI-05**: Relevant unit, integration, operated-mode, AI-eval, security, and completion verification commands pass and leave inspectable evidence artifacts.
+- [x] **VERI-05**: Relevant unit, integration, operated-mode, AI-eval, security, and completion verification commands pass and leave inspectable evidence artifacts.
 
 ## v2 Requirements
 
@@ -104,7 +104,7 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | VERI-02 | Phase 1 | Complete |
 | VERI-03 | Phase 1 | Complete |
 | VERI-04 | Phase 1 | Complete |
-| VERI-05 | Phase 1 | Pending |
+| VERI-05 | Phase 1 | Complete |
 
 **Coverage:**
 
