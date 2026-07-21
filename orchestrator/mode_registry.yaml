@@ -605,45 +605,218 @@ modes:
         - "Add a Markdown renderer and mode-level tests for clean, conflicting, and blocking panels."
     gate_level: director_signoff
     budget: {max_agent_hops: 3}
-  manuscript_review_pack:
-    entry_stage: VERIFY
-    stage_path: [VERIFY, REPORT]   # paper-writing/rebuttal review pack; human still decides venue/promotion
-    agent_subset: [review-configurator, methodology-reviewer, domain-reviewer, adversarial-reviewer,
-                   scientific-critic, review-synthesizer, synthesis-writer,
-                   contribution-ledger-builder, threats-to-validity-writer,
-                   review-response-simulator, quality-controller, integrity-refusal-recommender]
+  manuscript_authoring:
+    entry_stage: DISCOVER
+    stage_path: [DISCOVER, DESIGN, ANALYZE, VERIFY, REPORT]
+    agent_subset: [manuscript-venue-corpus-scout, manuscript-architect,
+                   manuscript-evidence-steward, manuscript-introduction-author,
+                   manuscript-related-work-author, manuscript-methods-author,
+                   manuscript-results-author, manuscript-section-author,
+                   manuscript-figure-table-engineer, manuscript-integrator,
+                   manuscript-factual-auditor, manuscript-citation-auditor,
+                   manuscript-style-latex-auditor, manuscript-submission-packager]
+    authoring_contract:
+      required_sections_ref: manuscript_contract.required_sections
+      specialized_owners:
+        introduction: manuscript-introduction-author
+        related_work: manuscript-related-work-author
+        methods: manuscript-methods-author
+        results: manuscript-results-author
+      remaining_required_section_owner: manuscript-section-author
+      candidate_artifact_type: manuscript_section_bundle
+      candidate_bundles_per_required_section: 1
+      integrator: manuscript-integrator
+      integrator_may_author_missing_prose: false
+    scheduler_contract:
+      dependency_model: sparse_dag
+      frozen_common_snapshot: manuscript_contract
+      adaptive_instances:
+        section_role: manuscript-section-author
+        derive_from: manuscript_contract.required_sections
+        excludes_specialized_sections: [introduction, related_work, methods, results]
+        fixed_section_worker_count: false
+      specialized_section_owners:
+        introduction: manuscript-introduction-author
+        related_work: manuscript-related-work-author
+        methods: manuscript-methods-author
+        results: manuscript-results-author
+      candidate_gate:
+        cardinality: exactly_one_per_required_section
+        compare_against: manuscript_contract.required_sections
+        integrator_may_author_missing_prose: false
+        canonical_owner: manuscript-integrator
+      parallel_groups:
+        - id: venue_and_corpus_reconnaissance
+          workers: [manuscript-venue-corpus-scout]
+          depends_on: []
+        - id: freeze_manuscript_contract
+          workers: [manuscript-architect]
+          depends_on: [venue_and_corpus_reconnaissance]
+        - id: admit_evidence
+          workers: [manuscript-evidence-steward]
+          depends_on: [freeze_manuscript_contract]
+        - id: author_candidates
+          workers: [manuscript-introduction-author, manuscript-related-work-author,
+                    manuscript-methods-author, manuscript-results-author,
+                    manuscript-section-author, manuscript-figure-table-engineer]
+          depends_on: [freeze_manuscript_contract, admit_evidence]
+        - id: integrate_canonical_tree
+          workers: [manuscript-integrator]
+          depends_on: [author_candidates]
+        - id: independent_authoring_audits
+          workers: [manuscript-factual-auditor, manuscript-citation-auditor,
+                    manuscript-style-latex-auditor]
+          depends_on: [integrate_canonical_tree]
+        - id: package_authoring_evidence
+          workers: [manuscript-submission-packager]
+          depends_on: [independent_authoring_audits]
+    paper_type_contract_fixtures:
+      section_set_source: frozen_contract_required_sections
+      fixed_section_count: false
+      cases:
+        empirical:
+          required_sections: [abstract, introduction, related_work, methods, results, discussion, limitations, conclusion, appendix, venue_reproducibility_checklist]
+        theory:
+          required_sections: [abstract, introduction, related_work, formalism, theorems, proofs, discussion, limitations, conclusion, appendix, venue_theory_statement]
+        dataset:
+          required_sections: [abstract, introduction, related_work, dataset_card, data_governance, benchmarks, limitations, ethics_statement, conclusion, appendix, venue_dataset_checklist]
+        survey:
+          required_sections: [abstract, introduction, related_work, taxonomy, landscape, discussion, limitations, conclusion, appendix, venue_survey_checklist]
+        system:
+          required_sections: [abstract, introduction, related_work, architecture, system_evaluation, discussion, limitations, ethics_statement, conclusion, appendix, venue_system_checklist]
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: manuscript-authoring/v1
+      primary_markdown: director-review/manuscript/manuscript-authoring.md
+      evidence_namespace: evidence/manuscript-authoring/
+      reusable_artifacts: [manuscript-contract.artifact.json, local-literature-coverage.artifact.json,
+                           manuscript-section-bundles.artifact.json, manuscript-integration.artifact.json,
+                           manuscript-asset-manifest.artifact.json, manuscript-build-receipt.artifact.json,
+                           manuscript-quality-report.artifact.json]
+      accepts: [paper-reading/v3, evidence-deep/v2, research-brief/v2]
     product_maturity:
       level: registry_routable_spec_only
-      reason: "The review and writing-support workers are registry-connected, but there is no staged manuscript intake, independent panel execution, or deterministic review-pack renderer."
-      evidence_refs: [tests/test_agent_connectivity.py, tests/test_vr_review_schemas.py, tests/test_verify_panel_schemas.py]
+      reason: "The complete manuscript role graph and adaptive section contract are registry-connected, but no operate recipe, deterministic reducer, renderer, or operated test exists yet."
+      evidence_refs: [tests/test_agent_connectivity.py, tests/test_capability_catalog.py, tests/test_manuscript_schema_contracts.py]
       target_markdown:
-        path: director-review/manuscript/manuscript-review-pack.md
-        purpose: "Provide a submission-facing review, contribution ledger, threats analysis, and response plan while leaving venue and publish decisions to the director."
-        required_sections: [Manuscript and venue scope, Independent reviewer reports, Contribution ledger, Threats to validity, Claim and citation repairs, Response plan, Director decisions]
+        path: director-review/manuscript/manuscript-authoring.md
+        purpose: "Deliver the frozen design, candidate provenance, canonical LaTeX manuscript, and honest build/quality state without claiming a recipe has run."
+        required_sections: [Frozen manuscript scope, Local literature coverage, Section and asset provenance, Integrated manuscript, Build outcome, Quality findings, Remaining gaps]
       minimum_worker_pipeline:
-        minimum_distinct_workers: 12
+        minimum_distinct_workers: 2
         stages:
-          - id: configure_review
-            workers: [review-configurator]
-            produces: "Review scope, manuscript inputs, and reviewer lenses."
-          - id: independent_review_panel
-            workers: [methodology-reviewer, domain-reviewer, adversarial-reviewer, scientific-critic]
-            produces: "Separate reviewer reports with evidence anchors."
-          - id: build_submission_assets
-            workers: [review-synthesizer, synthesis-writer, contribution-ledger-builder, threats-to-validity-writer]
-            produces: "Coverage-checked synthesis, contribution ledger, and threats section."
-          - id: simulate_response
-            workers: [review-response-simulator]
-            produces: "Prioritized author response and repair plan."
-          - id: quality_resolution
-            workers: [quality-controller, integrity-refusal-recommender]
-            produces: "Pack coverage score and explicit refusal or repair recommendations."
+          - id: discover_venue_and_corpus
+            workers: [manuscript-venue-corpus-scout]
+            produces: "Official venue facts and six-axis local-literature coverage."
+          - id: freeze_contract_and_evidence
+            workers: [manuscript-architect, manuscript-evidence-steward]
+            produces: "One frozen manuscript contract and admissible evidence slices."
+          - id: author_adaptive_candidates
+            workers: [manuscript-introduction-author, manuscript-related-work-author,
+                      manuscript-methods-author, manuscript-results-author,
+                      manuscript-section-author, manuscript-figure-table-engineer]
+            produces: "Exactly one candidate bundle per frozen required section plus provenance-bound assets."
+          - id: integrate_canonical_manuscript
+            workers: [manuscript-integrator]
+            produces: "A canonical source tree only after exact required-section closure."
+          - id: independently_audit_and_package
+            workers: [manuscript-factual-auditor, manuscript-citation-auditor,
+                      manuscript-style-latex-auditor, manuscript-submission-packager]
+            produces: "Independent authoring audits and a reviewable authoring evidence package."
       productization_gaps:
-        - "Add an operated recipe with frozen manuscript inputs and independent reviewer bundles."
-        - "Define deterministic claim, citation, contribution, and response coverage checks."
-        - "Add the final Markdown renderer plus operate-level venue and director-gate tests."
-    gate_level: director_signoff
-    budget: {max_agent_hops: 3}
+        - "Add the operated sparse-DAG recipe with scheduler authorization receipts and adaptive section instances."
+        - "Add deterministic candidate-cardinality, integration, build, and quality reducers."
+        - "Add the director-facing renderer and operated fixtures for every paper-type contract."
+    gate_level: record_only
+    budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 3, max_fulltext_reads: 20}
+  manuscript_review:
+    entry_stage: VERIFY
+    stage_path: [VERIFY, REPORT]
+    agent_subset: [manuscript-domain-contribution-reviewer,
+                   manuscript-methods-reproducibility-reviewer,
+                   manuscript-figure-table-reviewer, manuscript-factual-auditor,
+                   manuscript-citation-auditor, manuscript-style-latex-auditor,
+                   review-synthesizer, synthesis-writer, contribution-ledger-builder,
+                   threats-to-validity-writer, review-response-simulator,
+                   manuscript-submission-packager]
+    review_contract:
+      frozen_input_hashes: [contract_sha256, manuscript_sha256, source_tree_sha256, pdf_sha256]
+      required_capability_ids: [domain_contribution, methods_reproducibility, figure_table,
+                                factual, citation, venue_style_latex]
+      capability_workers:
+        domain_contribution: manuscript-domain-contribution-reviewer
+        methods_reproducibility: manuscript-methods-reproducibility-reviewer
+        figure_table: manuscript-figure-table-reviewer
+        factual: manuscript-factual-auditor
+        citation: manuscript-citation-auditor
+        venue_style_latex: manuscript-style-latex-auditor
+      blind_authorization:
+        minimum_distinct_reviewer_receipts: 2
+        distinct_reviewer_instance_ids: true
+        sibling_conclusions_visible_before_freeze: false
+        generation_evidence_counts_as_independent_review: false
+      reconciliation_join:
+        kind: deterministic_meta_review
+        strategy: deterministic_reducer_then_meta_review
+        require_exact_capability_set: true
+        require_frozen_verdicts: true
+        preserve_minority_findings: true
+        meta_review_worker: review-synthesizer
+      parallel_groups:
+        - id: blind_capability_reviews
+          workers: [manuscript-domain-contribution-reviewer,
+                    manuscript-methods-reproducibility-reviewer,
+                    manuscript-figure-table-reviewer, manuscript-factual-auditor,
+                    manuscript-citation-auditor, manuscript-style-latex-auditor]
+          depends_on: []
+        - id: deterministic_reconciliation_and_meta_review
+          workers: [review-synthesizer]
+          depends_on: [blind_capability_reviews]
+        - id: submission_evidence_pack
+          workers: [synthesis-writer, contribution-ledger-builder,
+                    threats-to-validity-writer, review-response-simulator,
+                    manuscript-submission-packager]
+          depends_on: [deterministic_reconciliation_and_meta_review]
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: manuscript-review/v1
+      primary_markdown: director-review/manuscript/manuscript-review.md
+      evidence_namespace: evidence/manuscript-review/
+      reusable_artifacts: [manuscript-review-verdicts.artifact.json,
+                           manuscript-review-reconciliation.artifact.json,
+                           manuscript-submission-package.artifact.json]
+      accepts: [manuscript-authoring/v1]
+    product_maturity:
+      level: registry_routable_spec_only
+      reason: "The six blind review capabilities and reconciliation contract are registry-connected, but no separate review run recipe, receipt verifier, deterministic reducer, renderer, or operated test exists yet."
+      evidence_refs: [tests/test_agent_connectivity.py, tests/test_capability_catalog.py, tests/test_manuscript_delivery_schemas.py]
+      target_markdown:
+        path: director-review/manuscript/manuscript-review.md
+        purpose: "Present independent capability verdicts, deterministic reconciliation, minority findings, and a submission evidence pack while leaving venue, publication, and promotion decisions to the director."
+        required_sections: [Frozen review scope, Blind authorization receipts, Independent capability verdicts, Reconciled findings, Contribution and validity assessment, Required repairs, Director decisions]
+      minimum_worker_pipeline:
+        minimum_distinct_workers: 2
+        stages:
+          - id: run_blind_capability_reviews
+            workers: [manuscript-domain-contribution-reviewer,
+                      manuscript-methods-reproducibility-reviewer,
+                      manuscript-figure-table-reviewer, manuscript-factual-auditor,
+                      manuscript-citation-auditor, manuscript-style-latex-auditor]
+            produces: "Frozen, receipt-bound verdicts for the exact six required capabilities."
+          - id: reconcile_without_erasure
+            workers: [review-synthesizer]
+            produces: "A deterministic-gated meta-review preserving minority and blocking findings."
+          - id: package_review_evidence
+            workers: [synthesis-writer, contribution-ledger-builder,
+                      threats-to-validity-writer, review-response-simulator,
+                      manuscript-submission-packager]
+            produces: "A review-only submission evidence pack and repair plan."
+      productization_gaps:
+        - "Add a review-only operated recipe with frozen authoring inputs and blind scheduler receipts."
+        - "Add deterministic capability closure, receipt uniqueness, reconciliation, and abstention reducers."
+        - "Add the review Markdown renderer and operated tests without sharing generation conclusions."
+    gate_level: record_only
+    budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 2}
   aers_enhanced_research_pack:
     entry_stage: DISCOVER
     stage_path: [DISCOVER, DESIGN, EXECUTE, ANALYZE, VERIFY, REPORT]
