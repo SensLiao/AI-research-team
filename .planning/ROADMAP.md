@@ -15,22 +15,46 @@ The accepted scope is one coherent vertical product capability: the director can
 ## Phase Details
 
 ### Phase 1: Operated AI Manuscript Authoring
+
 **Goal**: The director can turn local, auditable AI-research evidence into an integrated LaTeX manuscript through distinct operated authoring and review paths, receiving honest build status, readable work-in-progress, and strict submission-readiness evidence without writing to the database.
 **Depends on**: Nothing (first phase)
 **Requirements**: OPER-01, OPER-02, OPER-03, PREP-01, PREP-02, PREP-03, PREP-04, EVID-01, EVID-02, EVID-03, ORCH-01, ORCH-02, LATX-01, LATX-02, ASST-01, AUDT-01, DELV-01, DELV-02, SAFE-01, SAFE-02, SAFE-03, PLAT-01, PLAT-02, VERI-01, VERI-02, VERI-03, VERI-04, VERI-05
 **Success Criteria** (what must be TRUE):
+
   1. The director can start and resume distinct operated authoring and manuscript-review/rebuttal runs; capability facts identify them as operated only when their recipes exist, local evidence is assessed before any deficit-triggered use of the existing search engine, and neither path introduces an OpenAlex download or database-write path.
   2. Before section drafting begins, the director can inspect the frozen paper type, venue family, complete manuscript snapshot, evidence/result references, and resolved token cascade; dependency-scoped authors then produce sections that one integrator reconciles into a coherent manuscript with provenance-bound figures and tables.
   3. The director receives a complete native LaTeX source tree and either a genuinely compiled PDF from a detected engine or an explicit `TOOLCHAIN_MISSING` status; the system never presents a nonexistent or uncompiled PDF as real.
   4. The director can read the overview, coverage report, authoring plan, manuscript, quality report, independent reviewer report, and submission checklist under `director-review/`, with an honest usability status and deterministic findings for claim/evidence/number/citation closure, terminology, labels, venue rules, anonymity, execution truth, secret safety, and build integrity.
   5. A developer can run the local-first end-to-end fixture and the relevant unit, integration, operated-mode, AI-eval, security, and completion checks on the supported Windows/Linux Python runtime, obtaining evidence that search activation, token precedence, unsafe-path/database boundaries, required roles, false claims, and PDF status behave as specified.
-**Plans**: 20 plans across 6 dependency waves (`01-01` through `01-20`), covering contracts, roles, retrieval safety, orchestration, LaTeX/assets, operated recipes, and release evidence.
+
+**Plans**: 1/20 plans executed
+
+- [x] 01-01-PLAN.md
+- [ ] 01-02-PLAN.md
+- [ ] 01-03-PLAN.md
+- [ ] 01-04-PLAN.md
+- [ ] 01-05-PLAN.md
+- [ ] 01-06-PLAN.md
+- [ ] 01-07-PLAN.md
+- [ ] 01-08-PLAN.md
+- [ ] 01-09-PLAN.md
+- [ ] 01-10-PLAN.md
+- [ ] 01-11-PLAN.md
+- [ ] 01-12-PLAN.md
+- [ ] 01-13-PLAN.md
+- [ ] 01-14-PLAN.md
+- [ ] 01-15-PLAN.md
+- [ ] 01-16-PLAN.md
+- [ ] 01-17-PLAN.md
+- [ ] 01-18-PLAN.md
+- [ ] 01-19-PLAN.md
+- [ ] 01-20-PLAN.md
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Operated AI Manuscript Authoring | 0/20 | Planned | - |
+| 1. Operated AI Manuscript Authoring | 1/20 | In Progress|  |
 
 ## Requirement Coverage
 

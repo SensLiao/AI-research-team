@@ -14,20 +14,20 @@
 ### Pre-Draft Contract
 
 - [ ] **PREP-01**: Before drafting, the run selects and freezes a paper type and realistic target-venue family, prioritizing current top AI or CCF A-class-equivalent venues while treating official venue rules as authoritative.
-- [ ] **PREP-02**: Before parallel authoring, the run freezes a manuscript snapshot containing the paper brief, outline, claim ledger, evidence/result references, terminology/notation, venue profile, bibliography state, figure/table plan, and resolved Paper Design Tokens.
+- [x] **PREP-02**: Before parallel authoring, the run freezes a manuscript snapshot containing the paper brief, outline, claim ledger, evidence/result references, terminology/notation, venue profile, bibliography state, figure/table plan, and resolved Paper Design Tokens.
 - [ ] **PREP-03**: Paper Design Tokens resolve deterministically with precedence `base -> paper type -> venue -> project -> run override`.
 - [ ] **PREP-04**: The resolved token contract distinguishes the small hard-rule set—official template/anonymity, traceability, terminology/notation, figure provenance, compile/cross-reference integrity, and no fabrication—from advisory structure, voice, caption, rhetoric, and formatting guidance.
 
 ### Evidence Coverage
 
-- [ ] **EVID-01**: Each authoring run recalls and reads relevant papers and notes from the read-only PhD-Research-OS database first, then emits an explicit local-literature coverage assessment.
+- [x] **EVID-01**: Each authoring run recalls and reads relevant papers and notes from the read-only PhD-Research-OS database first, then emits an explicit local-literature coverage assessment.
 - [ ] **EVID-02**: Only a documented comparison, implementation, method, dataset, metric, or industry-prior-art deficit activates the existing paper-search engine, and network/search failure remains distinguishable from genuine evidence absence.
 - [ ] **EVID-03**: The authoring and review paths contain no OpenAlex PDF downloader, bulk-download/content API, corpus-construction, or automatic PDF acquisition path; OpenAlex may remain metadata-only inside the existing search engine.
 
 ### Multi-Agent Authoring
 
 - [ ] **ORCH-01**: Authoring runs use a sparse dependency DAG with explicit venue/corpus reconnaissance, paper architecture, evidence stewardship, section author, figure/table, integration, independent factual/citation/style/LaTeX audit, and submission-packaging roles.
-- [ ] **ORCH-02**: Each section author receives the frozen shared context plus only its declared dependency slice, and one integrator owns terminology, notation, claim, citation, number, figure, and cross-section coherence.
+- [x] **ORCH-02**: Each section author receives the frozen shared context plus only its declared dependency slice, and one integrator owns terminology, notation, claim, citation, number, figure, and cross-section coherence.
 
 ### LaTeX and Assets
 
@@ -54,7 +54,7 @@
 - [ ] **VERI-01**: A local-first end-to-end fixture reaches frozen context, dependency-safe authoring bundles, integration, LaTeX generation, quality gates, director-review Markdown, and honest PDF build status.
 - [ ] **VERI-02**: Automated tests prove sufficient local evidence suppresses online search, explicit deficits activate only the existing search engine, search failures remain explicit, and no OpenAlex download code path exists.
 - [ ] **VERI-03**: Automated tests prove token cascade precedence and hard-rule versus advisory-rule separation.
-- [ ] **VERI-04**: Negative-path tests reject or surface unsupported citations/numbers, false execution claims, database writes, unsafe paths, missing required roles, inconsistent terminology/labels, secret leakage, and false PDF claims at the correct gate.
+- [x] **VERI-04**: Negative-path tests reject or surface unsupported citations/numbers, false execution claims, database writes, unsafe paths, missing required roles, inconsistent terminology/labels, secret leakage, and false PDF claims at the correct gate.
 - [ ] **VERI-05**: Relevant unit, integration, operated-mode, AI-eval, security, and completion verification commands pass and leave inspectable evidence artifacts.
 
 ## v2 Requirements
@@ -81,14 +81,14 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | OPER-02 | Phase 1 | Pending |
 | OPER-03 | Phase 1 | Pending |
 | PREP-01 | Phase 1 | Pending |
-| PREP-02 | Phase 1 | Pending |
+| PREP-02 | Phase 1 | Complete |
 | PREP-03 | Phase 1 | Pending |
 | PREP-04 | Phase 1 | Pending |
-| EVID-01 | Phase 1 | Pending |
+| EVID-01 | Phase 1 | Complete |
 | EVID-02 | Phase 1 | Pending |
 | EVID-03 | Phase 1 | Pending |
 | ORCH-01 | Phase 1 | Pending |
-| ORCH-02 | Phase 1 | Pending |
+| ORCH-02 | Phase 1 | Complete |
 | LATX-01 | Phase 1 | Pending |
 | LATX-02 | Phase 1 | Pending |
 | ASST-01 | Phase 1 | Pending |
@@ -103,10 +103,11 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | VERI-01 | Phase 1 | Pending |
 | VERI-02 | Phase 1 | Pending |
 | VERI-03 | Phase 1 | Pending |
-| VERI-04 | Phase 1 | Pending |
+| VERI-04 | Phase 1 | Complete |
 | VERI-05 | Phase 1 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 28 total
 - Mapped to phases: 28
 - Unmapped: 0 ✓
