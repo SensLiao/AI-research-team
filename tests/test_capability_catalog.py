@@ -51,11 +51,18 @@ def test_spec_only_modes_are_honestly_not_push_button():
     assert "spec_only_not_push_button" in modes["design_experiment"]["honesty_notes"]
     assert "target_product_contract_not_implemented" in modes["design_experiment"]["honesty_notes"]
 
+    for name in ("manuscript_authoring", "manuscript_review"):
+        assert modes[name]["status"] == "spec_only"
+        assert modes[name]["runnable_surface"] == "registry_defined_not_one_button"
+        assert modes[name]["operate_recipe_present"] is False
+        assert "spec_only_not_push_button" in modes[name]["honesty_notes"]
+        assert "target_product_contract_not_implemented" in modes[name]["honesty_notes"]
+
 
 def test_every_spec_only_mode_has_a_machine_readable_target_product_contract():
     catalog = build_capability_catalog()
     spec_only = [row for row in catalog["modes"] if row["status"] == "spec_only"]
-    assert len(spec_only) == 15
+    assert len(spec_only) == 16
     assert catalog["summary"]["spec_only_product_contracts"] == len(spec_only)
 
     for row in spec_only:
@@ -100,7 +107,8 @@ def test_spec_only_maturity_matrix_and_target_markdown_paths_are_pinned():
         "power_analysis_review",
         "repo_code_audit",
         "analysis_audit_panel",
-        "manuscript_review_pack",
+        "manuscript_authoring",
+        "manuscript_review",
         "aers_enhanced_research_pack",
     }
     assert {
@@ -129,7 +137,8 @@ def test_spec_only_maturity_matrix_and_target_markdown_paths_are_pinned():
         "tree_explore": "director-review/experiments/experiment-tree-menu.md",
         "repo_code_audit": "director-review/code/repo-code-audit.md",
         "analysis_audit_panel": "director-review/analysis/analysis-audit-report.md",
-        "manuscript_review_pack": "director-review/manuscript/manuscript-review-pack.md",
+        "manuscript_authoring": "director-review/manuscript/manuscript-authoring.md",
+        "manuscript_review": "director-review/manuscript/manuscript-review.md",
         "aers_enhanced_research_pack": "director-review/research/aers-enhanced-research-pack.md",
     }
     assert {
@@ -139,7 +148,125 @@ def test_spec_only_maturity_matrix_and_target_markdown_paths_are_pinned():
 
     summary = build_capability_catalog()["summary"]
     assert summary["spec_only_engine_tested_modes"] == 10
-    assert summary["spec_only_registry_routable_modes"] == 5
+    assert summary["spec_only_registry_routable_modes"] == 6
+
+
+def test_manuscript_modes_are_distinct_declarative_contracts_not_operate_recipes():
+    registry_modes = load_mode_registry()["modes"]
+    catalog_modes = _modes_by_name(build_capability_catalog())
+
+    assert "manuscript_review_pack" not in registry_modes
+    assert "manuscript_review_pack" not in catalog_modes
+    assert {"manuscript_authoring", "manuscript_review"}.isdisjoint(REGISTRY)
+
+    authoring = registry_modes["manuscript_authoring"]
+    review = registry_modes["manuscript_review"]
+    assert "operated" not in authoring
+    assert "operated" not in review
+    assert authoring["stage_path"] == ["DISCOVER", "DESIGN", "ANALYZE", "VERIFY", "REPORT"]
+    assert review["stage_path"] == ["VERIFY", "REPORT"]
+    assert authoring["handoff"]["product_version"] == "manuscript-authoring/v1"
+    assert review["handoff"]["product_version"] == "manuscript-review/v1"
+    assert review["handoff"]["accepts"] == ["manuscript-authoring/v1"]
+    assert authoring["handoff"]["evidence_namespace"] != review["handoff"]["evidence_namespace"]
+    assert set(authoring["handoff"]["reusable_artifacts"]).isdisjoint(
+        review["handoff"]["reusable_artifacts"]
+    )
+
+
+def test_manuscript_authoring_contract_is_sparse_adaptive_and_section_complete():
+    mode = load_mode_registry()["modes"]["manuscript_authoring"]
+    contract = mode["authoring_contract"]
+    scheduler = mode["scheduler_contract"]
+    fixture_contract = mode["paper_type_contract_fixtures"]
+    fixtures = fixture_contract["cases"]
+
+    specialized = {
+        "introduction": "manuscript-introduction-author",
+        "related_work": "manuscript-related-work-author",
+        "methods": "manuscript-methods-author",
+        "results": "manuscript-results-author",
+    }
+    assert contract["specialized_owners"] == specialized
+    assert contract["remaining_required_section_owner"] == "manuscript-section-author"
+    assert contract["candidate_artifact_type"] == "manuscript_section_bundle"
+    assert contract["candidate_bundles_per_required_section"] == 1
+    assert contract["integrator"] == "manuscript-integrator"
+    assert contract["integrator_may_author_missing_prose"] is False
+    assert scheduler["dependency_model"] == "sparse_dag"
+    assert scheduler["adaptive_instances"]["fixed_section_worker_count"] is False
+    assert fixture_contract["fixed_section_count"] is False
+    assert set(fixtures) == {"empirical", "theory", "dataset", "survey", "system"}
+
+    section_lengths = set()
+    for fixture in fixtures.values():
+        sections = fixture["required_sections"]
+        section_lengths.add(len(sections))
+        assert len(sections) == len(set(sections))
+        assert "abstract" in sections
+        assert {"discussion", "conclusion"} & set(sections)
+        assert {"limitations", "ethics_statement"} & set(sections)
+        assert "appendix" in sections
+        assert any(section.startswith("venue_") for section in sections)
+        assignments = {
+            section: specialized.get(section, contract["remaining_required_section_owner"])
+            for section in sections
+        }
+        assert set(assignments) == set(sections)
+        assert all(assignments[section] == specialized[section]
+                   for section in set(sections) & set(specialized))
+        assert all(
+            assignments[section] == "manuscript-section-author"
+            for section in set(sections) - set(specialized)
+        )
+    assert len(section_lengths) > 1
+
+    groups = {row["id"]: row for row in scheduler["parallel_groups"]}
+    assert len(groups) == len(scheduler["parallel_groups"])
+    assert "manuscript-section-author" in groups["author_candidates"]["workers"]
+    assert groups["integrate_canonical_tree"]["depends_on"] == ["author_candidates"]
+    assert groups["independent_authoring_audits"]["depends_on"] == [
+        "integrate_canonical_tree"
+    ]
+
+
+def test_manuscript_review_contract_requires_blind_capability_closure_and_join():
+    mode = load_mode_registry()["modes"]["manuscript_review"]
+    contract = mode["review_contract"]
+    required_capabilities = {
+        "domain_contribution",
+        "methods_reproducibility",
+        "figure_table",
+        "factual",
+        "citation",
+        "venue_style_latex",
+    }
+
+    assert set(contract["frozen_input_hashes"]) == {
+        "contract_sha256", "manuscript_sha256", "source_tree_sha256", "pdf_sha256"
+    }
+    assert set(contract["required_capability_ids"]) == required_capabilities
+    assert set(contract["capability_workers"]) == required_capabilities
+    assert set(contract["capability_workers"].values()) <= set(mode["agent_subset"])
+    blind = contract["blind_authorization"]
+    assert blind["minimum_distinct_reviewer_receipts"] == 2
+    assert blind["distinct_reviewer_instance_ids"] is True
+    assert blind["sibling_conclusions_visible_before_freeze"] is False
+    assert blind["generation_evidence_counts_as_independent_review"] is False
+
+    join = contract["reconciliation_join"]
+    assert join["kind"] == "deterministic_meta_review"
+    assert join["strategy"] == "deterministic_reducer_then_meta_review"
+    assert join["require_exact_capability_set"] is True
+    assert join["require_frozen_verdicts"] is True
+    assert join["preserve_minority_findings"] is True
+    groups = {row["id"]: row for row in contract["parallel_groups"]}
+    assert set(groups["blind_capability_reviews"]["workers"]) == set(
+        contract["capability_workers"].values()
+    )
+    assert groups["deterministic_reconciliation_and_meta_review"]["depends_on"] == [
+        "blind_capability_reviews"
+    ]
 
 
 def test_aers_pack_and_m2_accept_keep_execution_claims_honest():
