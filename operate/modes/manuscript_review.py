@@ -14,7 +14,9 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+from .. import bounded_repair
 from ..artifacts import GateBlock, write_artifact
+from . import _shared
 from ...tools.manuscript_security import ManuscriptPathViolation, validate_run_owned_path
 from ...tools.validate_artifact import validate_payload
 
@@ -41,6 +43,14 @@ CAPABILITY_ROLES = {
     "factual": "SCIENTIFIC",
     "citation": "EXACT_CITATION",
     "venue_style_latex": "VENUE",
+}
+CAPABILITY_WORKER_LABELS = {
+    "domain_contribution": "manuscript-domain-contribution-reviewer",
+    "methods_reproducibility": "manuscript-methods-reproducibility-reviewer",
+    "figure_table": "manuscript-figure-table-reviewer",
+    "factual": "manuscript-factual-auditor",
+    "citation": "manuscript-citation-auditor",
+    "venue_style_latex": "manuscript-style-latex-auditor",
 }
 _CAPABILITY_RE = re.compile(r"^[a-z_]+$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -73,7 +83,7 @@ def _fail(message: str) -> None:
 def capability_bundle_rel(capability: str, *, suffix: str = "primary") -> str:
     if capability not in REQUIRED_CAPABILITY_IDS or not _CAPABILITY_RE.fullmatch(suffix):
         raise ManuscriptReviewError("invalid review capability bundle path")
-    return f"inbox/manuscript-review/bundles/{capability}--{suffix}.json"
+    return f"inbox/manuscript-review/bundles/{capability}--{suffix}.bundle.json"
 
 
 def _review_path(run_dir: str | Path, relative: str, *, write: bool = False) -> Path:
@@ -232,28 +242,63 @@ def prepare_review_precommit(run_dir: str | Path, timestamp: str) -> dict[str, A
     return precommit
 
 
-def llm_step(run_dir: str | Path, stage: str, action: str) -> dict[str, Any]:
-    """Expose a sparse blind panel contract for the existing scheduler layer."""
+def llm_step(
+    run_dir: str | Path,
+    stage: str,
+    request: str,
+    vault: str | None = None,
+    model_policy: str = "max_quality",
+) -> dict[str, Any] | None:
+    """Expose the VERIFY blind panel and REPORT packager through normal operate wiring.
 
-    if stage != "VERIFY" or action != "review":
-        raise ManuscriptReviewError("manuscript review only dispatches a VERIFY review panel")
-    precommit = prepare_review_precommit(run_dir, "scheduler-precommit")
-    workers = []
-    for capability in REQUIRED_CAPABILITY_IDS:
-        workers.append(
-            {
-                "capability_id": capability,
-                "role": CAPABILITY_ROLES[capability],
-                "output": capability_bundle_rel(capability),
-                "input_contract": {
-                    "blind": True,
-                    "frozen_inputs": precommit["frozen_inputs"],
-                    "forbidden_inputs": ["authoring-self-audit conclusions", "sibling reviewer conclusions"],
-                },
-                "prompt": f"Blind {capability} reviewer: sibling reviewer conclusions are forbidden.",
-            }
-        )
-    return {"group_barriers": False, "workers": workers, "precommit": PRECOMMIT_REL}
+    The generic wiring smoke intentionally opens a fresh run before the director
+    has supplied the cross-run review input.  That may expose role contracts but
+    must not manufacture a precommit or access another run.  The real panel
+    obtains frozen inputs only once ``INPUT_REL`` exists.
+    """
+
+    del vault, model_policy
+    if stage == "VERIFY":
+        input_path = _review_path(run_dir, INPUT_REL)
+        precommit = prepare_review_precommit(run_dir, "scheduler-precommit") if input_path.is_file() else None
+        workers = []
+        for capability in REQUIRED_CAPABILITY_IDS:
+            workers.append(
+                {
+                    "label": CAPABILITY_WORKER_LABELS[capability],
+                    "capability_id": capability,
+                    "role": CAPABILITY_ROLES[capability],
+                    "model": "opus",
+                    "output": capability_bundle_rel(capability),
+                    "input_contract": {
+                        "blind": True,
+                        "frozen_inputs": precommit["frozen_inputs"] if precommit else "requires frozen review input",
+                        "forbidden_inputs": ["authoring-self-audit conclusions", "sibling reviewer conclusions"],
+                    },
+                    "prompt": (
+                        f"NORTH STAR: independently assess the frozen manuscript for {request}. "
+                        f"Blind {capability} reviewer: sibling reviewer conclusions are forbidden."
+                    ),
+                }
+            )
+        return {
+            "label": "manuscript-review-blind-panel",
+            "group_barriers": False,
+            "workers": workers,
+            "precommit": PRECOMMIT_REL if precommit else None,
+        }
+    if stage == "REPORT":
+        worker = {
+            "label": "manuscript-submission-packager",
+            "model": "opus",
+            "output": "inbox/manuscript-review/manuscript-submission-packager.bundle.json",
+            "prompt": (
+                f"NORTH STAR: present the independently reconciled review for {request}; "
+                "never submit, merge fixes, or present advisory rebuttal text as applied."
+            ),
+        }
+        return {"label": "manuscript-review-report", "group_barriers": False, "workers": [worker]}
+    return None
 
 
 def _read_bundle(review_dir: Path, capability: str, precommit: Mapping[str, Any]) -> dict[str, Any]:
@@ -420,12 +465,50 @@ def _write_reviewer_report(review_dir: Path, reconciliation: Mapping[str, Any], 
     return path
 
 
+def _report_dets(review_dir: Path, timestamp: str) -> tuple[list[str], dict[str, Any]]:
+    """Publish an already-derived review report without rerunning the panel."""
+
+    reconciliation_path = _review_path(review_dir, RECONCILIATION_REL)
+    if not reconciliation_path.is_file():
+        _fail("REPORT requires a completed independent review reconciliation")
+    reconciliation = _read_json(reconciliation_path, "review reconciliation")
+    verdict_path = review_dir / "evidence" / "VERIFY" / "manuscript-review-verdict.artifact.json"
+    if not verdict_path.is_file():
+        _fail("REPORT requires a completed manuscript review verdict")
+    verdict_artifact = _read_json(verdict_path, "review verdict artifact")
+    verdict = verdict_artifact.get("payload") if isinstance(verdict_artifact.get("payload"), Mapping) else {}
+    blocking = any(
+        row.get("severity") == "BLOCKING" and row.get("status") == "OPEN"
+        for row in reconciliation.get("rows", []) if isinstance(row, Mapping)
+    )
+    result = {
+        "review_run_id": review_dir.name,
+        "verdict_sha256": verdict.get("verdict_sha256"),
+        "daily_state": "BLOCK" if blocking else ("USABLE_WITH_CAVEATS" if reconciliation.get("source_only") else "USABLE"),
+        "submission_ready": False,
+    }
+    report = _write_reviewer_report(review_dir, reconciliation, result)
+    note = {
+        "summary": "Independent manuscript review report rendered from reconciled capability findings; repairs remain advisory candidates.",
+        "references": [REVIEWER_REPORT_REL, RECONCILIATION_REL],
+        "produced_artifacts": ["evidence/VERIFY/manuscript-review-verdict.artifact.json"],
+        "open_questions": ["Director decides whether to revise; this review does not submit or mutate the manuscript."],
+    }
+    note_path = write_artifact(
+        review_dir, "REPORT", "manuscript-review-report-note.artifact.json", "report_note",
+        "manuscript-submission-packager", note, timestamp,
+    )
+    return [note_path, str(report)], result
+
+
 def run_dets(run_dir: str | Path, stage: str, timestamp: str) -> tuple[list[str], dict[str, Any]]:
     """Verify all blind bundles, derive one review verdict, and render review-only advice."""
 
-    if stage != "VERIFY":
-        raise ManuscriptReviewError("manuscript review deterministic work is VERIFY-only")
     review_dir = Path(run_dir).absolute()
+    if stage == "REPORT":
+        return _report_dets(review_dir, timestamp)
+    if stage != "VERIFY":
+        raise ValueError(f"manuscript_review has no stage {stage!r}")
     precommit = prepare_review_precommit(review_dir, timestamp)
     _payload, _authoring_id, _source_dir, details = _load_input(review_dir)
     bundles = {capability: _read_bundle(review_dir, capability, precommit) for capability in REQUIRED_CAPABILITY_IDS}
@@ -454,6 +537,12 @@ def run_dets(run_dir: str | Path, stage: str, timestamp: str) -> tuple[list[str]
     return [artifact_path, str(review_dir / RECONCILIATION_REL), str(report)], result
 
 
+def run_dets_with_repair(run_dir: str | Path, stage: str, timestamp: str):
+    return bounded_repair.attempt_with_repair(
+        run_dir, stage, _shared.budget(run_dir), timestamp, lambda: run_dets(run_dir, stage, timestamp)
+    )
+
+
 __all__ = [
     "CAPABILITY_ROLES",
     "DEFAULT_VAULT",
@@ -466,4 +555,5 @@ __all__ = [
     "llm_step",
     "prepare_review_precommit",
     "run_dets",
+    "run_dets_with_repair",
 ]
