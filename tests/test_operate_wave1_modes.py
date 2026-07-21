@@ -290,10 +290,11 @@ def _validate_written(paths):
 
 # ---------------- registry + router ----------------
 
-def test_registry_has_ten_wired_modes():
+def test_registry_has_twelve_wired_modes():
     assert set(REGISTRY) == {"new_direction", "deep_ideation", "evidence_review", "evidence_deep",
                              "deep_research", "gap_breadth", "venue_readiness", "full_rigor_minimal",
-                             "ingest_paper", "read_paper_deep"}
+                             "ingest_paper", "read_paper_deep",
+                             "manuscript_authoring", "manuscript_review"}
     for mod in REGISTRY.values():
         assert callable(mod.llm_step) and callable(mod.run_dets)
 

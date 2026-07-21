@@ -10,7 +10,7 @@ import pytest
 from research_agent_teams.operate import spine
 from research_agent_teams.operate.cli import cmd_run_dets, cmd_worker
 from research_agent_teams.operate.modes import REGISTRY
-from research_agent_teams.operate.modes import venue_readiness
+from research_agent_teams.operate.modes import manuscript_authoring, manuscript_review, venue_readiness
 from research_agent_teams.operate.panel_scheduler import validate_worker_spec_connectivity
 from research_agent_teams.orchestrator.engine import _resolve_path
 from research_agent_teams.orchestrator.model_policy import decorate_worker_runtime
@@ -26,7 +26,9 @@ TS = "2026-06-13T00:00:00Z"
 EXPECTED_WIRED = {"new_direction", "deep_ideation", "evidence_review", "evidence_deep", "deep_research",
                   "gap_breadth", "venue_readiness", "full_rigor_minimal",
                   # paper-reading upgrade (2026-06-26): the single-paper reading family
-                  "ingest_paper", "read_paper_deep"}
+                  "ingest_paper", "read_paper_deep",
+                  # independent authoring and review are separate one-button products.
+                  "manuscript_authoring", "manuscript_review"}
 
 
 def test_operated_flags_mirror_the_registry_exactly():
@@ -35,6 +37,21 @@ def test_operated_flags_mirror_the_registry_exactly():
     assert flagged == set(REGISTRY) == EXPECTED_WIRED, (
         "a mode is either wired in operate/modes/REGISTRY AND flagged operated:true, or neither — "
         "'works now' claims must never outrun the code (audit H8)")
+
+
+def test_manuscript_operated_entries_are_distinct_concrete_recipes():
+    registry = load_mode_registry()["modes"]
+    assert REGISTRY["manuscript_authoring"] is manuscript_authoring
+    assert REGISTRY["manuscript_review"] is manuscript_review
+    assert manuscript_authoring is not manuscript_review
+    assert registry["manuscript_authoring"]["operated"] is True
+    assert registry["manuscript_review"]["operated"] is True
+    assert "manuscript_review_pack" not in REGISTRY
+    assert "manuscript_review_pack" not in registry
+    for module in (manuscript_authoring, manuscript_review):
+        assert callable(module.llm_step)
+        assert callable(module.run_dets)
+        assert callable(module.run_dets_with_repair)
 
 
 def test_graph_and_registry_still_validate():

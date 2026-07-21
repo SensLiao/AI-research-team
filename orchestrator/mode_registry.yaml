@@ -607,6 +607,7 @@ modes:
     budget: {max_agent_hops: 3}
   manuscript_authoring:
     entry_stage: DISCOVER
+    operated: true   # concrete sparse-DAG recipe is wired in operate/modes/__init__.py::REGISTRY
     stage_path: [DISCOVER, DESIGN, ANALYZE, VERIFY, REPORT]
     agent_subset: [manuscript-venue-corpus-scout, manuscript-architect,
                    manuscript-evidence-steward, manuscript-introduction-author,
@@ -700,43 +701,11 @@ modes:
                            manuscript-asset-manifest.artifact.json, manuscript-build-receipt.artifact.json,
                            manuscript-quality-report.artifact.json]
       accepts: [paper-reading/v3, evidence-deep/v2, research-brief/v2]
-    product_maturity:
-      level: registry_routable_spec_only
-      reason: "The complete manuscript role graph and adaptive section contract are registry-connected, but no operate recipe, deterministic reducer, renderer, or operated test exists yet."
-      evidence_refs: [tests/test_agent_connectivity.py, tests/test_capability_catalog.py, tests/test_manuscript_schema_contracts.py]
-      target_markdown:
-        path: director-review/manuscript/manuscript-authoring.md
-        purpose: "Deliver the frozen design, candidate provenance, canonical LaTeX manuscript, and honest build/quality state without claiming a recipe has run."
-        required_sections: [Frozen manuscript scope, Local literature coverage, Section and asset provenance, Integrated manuscript, Build outcome, Quality findings, Remaining gaps]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 2
-        stages:
-          - id: discover_venue_and_corpus
-            workers: [manuscript-venue-corpus-scout]
-            produces: "Official venue facts and six-axis local-literature coverage."
-          - id: freeze_contract_and_evidence
-            workers: [manuscript-architect, manuscript-evidence-steward]
-            produces: "One frozen manuscript contract and admissible evidence slices."
-          - id: author_adaptive_candidates
-            workers: [manuscript-introduction-author, manuscript-related-work-author,
-                      manuscript-methods-author, manuscript-results-author,
-                      manuscript-section-author, manuscript-figure-table-engineer]
-            produces: "Exactly one candidate bundle per frozen required section plus provenance-bound assets."
-          - id: integrate_canonical_manuscript
-            workers: [manuscript-integrator]
-            produces: "A canonical source tree only after exact required-section closure."
-          - id: independently_audit_and_package
-            workers: [manuscript-factual-auditor, manuscript-citation-auditor,
-                      manuscript-style-latex-auditor, manuscript-submission-packager]
-            produces: "Independent authoring audits and an authoring-scoped evidence package."
-      productization_gaps:
-        - "Add the operated sparse-DAG recipe with scheduler authorization receipts and adaptive section instances."
-        - "Add deterministic candidate-cardinality, integration, build, and quality reducers."
-        - "Add the director-facing renderer and operated fixtures for every paper-type contract."
     gate_level: record_only
     budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 3, max_fulltext_reads: 20}
   manuscript_review:
     entry_stage: VERIFY
+    operated: true   # concrete independent review recipe is wired in operate/modes/__init__.py::REGISTRY
     stage_path: [VERIFY, REPORT]
     agent_subset: [manuscript-domain-contribution-reviewer,
                    manuscript-methods-reproducibility-reviewer,
@@ -801,36 +770,6 @@ modes:
                            manuscript-review-reconciliation.artifact.json,
                            manuscript-submission-package.artifact.json]
       accepts: [manuscript-authoring/v1]
-    product_maturity:
-      level: registry_routable_spec_only
-      reason: "The six blind review capabilities and reconciliation contract are registry-connected, but no separate review run recipe, receipt verifier, deterministic reducer, renderer, or operated test exists yet."
-      evidence_refs: [tests/test_agent_connectivity.py, tests/test_capability_catalog.py, tests/test_manuscript_delivery_schemas.py]
-      target_markdown:
-        path: director-review/manuscript/manuscript-review.md
-        purpose: "Present independent capability verdicts, deterministic reconciliation, minority findings, and a submission evidence pack while leaving venue, publication, and promotion decisions to the director."
-        required_sections: [Frozen review scope, Blind authorization receipts, Independent capability verdicts, Reconciled findings, Contribution and validity assessment, Required repairs, Director decisions]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 2
-        stages:
-          - id: run_blind_capability_reviews
-            workers: [manuscript-domain-contribution-reviewer,
-                      manuscript-methods-reproducibility-reviewer,
-                      manuscript-figure-table-reviewer, manuscript-factual-auditor,
-                      manuscript-citation-auditor, manuscript-style-latex-auditor]
-            produces: "Frozen, receipt-bound verdicts for the exact six required capabilities."
-          - id: reconcile_without_erasure
-            workers: [review-synthesizer]
-            produces: "A deterministic-gated meta-review preserving minority and blocking findings."
-          - id: package_review_evidence
-            workers: [synthesis-writer, contribution-ledger-builder,
-                      threats-to-validity-writer, review-response-simulator,
-                      manuscript-submission-packager]
-            produces: "A review-only submission evidence pack and repair plan."
-      productization_gaps:
-        - "Add a review-only operated recipe with frozen authoring inputs and blind scheduler receipts."
-        - "Add deterministic capability closure, receipt uniqueness, reconciliation, and abstention reducers."
-        - "Freeze and path-enforce the review evidence namespace in task frames before the recipe becomes operated."
-        - "Add the review Markdown renderer and operated tests without sharing generation conclusions."
     gate_level: record_only
     budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 2}
   aers_enhanced_research_pack:
