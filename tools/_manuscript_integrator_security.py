@@ -338,8 +338,8 @@ def validate_svg(data: bytes, asset_ref: str, *, fail: Callable[..., None]) -> N
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         fail("UNSAFE_ASSET_CONTENT", "SVG asset is not UTF-8", asset_ref)
-    if re.search(r"<!DOCTYPE|<!ENTITY", text, re.I):
-        fail("UNSAFE_ASSET_CONTENT", "SVG document declarations are not allowed", asset_ref)
+    if re.search(r"<!DOCTYPE|<!ENTITY|<\?", text, re.I):
+        fail("UNSAFE_ASSET_CONTENT", "SVG declarations and processing instructions are not allowed", asset_ref)
     try:
         root = ElementTree.fromstring(text)
     except ElementTree.ParseError:
@@ -381,9 +381,10 @@ def scan_candidate_text(files: Mapping[str, bytes], *, fail: Callable[..., None]
                 fail("TEXT_ENCODING_INVALID", "durable text is not complete UTF-8", path)
             for name, pattern in (patterns or {}).items():
                 raw = pattern.pattern if hasattr(pattern, "pattern") else str(pattern)
+                flags = getattr(pattern, "flags", 0) & ~re.UNICODE
                 try:
-                    byte_pattern = re.compile(raw.encode("ascii"))
-                except (UnicodeEncodeError, re.error):
+                    byte_pattern = re.compile(raw.encode("ascii"), flags)
+                except (UnicodeEncodeError, ValueError, re.error):
                     fail("SECRET_SCAN_INDETERMINATE", f"pattern {name!r} cannot scan binary bytes", path)
                 if byte_pattern.search(data):
                     fail("SECRET_LEAKAGE", f"secret pattern {name!r} found in durable output", path)
