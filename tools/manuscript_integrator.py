@@ -27,7 +27,9 @@ from research_agent_teams.tools._manuscript_integrator_security import (
     safe_run_file as _security_safe_run_file,
     scan_candidate_text as _security_scan_candidate_text,
     stable_bytes as _security_stable_bytes,
+    validate_asset_source_inputs as _security_validate_asset_source_inputs,
     validate_contract as _security_validate_contract,
+    validate_svg as _security_validate_svg,
     verify_result as _security_verify_result,
 )
 from research_agent_teams.tools.manuscript_security import (
@@ -75,6 +77,7 @@ def _fail(code: str, message: str, *refs: str) -> None:
 
 
 _stable_bytes = partial(_security_stable_bytes, fail=_fail)
+_validate_asset_source_inputs = partial(_security_validate_asset_source_inputs, fail=_fail)
 _read_json = partial(_security_read_json, fail=_fail, max_format_repairs=MAX_FORMAT_REPAIRS)
 _safe_run_file = partial(_security_safe_run_file, fail=_fail)
 _validate_contract = partial(_security_validate_contract, fail=_fail)
@@ -82,6 +85,7 @@ _require_verification = partial(_security_require_verification, fail=_fail)
 _receipt_row = partial(_security_receipt_row, fail=_fail)
 _verify_result = partial(_security_verify_result, fail=_fail)
 _scan_candidate_text = partial(_security_scan_candidate_text, fail=_fail)
+_validate_svg = partial(_security_validate_svg, fail=_fail)
 
 def _canonical_bytes(value: Any) -> bytes:
     try:
@@ -298,7 +302,7 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
     claims = {row["claim_id"] for row in contract["claim_ledger"]}
     results = {row["ref"] for row in contract["result_refs"]}
     planned = {row["asset_id"]: row for row in contract["asset_plan"]}
-    source_hashes = {row["ref"]: row["sha256"] for row in contract["source_hashes"]}
+    source_inventory = {row["ref"]: row for row in contract["source_hashes"]}
     for asset in assets:
         asset_id = asset["asset_id"]
         output = asset["output"]
@@ -324,24 +328,18 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
         source_value = asset_sources.get(asset_id)
         if source_value is None:
             _fail("ASSET_SOURCE_MISSING", "asset has no explicitly declared source file", asset_id)
+        provenance = asset["provenance"]
         plan = planned.get(asset_id)
         input_refs = {row["ref"] for row in asset["source_inputs"]}
         if (plan is None or input_refs != set(plan["source_refs"])
                 or set(asset["result_refs"]) != set(plan["result_refs"])):
             _fail("ASSET_SOURCE_INPUT_MISMATCH", "asset inputs differ from the frozen asset plan", asset_id)
-        for source_input in asset["source_inputs"]:
-            expected = source_hashes.get(source_input["ref"])
-            if expected is None or expected != source_input["sha256"]:
-                _fail("ASSET_SOURCE_INPUT_MISMATCH", "asset input hash is absent or stale", asset_id)
-            if source_input["kind"] == "FROZEN_RESULT":
-                _verify_result(source_input["ref"], contract, run_root, result_verifier)
-            elif source_input["kind"] != "DIRECTOR_ASSET":
-                input_path = _safe_run_file(
-                    source_input["ref"], run_root=run_root, owned_roots=(run_root,)
-                )
-                _stable_bytes(input_path, expected_sha256=source_input["sha256"])
+        trusted_inputs = _validate_asset_source_inputs(
+            asset["source_inputs"], source_inventory=source_inventory,
+            provenance_kind=provenance["kind"], contract=contract, run_root=run_root,
+            result_verifier=result_verifier,
+        )
         source_path = Path(source_value).absolute()
-        provenance = asset["provenance"]
         if provenance["kind"] == "EXTERNAL":
             try:
                 checked = validate_run_owned_path(
@@ -371,27 +369,28 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
         data = _stable_bytes(source_path, expected_sha256=output["sha256"])
         if len(data) != output["byte_size"]:
             _fail("ASSET_SOURCE_CHANGED", "asset bytes changed or do not match output facts", asset_id)
-        director_inputs = [row for row in asset["source_inputs"] if row["kind"] == "DIRECTOR_ASSET"]
-        if director_inputs and any(row["sha256"] != _bytes_hash(data) for row in director_inputs):
+        director_inputs = [row for row in trusted_inputs if row["kind"] == "ASSET"]
+        if director_inputs and any(
+            row["ref"] != provenance.get("external_source", {}).get("source_ref")
+            or row["sha256"] != _bytes_hash(data) for row in director_inputs
+        ):
             _fail("DIRECTOR_ASSET_HASH_MISMATCH", "director input hash does not match copied bytes", asset_id)
         if provenance["kind"] == "GENERATED":
             command = provenance["render_command"]
             facts = {
+                "run_id": contract["run_id"],
+                "manuscript_snapshot_sha256": contract["manuscript_snapshot_sha256"],
                 "asset_id": asset_id, "argv": command["argv"],
+                "script_ref": command["script_ref"], "script_sha256": command["script_sha256"],
                 "command_receipt_sha256": command["command_receipt_sha256"],
-                "source_inputs": asset["source_inputs"], "output_sha256": output["sha256"],
+                "source_inputs": trusted_inputs, "output_sha256": output["sha256"],
             }
             _require_verification(
                 command_verifier, facts, missing="GENERATED_RECEIPT_UNVERIFIED",
                 invalid="GENERATED_RECEIPT_UNVERIFIED",
             )
         if output_path.lower().endswith(".svg"):
-            try:
-                svg = data.decode("utf-8")
-            except UnicodeDecodeError:
-                _fail("UNSAFE_ASSET_CONTENT", "SVG asset is not UTF-8", asset_id)
-            if re.search(r"<script\b|\bonload\s*=|\bhref\s*=\s*['\"](?:https?:|file:|data:)", svg, re.I):
-                _fail("UNSAFE_ASSET_CONTENT", "SVG contains active or external content", asset_id)
+            _validate_svg(data, asset_id)
         files[output_path] = data
 
     if set(planned) != seen_ids:
