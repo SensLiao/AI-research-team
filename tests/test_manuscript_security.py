@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
+from urllib.parse import quote_plus
 
 import pytest
 
@@ -24,24 +26,28 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _real_frozen_result() -> dict:
-    raw_sha = "a" * 64
+def _auditable_fixture_result() -> dict:
+    raw_bytes = "fixture-result:v1|accuracy=0.81"
+    receipt_bytes = "fixture-receipt:v1|executor=deterministic|exit=0"
+    raw_sha = hashlib.sha256(raw_bytes.encode("utf-8")).hexdigest()
     return {
         "status": "FROZEN",
-        "raw_source": {"sha256": raw_sha},
+        "synthetic_fixture": True,
+        "raw_source": {"canonical_bytes": raw_bytes, "sha256": raw_sha},
         "executor_receipt": {
-            "executor_kind": "SIGNED_EXTERNAL_EXECUTOR",
+            "executor_kind": "DETERMINISTIC_FIXTURE_NON_LLM",
             "exit_code": 0,
             "raw_source_sha256": raw_sha,
-            "receipt_sha256": "b" * 64,
-            "fixture_only": False,
+            "receipt_canonical_bytes": receipt_bytes,
+            "receipt_sha256": hashlib.sha256(receipt_bytes.encode("utf-8")).hexdigest(),
+            "fixture_only": True,
         },
         "admissibility": {
             "observed_evidence": True,
             "plan_only": False,
             "script_only": False,
             "metadata_only": False,
-            "real_research_execution": True,
+            "real_research_execution": False,
         },
     }
 
@@ -143,6 +149,31 @@ def test_windows_reparse_simulation_rejects_future_output(tmp_path, monkeypatch)
         validate_run_owned_path(junction / "future" / "paper.tex", run_root=run_root)
 
 
+def test_hardlink_output_alias_is_rejected_without_touching_director_asset(tmp_path):
+    run_root = tmp_path / "runs" / "r1"
+    director_root = tmp_path / "director-assets"
+    run_root.mkdir(parents=True)
+    director_root.mkdir()
+    asset = director_root / "source.txt"
+    asset.write_text("director-owned", encoding="utf-8")
+    alias = run_root / "output.txt"
+    try:
+        os.link(asset, alias)
+    except OSError as exc:
+        pytest.skip(f"hard links unavailable on this filesystem: {exc}")
+    before = _sha256(asset)
+
+    with pytest.raises(ManuscriptPathViolation, match="HARDLINK_PATH"):
+        validate_run_owned_path(
+            alias,
+            run_root=run_root,
+            purpose="write",
+            director_asset_roots=(director_root,),
+        )
+
+    assert _sha256(asset) == before
+
+
 @pytest.mark.parametrize(
     "candidate",
     ["figures/plot\u00a0one.pdf", "figures/trailing-space .pdf ", "figures/trailing-dot."],
@@ -219,6 +250,39 @@ def test_vault_write_and_scope_permission_violation_leave_external_files_unchang
     assert _sha256(marker) == before
 
 
+def test_scope_validation_never_falls_back_to_environment(tmp_path, monkeypatch):
+    from research_agent_teams.tools import scope_guard
+
+    runs_root = tmp_path / "runs"
+    run_root = runs_root / "r1"
+    target = run_root / "evidence" / "DESIGN" / "note.md"
+    target.parent.mkdir(parents=True)
+    monkeypatch.setattr(
+        scope_guard,
+        "discover_vault_root",
+        lambda: pytest.fail("vault environment discovery"),
+    )
+    monkeypatch.setattr(
+        scope_guard,
+        "discover_projects_root",
+        lambda: pytest.fail("projects environment discovery"),
+    )
+
+    result = validate_run_owned_path(
+        target,
+        run_root=run_root,
+        scope={
+            "run_root": str(runs_root),
+            "run_id": "r1",
+            "stage": "DESIGN",
+            "vault_root": None,
+            "projects_root": "",
+        },
+    )
+
+    assert result["scope_checked"] is True
+
+
 def test_safe_run_relative_tex_directives_pass_with_spaces_and_unicode(tmp_path):
     run_root = tmp_path / "runs" / "r1"
     source_root = run_root / "manuscript source"
@@ -254,10 +318,17 @@ def test_safe_run_relative_tex_directives_pass_with_spaces_and_unicode(tmp_path)
         (r"\bibliography{https://example.invalid/refs}", "TEX_EXTERNAL_PATH"),
         (r"\directlua{os.execute('whoami')}", "TEX_EXECUTION_DIRECTIVE"),
         (r"\def\evil{\csname write18\endcsname}", "TEX_DYNAMIC_COMMAND"),
+        (r"\^^69nput{/etc/passwd}", "TEX_OBFUSCATED_COMMAND"),
+        (r"\InputIfFileExists{/etc/passwd}{}{}", "TEX_EXTERNAL_PATH"),
+        (r"\RequirePackage{minted}", "TEX_EXECUTION_DIRECTIVE"),
+        (r"\inputminted{python}{outside.py}", "TEX_EXECUTION_DIRECTIVE"),
+        (r"\begin{filecontents}{outside.txt}", "TEX_WRITE_DIRECTIVE"),
     ],
     ids=[
         "write18", "openout", "parent-input", "absolute-include",
         "windows-graphics", "url-bibliography", "directlua", "dynamic-command",
+        "caret-obfuscation", "conditional-input", "minted-package", "input-minted",
+        "filecontents-write",
     ],
 )
 def test_unsafe_tex_directives_and_external_paths_fail_closed(tmp_path, source, code):
@@ -317,15 +388,27 @@ def test_secret_scanner_uses_only_caller_supplied_text_and_patterns(monkeypatch)
     }
 
 
+def test_secret_scanner_decodes_lowercase_percent_and_form_url_encodings():
+    secret = "key/value with space"
+    encoded = quote_plus(secret, safe="").lower()
+
+    with pytest.raises(ManuscriptSecretViolation) as caught:
+        scan_persisted_text("url", f"https://example.invalid/?token={encoded}", sentinels={"key": secret})
+
+    assert caught.value.findings[0]["sentinel"] == "key"
+    assert secret not in str(caught.value)
+
+
 def test_frozen_non_llm_receipt_allows_supported_execution_prose():
+    facts = _auditable_fixture_result()
     result = validate_execution_claim(
         "We executed the registered evaluation and observed accuracy 0.81.",
-        _real_frozen_result(),
+        facts,
     )
 
     assert result["ok"] is True
     assert result["execution_claim"] is True
-    assert result["receipt_sha256"] == "b" * 64
+    assert result["receipt_sha256"] == facts["executor_receipt"]["receipt_sha256"]
     json.dumps(result)
 
 
@@ -351,7 +434,7 @@ def test_frozen_non_llm_receipt_allows_supported_execution_prose():
     ids=["not-frozen", "scripts-only", "plan-only", "model-receipt", "hash-mismatch", "not-real"],
 )
 def test_false_or_unsupported_execution_prose_hard_blocks(mutate, code):
-    facts = _real_frozen_result()
+    facts = _auditable_fixture_result()
     mutate(facts)
 
     with pytest.raises(ManuscriptExecutionViolation) as caught:
@@ -359,6 +442,27 @@ def test_false_or_unsupported_execution_prose_hard_blocks(mutate, code):
 
     assert caught.value.code == code
     json.dumps(caught.value.findings)
+
+
+def test_mixed_negative_and_positive_execution_language_still_requires_evidence():
+    with pytest.raises(ManuscriptExecutionViolation, match="UNSUPPORTED_EXECUTION_CLAIM"):
+        validate_execution_claim(
+            "No experiment was run in the pilot; we achieved 0.99 on a real GPU experiment.",
+            {},
+        )
+
+
+def test_plain_self_asserted_real_receipt_requires_independent_reverification():
+    facts = _auditable_fixture_result()
+    facts["synthetic_fixture"] = False
+    facts["executor_receipt"].update(
+        executor_kind="SIGNED_EXTERNAL_EXECUTOR",
+        fixture_only=False,
+    )
+    facts["admissibility"]["real_research_execution"] = True
+
+    with pytest.raises(ManuscriptExecutionViolation, match="EXECUTION_REVERIFY_REQUIRED"):
+        validate_execution_claim("We executed the registered evaluation.", facts)
 
 
 def test_explicit_scripts_only_non_claim_does_not_invent_execution():
