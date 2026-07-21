@@ -551,42 +551,48 @@ def test_numeric_mismatch_and_failed_receipt_reverification_block(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("mutate", "expected_code", "expected_state"),
+    ("mutate", "expected_code", "expected_state", "expected_ready"),
     [
         (
             lambda value: value["sections"].pop(1),
             "MISSING_REQUIRED_SECTION",
             "BLOCK",
+            False,
         ),
         (
             lambda value: value["term_usage"].update({"frozen contract": "INCONSISTENT"}),
             "TERMINOLOGY_INCONSISTENT",
             "NEEDS_SUPPLEMENT",
+            True,
         ),
         (
             lambda value: value["notation_usage"].update({"H": "MISSING"}),
             "NOTATION_INCONSISTENT",
             "NEEDS_SUPPLEMENT",
+            True,
         ),
         (
             lambda value: value["cross_references"].append("fig:missing"),
             "DANGLING_CROSS_REFERENCE",
             "NEEDS_SUPPLEMENT",
+            True,
         ),
         (
             lambda value: value["anonymity_violations"].append("author name exposed"),
             "ANONYMITY_VIOLATION",
             "USABLE",
+            False,
         ),
         (
             lambda value: value["official_rule_violations"].append("page limit exceeded"),
             "OFFICIAL_RULE_VIOLATION",
             "USABLE",
+            False,
         ),
     ],
 )
 def test_remaining_registry_dimensions_have_stable_policy(
-    tmp_path, mutate, expected_code, expected_state
+    tmp_path, mutate, expected_code, expected_state, expected_ready
 ):
     manuscript = _manuscript()
     mutate(manuscript)
@@ -600,7 +606,7 @@ def test_remaining_registry_dimensions_have_stable_policy(
     _assert_schema_valid(report)
     assert expected_code in _codes(report)
     assert report["daily_state"] == expected_state
-    assert report["submission_ready"] is False
+    assert report["submission_ready"] is expected_ready
 
 
 def test_path_secret_and_false_pdf_claims_are_daily_hard_blocks(tmp_path):
@@ -699,4 +705,3 @@ def test_explicit_pdf_claim_requires_current_verified_pdf(tmp_path):
     assert "FALSE_PDF_CLAIM" in _codes(report)
     assert report["daily_state"] == "BLOCK"
     assert report["submission_ready"] is False
-
