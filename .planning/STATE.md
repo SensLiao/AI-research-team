@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
 status: executing
-stopped_at: Completed 01-07-PLAN.md
-last_updated: "2026-07-21T10:48:09.335Z"
+stopped_at: Completed 01-08-PLAN.md
+last_updated: "2026-07-21T11:28:33.932Z"
 last_activity: 2026-07-21
 last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 20
-  completed_plans: 7
-  percent: 35
+  completed_plans: 8
+  percent: 40
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-21)
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 7 of 20 in current phase
+Plan: 8 of 20 in current phase
 Status: Ready to execute
 Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
 
-Progress: [████░░░░░░] 35%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [████░░░░░░] 35%
 | Phase 01 P05 | 8min | 1 tasks | 5 files |
 | Phase 01 P06 | 11min | 2 tasks | 7 files |
 | Phase 01 P07 | 14min | 1 tasks | 4 files |
+| Phase 01 P08 | 35min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,10 @@ Decisions are logged in PROJECT.md Key Decisions.
 - [Phase 01]: Fail closed before transport when RAT_OPENALEX_API_KEY is configured because supported OpenAlex authentication is query-only; continue other providers independently.
 - [Phase 01]: Keep contact identity only in User-Agent and preserve Semantic Scholar key authentication only in its existing header.
 - [Phase 01]: Redact source_errors independently at exception construction, provider collection, and bundle serialization boundaries.
+- [Phase 01]: Fence manuscript paths against vault, scope, symlink, reparse, and hardlink escapes. — Run outputs remain run-owned while declared director assets are read-only and hash-checked.
+- [Phase 01]: Validate generated TeX as an explicit bounded allowlist. — Unknown controls, environments, packages, classes, and local shadows must fail closed before compilation.
+- [Phase 01]: Require independent reverification for every external or real execution receipt. — A caller-provided mapping cannot establish signature authenticity; disclosed synthetic fixtures remain non-publishable.
+- [Phase 01]: Keep secret scanning caller-supplied and side-effect free. — The validator must not discover environment values, secret files, credentials, or broader worker context.
 
 ### Pending Todos
 
@@ -107,6 +112,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T10:48:09.326Z
-Stopped at: Completed 01-07-PLAN.md
+Last session: 2026-07-21T11:28:33.923Z
+Stopped at: Completed 01-08-PLAN.md
 Resume file: None

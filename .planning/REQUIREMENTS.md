@@ -43,10 +43,10 @@
 
 ### Safety and Platform Boundaries
 
-- [ ] **SAFE-01**: Authoring and review keep PhD-Research-OS read-only and never copy a draft, search result, manuscript, or PDF into it without a later explicit top-level `/promote-to-vault` command.
+- [x] **SAFE-01**: Authoring and review keep PhD-Research-OS read-only and never copy a draft, search result, manuscript, or PDF into it without a later explicit top-level `/promote-to-vault` command.
 - [x] **SAFE-02**: Secrets never appear in request URLs, error artifacts, logs, generated LaTeX, build metadata, or director-review outputs.
-- [ ] **SAFE-03**: The capability does not run GPU experiments and accepts execution claims only from frozen, auditable result artifacts rather than scripts, model-authored metrics, or unsupported prose.
-- [ ] **PLAT-01**: The local CLI, path handling, fixtures, and optional LaTeX tool detection operate on the repository's supported Python runtime on Windows and Linux.
+- [x] **SAFE-03**: The capability does not run GPU experiments and accepts execution claims only from frozen, auditable result artifacts rather than scripts, model-authored metrics, or unsupported prose.
+- [x] **PLAT-01**: The local CLI, path handling, fixtures, and optional LaTeX tool detection operate on the repository's supported Python runtime on Windows and Linux.
 - [ ] **PLAT-02**: The control plane remains domain-general, with AI-research defaults supplied through profile or Paper Design Token overlays rather than hardcoded domain rules.
 
 ### Verification Evidence
@@ -95,10 +95,10 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | AUDT-01 | Phase 1 | Complete |
 | DELV-01 | Phase 1 | Pending |
 | DELV-02 | Phase 1 | Complete |
-| SAFE-01 | Phase 1 | Pending |
+| SAFE-01 | Phase 1 | Complete |
 | SAFE-02 | Phase 1 | Complete |
-| SAFE-03 | Phase 1 | Pending |
-| PLAT-01 | Phase 1 | Pending |
+| SAFE-03 | Phase 1 | Complete |
+| PLAT-01 | Phase 1 | Complete |
 | PLAT-02 | Phase 1 | Pending |
 | VERI-01 | Phase 1 | Complete |
 | VERI-02 | Phase 1 | Complete |
