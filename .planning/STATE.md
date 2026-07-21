@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
 status: executing
-stopped_at: Completed 01-11-PLAN.md
-last_updated: "2026-07-21T13:02:21.071Z"
+stopped_at: Completed 01-12-PLAN.md
+last_updated: "2026-07-21T13:42:38.815Z"
 last_activity: 2026-07-21
 last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 20
-  completed_plans: 11
-  percent: 55
+  completed_plans: 12
+  percent: 60
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-21)
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 11 of 20 in current phase
+Plan: 12 of 20 in current phase
 Status: Ready to execute
 Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
 
-Progress: [██████░░░░] 55%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [██████░░░░] 55%
 | Phase 01 P09 | 10min | 1 tasks | 3 files |
 | Phase 01 P10 | 23min | 2 tasks | 5 files |
 | Phase 01 P11 | 42min | 1 tasks | 6 files |
+| Phase 01 P12 | 22min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,10 @@ Decisions are logged in PROJECT.md Key Decisions.
 - [Phase 01]: Resolve Paper Design Tokens only in base -> paper_type -> venue -> project -> run order, replaying rich provenance before closed-schema projection.
 - [Phase 01]: Lock six generic truth controls at base and accept venue hard policy only from the frozen official rule/template pair; presentation style remains advisory.
 - [Phase 01]: Inject venue freshness and result/receipt verification facts, and publish contracts through create-once atomic filesystem semantics.
+- [Phase 01]: Keep empty bounded local recall UNVERIFIED; only a named frozen deficit authorization may permit metadata search.
+- [Phase 01]: Freeze one query and an exact provider-attempt set per deficit, executed only through injected paper_search.search_many.
+- [Phase 01]: Require exact plan/trace/response closure for NO_EVIDENCE_AFTER_VALID_SEARCH; malformed or incomplete responses remain failure or unresolved.
+- [Phase 01]: Project every search result to metadata-only fields with no entailment, exact-span, local-full-text, or manuscript-admission authority.
 
 ### Pending Todos
 
@@ -123,6 +128,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T13:02:21.063Z
-Stopped at: Completed 01-11-PLAN.md
+Last session: 2026-07-21T13:42:38.806Z
+Stopped at: Completed 01-12-PLAN.md
 Resume file: None
