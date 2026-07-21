@@ -1,0 +1,406 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/manuscript_contract.schema.json",
+  "title": "Frozen Manuscript Contract",
+  "description": "Closed pre-draft snapshot shared by every manuscript worker. It binds the paper and venue design, admissible evidence and frozen results, token provenance, dependency slices, and all source hashes before drafting begins.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "contract_id",
+    "project",
+    "run_id",
+    "north_star",
+    "paper_brief",
+    "paper_type",
+    "venue_profile",
+    "outline",
+    "claim_ledger",
+    "evidence_refs",
+    "result_refs",
+    "glossary",
+    "bibliography",
+    "asset_plan",
+    "resolved_tokens",
+    "dependency_slices",
+    "source_hashes",
+    "manuscript_snapshot_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {"const": "1.0"},
+    "contract_id": {"$ref": "#/$defs/reference"},
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 80
+    },
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "north_star": {"$ref": "#/$defs/nonemptyString"},
+    "paper_brief": {
+      "type": "object",
+      "required": [
+        "working_title",
+        "research_question",
+        "contribution_statement",
+        "done_when"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "working_title": {"$ref": "#/$defs/nonemptyString"},
+        "research_question": {"$ref": "#/$defs/nonemptyString"},
+        "contribution_statement": {"$ref": "#/$defs/nonemptyString"},
+        "done_when": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/nonemptyString"}
+        }
+      }
+    },
+    "paper_type": {
+      "type": "string",
+      "enum": ["METHOD", "EMPIRICAL", "DATASET", "SYSTEMS", "THEORY", "POSITION_SURVEY"]
+    },
+    "venue_profile": {
+      "type": "object",
+      "required": [
+        "venue_id",
+        "venue_family",
+        "year",
+        "track",
+        "retrieved_at",
+        "official_rule_refs",
+        "template_ref",
+        "template_sha256",
+        "requires_pdf",
+        "hard_field_policy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "venue_id": {"$ref": "#/$defs/identifier"},
+        "venue_family": {"$ref": "#/$defs/identifier"},
+        "year": {"type": "integer", "minimum": 2000, "maximum": 9999},
+        "track": {"$ref": "#/$defs/identifier"},
+        "retrieved_at": {"type": "string", "format": "date-time"},
+        "official_rule_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/hashedReference"}
+        },
+        "template_ref": {"$ref": "#/$defs/reference"},
+        "template_sha256": {"$ref": "#/$defs/sha256"},
+        "requires_pdf": {"type": "boolean"},
+        "hard_field_policy": {
+          "type": "object",
+          "required": ["requires_pdf"],
+          "additionalProperties": false,
+          "properties": {
+            "requires_pdf": {
+              "type": "object",
+              "required": ["classification", "weakenable", "source_ref", "source_sha256"],
+              "additionalProperties": false,
+              "properties": {
+                "classification": {"const": "OFFICIAL_HARD"},
+                "weakenable": {"const": false},
+                "source_ref": {"$ref": "#/$defs/reference"},
+                "source_sha256": {"$ref": "#/$defs/sha256"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "outline": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["section_id", "title", "purpose", "required", "depends_on"],
+        "additionalProperties": false,
+        "properties": {
+          "section_id": {"$ref": "#/$defs/identifier"},
+          "title": {"$ref": "#/$defs/nonemptyString"},
+          "purpose": {"$ref": "#/$defs/nonemptyString"},
+          "required": {"type": "boolean"},
+          "depends_on": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/identifier"}
+          }
+        }
+      }
+    },
+    "claim_ledger": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["claim_id", "text", "importance", "evidence_refs", "result_refs"],
+        "additionalProperties": false,
+        "properties": {
+          "claim_id": {"type": "string", "pattern": "^CLM-[A-Za-z0-9._-]+$"},
+          "text": {"$ref": "#/$defs/nonemptyString"},
+          "importance": {"type": "string", "enum": ["LOAD_BEARING", "SUPPORTING", "CONTEXT"]},
+          "evidence_refs": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/reference"}
+          },
+          "result_refs": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/reference"}
+          }
+        },
+        "anyOf": [
+          {"properties": {"evidence_refs": {"minItems": 1}}},
+          {"properties": {"result_refs": {"minItems": 1}}}
+        ]
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref", "sha256", "source_kind", "claim_support"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {"$ref": "#/$defs/reference"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "source_kind": {
+            "type": "string",
+            "enum": ["LOCAL_FULL_TEXT", "LOCAL_NOTE", "VENUE_RULE", "DATASET_CARD", "OTHER_LOCAL"]
+          },
+          "claim_support": {
+            "type": "string",
+            "enum": ["EXACT_SPAN", "CLAIM_LEVEL", "NONCITABLE_CONTEXT"]
+          }
+        }
+      }
+    },
+    "result_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref", "sha256", "status", "receipt_ref", "receipt_sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {"$ref": "#/$defs/reference"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "status": {"const": "FROZEN"},
+          "receipt_ref": {"$ref": "#/$defs/reference"},
+          "receipt_sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "glossary": {
+      "type": "object",
+      "required": ["terms", "notation"],
+      "additionalProperties": false,
+      "properties": {
+        "terms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["term", "definition"],
+            "additionalProperties": false,
+            "properties": {
+              "term": {"$ref": "#/$defs/nonemptyString"},
+              "definition": {"$ref": "#/$defs/nonemptyString"}
+            }
+          }
+        },
+        "notation": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["symbol", "meaning"],
+            "additionalProperties": false,
+            "properties": {
+              "symbol": {"$ref": "#/$defs/nonemptyString"},
+              "meaning": {"$ref": "#/$defs/nonemptyString"}
+            }
+          }
+        }
+      }
+    },
+    "bibliography": {
+      "type": "object",
+      "required": ["style", "entries"],
+      "additionalProperties": false,
+      "properties": {
+        "style": {"$ref": "#/$defs/identifier"},
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["citation_key", "source_ref", "source_sha256", "identity_status"],
+            "additionalProperties": false,
+            "properties": {
+              "citation_key": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9:_-]*$"},
+              "source_ref": {"$ref": "#/$defs/reference"},
+              "source_sha256": {"$ref": "#/$defs/sha256"},
+              "identity_status": {"type": "string", "enum": ["VERIFIED", "UNVERIFIED"]}
+            }
+          }
+        }
+      }
+    },
+    "asset_plan": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["asset_id", "kind", "label", "planned_path", "source_refs", "result_refs"],
+        "additionalProperties": false,
+        "properties": {
+          "asset_id": {"$ref": "#/$defs/identifier"},
+          "kind": {"type": "string", "enum": ["FIGURE", "TABLE"]},
+          "label": {"type": "string", "pattern": "^(?:fig|tab):[A-Za-z0-9._:-]+$"},
+          "planned_path": {"$ref": "#/$defs/runRelativePath"},
+          "source_refs": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/reference"}
+          },
+          "result_refs": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/reference"}
+          }
+        },
+        "anyOf": [
+          {"properties": {"source_refs": {"minItems": 1}}},
+          {"properties": {"result_refs": {"minItems": 1}}}
+        ]
+      }
+    },
+    "resolved_tokens": {
+      "type": "object",
+      "required": ["cascade_order", "tokens", "snapshot_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "cascade_order": {
+          "type": "array",
+          "prefixItems": [
+            {"const": "base"},
+            {"const": "paper_type"},
+            {"const": "venue"},
+            {"const": "project"},
+            {"const": "run"}
+          ],
+          "items": false,
+          "minItems": 5,
+          "maxItems": 5
+        },
+        "tokens": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "token",
+              "value",
+              "classification",
+              "resolved_layer",
+              "source_ref",
+              "source_sha256",
+              "weakenable"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "token": {"$ref": "#/$defs/identifier"},
+              "value": {},
+              "classification": {"type": "string", "enum": ["HARD", "ADVISORY"]},
+              "resolved_layer": {
+                "type": "string",
+                "enum": ["base", "paper_type", "venue", "project", "run"]
+              },
+              "source_ref": {"$ref": "#/$defs/reference"},
+              "source_sha256": {"$ref": "#/$defs/sha256"},
+              "weakenable": {"type": "boolean"}
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"classification": {"const": "HARD"}}, "required": ["classification"]},
+                "then": {"properties": {"weakenable": {"const": false}}}
+              }
+            ]
+          }
+        },
+        "snapshot_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "dependency_slices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["slice_id", "worker_role", "input_refs", "slice_sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "slice_id": {"$ref": "#/$defs/identifier"},
+          "worker_role": {"$ref": "#/$defs/identifier"},
+          "input_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/$defs/inputReference"}
+          },
+          "slice_sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "source_hashes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["ref", "sha256", "kind"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {"$ref": "#/$defs/reference"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "kind": {
+            "type": "string",
+            "enum": ["VENUE_RULE", "TEMPLATE", "EVIDENCE", "RESULT", "TOKEN_OVERLAY", "ASSET"]
+          }
+        }
+      }
+    },
+    "manuscript_snapshot_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonemptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "reference": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\.\\.)(?!.*\\\\)[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+    },
+    "runRelativePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\.\\.)(?!.*\\\\)[A-Za-z0-9][A-Za-z0-9._/-]*$"
+    },
+    "hashedReference": {
+      "type": "object",
+      "required": ["ref", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"$ref": "#/$defs/reference"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "inputReference": {
+      "type": "object",
+      "required": ["ref", "sha256", "slice_kind"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"$ref": "#/$defs/reference"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "slice_kind": {
+          "type": "string",
+          "enum": ["GLOBAL_CONTRACT", "CLAIM_EVIDENCE", "RESULT", "DEPENDENCY_BUNDLE", "VENUE_RULE", "ASSET"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/manuscript_section_bundle.schema.json",
+  "title": "Manuscript Section Bundle",
+  "description": "Closed dependency-scoped candidate emitted by one section worker. The bundle is hash-bound to the frozen manuscript snapshot and scheduler authorization receipt and never owns the canonical source tree.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "bundle_id",
+    "worker_role",
+    "section_id",
+    "manuscript_snapshot_sha256",
+    "authorization_receipt",
+    "input_refs",
+    "claim_support_refs",
+    "draft_latex",
+    "citation_keys",
+    "labels",
+    "cross_references",
+    "asset_refs",
+    "notation_uses",
+    "uncertainties",
+    "omissions",
+    "requested_supplements",
+    "content_hash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {"const": "1.0"},
+    "bundle_id": {"$ref": "#/$defs/reference"},
+    "worker_role": {"$ref": "#/$defs/identifier"},
+    "section_id": {"$ref": "#/$defs/identifier"},
+    "manuscript_snapshot_sha256": {"$ref": "#/$defs/sha256"},
+    "authorization_receipt": {
+      "type": "object",
+      "required": ["ref", "sha256", "worker_role"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"$ref": "#/$defs/reference"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "worker_role": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "input_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["ref", "sha256", "slice_kind"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {"$ref": "#/$defs/reference"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "slice_kind": {
+            "type": "string",
+            "enum": ["GLOBAL_CONTRACT", "CLAIM_EVIDENCE", "RESULT", "DEPENDENCY_BUNDLE", "VENUE_RULE", "ASSET"]
+          }
+        }
+      },
+      "contains": {
+        "type": "object",
+        "properties": {"slice_kind": {"const": "GLOBAL_CONTRACT"}},
+        "required": ["slice_kind"]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "claim_support_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["claim_id", "evidence_refs", "result_refs"],
+        "additionalProperties": false,
+        "properties": {
+          "claim_id": {"type": "string", "pattern": "^CLM-[A-Za-z0-9._-]+$"},
+          "evidence_refs": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/reference"}
+          },
+          "result_refs": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/reference"}
+          }
+        },
+        "anyOf": [
+          {"properties": {"evidence_refs": {"minItems": 1}}},
+          {"properties": {"result_refs": {"minItems": 1}}}
+        ]
+      }
+    },
+    "draft_latex": {"$ref": "#/$defs/nonemptyString"},
+    "citation_keys": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9:_-]*$"}
+    },
+    "labels": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"}
+    },
+    "cross_references": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"}
+    },
+    "asset_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/reference"}
+    },
+    "notation_uses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["symbol", "meaning_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "symbol": {"$ref": "#/$defs/nonemptyString"},
+          "meaning_ref": {"$ref": "#/$defs/reference"}
+        }
+      }
+    },
+    "uncertainties": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/nonemptyString"}
+    },
+    "omissions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/nonemptyString"}
+    },
+    "requested_supplements": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/reference"}
+    },
+    "content_hash": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonemptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "reference": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\.\\.)(?!.*\\\\)[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+    }
+  }
+}
