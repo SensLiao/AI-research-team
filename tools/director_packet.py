@@ -7,6 +7,7 @@ It never writes the vault/database.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -18,9 +19,17 @@ from .full_rigor_markdown import (
 )
 from .runstore import classify_status, read_manifest
 from .venue_readiness_markdown import venue_readiness_path, write_venue_readiness_markdown
+from .manuscript_security import ManuscriptPathViolation, validate_run_owned_path
 
 
 PACKET_REL = Path("director-review") / "00-REVIEW-PACKET.md"
+MANUSCRIPT_OVERVIEW_REL = Path("director-review") / "manuscript" / "00-OVERVIEW.md"
+MANUSCRIPT_REVIEW_REPORT_REL = Path("director-review") / "manuscript" / "reviewer-report.md"
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
+_SECRET_REF_RE = re.compile(
+    r"(?:api[_-]?key|access[_-]?token|authorization|bearer|password|secret|sk-[A-Za-z0-9_-]+)",
+    re.IGNORECASE,
+)
 REQUIRED_HEADINGS = [
     "## What Happened",
     "## What The Director Can Decide Now",
@@ -57,6 +66,89 @@ def _artifact_files(run_dir: Path) -> list[Path]:
     if not evidence.exists():
         return []
     return sorted(p for p in evidence.glob("*/*.artifact.json") if p.is_file())
+
+
+def _safe_director_report(run_dir: Path, relative_path: Path) -> Path | None:
+    """Return a run-owned director report only when its path has no escape route.
+
+    The top-level packet is a navigation surface, never a path authority.  In
+    particular, a symlink/junction dropped under director-review must not turn
+    into a link to another run, the database, or a secret-bearing location.
+    """
+
+    candidate = run_dir / relative_path
+    try:
+        checked = validate_run_owned_path(
+            candidate,
+            run_root=run_dir,
+            purpose="read",
+            owned_output_roots=(run_dir / "director-review",),
+        )
+    except (ManuscriptPathViolation, OSError, ValueError):
+        return None
+    if checked.get("existing_kind") != "file" or not candidate.is_file():
+        return None
+    return candidate
+
+
+def _safe_evidence_ref(value: object) -> str | None:
+    """Keep cross-run identities display-only and reject unsafe/redacted refs."""
+
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.replace("\\", "/")
+    if (
+        normalized.startswith(("/", "//"))
+        or re.match(r"^[A-Za-z]:", normalized)
+        or ".." in normalized.split("/")
+        or "\x00" in normalized
+        or _SECRET_REF_RE.search(normalized)
+    ):
+        return None
+    return normalized
+
+
+def _is_sha256(value: object) -> bool:
+    return isinstance(value, str) and bool(_SHA256_RE.fullmatch(value))
+
+
+def _verified_manuscript_review(
+    rows: list[tuple[Path, dict]], *, expected_review_run_id: str
+) -> dict | None:
+    """Extract a separately identified review verdict for navigation only.
+
+    This deliberately checks a compact subset of the closed verdict contract.
+    Schema validation already occurs when normal artifacts are persisted; the
+    second check makes hand-dropped/incomplete JSON fail closed before a
+    director packet presents it as independent review evidence.
+    """
+
+    for _path, artifact in rows:
+        if artifact.get("artifact_type") != "manuscript_review_verdict":
+            continue
+        payload = _payload(artifact)
+        reviewer = payload.get("reviewer_identity")
+        frozen = payload.get("frozen_inputs")
+        receipt = payload.get("blind_read_receipt")
+        if not (
+            payload.get("review_run_id") == expected_review_run_id
+            and isinstance(reviewer, dict)
+            and reviewer.get("independent_from_authoring") is True
+            and isinstance(frozen, dict)
+            and isinstance(receipt, dict)
+            and _safe_evidence_ref(frozen.get("manuscript_ref"))
+            and _is_sha256(frozen.get("manuscript_sha256"))
+            and _is_sha256(payload.get("verdict_sha256"))
+            and _is_sha256(receipt.get("scheduler_authorization_sha256"))
+        ):
+            continue
+        return {
+            "manuscript_ref": _safe_evidence_ref(frozen["manuscript_ref"]),
+            "manuscript_sha256": frozen["manuscript_sha256"].lower(),
+            "verdict_sha256": payload["verdict_sha256"].lower(),
+            "receipt_sha256": receipt["scheduler_authorization_sha256"].lower(),
+        }
+    return None
 
 
 def _artifact_summary(path: Path, artifact: dict) -> str:
@@ -136,6 +228,10 @@ def _stage_of(path: Path, run_dir: Path) -> str:
 
 
 def _primary_human_action(mode: str, artifacts: Iterable[dict]) -> str:
+    if mode == "manuscript_authoring":
+        return "review the authoring overview; independent manuscript_review remains a separate operated run"
+    if mode == "manuscript_review":
+        return "review the separate verdict and decide whether to revise; no automatic integration or submission"
     if mode in {"new_direction", "deep_ideation", "ideate_ring"}:
         return "/idea-bet"
     if mode == "venue_readiness":
@@ -156,6 +252,39 @@ def _primary_human_action(mode: str, artifacts: Iterable[dict]) -> str:
 def _mode_findings(mode: str, rows: list[tuple[Path, dict]], run_dir: Path) -> list[str]:
     findings: list[str] = []
     by_name = {p.name: art for p, art in rows}
+    if mode == "manuscript_authoring":
+        overview = _safe_director_report(run_dir, MANUSCRIPT_OVERVIEW_REL)
+        if overview is not None:
+            findings.append(
+                "Primary manuscript product: "
+                "[00-OVERVIEW.md](./manuscript/00-OVERVIEW.md)."
+            )
+        else:
+            findings.append(
+                "No verified manuscript overview is available yet; inspect the run evidence and do not infer a PDF or submission state."
+            )
+        findings.append(
+            "No independently operated `manuscript_review` product is linked; any authoring self-audit remains internal."
+        )
+
+    if mode == "manuscript_review":
+        run_id = str(read_manifest(run_dir).get("run_id") or run_dir.name)
+        verdict = _verified_manuscript_review(rows, expected_review_run_id=run_id)
+        reviewer_report = _safe_director_report(run_dir, MANUSCRIPT_REVIEW_REPORT_REL)
+        if verdict is not None and reviewer_report is not None:
+            findings.extend(
+                [
+                    "Independent review product: [reviewer-report.md](./manuscript/reviewer-report.md).",
+                    f"It is bound to review run `{run_id}`, manuscript `{verdict['manuscript_ref']}`, "
+                    f"manuscript SHA-256 `{verdict['manuscript_sha256']}`, "
+                    f"verdict SHA-256 `{verdict['verdict_sha256']}`, and blind receipt SHA-256 `{verdict['receipt_sha256']}`.",
+                ]
+            )
+        else:
+            findings.append(
+                "No verified independent manuscript-review verdict is available; the readable report, if any, is not presented as independent evidence."
+            )
+
 
     if "idea-backlog.artifact.json" in by_name:
         ideas = _payload(by_name["idea-backlog.artifact.json"]).get("ranked_ideas") or []
