@@ -192,9 +192,10 @@ def test_exact_bundle_closure_rejects_all_invalid_sets_before_integration(mutati
         authoring.validate_section_bundle_closure(contract, rows)
 
 
-def test_author_panel_is_sparse_adaptive_and_auditors_are_blind(tmp_path):
+def test_author_panel_is_sparse_adaptive_and_auditors_are_blind(tmp_path, monkeypatch):
     contract = _contract(sections=["abstract", "introduction", "related_work", "venue_checklist"])
     _write_contract(tmp_path, contract)
+    monkeypatch.setattr(authoring, "load_frozen_contract", lambda _run_dir: contract)
 
     panel = authoring.llm_step(str(tmp_path), "ANALYZE", "write")
     labels = [worker["label"] for worker in panel["workers"]]
