@@ -1,0 +1,92 @@
+profile_version: "1.0"
+profile_id: paper-design-base
+layer: base
+description: Generic manuscript truth safeguards plus portable presentation defaults.
+mandatory_tokens:
+  - no_fabrication
+  - claim_traceability
+  - terminology_consistency
+  - asset_provenance
+  - compile_integrity
+  - no_shell_escape
+tokens:
+  no_fabrication:
+    value: true
+    classification: HARD
+    weakenable: false
+  claim_traceability:
+    value: claim-number-citation-closure
+    classification: HARD
+    weakenable: false
+  terminology_consistency:
+    value: frozen-glossary-and-notation
+    classification: HARD
+    weakenable: false
+  asset_provenance:
+    value: hashed-source-and-result-refs
+    classification: HARD
+    weakenable: false
+  compile_integrity:
+    value: references-and-cross-references-must-resolve
+    classification: HARD
+    weakenable: false
+  no_shell_escape:
+    value: true
+    classification: HARD
+    weakenable: false
+  paragraph_rhythm:
+    value: varied-readable
+    classification: ADVISORY
+    weakenable: true
+  voice:
+    value: precise-direct
+    classification: ADVISORY
+    weakenable: true
+  heading_depth:
+    value: minimum-needed-for-navigation
+    classification: ADVISORY
+    weakenable: true
+  caption_preference:
+    value: self-contained-when-practical
+    classification: ADVISORY
+    weakenable: true
+  visual_density:
+    value: evidence-led
+    classification: ADVISORY
+    weakenable: true
+  color_accessibility:
+    value: distinguishable-without-color-alone
+    classification: ADVISORY
+    weakenable: true
+  table_convention:
+    value: comparable-columns-and-explicit-units
+    classification: ADVISORY
+    weakenable: true
+  figure_convention:
+    value: readable-labels-and-descriptive-alt-text
+    classification: ADVISORY
+    weakenable: true
+  theorem_convention:
+    value: define-before-use
+    classification: ADVISORY
+    weakenable: true
+  algorithm_convention:
+    value: inputs-outputs-and-complexity-when-relevant
+    classification: ADVISORY
+    weakenable: true
+  bibliography_convention:
+    value: consistent-identities-and-complete-metadata
+    classification: ADVISORY
+    weakenable: true
+  appendix_preference:
+    value: move-supporting-detail-with-clear-forward-links
+    classification: ADVISORY
+    weakenable: true
+  section_shape:
+    value: contribution-led
+    classification: ADVISORY
+    weakenable: true
+  typography_preference:
+    value: legible-and-template-compatible
+    classification: ADVISORY
+    weakenable: true

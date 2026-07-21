@@ -1,0 +1,65 @@
+profile_version: "1.0"
+profile_id: paper-design-paper-types
+layer: paper_type
+description: Advisory structure and evidence emphasis selected by frozen paper type.
+paper_types:
+  METHOD:
+    tokens:
+      section_shape:
+        value: problem-method-analysis-evaluation
+        classification: ADVISORY
+        weakenable: true
+      evidence_emphasis:
+        value: mechanism-baselines-ablations-limitations
+        classification: ADVISORY
+        weakenable: true
+  EMPIRICAL:
+    tokens:
+      section_shape:
+        value: question-protocol-results-robustness
+        classification: ADVISORY
+        weakenable: true
+      evidence_emphasis:
+        value: design-validity-uncertainty-generalization
+        classification: ADVISORY
+        weakenable: true
+  DATASET:
+    tokens:
+      section_shape:
+        value: motivation-collection-governance-benchmarks
+        classification: ADVISORY
+        weakenable: true
+      evidence_emphasis:
+        value: provenance-coverage-bias-licenses
+        classification: ADVISORY
+        weakenable: true
+  SYSTEMS:
+    tokens:
+      section_shape:
+        value: requirements-architecture-implementation-evaluation
+        classification: ADVISORY
+        weakenable: true
+      evidence_emphasis:
+        value: workload-baselines-reliability-cost
+        classification: ADVISORY
+        weakenable: true
+  THEORY:
+    tokens:
+      section_shape:
+        value: assumptions-formalism-results-proofs-implications
+        classification: ADVISORY
+        weakenable: true
+      evidence_emphasis:
+        value: assumptions-proof-obligations-boundaries
+        classification: ADVISORY
+        weakenable: true
+  POSITION_SURVEY:
+    tokens:
+      section_shape:
+        value: scope-taxonomy-synthesis-tensions-outlook
+        classification: ADVISORY
+        weakenable: true
+      evidence_emphasis:
+        value: source-coverage-contradictions-open-questions
+        classification: ADVISORY
+        weakenable: true

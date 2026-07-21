@@ -1,0 +1,29 @@
+profile_version: "1.0"
+profile_id: paper-design-ai-research
+layer: project
+description: Advisory defaults for broadly scoped AI research manuscripts.
+tokens:
+  related_work_focus:
+    value: distinguish-mechanism-evidence-and-positioning
+    classification: ADVISORY
+    weakenable: true
+  reproducibility_exposition:
+    value: surface-data-compute-settings-and-variance
+    classification: ADVISORY
+    weakenable: true
+  evaluation_narrative:
+    value: lead-with-questions-before-metric-tables
+    classification: ADVISORY
+    weakenable: true
+  limitation_emphasis:
+    value: separate-observed-boundaries-from-open-uncertainty
+    classification: ADVISORY
+    weakenable: true
+  baseline_narrative:
+    value: explain-comparability-and-known-asymmetries
+    classification: ADVISORY
+    weakenable: true
+  disclosure_placement:
+    value: keep-required-disclosures-visible-and-easy-to-audit
+    classification: ADVISORY
+    weakenable: true
