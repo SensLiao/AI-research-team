@@ -24,13 +24,13 @@ The accepted scope is one coherent vertical product capability: the director can
   3. The director receives a complete native LaTeX source tree and either a genuinely compiled PDF from a detected engine or an explicit `TOOLCHAIN_MISSING` status; the system never presents a nonexistent or uncompiled PDF as real.
   4. The director can read the overview, coverage report, authoring plan, manuscript, quality report, independent reviewer report, and submission checklist under `director-review/`, with an honest usability status and deterministic findings for claim/evidence/number/citation closure, terminology, labels, venue rules, anonymity, execution truth, secret safety, and build integrity.
   5. A developer can run the local-first end-to-end fixture and the relevant unit, integration, operated-mode, AI-eval, security, and completion checks on the supported Windows/Linux Python runtime, obtaining evidence that search activation, token precedence, unsafe-path/database boundaries, required roles, false claims, and PDF status behave as specified.
-**Plans**: TBD — plan within Phase 1 using architecture, implementation, review, and verification waves; do not create separate phases for tests, documentation, governance, or polish.
+**Plans**: 20 plans across 6 dependency waves (`01-01` through `01-20`), covering contracts, roles, retrieval safety, orchestration, LaTeX/assets, operated recipes, and release evidence.
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Operated AI Manuscript Authoring | 0/TBD | Not started | - |
+| 1. Operated AI Manuscript Authoring | 0/20 | Planned | - |
 
 ## Requirement Coverage
 
