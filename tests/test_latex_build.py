@@ -187,7 +187,10 @@ def test_driver_readiness_uses_build_sanitized_environment(tmp_path):
     assert original["PATH"] == "fixture-base-path"
     durable = json.dumps(receipt, ensure_ascii=False)
     assert Path.home().name not in durable
-    assert "shell-escape" not in durable
+    assert "-no-shell-escape" in receipt["process_receipt"]["argv"]
+    assert not {"-shell-escape", "--shell-escape", "--enable-write18"}.intersection(
+        receipt["process_receipt"]["argv"]
+    )
 
 
 def test_latexmk_present_without_perl_falls_back_to_direct_pipeline(tmp_path):
