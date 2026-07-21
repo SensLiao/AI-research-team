@@ -1,0 +1,39 @@
+{
+  "source_path": "C:\\Users\\廖神\\Desktop\\Innovation_projects\\Self-project\\Personal AI Infrastructure\\cases\\Route A\\AI agent database (for research)\\research_agent_teams\\_design\\paper-reading-upgrade\\00-gap-analysis-and-upgrade-design-2026-06-26.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Paper-Reading Upgrade — Gap Analysis & Design (0+3+1 Protocol)",
+  "summary": "Analyzes gaps in the two-system paper-reading workflow and proposes a graduated canonical Research Card aligned with the 0+3+1 protocol.",
+  "scope": [
+    "PhD-Research-OS",
+    "research_agent_teams",
+    "0+3+1 paper-reading protocol",
+    "canonical Research Card",
+    "paper ingestion",
+    "claim-evidence mapping",
+    "full-text QA",
+    "paper appraisal",
+    "paper relations",
+    "trend cards",
+    "vault linting",
+    "domain profiles"
+  ],
+  "cross_refs": [
+    "paper-reading-upgrade-LEDGER.md",
+    "../../PLATFORM-FACTS.md",
+    "CLAUDE.md",
+    "04-templates/paper.md",
+    "05-registry/type-registry.md",
+    "00-system/CLAUDE.md",
+    "00-system/how-to-operate.md",
+    "koleilat-2025-biomedcoop.md",
+    "cheng-2024-h-sam.md",
+    "agents/references/venue-rubrics/rubric-7d.md",
+    "agents/literature-ingest.md",
+    "05-registry/status-registry.md"
+  ],
+  "locked": false,
+  "precedence": 40,
+  "notes": ""
+}

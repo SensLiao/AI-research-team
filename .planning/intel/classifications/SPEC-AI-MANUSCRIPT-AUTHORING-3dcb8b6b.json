@@ -1,0 +1,26 @@
+{
+  "source_path": "C:\\Users\\廖神\\Desktop\\Innovation_projects\\Self-project\\Personal AI Infrastructure\\cases\\Route A\\AI agent database (for research)\\research_agent_teams\\.planning\\intake\\SPEC-AI-MANUSCRIPT-AUTHORING.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "AI Manuscript Authoring System",
+  "summary": "Specifies an operated, local-first multi-agent system that turns approved research evidence into auditable LaTeX manuscripts, PDFs, and submission-review packages.",
+  "scope": [
+    "manuscript_authoring mode",
+    "manuscript review path",
+    "local literature recall and search",
+    "frozen manuscript snapshot",
+    "Paper Design Tokens",
+    "multi-agent authoring DAG",
+    "LaTeX source project",
+    "PDF build",
+    "figure and table provenance",
+    "quality gates",
+    "director-review outputs",
+    "PhD-Research-OS read-only boundary"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": 0,
+  "notes": ""
+}

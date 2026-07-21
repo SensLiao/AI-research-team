@@ -1,0 +1,38 @@
+{
+  "source_path": "C:\\Users\\廖神\\Desktop\\Innovation_projects\\Self-project\\Personal AI Infrastructure\\cases\\Route A\\AI agent database (for research)\\research_agent_teams\\README.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Research Agent Teams (the machine)",
+  "summary": "Overview of the research-agent machine, its vault boundary, operating layout, research standards, verified build status, and GPU-execution limitations.",
+  "scope": [
+    "Research Agent Teams",
+    "PhD-Research-OS",
+    "agent control plane",
+    "research product standards",
+    "mode handoff",
+    "domain profiles",
+    "run store",
+    "human gates",
+    "GPU execution layer",
+    "vault promotion seam"
+  ],
+  "cross_refs": [
+    "PLATFORM-FACTS.md",
+    "director-review/ideas/idea-bet-menu.md",
+    "_design/research-agent-teams-complete-blueprint-v1.md",
+    "docs/PAPER-READING-STANDARD-CN.md",
+    "docs/IDEA-CARD-STANDARD-CN.md",
+    "docs/RESEARCH-PROGRESS-REPORT-STANDARD-CN.md",
+    "docs/STORAGE-PIPELINE-AND-PROMOTION-CN.md",
+    "orchestrator/mode_registry.yaml",
+    "profiles/cv-medical-segmentation.profile.yaml",
+    "profiles/*.yaml",
+    "05-registry/project-registry.md",
+    "_design/remediation-2026-06-10-governance-gpu-qc-hardening.md",
+    "_design/research-agent-teams-absorption-wave1-build-contract.md"
+  ],
+  "locked": false,
+  "precedence": 20,
+  "notes": ""
+}
