@@ -10,17 +10,17 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import json
 import re
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import yaml
 
 from research_agent_teams.tools._manuscript_contract_validation import (
     ManuscriptContractError,
+    atomic_create_once as _atomic_create_once,
     canonical_json as _canonical_json,
     canonical_sha256 as _canonical_sha256,
     fail as _fail,
@@ -35,11 +35,33 @@ from research_agent_teams.tools.manuscript_security import (
     scan_persisted_text,
     validate_run_owned_path,
 )
-from research_agent_teams.tools.runstore import atomic_write_text
 from research_agent_teams.tools.validate_artifact import validate_payload
 
 
 TOKEN_LAYERS = ("base", "paper_type", "venue", "project", "run")
+
+_BASE_HARD_VALUES = {
+    "no_fabrication": True,
+    "claim_traceability": "claim-number-citation-closure",
+    "terminology_consistency": "frozen-glossary-and-notation",
+    "asset_provenance": "hashed-source-and-result-refs",
+    "compile_integrity": "references-and-cross-references-must-resolve",
+    "no_shell_escape": True,
+}
+_VENUE_HARD_TOKENS = frozenset(
+    {
+        "anonymity",
+        "build_engine",
+        "checklist",
+        "column_layout",
+        "disclosure",
+        "page_limit",
+        "requires_pdf",
+        "submission_format",
+        "supplement_policy",
+        "template",
+    }
+)
 
 _DEFAULT_SECRET_PATTERNS = {
     "credential-bearing-url": re.compile(
@@ -48,7 +70,35 @@ _DEFAULT_SECRET_PATTERNS = {
     "authorization-header": re.compile(
         r"\bauthorization\s*:\s*(?:bearer|basic)\s+\S+", re.IGNORECASE
     ),
+    "private-key-block": re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----"),
+    "secret-assignment": re.compile(
+        r"\b(?:api[_-]?key|password|secret|access[_-]?token)\s*[:=]\s*"
+        r"[\"']?[A-Za-z0-9_./+=-]{12,}",
+        re.IGNORECASE,
+    ),
 }
+
+
+def _validate_hard_authority(token: str, entry: Mapping[str, Any], layer: str) -> None:
+    if layer == "base" and token in _BASE_HARD_VALUES:
+        if (
+            entry.get("classification") != "HARD"
+            or entry.get("weakenable") is not False
+            or entry.get("value") != _BASE_HARD_VALUES[token]
+        ):
+            _fail(
+                "BASE_HARD_POLICY",
+                f"base truth token {token!r} must retain its locked hard value",
+            )
+        return
+    if entry.get("classification") != "HARD":
+        return
+    if layer == "venue" and token in _VENUE_HARD_TOKENS:
+        return
+    _fail(
+        "UNAUTHORIZED_HARD_TOKEN",
+        f"token {token!r} cannot become HARD in the {layer} layer",
+    )
 
 
 def _layer_tokens(raw_layer: Any, layer: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -133,6 +183,21 @@ def _normalise_token_entry(
 
 
 def _token_snapshot(tokens: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    required = {
+        "token",
+        "value",
+        "classification",
+        "resolved_layer",
+        "source_ref",
+        "source_sha256",
+        "weakenable",
+    }
+    for index, row in enumerate(tokens):
+        if not isinstance(row, Mapping) or not required.issubset(row):
+            _fail(
+                "INVALID_TOKEN_SNAPSHOT",
+                f"resolved token row {index} is missing required fields",
+            )
     rows = [
         {
             "token": row["token"],
@@ -197,7 +262,17 @@ def resolve_paper_design_tokens(
                 ),
             )
 
+            if not entry.get("delete") and (
+                previous is None or previous["classification"] != "HARD"
+            ):
+                _validate_hard_authority(token, entry, layer)
+
             if entry.get("delete") is True:
+                if token == "requires_pdf" and previous is None:
+                    _fail(
+                        "REQUIRES_PDF_AUTHORITY",
+                        "requires_pdf cannot be introduced as a deletion",
+                    )
                 if previous and previous["classification"] == "HARD":
                     _fail(
                         "HARD_RULE_DELETE",
@@ -353,6 +428,11 @@ def resolve_paper_design_tokens(
         "provenance": provenance,
         "caveats": caveats,
         "hard_failures": [],
+        "resolver_version": "1.0",
+        "mandatory_tokens": sorted(required),
+        "source_layers": copy.deepcopy(
+            {layer: layers[layer] for layer in TOKEN_LAYERS if layer in layers}
+        ),
     }
 
 
@@ -424,6 +504,151 @@ def _schema_token_projection(value: Any) -> dict[str, Any]:
     return _token_snapshot(tokens)
 
 
+def _validated_token_resolution(
+    value: Any,
+    source_hashes: Any,
+    venue_profile: Any,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or value.get("resolver_version") != "1.0":
+        _fail(
+            "TOKEN_RESOLUTION_ATTESTATION",
+            "freeze requires the rich output of resolve_paper_design_tokens",
+        )
+    source_layers = value.get("source_layers")
+    mandatory_tokens = value.get("mandatory_tokens")
+    if not isinstance(source_layers, Mapping) or not isinstance(mandatory_tokens, list):
+        _fail(
+            "TOKEN_RESOLUTION_ATTESTATION",
+            "token resolution is missing replayable source layers",
+        )
+    replay = resolve_paper_design_tokens(
+        source_layers,
+        mandatory_tokens=mandatory_tokens,
+    )
+    comparable_keys = (
+        "cascade_order",
+        "tokens",
+        "snapshot_sha256",
+        "resolved_tokens",
+        "resolved",
+        "provenance",
+        "caveats",
+        "hard_failures",
+    )
+    if any(value.get(key) != replay.get(key) for key in comparable_keys):
+        _fail(
+            "TOKEN_RESOLUTION_TAMPERED",
+            "resolved tokens do not match deterministic replay of their source layers",
+        )
+    replay_tokens = {row["token"]: row for row in replay["tokens"]}
+    missing_truth_tokens = sorted(set(_BASE_HARD_VALUES) - set(replay_tokens))
+    if missing_truth_tokens:
+        _fail(
+            "TOKEN_RESOLUTION_ATTESTATION",
+            f"base truth-hard tokens are missing: {missing_truth_tokens}",
+        )
+    for token, expected_value in _BASE_HARD_VALUES.items():
+        row = replay_tokens[token]
+        if (
+            row["value"] != expected_value
+            or row["classification"] != "HARD"
+            or row["weakenable"] is not False
+            or row["resolved_layer"] != "base"
+        ):
+            _fail(
+                "BASE_HARD_POLICY",
+                f"base truth token {token!r} was downgraded or moved",
+            )
+
+    if not isinstance(source_hashes, Sequence) or isinstance(source_hashes, (str, bytes)):
+        _fail("TOKEN_SOURCE_CLOSURE", "source_hashes must freeze token provenance")
+    source_index = {
+        row.get("ref"): row
+        for row in source_hashes
+        if isinstance(row, Mapping) and isinstance(row.get("ref"), str)
+    }
+    official_pairs: set[tuple[str, str]] = set()
+    if isinstance(venue_profile, Mapping):
+        official_pairs.update(
+            (str(row.get("ref")), str(row.get("sha256")))
+            for row in venue_profile.get("official_rule_refs", ())
+            if isinstance(row, Mapping)
+        )
+        official_pairs.add(
+            (
+                str(venue_profile.get("template_ref")),
+                str(venue_profile.get("template_sha256")),
+            )
+        )
+    for token, provenance in replay["provenance"].items():
+        for event in provenance["history"]:
+            source = source_index.get(event["source_ref"])
+            if (
+                source is None
+                or source.get("sha256") != event["source_sha256"]
+                or source.get("kind") not in {"TOKEN_OVERLAY", "VENUE_RULE", "TEMPLATE"}
+            ):
+                _fail(
+                    "TOKEN_SOURCE_CLOSURE",
+                    f"token {token!r} has unfrozen override provenance",
+                )
+            if event["layer"] == "venue" and event["classification"] == "HARD":
+                if (
+                    source.get("kind") not in {"VENUE_RULE", "TEMPLATE"}
+                    or (event["source_ref"], event["source_sha256"])
+                    not in official_pairs
+                ):
+                    _fail(
+                        "VENUE_HARD_SOURCE",
+                        f"venue hard token {token!r} lacks current official authority",
+                    )
+    return replay
+
+
+def _validate_result_receipts(
+    payload: Mapping[str, Any],
+    verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
+) -> None:
+    results = payload.get("result_refs")
+    if not isinstance(results, Sequence) or isinstance(results, (str, bytes)):
+        return
+    if results and verifier is None:
+        _fail(
+            "RESULT_VERIFIER_REQUIRED",
+            "frozen result refs require an injected receipt verifier",
+        )
+    for row in results:
+        if not isinstance(row, Mapping):
+            continue
+        try:
+            facts = verifier(copy.deepcopy(dict(row))) if verifier else None
+        except Exception:
+            _fail(
+                "RESULT_RECEIPT_UNVERIFIED",
+                "the injected verifier rejected a result receipt",
+            )
+        expected = {
+            "verified": True,
+            "result_ref": row.get("ref"),
+            "result_sha256": row.get("sha256"),
+            "receipt_ref": row.get("receipt_ref"),
+            "receipt_sha256": row.get("receipt_sha256"),
+        }
+        if (
+            not isinstance(facts, Mapping)
+            or facts.get("verified") is not True
+            or any(
+                facts.get(key) != expected_value
+                for key, expected_value in expected.items()
+                if key != "verified"
+            )
+        ):
+            _fail(
+                "RESULT_RECEIPT_UNVERIFIED",
+                f"result {row.get('ref')!r} lacks matching verified receipt facts",
+            )
+
+
 def canonical_contract_hash(contract: Mapping[str, Any]) -> str:
     """Hash a contract canonically while excluding its self-referential stamp."""
 
@@ -445,6 +670,9 @@ def freeze_manuscript_contract(
     run_root: str | Path,
     now: datetime,
     max_official_age: timedelta,
+    result_receipt_verifier: (
+        Callable[[Mapping[str, Any]], Mapping[str, Any]] | None
+    ) = None,
     secret_sentinels: Mapping[str, str] | None = None,
     secret_patterns: Mapping[str, str | re.Pattern[str]] | None = None,
 ) -> dict[str, Any]:
@@ -453,16 +681,21 @@ def freeze_manuscript_contract(
     if not isinstance(contract, Mapping):
         _fail("INVALID_CONTRACT", "contract must be an object")
     candidate = copy.deepcopy(dict(contract))
-    if "resolved_tokens" in candidate:
-        candidate["resolved_tokens"] = _schema_token_projection(
-            candidate["resolved_tokens"]
-        )
-
+    for required in ("paper_type", "north_star", "source_hashes"):
+        if required not in candidate:
+            _fail("SCHEMA_INVALID", f"required contract field {required!r} is missing")
     _validate_official_profile(
         candidate,
         now=now,
         max_official_age=max_official_age,
     )
+    resolution = _validated_token_resolution(
+        candidate.get("resolved_tokens"),
+        candidate.get("source_hashes"),
+        candidate.get("venue_profile"),
+    )
+    candidate["resolved_tokens"] = copy.deepcopy(resolution["resolved_tokens"])
+    _validate_result_receipts(candidate, result_receipt_verifier)
     _validate_dependency_slice_hashes(candidate)
     candidate["manuscript_snapshot_sha256"] = canonical_contract_hash(candidate)
     schema_errors = validate_payload("manuscript_contract", candidate)
@@ -482,11 +715,6 @@ def freeze_manuscript_contract(
         purpose="write",
     )
     target = Path(path_result["path"])
-    validate_run_owned_path(
-        Path(str(target) + ".tmp"),
-        run_root=run_root,
-        purpose="write",
-    )
     text = _canonical_json(candidate) + "\n"
     patterns = dict(_DEFAULT_SECRET_PATTERNS)
     patterns.update(secret_patterns or {})
@@ -497,24 +725,7 @@ def freeze_manuscript_contract(
         patterns=patterns,
     )
 
-    if target.exists():
-        try:
-            existing = json.loads(target.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            _fail(
-                "FROZEN_CONTRACT_CONFLICT",
-                "existing contract is unreadable and will not be overwritten",
-            )
-        if existing == candidate:
-            return copy.deepcopy(candidate)
-        _fail(
-            "FROZEN_CONTRACT_CONFLICT",
-            "a different contract is already frozen at the target path",
-        )
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(target, text)
-    return copy.deepcopy(candidate)
+    return _atomic_create_once(target, text, candidate, run_root=run_root)
 
 
 def affected_descendants(

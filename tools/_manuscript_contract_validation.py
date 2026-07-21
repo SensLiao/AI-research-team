@@ -5,9 +5,14 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import re
+import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Mapping, Sequence
+
+from research_agent_teams.tools.manuscript_security import validate_run_owned_path
 
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -338,8 +343,91 @@ def validate_source_closure(payload: Mapping[str, Any]) -> None:
                 )
 
 
+def _existing_contract_or_conflict(
+    target: Path,
+    candidate: Mapping[str, Any],
+    *,
+    run_root: str | Path,
+) -> dict[str, Any]:
+    validate_run_owned_path(target, run_root=run_root, purpose="write")
+    try:
+        existing = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        fail(
+            "FROZEN_CONTRACT_CONFLICT",
+            "existing contract is unreadable and will not be overwritten",
+        )
+    if existing == candidate:
+        return copy.deepcopy(dict(candidate))
+    fail(
+        "FROZEN_CONTRACT_CONFLICT",
+        "a different contract is already frozen at the target path",
+    )
+
+
+def atomic_create_once(
+    target: Path,
+    text: str,
+    candidate: Mapping[str, Any],
+    *,
+    run_root: str | Path,
+) -> dict[str, Any]:
+    """Publish complete bytes once using a unique file plus atomic hard-link."""
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    validate_run_owned_path(target, run_root=run_root, purpose="write")
+    if target.exists():
+        return _existing_contract_or_conflict(target, candidate, run_root=run_root)
+
+    descriptor = -1
+    temporary: Path | None = None
+    try:
+        descriptor, name = tempfile.mkstemp(
+            prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+        )
+        temporary = Path(name)
+        validate_run_owned_path(temporary, run_root=run_root, purpose="write")
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+            descriptor = -1
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        validate_run_owned_path(target, run_root=run_root, purpose="write")
+        try:
+            os.link(temporary, target, follow_symlinks=False)
+        except FileExistsError:
+            return _existing_contract_or_conflict(
+                target, candidate, run_root=run_root
+            )
+        except OSError:
+            fail(
+                "ATOMIC_FREEZE_UNAVAILABLE",
+                "filesystem cannot provide create-once atomic contract publication",
+            )
+        temporary.unlink()
+        temporary = None
+        validate_run_owned_path(target, run_root=run_root, purpose="write")
+        if os.name != "nt":
+            directory_fd = os.open(target.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        return copy.deepcopy(dict(candidate))
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 __all__ = [
     "ManuscriptContractError",
+    "atomic_create_once",
     "canonical_json",
     "canonical_sha256",
     "fail",
