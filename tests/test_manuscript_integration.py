@@ -26,6 +26,13 @@ STAGE = "WRITE"
 RECEIPT_REF = "inbox/panel-scheduler/WRITE.json"
 EVIDENCE_REF = "evidence/local-paper-001"
 RESULT_REF = "results/frozen-result.json"
+BIBLIOGRAPHY = (
+    "@article{LocalPaper2026,\n"
+    "  title = {A Frozen Local Source},\n"
+    "  author = {Fixture, Research},\n"
+    "  year = {2026}\n"
+    "}\n"
+)
 SECTIONS = (
     {
         "section_id": "introduction",
@@ -72,6 +79,8 @@ def _contract(run_root: Path) -> dict:
     result_path = run_root / RESULT_REF
     _write_json(result_path, {"fixture_only": True, "metrics": {"score": 0.8125}})
     result_sha = _file_hash(result_path)
+    receipt_path = run_root / "receipts/result-001"
+    _write_json(receipt_path, {"fixture": True, "result_sha256": result_sha})
 
     contract = valid_manuscript_contract()
     contract["run_id"] = run_root.name
@@ -107,7 +116,7 @@ def _contract(run_root: Path) -> dict:
             "sha256": result_sha,
             "status": "FROZEN",
             "receipt_ref": "receipts/result-001",
-            "receipt_sha256": "e" * 64,
+            "receipt_sha256": _file_hash(receipt_path),
         }
     ]
     contract["bibliography"]["entries"] = [
@@ -245,13 +254,7 @@ def _integrate(run_root: Path, contract: dict, refs: list[str], **kwargs) -> dic
         manuscript_contract=contract,
         section_bundle_refs=refs,
         required_sections=SECTIONS,
-        bibliography_text=(
-            "@article{LocalPaper2026,\n"
-            "  title = {A Frozen Local Source},\n"
-            "  author = {Fixture, Research},\n"
-            "  year = {2026}\n"
-            "}\n"
-        ),
+        bibliography_text=kwargs.pop("bibliography_text", BIBLIOGRAPHY),
         stage=STAGE,
         **kwargs,
     )
@@ -506,24 +509,18 @@ def _external_asset(run_root: Path, contract: dict, director_file: Path) -> dict
     return _stamp(manifest, "manifest_sha256")
 
 
-def test_director_asset_is_copied_byte_for_byte_with_canonical_provenance(tmp_path):
+def _prepare_external_asset_case(tmp_path: Path, content: bytes = b"<svg><title>director source</title></svg>"):
     run_root, contract, refs = _setup_run(tmp_path)
     director_root = tmp_path / "director-assets"
     director_root.mkdir()
     director_file = director_root / "director.svg"
-    director_file.write_bytes(b"<svg><title>director source</title></svg>")
-    before = director_file.read_bytes()
+    director_file.write_bytes(content)
     manifest = _external_asset(run_root, contract, director_file)
-    contract["asset_plan"] = [
-        {
-            "asset_id": "asset-director-figure",
-            "kind": "FIGURE",
-            "label": "fig:director",
-            "planned_path": "figures/director.svg",
-            "source_refs": [director_file.name],
-            "result_refs": [RESULT_REF],
-        }
-    ]
+    contract["asset_plan"] = [{
+        "asset_id": "asset-director-figure", "kind": "FIGURE", "label": "fig:director",
+        "planned_path": "figures/director.svg", "source_refs": [director_file.name],
+        "result_refs": [RESULT_REF],
+    }]
     contract["source_hashes"].append(
         {"ref": director_file.name, "sha256": _file_hash(director_file), "kind": "ASSET"}
     )
@@ -543,6 +540,14 @@ def test_director_asset_is_copied_byte_for_byte_with_canonical_provenance(tmp_pa
         payload["asset_refs"].append("asset-director-figure")
 
     _rewrite_bundle(run_root, refs[0], add_figure)
+    return run_root, contract, refs, director_root, director_file, manifest
+
+
+def test_director_asset_is_copied_byte_for_byte_with_canonical_provenance(tmp_path):
+    run_root, contract, refs, director_root, director_file, manifest = (
+        _prepare_external_asset_case(tmp_path)
+    )
+    before = director_file.read_bytes()
     candidate = _integrate(
         run_root,
         contract,
@@ -558,6 +563,118 @@ def test_director_asset_is_copied_byte_for_byte_with_canonical_provenance(tmp_pa
     record = candidate["asset_manifest"]["assets"][0]
     assert record["source_inputs"][0]["sha256"] == record["output"]["sha256"]
     assert record["provenance"]["external_source"]["original_sha256"] == _file_hash(director_file)
+
+
+def test_bibliography_is_part_of_the_fail_closed_tex_boundary(tmp_path):
+    run_root, contract, refs = _setup_run(tmp_path)
+    unsafe = BIBLIOGRAPHY.replace("A Frozen Local Source", "\\write18{touch escaped}")
+    _assert_code(
+        "UNSAFE_TEX",
+        lambda: _integrate(run_root, contract, refs, bibliography_text=unsafe),
+    )
+
+
+def test_result_use_requires_a_real_frozen_receipt_binding(tmp_path):
+    run_root, contract, refs = _setup_run(tmp_path)
+    contract["claim_ledger"][1]["result_refs"] = [RESULT_REF]
+    contract["manuscript_snapshot_sha256"] = canonical_contract_hash(contract)
+    receipt = json.loads((run_root / RECEIPT_REF).read_text(encoding="utf-8"))
+    for row, ref, authorization in zip(SECTIONS, refs, receipt["authorizations"]):
+        _write_json(run_root / ref, _bundle(contract, row, _canonical_hash(authorization)))
+    _rewrite_bundle(
+        run_root, refs[1],
+        lambda payload: payload["claim_support_refs"][0]["result_refs"].append(RESULT_REF),
+    )
+    _assert_code("RESULT_RECEIPT_UNVERIFIED", lambda: _integrate(run_root, contract, refs))
+
+
+def test_materialization_rejects_cross_run_replay_and_preserves_foreign_lock(tmp_path):
+    run_root, contract, refs = _setup_run(tmp_path)
+    candidate = _integrate(run_root, contract, refs)
+    other_run = tmp_path / "run-002"
+    other_run.mkdir()
+    _assert_code(
+        "CANDIDATE_RUN_MISMATCH",
+        lambda: materialize_source_tree(candidate, run_root=other_run),
+    )
+    lock = run_root / ".source-integration.lock"
+    lock.write_bytes(b"incumbent-writer")
+    _assert_code("SOURCE_WRITER_BUSY", lambda: materialize_source_tree(candidate, run_root=run_root))
+    assert lock.read_bytes() == b"incumbent-writer"
+
+
+def test_scheduler_receipt_requires_an_external_authority(tmp_path):
+    run_root, contract, refs = _setup_run(tmp_path)
+    _assert_code(
+        "AUTHORIZATION_VERIFIER_REQUIRED",
+        lambda: integrate_manuscript(
+            run_root=run_root, manuscript_contract=contract, section_bundle_refs=refs,
+            required_sections=SECTIONS, bibliography_text=BIBLIOGRAPHY, stage=STAGE,
+        ),
+    )
+
+
+def test_format_repair_cannot_change_json_structure(tmp_path):
+    run_root, contract, refs = _setup_run(tmp_path)
+    path = run_root / refs[0]
+    valid_text = path.read_text(encoding="utf-8")
+    path.write_text(valid_text.replace('"asset_refs":[]', '"asset_refs":{', 1), encoding="utf-8")
+    _assert_code(
+        "FORMAT_REPAIR_CHANGED_CONTENT",
+        lambda: validate_section_bundle(
+            refs[0], run_root=run_root, manuscript_contract=contract,
+            required_section=SECTIONS[0], stage=STAGE,
+            format_repair=lambda *_args: valid_text,
+        ),
+    )
+
+
+def test_asset_source_refs_and_textual_asset_secrets_are_verified(tmp_path):
+    run_root, contract, refs, director_root, director_file, manifest = (
+        _prepare_external_asset_case(tmp_path)
+    )
+    manifest["assets"][0]["source_inputs"][0]["ref"] = "forged.svg"
+    _stamp(manifest["assets"][0], "asset_record_sha256")
+    _stamp(manifest, "manifest_sha256")
+    _assert_code(
+        "ASSET_SOURCE_INPUT_MISMATCH",
+        lambda: _integrate(
+            run_root, contract, refs, asset_manifest=manifest,
+            asset_sources={"asset-director-figure": director_file},
+            director_asset_roots=[director_root],
+        ),
+    )
+
+    run_root, contract, refs, director_root, director_file, manifest = (
+        _prepare_external_asset_case(tmp_path / "secret", b"<svg>TOPSECRET</svg>")
+    )
+    _assert_code(
+        "SECRET_LEAKAGE",
+        lambda: _integrate(
+            run_root, contract, refs, asset_manifest=manifest,
+            asset_sources={"asset-director-figure": director_file},
+            director_asset_roots=[director_root], secret_sentinels={"fixture": "TOPSECRET"},
+        ),
+    )
+
+
+def test_asset_copy_uses_hash_checked_bytes_not_a_later_path_read(tmp_path, monkeypatch):
+    run_root, contract, refs, director_root, director_file, manifest = (
+        _prepare_external_asset_case(tmp_path)
+    )
+    expected = director_file.read_bytes()
+    injected = b"X" * len(expected)
+    original_read = Path.read_bytes
+
+    def raced_read(path: Path) -> bytes:
+        return injected if path == director_file else original_read(path)
+
+    monkeypatch.setattr(Path, "read_bytes", raced_read)
+    candidate = _integrate(
+        run_root, contract, refs, asset_manifest=manifest,
+        asset_sources={"asset-director-figure": director_file}, director_asset_roots=[director_root],
+    )
+    assert candidate["files"]["figures/director.svg"] == expected
 
 
 def test_generated_assets_require_argv_receipts_and_all_assets_must_exist(tmp_path):
