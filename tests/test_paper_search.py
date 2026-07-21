@@ -131,3 +131,97 @@ def test_vault_path_is_refused_by_both_write_paths(tmp_path):
         _reject_vault_path(tmp_path / "phd-research-os" / "02-wiki" / "leak.json")
     # a normal runs/ path is fine
     write_search_bundle(tmp_path / "runs" / "ok", "q", res, "2026-06-10T12:00:00Z")
+
+
+def test_openalex_key_failure_does_not_suppress_other_provider_results(monkeypatch):
+    key = "openalex-key-sentinel"
+    contact = "contact-sentinel@example.invalid"
+    monkeypatch.setenv("RAT_OPENALEX_API_KEY", key)
+    monkeypatch.setenv("RAT_CONTACT_MAIL", contact)
+    crossref_body = json.dumps({"message": {"items": [{
+        "DOI": "10.5555/safe",
+        "title": ["Safe Crossref Metadata"],
+        "issued": {"date-parts": [[2026]]},
+    }]}}).encode()
+    seen = []
+
+    def transport(url, _headers):
+        seen.append(url)
+        if "crossref.org" in url:
+            return crossref_body
+        if "openalex.org" in url:
+            return OPENALEX_AB
+        raise AssertionError(f"unexpected URL {url}")
+
+    result = search(
+        "safe metadata",
+        sources=("openalex", "crossref"),
+        transport=transport,
+    )
+
+    assert all("openalex.org" not in url for url in seen)
+    assert [record["doi"] for record in result["records"]] == ["10.5555/safe"]
+    assert set(result["source_errors"]) == {"openalex"}
+    detail = result["source_errors"]["openalex"]
+    assert "blocked before transport" in detail.lower()
+    assert key not in detail
+    assert contact not in detail
+
+
+def test_source_errors_are_redacted_when_collected_and_persisted(monkeypatch, tmp_path):
+    key = "credential-sentinel"
+    contact = "contact-sentinel@example.invalid"
+    query_value = "private-query-sentinel"
+    monkeypatch.setenv("RAT_OPENALEX_API_KEY", key)
+    monkeypatch.setenv("RAT_CONTACT_MAIL", contact)
+    unsafe_detail = (
+        "network failure for https://api.crossref.org/works?"
+        f"query={query_value}&api_key={key}&mailto={contact}: token={key}"
+    )
+
+    def failing_transport(_url, _headers):
+        raise ScholarLookupError(unsafe_detail)
+
+    result = search("safe metadata", sources=("crossref",), transport=failing_transport)
+    collected = result["source_errors"]["crossref"]
+    assert "crossref" in collected.lower()
+    assert "api.crossref.org/works" in collected
+    assert "?" not in collected
+    assert query_value not in collected
+    assert key not in collected
+    assert contact not in collected
+
+    result["source_errors"]["crossref"] = unsafe_detail
+    output = write_search_bundle(
+        tmp_path / "run-redaction",
+        "safe metadata",
+        result,
+        "2026-07-21T00:00:00Z",
+    )
+    persisted = json.loads(open(output, encoding="utf-8").read())
+    persisted_detail = persisted["source_errors"]["crossref"]
+    assert "api.crossref.org/works" in persisted_detail
+    assert "?" not in persisted_detail
+    assert query_value not in persisted_detail
+    assert key not in persisted_detail
+    assert contact not in persisted_detail
+
+
+def test_openalex_results_remain_metadata_only(monkeypatch):
+    monkeypatch.delenv("RAT_OPENALEX_API_KEY", raising=False)
+    monkeypatch.delenv("RAT_CONTACT_MAIL", raising=False)
+    result = search(
+        "metadata only",
+        sources=("openalex",),
+        transport=lambda _url, _headers: OPENALEX_AB,
+    )
+
+    forbidden_acquisition_fields = {
+        "content", "full_text", "pdf", "pdf_path", "pdf_url", "download",
+    }
+    assert result["records"]
+    assert all(forbidden_acquisition_fields.isdisjoint(record) for record in result["records"])
+    assert all(
+        row["claim_support"] == "none"
+        for row in to_evidence_sources(result["records"])
+    )
