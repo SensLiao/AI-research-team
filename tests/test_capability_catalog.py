@@ -51,18 +51,10 @@ def test_spec_only_modes_are_honestly_not_push_button():
     assert "spec_only_not_push_button" in modes["design_experiment"]["honesty_notes"]
     assert "target_product_contract_not_implemented" in modes["design_experiment"]["honesty_notes"]
 
-    for name in ("manuscript_authoring", "manuscript_review"):
-        assert modes[name]["status"] == "spec_only"
-        assert modes[name]["runnable_surface"] == "registry_defined_not_one_button"
-        assert modes[name]["operate_recipe_present"] is False
-        assert "spec_only_not_push_button" in modes[name]["honesty_notes"]
-        assert "target_product_contract_not_implemented" in modes[name]["honesty_notes"]
-
-
 def test_every_spec_only_mode_has_a_machine_readable_target_product_contract():
     catalog = build_capability_catalog()
     spec_only = [row for row in catalog["modes"] if row["status"] == "spec_only"]
-    assert len(spec_only) == 16
+    assert len(spec_only) == 14
     assert catalog["summary"]["spec_only_product_contracts"] == len(spec_only)
 
     for row in spec_only:
@@ -107,8 +99,6 @@ def test_spec_only_maturity_matrix_and_target_markdown_paths_are_pinned():
         "power_analysis_review",
         "repo_code_audit",
         "analysis_audit_panel",
-        "manuscript_authoring",
-        "manuscript_review",
         "aers_enhanced_research_pack",
     }
     assert {
@@ -137,8 +127,6 @@ def test_spec_only_maturity_matrix_and_target_markdown_paths_are_pinned():
         "tree_explore": "director-review/experiments/experiment-tree-menu.md",
         "repo_code_audit": "director-review/code/repo-code-audit.md",
         "analysis_audit_panel": "director-review/analysis/analysis-audit-report.md",
-        "manuscript_authoring": "director-review/manuscript/manuscript-authoring.md",
-        "manuscript_review": "director-review/manuscript/manuscript-review.md",
         "aers_enhanced_research_pack": "director-review/research/aers-enhanced-research-pack.md",
     }
     assert {
@@ -148,21 +136,27 @@ def test_spec_only_maturity_matrix_and_target_markdown_paths_are_pinned():
 
     summary = build_capability_catalog()["summary"]
     assert summary["spec_only_engine_tested_modes"] == 10
-    assert summary["spec_only_registry_routable_modes"] == 6
+    assert summary["spec_only_registry_routable_modes"] == 4
 
 
-def test_manuscript_modes_are_distinct_declarative_contracts_not_operate_recipes():
+def test_manuscript_modes_are_distinct_operated_contracts_with_no_phantom_review_pack():
     registry_modes = load_mode_registry()["modes"]
     catalog_modes = _modes_by_name(build_capability_catalog())
 
     assert "manuscript_review_pack" not in registry_modes
     assert "manuscript_review_pack" not in catalog_modes
-    assert {"manuscript_authoring", "manuscript_review"}.isdisjoint(REGISTRY)
+    assert {"manuscript_authoring", "manuscript_review"} <= set(REGISTRY)
 
     authoring = registry_modes["manuscript_authoring"]
     review = registry_modes["manuscript_review"]
-    assert "operated" not in authoring
-    assert "operated" not in review
+    assert authoring["operated"] is True
+    assert review["operated"] is True
+    assert "product_maturity" not in authoring
+    assert "product_maturity" not in review
+    for name in ("manuscript_authoring", "manuscript_review"):
+        assert catalog_modes[name]["status"] == "operated"
+        assert catalog_modes[name]["runnable_surface"] == "one_button_operate"
+        assert catalog_modes[name]["operate_recipe_present"] is True
     assert authoring["stage_path"] == ["DISCOVER", "DESIGN", "ANALYZE", "VERIFY", "REPORT"]
     assert review["stage_path"] == ["VERIFY", "REPORT"]
     assert authoring["handoff"]["product_version"] == "manuscript-authoring/v1"
@@ -172,6 +166,18 @@ def test_manuscript_modes_are_distinct_declarative_contracts_not_operate_recipes
     assert set(authoring["handoff"]["reusable_artifacts"]).isdisjoint(
         review["handoff"]["reusable_artifacts"]
     )
+
+
+def test_capability_catalog_rejects_a_yaml_only_manuscript_operated_claim(monkeypatch):
+    recipes = set(REGISTRY)
+    recipes.remove("manuscript_review")
+    monkeypatch.setattr(capability_catalog_module, "operate_recipe_names", lambda: recipes)
+
+    catalog = build_capability_catalog()
+
+    assert "manuscript_review:claimed_operated_without_recipe" in catalog["validation"][
+        "operate_registry_drift"
+    ]
 
 
 def test_manuscript_authoring_contract_is_sparse_adaptive_and_section_complete():

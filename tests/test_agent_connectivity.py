@@ -90,6 +90,8 @@ def test_operated_surface_stays_honest_and_separate_from_routable_surface():
         "full_rigor_minimal",
         "ingest_paper",
         "read_paper_deep",
+        "manuscript_authoring",
+        "manuscript_review",
     }
     assert report["summary"]["operated_agent_count"] < report["summary"]["non_control_agents"]
 
@@ -150,6 +152,10 @@ def test_manuscript_roles_have_exact_roster_graph_and_mode_connectivity():
         worker_spec = {"workers": [{"label": agent}]}
         for mode in modes:
             assert validate_worker_spec_connectivity(mode, stage, worker_spec) == []
+
+    assert validate_worker_spec_connectivity(
+        "manuscript_review", "VERIFY", {"workers": [{"label": "missing-manuscript-role"}]}
+    ) != []
 
 
 def test_manuscript_author_and_expert_reviewer_scopes_remain_disjoint():

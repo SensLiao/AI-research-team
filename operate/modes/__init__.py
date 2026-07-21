@@ -25,6 +25,8 @@ from . import (
     full_rigor_minimal,
     gap_breadth,
     ingest_paper,
+    manuscript_authoring,
+    manuscript_review,
     new_direction,
     read_paper_deep,
     venue_readiness,
@@ -43,8 +45,11 @@ REGISTRY = {
     # knowledge; the human gate is /promote-to-vault). Hard gates fire as deterministic cores in-recipe.
     "ingest_paper": ingest_paper,
     "read_paper_deep": read_paper_deep,
+    # Paper authoring and independent review are deliberately separate operated products.
+    "manuscript_authoring": manuscript_authoring,
+    "manuscript_review": manuscript_review,
 }
 
 __all__ = ["REGISTRY", "deep_ideation", "deep_research", "evidence_deep", "evidence_review",
-           "full_rigor_minimal", "gap_breadth", "ingest_paper", "new_direction", "read_paper_deep",
-           "venue_readiness"]
+           "full_rigor_minimal", "gap_breadth", "ingest_paper", "manuscript_authoring",
+           "manuscript_review", "new_direction", "read_paper_deep", "venue_readiness"]
