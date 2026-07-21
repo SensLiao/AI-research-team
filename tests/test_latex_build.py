@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -90,11 +91,18 @@ class FakeRunner:
             return self._result(returncode=12, stdout="compiler failed")
         output = self.secret or "fixture compiler output"
         if self.mode == "success" and name in {"latexmk", "pdflatex"}:
-            build = self.run_root / "build"
+            build = self._output_dir(argv)
             build.mkdir(exist_ok=True)
             (build / "main.pdf").write_bytes(b"%PDF-1.4 fixture\n")
             (build / "main.fls").write_text("INPUT main.tex\nOUTPUT main.pdf\n", encoding="utf-8")
         return self._result(returncode=0, stdout=output)
+
+    def _output_dir(self, argv) -> Path:
+        for argument in argv:
+            for prefix in ("-outdir=", "-output-directory="):
+                if str(argument).startswith(prefix):
+                    return Path(str(argument)[len(prefix) :])
+        return self.run_root / "build"
 
     @staticmethod
     def _result(*, returncode: int, stdout: str, timed_out: bool = False) -> dict:
@@ -428,6 +436,144 @@ def test_secret_bearing_log_hard_fails_and_persists_only_redaction(tmp_path):
     assert secret not in durable
     assert "[REDACTED_SECRET_OUTPUT]" in durable
     assert secret not in json.dumps(receipt)
+
+
+def test_build_compiles_private_snapshot_and_detects_source_mutation(tmp_path):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    source = _source_tree(run_root)
+    tools = _fake_tools(tmp_path, "latexmk", "perl")
+
+    class MutatingRunner(FakeRunner):
+        def __call__(self, argv, **kwargs):
+            probe = any(arg in {"-v", "--version"} for arg in argv[1:])
+            if not probe:
+                compiled = Path(kwargs["cwd"]) / "main.tex"
+                assert compiled.parent != source
+                assert "write18" not in compiled.read_text(encoding="utf-8")
+                (source / "main.tex").write_text(
+                    r"\documentclass{article}\immediate\write18{whoami}",
+                    encoding="utf-8",
+                )
+            return super().__call__(argv, **kwargs)
+
+    receipt = _build(
+        run_root,
+        tools,
+        MutatingRunner(run_root),
+        runtime_candidates=str(Path(tools["perl"]).parent),
+    )
+
+    _assert_valid(receipt)
+    assert receipt["build_state"] == "COMPILE_FAILED"
+    assert receipt["failure"]["code"] == "SOURCE_CHANGED"
+    assert "-no-shell-escape" in receipt["process_receipt"]["argv"]
+    assert "pdf" not in receipt
+
+
+def test_executable_tex_support_files_are_rejected_before_process(tmp_path):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    _source_tree(run_root)
+    (run_root / "source" / "attacker.cfg").write_text(
+        r"\immediate\write18{whoami}", encoding="utf-8"
+    )
+    tools = _fake_tools(tmp_path, "latexmk", "perl")
+    runner = FakeRunner(run_root)
+
+    receipt = build_latex_project(
+        run_root,
+        run_root / "source",
+        run_id="build-run-001",
+        manuscript_snapshot_sha256=HEX["a"],
+        requires_pdf=True,
+        environment={
+            "PATH": "",
+            "RAT_LATEX_DRIVER_RUNTIME_CANDIDATES": str(Path(tools["perl"]).parent),
+        },
+        which=_which(tools),
+        runner=runner,
+    )
+
+    assert receipt["build_state"] == "COMPILE_FAILED"
+    assert receipt["failure"]["code"] == "UNSAFE_TEX_SUPPORT_FILE"
+    assert runner.calls == []
+
+
+def test_tool_identity_change_after_probe_fails_before_compile(tmp_path):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    tools = _fake_tools(tmp_path, "latexmk", "perl")
+
+    class ReplacingRunner(FakeRunner):
+        def __call__(self, argv, **kwargs):
+            result = super().__call__(argv, **kwargs)
+            if any(arg in {"-v", "--version"} for arg in argv[1:]):
+                Path(tools["latexmk"]).write_bytes(b"replaced executable")
+            return result
+
+    receipt = _build(
+        run_root,
+        tools,
+        ReplacingRunner(run_root),
+        runtime_candidates=str(Path(tools["perl"]).parent),
+    )
+
+    assert receipt["build_state"] == "COMPILE_FAILED"
+    assert receipt["failure"]["code"] == "TOOL_IDENTITY_CHANGED"
+    assert "pdf" not in receipt
+
+
+def test_secret_generated_artifacts_are_removed_not_only_log_redacted(tmp_path):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    tools = _fake_tools(tmp_path, "latexmk", "perl")
+    secret = "artifact-secret-001"
+
+    class ArtifactSecretRunner(FakeRunner):
+        def __call__(self, argv, **kwargs):
+            result = super().__call__(argv, **kwargs)
+            if not any(arg in {"-v", "--version"} for arg in argv[1:]):
+                output = self._output_dir(argv)
+                (output / "main.aux").write_text(secret, encoding="utf-8")
+                (output / "main.log").write_text(secret, encoding="utf-8")
+            return result
+
+    receipt = _build(
+        run_root,
+        tools,
+        ArtifactSecretRunner(run_root),
+        runtime_candidates=str(Path(tools["perl"]).parent),
+        secret_sentinels={"artifact": secret},
+    )
+
+    assert receipt["build_state"] == "COMPILE_FAILED"
+    assert receipt["failure"]["code"] == "SECRET_LEAKAGE"
+    assert not any(secret in path.read_text(encoding="utf-8", errors="ignore")
+                   for path in run_root.rglob("*") if path.is_file())
+
+
+def test_direct_pipeline_uses_one_decreasing_build_deadline(tmp_path):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    tools = _fake_tools(tmp_path, "pdflatex", "bibtex")
+
+    class DelayedRunner(FakeRunner):
+        def __call__(self, argv, **kwargs):
+            if not any(arg in {"-v", "--version"} for arg in argv[1:]):
+                time.sleep(0.01)
+            return super().__call__(argv, **kwargs)
+
+    runner = DelayedRunner(run_root)
+    receipt = _build(run_root, tools, runner, runtime_candidates="", timeout=5)
+
+    assert receipt["build_state"] == "COMPILED"
+    compile_timeouts = [
+        call["timeout"] for call in runner.calls
+        if not any(arg in {"-v", "--version"} for arg in call["argv"][1:])
+    ]
+    assert len(compile_timeouts) == 4
+    assert all(later < earlier for earlier, later in zip(compile_timeouts, compile_timeouts[1:]))
 
 
 @pytest.mark.skipif(
