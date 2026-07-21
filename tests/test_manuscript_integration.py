@@ -671,6 +671,64 @@ def test_asset_source_refs_and_textual_asset_secrets_are_verified(tmp_path):
     )
 
 
+def test_asset_input_kind_is_derived_from_the_frozen_contract(tmp_path):
+    run_root, contract, refs, director_root, director_file, manifest = (
+        _prepare_external_asset_case(tmp_path)
+    )
+    next(row for row in contract["source_hashes"] if row["ref"] == director_file.name)[
+        "kind"
+    ] = "RESULT"
+    contract["manuscript_snapshot_sha256"] = canonical_contract_hash(contract)
+    manifest["manuscript_sha256"] = contract["manuscript_snapshot_sha256"]
+    _stamp(manifest, "manifest_sha256")
+    receipt = json.loads((run_root / RECEIPT_REF).read_text(encoding="utf-8"))
+    for row, ref, authorization in zip(SECTIONS, refs, receipt["authorizations"]):
+        payload = _bundle(contract, row, _canonical_hash(authorization))
+        if row["section_id"] == "introduction":
+            payload["draft_latex"] += (
+                "\\begin{figure}\\centering\\includegraphics{figures/director.svg}"
+                "\\caption{Director-provided architecture.}\\label{fig:director}\\end{figure}\n"
+            )
+            payload["labels"].append("fig:director")
+            payload["asset_refs"].append("asset-director-figure")
+            _stamp(payload, "content_hash")
+        _write_json(run_root / ref, payload)
+
+    _assert_code(
+        "ASSET_SOURCE_KIND_MISMATCH",
+        lambda: _integrate(
+            run_root, contract, refs, asset_manifest=manifest,
+            asset_sources={"asset-director-figure": director_file},
+            director_asset_roots=[director_root],
+        ),
+    )
+
+
+def test_binary_default_secret_patterns_and_active_svg_fail_closed(tmp_path):
+    binary = b"\xffprefix AKIAABCDEFGHIJKLMNOP suffix"
+    _assert_code(
+        "SECRET_LEAKAGE",
+        lambda: integrator_module._scan_candidate_text(
+            {"figures/opaque.png": binary}, sentinels=None, patterns=None
+        ),
+    )
+
+    run_root, contract, refs, director_root, director_file, manifest = (
+        _prepare_external_asset_case(
+            tmp_path,
+            b'<svg><foreignObject onpointerenter="run()"><a href="javascript:run()"/></foreignObject></svg>',
+        )
+    )
+    _assert_code(
+        "UNSAFE_ASSET_CONTENT",
+        lambda: _integrate(
+            run_root, contract, refs, asset_manifest=manifest,
+            asset_sources={"asset-director-figure": director_file},
+            director_asset_roots=[director_root],
+        ),
+    )
+
+
 def test_asset_copy_uses_hash_checked_bytes_not_a_later_path_read(tmp_path, monkeypatch):
     run_root, contract, refs, director_root, director_file, manifest = (
         _prepare_external_asset_case(tmp_path)
