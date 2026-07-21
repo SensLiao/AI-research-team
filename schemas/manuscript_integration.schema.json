@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/manuscript_integration.schema.json",
+  "title": "Manuscript Integration",
+  "description": "Closed single-integrator record for the canonical manuscript source tree. Every consumed section bundle and canonical file is identified by immutable hashes.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "integration_id",
+    "integrator_role",
+    "manuscript_snapshot_sha256",
+    "section_bundle_refs",
+    "canonical_file_inventory",
+    "source_tree_sha256",
+    "reconciliation_findings",
+    "unresolved_interfaces",
+    "integration_hash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {"const": "1.0"},
+    "integration_id": {"$ref": "#/$defs/reference"},
+    "integrator_role": {"const": "manuscript-integrator"},
+    "manuscript_snapshot_sha256": {"$ref": "#/$defs/sha256"},
+    "section_bundle_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["section_id", "bundle_ref", "bundle_sha256", "content_hash"],
+        "additionalProperties": false,
+        "properties": {
+          "section_id": {"$ref": "#/$defs/identifier"},
+          "bundle_ref": {"$ref": "#/$defs/runRelativePath"},
+          "bundle_sha256": {"$ref": "#/$defs/sha256"},
+          "content_hash": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "canonical_file_inventory": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "kind"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"$ref": "#/$defs/runRelativePath"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "kind": {
+            "type": "string",
+            "enum": ["MAIN_TEX", "BIBLIOGRAPHY", "SECTION", "ASSET_MANIFEST", "FIGURE", "TABLE", "OTHER"]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "properties": {"path": {"const": "main.tex"}, "kind": {"const": "MAIN_TEX"}},
+            "required": ["path", "kind"]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": {"path": {"const": "refs.bib"}, "kind": {"const": "BIBLIOGRAPHY"}},
+            "required": ["path", "kind"]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    },
+    "source_tree_sha256": {"$ref": "#/$defs/sha256"},
+    "reconciliation_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["finding_id", "category", "disposition", "details", "affected_refs"],
+        "additionalProperties": false,
+        "properties": {
+          "finding_id": {"type": "string", "pattern": "^REC-[A-Za-z0-9._-]+$"},
+          "category": {
+            "type": "string",
+            "enum": ["TERMINOLOGY", "NOTATION", "CLAIM", "CITATION", "NUMBER", "LABEL", "ASSET", "NARRATIVE"]
+          },
+          "disposition": {"type": "string", "enum": ["RESOLVED", "UNRESOLVED"]},
+          "details": {"$ref": "#/$defs/nonemptyString"},
+          "affected_refs": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/reference"}
+          }
+        }
+      }
+    },
+    "unresolved_interfaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["interface_id", "kind", "details", "owner", "blocking"],
+        "additionalProperties": false,
+        "properties": {
+          "interface_id": {"$ref": "#/$defs/identifier"},
+          "kind": {
+            "type": "string",
+            "enum": ["CLAIM", "CITATION", "NUMBER", "NOTATION", "LABEL", "ASSET", "SECTION"]
+          },
+          "details": {"$ref": "#/$defs/nonemptyString"},
+          "owner": {"$ref": "#/$defs/identifier"},
+          "blocking": {"type": "boolean"}
+        }
+      }
+    },
+    "integration_hash": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonemptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "reference": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\.\\.)(?!.*\\\\)[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+    },
+    "runRelativePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\.\\.)(?!.*\\\\)[A-Za-z0-9][A-Za-z0-9._/-]*$"
+    }
+  }
+}

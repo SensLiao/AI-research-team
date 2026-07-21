@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/local_literature_coverage.schema.json",
+  "title": "Local Literature Coverage",
+  "description": "Closed six-axis local-first coverage contract. Only a named DEFICIT authorizes a frozen metadata search; provider failure and incomplete zero-result traces cannot be laundered into evidence absence.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "coverage_id",
+    "manuscript_snapshot_sha256",
+    "assessed_at",
+    "local_corpus_refs",
+    "axes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {"const": "1.0"},
+    "coverage_id": {"$ref": "#/$defs/reference"},
+    "manuscript_snapshot_sha256": {"$ref": "#/$defs/sha256"},
+    "assessed_at": {"type": "string", "format": "date-time"},
+    "local_corpus_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref", "sha256", "source_kind"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {"$ref": "#/$defs/reference"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "source_kind": {"type": "string", "enum": ["PAPER", "NOTE", "RESULT", "DATASET_CARD"]}
+        }
+      }
+    },
+    "axes": {
+      "type": "object",
+      "required": [
+        "related_comparison",
+        "technical_method",
+        "implementation_detail",
+        "dataset",
+        "metric_evaluation",
+        "industry_prior_art"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "related_comparison": {"$ref": "#/$defs/coverageAxis"},
+        "technical_method": {"$ref": "#/$defs/coverageAxis"},
+        "implementation_detail": {"$ref": "#/$defs/coverageAxis"},
+        "dataset": {"$ref": "#/$defs/coverageAxis"},
+        "metric_evaluation": {"$ref": "#/$defs/coverageAxis"},
+        "industry_prior_art": {"$ref": "#/$defs/coverageAxis"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonemptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "reference": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\.\\.)(?!.*\\\\)[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+    },
+    "coverageAxis": {
+      "type": "object",
+      "required": ["criterion", "status", "local_source_refs", "rationale"],
+      "additionalProperties": false,
+      "properties": {
+        "criterion": {"$ref": "#/$defs/nonemptyString"},
+        "status": {"type": "string", "enum": ["SUFFICIENT", "DEFICIT", "UNVERIFIED"]},
+        "local_source_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/reference"}
+        },
+        "rationale": {"$ref": "#/$defs/nonemptyString"},
+        "query_authorization": {"$ref": "#/$defs/queryAuthorization"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "DEFICIT"}}, "required": ["status"]},
+          "then": {"required": ["query_authorization"]},
+          "else": {"not": {"required": ["query_authorization"]}}
+        }
+      ]
+    },
+    "queryAuthorization": {
+      "type": "object",
+      "required": [
+        "authorization_id",
+        "deficit_id",
+        "frozen_plan_sha256",
+        "created_at",
+        "outcome",
+        "terminal_trace_sha256",
+        "attempts",
+        "metadata_rows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "authorization_id": {"$ref": "#/$defs/reference"},
+        "deficit_id": {"type": "string", "pattern": "^DEF-[A-Za-z0-9._-]+$"},
+        "frozen_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "PROVIDER_FAILURE",
+            "PARTIAL_OR_UNRESOLVED_ZERO_RESULT",
+            "NO_EVIDENCE_AFTER_VALID_SEARCH"
+          ]
+        },
+        "terminal_trace_sha256": {"$ref": "#/$defs/sha256"},
+        "attempts": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"pattern": "^attempt-[A-Za-z0-9._-]+$"},
+          "patternProperties": {
+            "^attempt-[A-Za-z0-9._-]+$": {"$ref": "#/$defs/searchAttempt"}
+          },
+          "additionalProperties": false
+        },
+        "metadata_rows": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/metadataRow"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"outcome": {"const": "PROVIDER_FAILURE"}},
+            "required": ["outcome"]
+          },
+          "then": {
+            "properties": {
+              "attempts": {
+                "patternProperties": {
+                  "^attempt-[A-Za-z0-9._-]+$": {
+                    "properties": {
+                      "terminal": {
+                        "properties": {
+                          "closed": {"const": true},
+                          "status": {"const": "PROVIDER_FAILURE"},
+                          "result_count": {"const": 0},
+                          "admissible_rows": {"const": 0}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"outcome": {"const": "PARTIAL_OR_UNRESOLVED_ZERO_RESULT"}},
+            "required": ["outcome"]
+          },
+          "then": {
+            "properties": {
+              "attempts": {
+                "patternProperties": {
+                  "^attempt-[A-Za-z0-9._-]+$": {
+                    "properties": {
+                      "terminal": {
+                        "properties": {
+                          "closed": {"const": true},
+                          "status": {"type": "string", "enum": ["PARTIAL", "UNRESOLVED_ZERO_RESULT"]}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"outcome": {"const": "NO_EVIDENCE_AFTER_VALID_SEARCH"}},
+            "required": ["outcome"]
+          },
+          "then": {
+            "properties": {
+              "attempts": {
+                "patternProperties": {
+                  "^attempt-[A-Za-z0-9._-]+$": {
+                    "properties": {
+                      "terminal": {
+                        "properties": {
+                          "closed": {"const": true},
+                          "status": {"const": "SUCCESS_EMPTY"},
+                          "result_count": {"const": 0},
+                          "admissible_rows": {"const": 0},
+                          "response_sha256": {"$ref": "#/$defs/sha256"}
+                        }
+                      }
+                    }
+                  }
+                },
+                "minProperties": 1
+              },
+              "metadata_rows": {
+                "items": {
+                  "properties": {"admissible_for_manuscript": {"const": false}}
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "searchAttempt": {
+      "type": "object",
+      "required": ["provider", "query", "query_sha256", "terminal"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["ARXIV", "OPENALEX", "CROSSREF", "SEMANTIC_SCHOLAR"]
+        },
+        "query": {"$ref": "#/$defs/nonemptyString"},
+        "query_sha256": {"$ref": "#/$defs/sha256"},
+        "terminal": {
+          "type": "object",
+          "required": ["closed", "status", "result_count", "admissible_rows", "response_sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "closed": {"type": "boolean"},
+            "status": {
+              "type": "string",
+              "enum": ["PROVIDER_FAILURE", "PARTIAL", "UNRESOLVED_ZERO_RESULT", "SUCCESS_EMPTY"]
+            },
+            "result_count": {"type": "integer", "minimum": 0},
+            "admissible_rows": {"type": "integer", "minimum": 0},
+            "response_sha256": {
+              "oneOf": [
+                {"$ref": "#/$defs/sha256"},
+                {"type": "null"}
+              ]
+            }
+          }
+        }
+      }
+    },
+    "metadataRow": {
+      "type": "object",
+      "required": [
+        "provider",
+        "provider_record_id",
+        "title",
+        "claim_support",
+        "exact_span_support",
+        "local_full_text_owned",
+        "admissible_for_manuscript"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["ARXIV", "OPENALEX", "CROSSREF", "SEMANTIC_SCHOLAR"]
+        },
+        "provider_record_id": {"$ref": "#/$defs/nonemptyString"},
+        "title": {"$ref": "#/$defs/nonemptyString"},
+        "claim_support": {"const": "NONE"},
+        "exact_span_support": {"const": false},
+        "local_full_text_owned": {"const": false},
+        "admissible_for_manuscript": {"const": false}
+      }
+    }
+  }
+}
