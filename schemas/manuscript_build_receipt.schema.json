@@ -1,0 +1,346 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/manuscript_build_receipt.schema.json",
+  "title": "Manuscript Build Receipt",
+  "description": "Closed, receipt-derived build truth for one frozen manuscript source tree. Only COMPILED may expose a PDF fact.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "manuscript_snapshot_sha256",
+    "source_tree_ref",
+    "source_tree_sha256",
+    "requires_pdf",
+    "build_state",
+    "build_receipt_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "run_id": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "manuscript_snapshot_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_tree_ref": {
+      "$ref": "#/$defs/safe_ref"
+    },
+    "source_tree_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "requires_pdf": {
+      "type": "boolean"
+    },
+    "build_state": {
+      "type": "string",
+      "enum": [
+        "COMPILED",
+        "TOOLCHAIN_MISSING",
+        "COMPILE_FAILED"
+      ]
+    },
+    "process_receipt": {
+      "$ref": "#/$defs/process_receipt"
+    },
+    "log_ref": {
+      "$ref": "#/$defs/safe_ref"
+    },
+    "log_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "recorder_ref": {
+      "$ref": "#/$defs/safe_ref"
+    },
+    "recorder_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "pdf": {
+      "$ref": "#/$defs/pdf_fact"
+    },
+    "failure": {
+      "$ref": "#/$defs/failure_fact"
+    },
+    "build_receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["build_state"],
+        "properties": {
+          "build_state": {
+            "const": "COMPILED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "process_receipt",
+          "log_ref",
+          "log_sha256",
+          "recorder_ref",
+          "recorder_sha256",
+          "pdf"
+        ],
+        "properties": {
+          "process_receipt": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/process_receipt"
+              },
+              {
+                "properties": {
+                  "return_code": {
+                    "const": 0
+                  },
+                  "timed_out": {
+                    "const": false
+                  }
+                }
+              }
+            ]
+          },
+          "failure": false
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["build_state"],
+        "properties": {
+          "build_state": {
+            "const": "TOOLCHAIN_MISSING"
+          }
+        }
+      },
+      "then": {
+        "required": ["failure"],
+        "properties": {
+          "process_receipt": false,
+          "log_ref": false,
+          "log_sha256": false,
+          "recorder_ref": false,
+          "recorder_sha256": false,
+          "pdf": false,
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/failure_fact"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "TOOLCHAIN_MISSING"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["build_state"],
+        "properties": {
+          "build_state": {
+            "const": "COMPILE_FAILED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "process_receipt",
+          "log_ref",
+          "log_sha256",
+          "failure"
+        ],
+        "properties": {
+          "pdf": false,
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/failure_fact"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "COMPILE_FAILED"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nonempty": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "safe_ref": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^\\u0000-\\u001f]+$"
+    },
+    "process_receipt": {
+      "type": "object",
+      "required": [
+        "executable",
+        "executable_version",
+        "argv",
+        "operating_system",
+        "tex_engine",
+        "return_code",
+        "duration_ms",
+        "timed_out",
+        "shell",
+        "shell_escape",
+        "started_at",
+        "finished_at",
+        "receipt_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "executable": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "executable_version": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/nonempty"
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "-norc"
+              }
+            },
+            {
+              "contains": {
+                "const": "-recorder"
+              }
+            },
+            {
+              "contains": {
+                "const": "-halt-on-error"
+              }
+            },
+            {
+              "not": {
+                "contains": {
+                  "enum": [
+                    "-shell-escape",
+                    "--shell-escape",
+                    "--enable-write18"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "operating_system": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "tex_engine": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "return_code": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timed_out": {
+          "type": "boolean"
+        },
+        "shell": {
+          "const": false
+        },
+        "shell_escape": {
+          "const": false
+        },
+        "started_at": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "finished_at": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "pdf_fact": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256",
+        "byte_size"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/safe_ref"
+            },
+            {
+              "pattern": "\\.pdf$"
+            }
+          ]
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "failure_fact": {
+      "type": "object",
+      "required": [
+        "kind",
+        "code",
+        "safe_message",
+        "observed_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "TOOLCHAIN_MISSING",
+            "COMPILE_FAILED"
+          ]
+        },
+        "code": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "safe_message": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    }
+  }
+}
