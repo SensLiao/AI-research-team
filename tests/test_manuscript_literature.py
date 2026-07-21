@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from research_agent_teams.tools import manuscript_literature
 from research_agent_teams.tools.manuscript_literature import (
     COVERAGE_AXES,
     LiteratureCoverageError,
@@ -460,7 +461,9 @@ def test_provider_errors_and_request_urls_are_redacted_before_return(tmp_path: P
     assert "https://api.openalex.org/works" in serialized
 
 
-def test_unapproved_or_linked_vault_roots_fail_before_recall(tmp_path: Path):
+def test_unapproved_or_linked_vault_roots_fail_before_recall(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     allowed = tmp_path / "allowed-vault"
     outside = tmp_path / "outside-vault"
     allowed.mkdir()
@@ -486,8 +489,14 @@ def test_unapproved_or_linked_vault_roots_fail_before_recall(tmp_path: Path):
     linked = tmp_path / "linked-vault"
     try:
         os.symlink(allowed, linked, target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"directory symlinks unavailable: {exc}")
+    except OSError:
+        linked.mkdir()
+        original_link_check = manuscript_literature._is_link_or_reparse
+        monkeypatch.setattr(
+            manuscript_literature,
+            "_is_link_or_reparse",
+            lambda path: path == linked or original_link_check(path),
+        )
     with pytest.raises(LiteratureCoverageError, match="LINKED_VAULT_ROOT"):
         assess_local_coverage(
             coverage_id="coverage-linked",
