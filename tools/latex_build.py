@@ -1,10 +1,4 @@
-"""Bounded, receipt-producing LaTeX builds for run-owned manuscript trees.
-
-The adapter deliberately separates executable discovery from durable facts.  Host
-paths are used only in memory; receipts and logs contain portable executable names
-and run-relative paths.  Every subprocess receives the same sanitized environment,
-an argv list, a timeout, and ``shell=False``.
-"""
+"""Bounded, receipt-producing LaTeX builds for run-owned manuscript trees."""
 from __future__ import annotations
 
 import hashlib
@@ -13,18 +7,29 @@ import os
 import platform
 import re
 import shutil
-import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from research_agent_teams.tools.manuscript_security import (
+    ManuscriptPathViolation,
     ManuscriptSecretViolation,
     ManuscriptTexViolation,
     scan_persisted_text,
     validate_run_owned_path,
     validate_tex_sources,
+)
+from research_agent_teams.tools._latex_sandbox import (
+    LatexSandboxViolation,
+    atomic_write_bytes,
+    executable_sha256,
+    invoke_runner,
+    private_workspace,
+    stable_file_bytes,
+    stage_files,
+    text_artifacts,
+    validate_recorder_inputs,
 )
 from research_agent_teams.tools.runstore import atomic_write_text
 from research_agent_teams.tools.validate_artifact import validate_payload
@@ -68,11 +73,12 @@ _UNRESOLVED_LOG_RE = re.compile(
     r"reference [`'].+?[`'] .* undefined)",
     re.IGNORECASE,
 )
+_EXECUTABLE_SUPPORT_SUFFIXES = frozenset(
+    {".sty", ".cls", ".cfg", ".def", ".fd", ".lua", ".bst", ".pl", ".py", ".sh", ".bat", ".cmd", ".ps1", ".exe", ".dll"}
+)
 
 
 class LatexBuildError(RuntimeError):
-    """Raised when the caller crosses a build boundary rather than a build failing."""
-
     def __init__(self, code: str, message: str) -> None:
         self.code = code
         super().__init__(f"{code}: {message}")
@@ -93,11 +99,7 @@ def _digest_bytes(value: bytes) -> str:
 
 
 def _digest_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return _digest_bytes(stable_file_bytes(path))
 
 
 def _object_digest(value: Mapping[str, Any], omitted: str) -> str:
@@ -114,9 +116,18 @@ def _inside(path: Path, root: Path) -> bool:
 
 def _safe_root(run_root: str | os.PathLike[str], source_root: str | os.PathLike[str]) -> tuple[Path, Path]:
     run = Path(run_root).absolute().resolve(strict=True)
-    source = Path(source_root).absolute()
+    source_input = Path(source_root).absolute()
     try:
-        source = source.resolve(strict=True)
+        validate_run_owned_path(
+            source_input / ".source-boundary-probe",
+            run_root=run,
+            purpose="read",
+            owned_output_roots=(source_input,),
+        )
+    except (ManuscriptPathViolation, OSError) as exc:
+        raise LatexBuildError("SOURCE_OUTSIDE_RUN", "source tree crosses an unsafe path boundary") from exc
+    try:
+        source = source_input.resolve(strict=True)
     except OSError as exc:
         raise LatexBuildError("SOURCE_MISSING", "manuscript source tree is unavailable") from exc
     if not source.is_dir() or not _inside(source, run):
@@ -145,25 +156,26 @@ def _kind(relative: str) -> str:
     return "OTHER"
 
 
-def _source_snapshot(run: Path, source: Path) -> tuple[str, dict[str, str]]:
+def _source_snapshot(run: Path, source: Path) -> tuple[str, dict[str, str], dict[str, bytes]]:
     inventory: list[dict[str, str]] = []
     tex_sources: dict[str, str] = {}
+    source_files: dict[str, bytes] = {}
     for path in sorted((item for item in source.rglob("*") if item.is_file()), key=lambda item: item.as_posix()):
         if path.is_symlink():
             raise LatexBuildError("SOURCE_OUTSIDE_RUN", "source files may not be links")
         checked = validate_run_owned_path(
             path, run_root=run, purpose="read", owned_output_roots=(source,)
         )
-        before = path.stat()
-        data = path.read_bytes()
-        after = path.stat()
-        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-            raise LatexBuildError("SOURCE_CHANGED", "source changed while it was being hashed")
+        try:
+            data = stable_file_bytes(path, max_bytes=64 * 1024 * 1024)
+        except LatexSandboxViolation as exc:
+            raise LatexBuildError("SOURCE_CHANGED", "source identity is not stable") from exc
         relative = checked["relative_path"]
         source_relative = path.relative_to(source).as_posix()
         inventory.append(
             {"path": source_relative, "sha256": _digest_bytes(data), "kind": _kind(source_relative)}
         )
+        source_files[source_relative] = data
         if path.suffix.casefold() in {".tex", ".bib"}:
             try:
                 tex_sources[source_relative] = data.decode("utf-8")
@@ -171,7 +183,7 @@ def _source_snapshot(run: Path, source: Path) -> tuple[str, dict[str, str]]:
                 raise LatexBuildError("SOURCE_ENCODING", f"{relative} is not UTF-8") from exc
     if "main.tex" not in tex_sources:
         raise LatexBuildError("MAIN_TEX_MISSING", "source/main.tex is required")
-    return _digest_bytes(_canonical(inventory)), tex_sources
+    return _digest_bytes(_canonical(inventory)), tex_sources, source_files
 
 
 def _asset_exists(source: Path, kind: str, raw: str) -> bool:
@@ -197,10 +209,13 @@ def _preflight(
     run: Path,
     source: Path,
     tex_sources: Mapping[str, str],
+    source_files: Mapping[str, bytes],
     *,
     sentinels: Mapping[str, str] | None,
     patterns: Mapping[str, Any] | None,
 ) -> tuple[str | None, str | None]:
+    if any(Path(name).suffix.casefold() in _EXECUTABLE_SUPPORT_SUFFIXES for name in source_files):
+        return "UNSAFE_TEX_SUPPORT_FILE", "local executable TeX support files are forbidden"
     try:
         validate_tex_sources(tex_sources, run_root=run, source_root=source)
     except ManuscriptTexViolation:
@@ -229,6 +244,8 @@ def _sanitize_environment(environment: Mapping[str, str] | None) -> tuple[dict[s
         if key.upper() in _ALLOWED_ENV and value is not None
     }
     clean.setdefault("PATH", "")
+    clean["openin_any"] = "p"
+    clean["openout_any"] = "p"
     return clean, raw_candidates
 
 
@@ -269,7 +286,7 @@ def _candidate_perl(raw: str | None, platform_name: str) -> Path | None:
                 continue
             seen.add(key)
             if executable.is_file():
-                return executable.resolve()
+                return executable
     return None
 
 
@@ -278,72 +295,7 @@ def _windows_miktex(environment: Mapping[str, str], name: str) -> str | None:
     if not local:
         return None
     candidate = Path(local) / "Programs" / "MiKTeX" / "miktex" / "bin" / "x64" / f"{name}.exe"
-    return str(candidate.resolve()) if candidate.is_file() else None
-
-
-def _default_runner(
-    argv: Sequence[str],
-    *,
-    cwd: str | os.PathLike[str],
-    env: Mapping[str, str],
-    timeout: int,
-    output_limit: int,
-    shell: bool,
-) -> dict[str, Any]:
-    if shell is not False:
-        raise LatexBuildError("SHELL_FORBIDDEN", "LaTeX processes must not use a shell")
-    started_at = _now()
-    started = time.monotonic()
-    try:
-        completed = subprocess.run(
-            list(argv), cwd=cwd, env=dict(env), shell=False, capture_output=True,
-            timeout=timeout, check=False,
-        )
-        stdout = completed.stdout[:output_limit].decode("utf-8", errors="replace")
-        stderr = completed.stderr[:output_limit].decode("utf-8", errors="replace")
-        return_code = completed.returncode
-        timed_out = False
-    except subprocess.TimeoutExpired as exc:
-        stdout = (exc.stdout or b"")[:output_limit].decode("utf-8", errors="replace")
-        stderr = (exc.stderr or b"")[:output_limit].decode("utf-8", errors="replace")
-        return_code = 124
-        timed_out = True
-    return {
-        "returncode": int(return_code),
-        "stdout": stdout,
-        "stderr": stderr,
-        "timed_out": timed_out,
-        "duration_ms": max(0, int((time.monotonic() - started) * 1000)),
-        "started_at": started_at,
-        "finished_at": _now(),
-    }
-
-
-def _invoke(
-    runner: Callable[..., Mapping[str, Any]],
-    argv: Sequence[str],
-    *,
-    cwd: Path,
-    environment: dict[str, str],
-    timeout: int,
-    output_limit: int,
-) -> dict[str, Any]:
-    result = dict(
-        runner(
-            list(argv), cwd=str(cwd), env=environment, timeout=timeout,
-            output_limit=output_limit, shell=False,
-        )
-    )
-    result.setdefault("returncode", 1)
-    result.setdefault("stdout", "")
-    result.setdefault("stderr", "")
-    result.setdefault("timed_out", False)
-    result.setdefault("duration_ms", 0)
-    result.setdefault("started_at", _now())
-    result.setdefault("finished_at", _now())
-    result["stdout"] = str(result["stdout"])[:output_limit]
-    result["stderr"] = str(result["stderr"])[:output_limit]
-    return result
+    return str(candidate.absolute()) if candidate.is_file() else None
 
 
 def _version(result: Mapping[str, Any], fallback: str) -> str:
@@ -367,18 +319,29 @@ def detect_latex_toolchain(
     timeout: int = _PROBE_TIMEOUT,
     output_limit: int = _OUTPUT_LIMIT,
 ) -> dict[str, Any]:
-    """Discover a runnable driver using the exact environment later used to build."""
-
     run = Path(run_root).absolute()
     clean, declared = _sanitize_environment(environment)
     if runtime_candidates is not None:
         declared = runtime_candidates
     host = platform_name or os.name
-    invoke = runner or _default_runner
+    diagnostics: list[str] = []
+    identities: dict[str, str] = {}
+
+    def bind(name: str, path: str | None) -> str | None:
+        if not path:
+            return None
+        try:
+            identities[name] = executable_sha256(path, platform_name=host)
+            return path
+        except (OSError, LatexSandboxViolation):
+            diagnostics.append(f"{name.upper()}_IDENTITY_REJECTED")
+            return None
+
     perl = _which_call(which, "perl", clean)
     if not perl:
         candidate = _candidate_perl(declared, host)
         perl = str(candidate) if candidate else None
+    perl = bind("perl", perl)
     if perl:
         _prepend_path(clean, (Path(perl).parent,), host)
 
@@ -386,21 +349,22 @@ def detect_latex_toolchain(
         found = _which_call(which, name, clean)
         if not found and host == "nt":
             found = _windows_miktex(clean, name)
+        found = bind(name, found)
         if found:
             _prepend_path(clean, (Path(found).parent,), host)
         return found
 
-    diagnostics: list[str] = []
     latexmk = discover("latexmk")
     if latexmk and perl:
-        probe = _invoke(
-            invoke, (latexmk, "-v"), cwd=run, environment=clean,
+        probe = invoke_runner(
+            runner, (latexmk, "-v"), cwd=run, environment=clean,
             timeout=timeout, output_limit=output_limit,
         )
         if probe["returncode"] == 0 and not probe["timed_out"]:
             return {
                 "state": "READY", "driver": "latexmk",
                 "executables": {"latexmk": latexmk, "perl": perl},
+                "executable_sha256": {key: identities[key] for key in ("latexmk", "perl")},
                 "environment": clean, "version": _version(probe, "latexmk version unavailable"),
                 "diagnostics": diagnostics,
             }
@@ -409,46 +373,33 @@ def detect_latex_toolchain(
         diagnostics.append("LATEXMK_RUNTIME_UNAVAILABLE")
 
     pdflatex = discover("pdflatex")
-    bibliography = "bibtex" if discover("bibtex") else None
-    bibliography_path = discover("biber") if bibliography is None else discover("bibtex")
-    if pdflatex and bibliography and bibliography_path:
-        engine_probe = _invoke(
-            invoke, (pdflatex, "--version"), cwd=run, environment=clean,
+    if pdflatex:
+        engine_probe = invoke_runner(
+            runner, (pdflatex, "--version"), cwd=run, environment=clean,
             timeout=timeout, output_limit=output_limit,
         )
-        bib_probe = _invoke(
-            invoke, (bibliography_path, "--version"), cwd=run, environment=clean,
-            timeout=timeout, output_limit=output_limit,
-        )
-        if all(result["returncode"] == 0 and not result["timed_out"] for result in (engine_probe, bib_probe)):
-            return {
-                "state": "READY", "driver": "direct", "bibliography": bibliography,
-                "executables": {"pdflatex": pdflatex, bibliography: bibliography_path},
-                "environment": clean,
-                "version": _version(engine_probe, "pdflatex version unavailable"),
-                "diagnostics": diagnostics,
-            }
+        if engine_probe["returncode"] == 0 and not engine_probe["timed_out"]:
+            for bibliography in ("bibtex", "biber"):
+                bibliography_path = discover(bibliography)
+                if not bibliography_path:
+                    continue
+                bib_probe = invoke_runner(
+                    runner, (bibliography_path, "--version"), cwd=run,
+                    environment=clean, timeout=timeout, output_limit=output_limit,
+                )
+                if bib_probe["returncode"] == 0 and not bib_probe["timed_out"]:
+                    return {
+                        "state": "READY", "driver": "direct", "bibliography": bibliography,
+                        "executables": {"pdflatex": pdflatex, bibliography: bibliography_path},
+                        "executable_sha256": {
+                            "pdflatex": identities["pdflatex"],
+                            bibliography: identities[bibliography],
+                        },
+                        "environment": clean,
+                        "version": _version(engine_probe, "pdflatex version unavailable"),
+                        "diagnostics": diagnostics,
+                    }
         diagnostics.append("DIRECT_READINESS_FAILED")
-    elif pdflatex:
-        biber = discover("biber")
-        if biber:
-            engine_probe = _invoke(
-                invoke, (pdflatex, "--version"), cwd=run, environment=clean,
-                timeout=timeout, output_limit=output_limit,
-            )
-            bib_probe = _invoke(
-                invoke, (biber, "--version"), cwd=run, environment=clean,
-                timeout=timeout, output_limit=output_limit,
-            )
-            if all(result["returncode"] == 0 and not result["timed_out"] for result in (engine_probe, bib_probe)):
-                return {
-                    "state": "READY", "driver": "direct", "bibliography": "biber",
-                    "executables": {"pdflatex": pdflatex, "biber": biber},
-                    "environment": clean,
-                    "version": _version(engine_probe, "pdflatex version unavailable"),
-                    "diagnostics": diagnostics,
-                }
-            diagnostics.append("DIRECT_READINESS_FAILED")
     return {
         "state": "TOOLCHAIN_MISSING", "driver": None, "executables": {},
         "environment": clean, "diagnostics": diagnostics + ["NO_RUNNABLE_LATEX_DRIVER"],
@@ -548,19 +499,14 @@ def build_latex_project(
     secret_patterns: Mapping[str, Any] | None = None,
     clock: Callable[[], str] = _now,
 ) -> dict[str, Any]:
-    """Build a run-owned source tree and return a schema-valid truthful receipt."""
-
     run, source = _safe_root(run_root, source_root)
-    try:
-        source_hash, tex_sources = _source_snapshot(run, source)
-    except LatexBuildError:
-        raise
+    source_hash, tex_sources, source_files = _source_snapshot(run, source)
     source_ref = source.relative_to(run).as_posix()
     preflight_code, preflight_message = _preflight(
-        run, source, tex_sources, sentinels=secret_sentinels, patterns=secret_patterns
+        run, source, tex_sources, source_files,
+        sentinels=secret_sentinels, patterns=secret_patterns,
     )
     build = run / "build"
-    build.mkdir(parents=True, exist_ok=True)
     log_path = build / "build.log"
     pdf_path = build / "main.pdf"
     recorder_path = build / "main.fls"
@@ -568,6 +514,8 @@ def build_latex_project(
         validate_run_owned_path(
             stale, run_root=run, purpose="write", owned_output_roots=(build,)
         )
+    build.mkdir(parents=True, exist_ok=True)
+    for stale in (log_path, pdf_path, recorder_path):
         if stale.exists() and stale.is_file():
             stale.unlink()
 
@@ -577,7 +525,7 @@ def build_latex_project(
             "returncode": 2, "duration_ms": 0, "timed_out": False,
             "started_at": observed, "finished_at": observed,
         }
-        argv = ["preflight", "-norc", "-recorder", "-halt-on-error"]
+        argv = ["preflight", "-norc", "-recorder", "-halt-on-error", "-no-shell-escape"]
         process = _process_receipt(
             executable="preflight", version="bounded-source-policy/1.0", argv=argv,
             tex_engine="preflight", result=result,
@@ -619,103 +567,181 @@ def build_latex_project(
         }
         return _finish_receipt(run, receipt)
 
-    invoke = runner or _default_runner
     env = selected["environment"]
     records: list[tuple[list[str], Mapping[str, Any]]] = []
-    if selected["driver"] == "latexmk":
-        executable_path = selected["executables"]["latexmk"]
-        actual = [
-            executable_path, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
-            "-halt-on-error", "-file-line-error", "-recorder",
-            f"-outdir={build}", "main.tex",
-        ]
-        result = _invoke(
-            invoke, actual, cwd=source, environment=env, timeout=timeout,
-            output_limit=output_limit,
-        )
-        records.append((actual, result))
-        executable = Path(executable_path).name
-        portable_argv = [
-            executable, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
-            "-halt-on-error", "-file-line-error", "-recorder", "-outdir=build", "main.tex",
-        ]
-        tex_engine = "pdflatex"
-        aggregate = dict(result)
-    else:
-        engine = selected["executables"]["pdflatex"]
-        bib_name = selected["bibliography"]
-        bib = selected["executables"][bib_name]
-        passes = [
-            [engine, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-recorder", f"-output-directory={build}", "main.tex"],
-            [bib, "main"],
-            [engine, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-recorder", f"-output-directory={build}", "main.tex"],
-            [engine, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-recorder", f"-output-directory={build}", "main.tex"],
-        ]
-        for index, command in enumerate(passes):
-            cwd = build if index == 1 else source
-            result = _invoke(
-                invoke, command, cwd=cwd, environment=env, timeout=timeout,
-                output_limit=output_limit,
+    host = platform_name or os.name
+
+    def identity_is_current() -> bool:
+        try:
+            return all(
+                executable_sha256(path, platform_name=host)
+                == selected["executable_sha256"][name]
+                for name, path in selected["executables"].items()
             )
-            records.append((command, result))
-            if result["returncode"] != 0 or result["timed_out"]:
-                break
-        executable = "direct-pipeline"
-        portable_argv = [
-            executable, "-norc", "-recorder", "-halt-on-error",
-            "pdflatex", bib_name, "pdflatex", "pdflatex",
-        ]
-        tex_engine = "pdflatex"
-        aggregate = {
-            "returncode": int(result["returncode"]),
-            "timed_out": any(bool(item[1]["timed_out"]) for item in records),
-            "duration_ms": sum(int(item[1]["duration_ms"]) for item in records),
-            "started_at": records[0][1]["started_at"],
-            "finished_at": records[-1][1]["finished_at"],
-        }
+        except (OSError, LatexSandboxViolation):
+            return False
 
-    log_text = _safe_log_text(records, selected.get("diagnostics", ()), run=run)
-    engine_log_path = build / "main.log"
-    engine_log_text = ""
-    if engine_log_path.is_file():
-        engine_log_text = engine_log_path.read_bytes()[:output_limit].decode(
-            "utf-8", errors="replace"
-        )
-    secret_leak = False
-    try:
-        scan_persisted_text(
-            "latex-build-log", log_text, sentinels=secret_sentinels, patterns=secret_patterns
-        )
-        scan_persisted_text(
-            "latex-engine-log", engine_log_text,
-            sentinels=secret_sentinels, patterns=secret_patterns,
-        )
-    except ManuscriptSecretViolation:
-        secret_leak = True
-        log_text = "[REDACTED_SECRET_OUTPUT]\n"
-    atomic_write_text(log_path, log_text)
-
+    hash_diagnostics = [
+        f"TOOL_SHA256 {name}={digest}"
+        for name, digest in sorted(selected["executable_sha256"].items())
+    ]
     failure_code: str | None = None
     failure_message: str | None = None
-    if secret_leak:
-        failure_code, failure_message = "SECRET_LEAKAGE", "build output contained caller-identified secret material"
-    elif aggregate["timed_out"]:
-        failure_code, failure_message = "PROCESS_TIMEOUT", "LaTeX build exceeded its bounded timeout"
-    elif aggregate["returncode"] != 0:
-        failure_code, failure_message = "PROCESS_NONZERO", "LaTeX build process returned a non-zero status"
-    elif engine_log_text and _UNRESOLVED_LOG_RE.search(engine_log_text):
-        failure_code, failure_message = "UNRESOLVED_REFERENCE", "LaTeX build left unresolved references or citations"
-    elif not pdf_path.is_file() or pdf_path.stat().st_size < 1:
-        failure_code, failure_message = "PDF_MISSING", "LaTeX build did not produce a fresh non-empty PDF"
-    elif not recorder_path.is_file() or recorder_path.stat().st_size < 1:
-        failure_code, failure_message = "RECORDER_MISSING", "LaTeX build did not produce a recorder file"
-    else:
+    pdf_bytes = b""
+    recorder_bytes = b""
+
+    with private_workspace(build) as (_workspace, staged_source, private_output):
+        stage_files(staged_source, source_files)
+        deadline = time.monotonic() + max(0.001, float(timeout))
+
+        def run_command(command: list[str], cwd: Path) -> Mapping[str, Any]:
+            nonlocal failure_code, failure_message
+            if not identity_is_current():
+                failure_code = "TOOL_IDENTITY_CHANGED"
+                failure_message = "selected tool identity changed after readiness probing"
+                stamp = clock()
+                return {
+                    "returncode": 126, "timed_out": False, "duration_ms": 0,
+                    "started_at": stamp, "finished_at": stamp,
+                }
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                stamp = clock()
+                return {
+                    "returncode": 124, "timed_out": True, "duration_ms": 0,
+                    "started_at": stamp, "finished_at": stamp,
+                }
+            outcome = invoke_runner(
+                runner, command, cwd=cwd, environment=env, timeout=remaining,
+                output_limit=output_limit,
+            )
+            records.append((command, outcome))
+            if not identity_is_current():
+                failure_code = "TOOL_IDENTITY_CHANGED"
+                failure_message = "selected tool identity changed during compilation"
+                outcome = dict(outcome)
+                outcome["returncode"] = 126
+            return outcome
+
+        if selected["driver"] == "latexmk":
+            executable_path = selected["executables"]["latexmk"]
+            executable = Path(executable_path).name
+            actual = [
+                executable_path, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
+                "-halt-on-error", "-file-line-error", "-recorder", "-no-shell-escape",
+                f"-outdir={private_output}", "main.tex",
+            ]
+            result = run_command(actual, staged_source)
+            portable_argv = [
+                executable, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
+                "-halt-on-error", "-file-line-error", "-recorder", "-no-shell-escape",
+                "-outdir=private-output", "main.tex",
+            ]
+            aggregate = dict(result)
+        else:
+            engine = selected["executables"]["pdflatex"]
+            bib_name = selected["bibliography"]
+            bib = selected["executables"][bib_name]
+            engine_args = [
+                "-interaction=nonstopmode", "-halt-on-error", "-file-line-error",
+                "-recorder", "-no-shell-escape", f"-output-directory={private_output}",
+                "main.tex",
+            ]
+            passes = [[engine, *engine_args], [bib, "main"], [engine, *engine_args], [engine, *engine_args]]
+            for index, command in enumerate(passes):
+                result = run_command(command, private_output if index == 1 else staged_source)
+                if result["returncode"] != 0 or result["timed_out"] or failure_code:
+                    break
+            executable = "direct-pipeline"
+            portable_argv = [
+                executable, "-norc", "-recorder", "-halt-on-error", "-no-shell-escape",
+                "pdflatex", bib_name, "pdflatex", "pdflatex",
+            ]
+            aggregate = {
+                "returncode": int(result["returncode"]),
+                "timed_out": any(bool(item[1]["timed_out"]) for item in records),
+                "duration_ms": sum(int(item[1]["duration_ms"]) for item in records),
+                "started_at": (records[0][1] if records else result)["started_at"],
+                "finished_at": (records[-1][1] if records else result)["finished_at"],
+            }
+
+        tex_engine = "pdflatex"
+        log_text = _safe_log_text(
+            records, [*selected.get("diagnostics", ()), *hash_diagnostics], run=run
+        )
+        generated_text: dict[str, str] = {}
         try:
-            current_source_hash, _ = _source_snapshot(run, source)
-        except LatexBuildError:
-            current_source_hash = ""
-        if current_source_hash != source_hash:
-            failure_code, failure_message = "SOURCE_CHANGED", "source tree changed during compilation"
+            generated_text = text_artifacts(private_output, max_bytes=output_limit)
+        except (OSError, LatexSandboxViolation):
+            failure_code = failure_code or "OUTPUT_IDENTITY_INVALID"
+            failure_message = failure_message or "generated artifacts failed stable bounded reads"
+        engine_log_text = generated_text.get("main.log", "")
+        secret_leak = False
+        try:
+            scan_persisted_text(
+                "latex-build-log", log_text,
+                sentinels=secret_sentinels, patterns=secret_patterns,
+            )
+            scan_persisted_text(
+                "latex-tool-version", str(selected["version"]),
+                sentinels=secret_sentinels, patterns=secret_patterns,
+            )
+            for name, text in generated_text.items():
+                scan_persisted_text(
+                    f"latex-artifact:{name}", text,
+                    sentinels=secret_sentinels, patterns=secret_patterns,
+                )
+        except ManuscriptSecretViolation:
+            secret_leak = True
+            selected["version"] = "[REDACTED_TOOL_VERSION]"
+            log_text = "[REDACTED_SECRET_OUTPUT]\n"
+
+        if secret_leak:
+            failure_code, failure_message = (
+                "SECRET_LEAKAGE", "generated build artifacts contained secret material"
+            )
+        elif failure_code:
+            pass
+        elif aggregate["timed_out"]:
+            failure_code, failure_message = "PROCESS_TIMEOUT", "LaTeX build exceeded its total deadline"
+        elif aggregate["returncode"] != 0:
+            failure_code, failure_message = "PROCESS_NONZERO", "LaTeX build process returned a non-zero status"
+        elif engine_log_text and _UNRESOLVED_LOG_RE.search(engine_log_text):
+            failure_code, failure_message = "UNRESOLVED_REFERENCE", "LaTeX build left unresolved references or citations"
+        else:
+            try:
+                pdf_bytes = stable_file_bytes(private_output / "main.pdf", max_bytes=512 * 1024 * 1024)
+                recorder_bytes = stable_file_bytes(private_output / "main.fls", max_bytes=output_limit)
+                roots = [staged_source, private_output]
+                for key in ("LOCALAPPDATA", "APPDATA", "PROGRAMDATA"):
+                    if env.get(key):
+                        roots.extend([Path(env[key]) / "MiKTeX", Path(env[key]) / "Programs" / "MiKTeX"])
+                if host != "nt":
+                    roots.extend(
+                        Path(item) for item in (
+                            "/usr/share/texlive", "/usr/share/texmf", "/usr/local/texlive",
+                            "/var/lib/texmf", "/etc/texmf", "/usr/share/fonts",
+                        )
+                    )
+                validate_recorder_inputs(recorder_bytes, cwd=staged_source, allowed_roots=roots)
+            except FileNotFoundError:
+                failure_code, failure_message = "PDF_MISSING", "build did not produce PDF and recorder outputs"
+            except LatexSandboxViolation:
+                failure_code, failure_message = "OUTPUT_IDENTITY_INVALID", "PDF or recorder identity failed validation"
+            if not failure_code and not pdf_bytes:
+                failure_code, failure_message = "PDF_MISSING", "build did not produce a non-empty PDF"
+            if not failure_code:
+                try:
+                    current_source_hash, _, _ = _source_snapshot(run, source)
+                except LatexBuildError:
+                    current_source_hash = ""
+                if current_source_hash != source_hash:
+                    failure_code, failure_message = "SOURCE_CHANGED", "source tree changed during compilation"
+
+        atomic_write_text(log_path, log_text)
+        if not failure_code:
+            atomic_write_bytes(pdf_path, pdf_bytes)
+            atomic_write_bytes(recorder_path, recorder_bytes)
 
     if failure_code:
         if pdf_path.is_file():
@@ -759,10 +785,10 @@ def build_latex_project(
             "log_ref": log_path.relative_to(run).as_posix(),
             "log_sha256": _digest_file(log_path),
             "recorder_ref": recorder_path.relative_to(run).as_posix(),
-            "recorder_sha256": _digest_file(recorder_path),
+            "recorder_sha256": _digest_bytes(recorder_bytes),
             "pdf": {
                 "path": pdf_path.relative_to(run).as_posix(),
-                "sha256": _digest_file(pdf_path), "byte_size": pdf_path.stat().st_size,
+                "sha256": _digest_bytes(pdf_bytes), "byte_size": len(pdf_bytes),
             },
         }
     )
