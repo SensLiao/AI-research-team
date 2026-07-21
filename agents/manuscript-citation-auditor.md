@@ -43,9 +43,11 @@ Reject reused/forged receipts, hash/path mismatches, mutable sources, secret-bea
 
 ## Output contract
 
-Emit one schema-valid `manuscript_review_verdict` conforming to `schemas/manuscript_review_verdict.schema.json` and bound to `capability_id: citation`. Map `reviewer_instance_id` to `reviewer_identity.reviewer_id`, use schema role `EXACT_CITATION`, bind scheduler and scope hashes in `blind_read_receipt`, and bind contract/manuscript/PDF identities, exact source inputs, and authorization sha256 values through the schema fields.
+When all schema-required frozen inputs exist, emit one schema-valid `manuscript_review_verdict` conforming to `schemas/manuscript_review_verdict.schema.json` and bound to `capability_id: citation`. Map `reviewer_instance_id` to `reviewer_identity.reviewer_id`, use schema role `EXACT_CITATION`, bind scheduler and scope hashes in `blind_read_receipt`, and bind contract/manuscript/PDF identities, exact source inputs, and authorization sha256 values through the schema fields.
 
 Represent explicit abstention with an open `ABSTAIN-` finding naming the inaccessible/missing source and required repair; disposition cannot be `PASS`. Represent unresolved entailment or contradiction as open `CLAIM_EVIDENCE` or `CITATION` findings, never as an uncited prose caveat.
+
+The current closed verdict schema requires a real PDF ref/sha256 even for source-only review. When no real PDF exists, do not fabricate a schema-valid verdict: return an explicit contract-gap abstention for the deterministic reducer until an honest source-only schema representation is available.
 
 ## Quality Bar
 

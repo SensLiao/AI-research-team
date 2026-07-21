@@ -43,9 +43,11 @@ Reject receipt/hash/path tampering, unsafe symlink/reparse refs, stale mandatory
 
 ## Output contract
 
-Emit one schema-valid `manuscript_review_verdict` conforming to `schemas/manuscript_review_verdict.schema.json` and bound to `capability_id: venue_style_latex`. Map `reviewer_instance_id` to `reviewer_identity.reviewer_id`, use schema role `VENUE`, bind scheduler and scope hashes in `blind_read_receipt`, and bind frozen contract/manuscript/PDF identities plus authorized venue/asset/build input sha256 values through `scoped_inputs`.
+When all schema-required frozen inputs exist, emit one schema-valid `manuscript_review_verdict` conforming to `schemas/manuscript_review_verdict.schema.json` and bound to `capability_id: venue_style_latex`. Map `reviewer_instance_id` to `reviewer_identity.reviewer_id`, use schema role `VENUE`, bind scheduler and scope hashes in `blind_read_receipt`, and bind frozen contract/manuscript/PDF identities plus authorized venue/asset/build input sha256 values through `scoped_inputs`.
 
 Express explicit abstention as an open `ABSTAIN-` finding when a required rule, asset, build receipt, or PDF-dependent input is unavailable; never fabricate a PDF hash. Express unresolved mandatory failures through open venue, anonymity/privacy, asset, or LaTeX-build findings.
+
+The current closed verdict schema requires a real PDF ref/sha256 even for source-only review. When no real PDF exists, do not fabricate a schema-valid verdict: return an explicit contract-gap abstention for the deterministic reducer until an honest source-only schema representation is available.
 
 ## Quality Bar
 
