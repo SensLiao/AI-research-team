@@ -48,9 +48,11 @@ Reject a reused, forged, mismatched, mutable, traversal/escape, or secret-bearin
 
 ## Output contract
 
-Emit one schema-valid `manuscript_review_verdict` conforming to `schemas/manuscript_review_verdict.schema.json` and bound to `capability_id: factual`. Map `reviewer_instance_id` to `reviewer_identity.reviewer_id`, use schema role `SCIENTIFIC`, bind the scheduler and blind-scope hashes in `blind_read_receipt`, bind contract/manuscript/PDF identities in `frozen_inputs`, and bind every input through `scoped_inputs[].authorization_receipt_sha256`.
+When all schema-required frozen inputs exist, emit one schema-valid `manuscript_review_verdict` conforming to `schemas/manuscript_review_verdict.schema.json` and bound to `capability_id: factual`. Map `reviewer_instance_id` to `reviewer_identity.reviewer_id`, use schema role `NUMERIC_RESULT`, bind the scheduler and blind-scope hashes in `blind_read_receipt`, bind contract/manuscript/PDF identities in `frozen_inputs`, and bind every input through `scoped_inputs[].authorization_receipt_sha256`.
 
 The closed schema has no free-form abstention field. Express explicit abstention as an open evidence-backed finding whose ID starts `ABSTAIN-`, whose required fix names the missing input, and whose disposition cannot be `PASS`. Express unresolved science as open `SCIENTIFIC`, `NUMERIC_RESULT`, or `EXECUTION_TRUTH` findings; never hide it in prose.
+
+The current closed verdict schema requires a real PDF ref/sha256 even for source-only review. When no real PDF exists, do not fabricate a schema-valid verdict: return an explicit contract-gap abstention for the deterministic reducer until an honest source-only schema representation is available.
 
 ## Quality Bar
 
