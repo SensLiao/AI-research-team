@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/manuscript_asset_manifest.schema.json",
+  "title": "Manuscript Asset Manifest",
+  "description": "Closed provenance and ownership inventory for every visible manuscript figure and table.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "manuscript_sha256",
+    "assets",
+    "manifest_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "run_id": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "manuscript_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "nonempty": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "safe_ref": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^\\u0000-\\u001f]+$"
+    },
+    "string_ref_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/nonempty"
+      }
+    },
+    "source_input": {
+      "type": "object",
+      "required": [
+        "ref",
+        "sha256",
+        "kind",
+        "immutable"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "FROZEN_RESULT",
+            "SOURCE_DATA",
+            "DIRECTOR_ASSET",
+            "EXTERNAL_EVIDENCE"
+          ]
+        },
+        "immutable": {
+          "const": true
+        }
+      }
+    },
+    "output_fact": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256",
+        "byte_size",
+        "owner_run_id",
+        "run_owned",
+        "overwrite_policy",
+        "preexisting_target"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "owner_run_id": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "run_owned": {
+          "const": true
+        },
+        "overwrite_policy": {
+          "const": "CREATE_NEW"
+        },
+        "preexisting_target": {
+          "const": false
+        }
+      }
+    },
+    "caption": {
+      "type": "object",
+      "required": [
+        "text",
+        "owner_role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "owner_role": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "numeric_source_cell": {
+      "type": "object",
+      "required": [
+        "result_ref",
+        "cell_ref",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "result_ref": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "cell_ref": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "render_command": {
+      "type": "object",
+      "required": [
+        "script_ref",
+        "script_sha256",
+        "argv",
+        "environment_sha256",
+        "parameters_sha256",
+        "command_receipt_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "script_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "script_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/nonempty"
+          }
+        },
+        "environment_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "parameters_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "command_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "external_source": {
+      "type": "object",
+      "required": [
+        "source_ref",
+        "original_sha256",
+        "acquired_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "original_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "acquired_at": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "kind",
+        "creator",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "GENERATED",
+            "EXTERNAL"
+          ]
+        },
+        "creator": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "created_at": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "render_command": {
+          "$ref": "#/$defs/render_command"
+        },
+        "external_source": {
+          "$ref": "#/$defs/external_source"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "const": "GENERATED"
+              }
+            }
+          },
+          "then": {
+            "required": ["render_command"],
+            "properties": {
+              "external_source": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "const": "EXTERNAL"
+              }
+            }
+          },
+          "then": {
+            "required": ["external_source"],
+            "properties": {
+              "render_command": false
+            }
+          }
+        }
+      ]
+    },
+    "permission": {
+      "type": "object",
+      "required": [
+        "status",
+        "license_ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "OWNED",
+            "LICENSED",
+            "DIRECTOR_APPROVED"
+          ]
+        },
+        "license_ref": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "required": [
+        "asset_id",
+        "label",
+        "asset_type",
+        "source_inputs",
+        "output",
+        "caption",
+        "claim_refs",
+        "result_refs",
+        "numeric_source_cells",
+        "provenance",
+        "permission",
+        "accessibility_text",
+        "asset_record_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "label": {
+          "type": "string",
+          "pattern": "^(fig|tab):[A-Za-z0-9][A-Za-z0-9:._-]*$"
+        },
+        "asset_type": {
+          "type": "string",
+          "enum": [
+            "FIGURE",
+            "TABLE"
+          ]
+        },
+        "source_inputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source_input"
+          }
+        },
+        "output": {
+          "$ref": "#/$defs/output_fact"
+        },
+        "caption": {
+          "$ref": "#/$defs/caption"
+        },
+        "claim_refs": {
+          "$ref": "#/$defs/string_ref_list"
+        },
+        "result_refs": {
+          "$ref": "#/$defs/string_ref_list"
+        },
+        "numeric_source_cells": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/numeric_source_cell"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "permission": {
+          "$ref": "#/$defs/permission"
+        },
+        "accessibility_text": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "asset_record_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["asset_type"],
+            "properties": {
+              "asset_type": {
+                "const": "FIGURE"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "label": {
+                "pattern": "^fig:"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["asset_type"],
+            "properties": {
+              "asset_type": {
+                "const": "TABLE"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "label": {
+                "pattern": "^tab:"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
