@@ -106,6 +106,9 @@ _SAFE_TEX_PACKAGES = frozenset(
     newtxmath newtxtext subcaption tabularx times url verbatim xcolor
     """.split()
 )
+_SAFE_TEX_DOCUMENT_CLASSES = frozenset(
+    {"article", "book", "letter", "minimal", "proc", "report", "standalone"}
+)
 _NO_EXECUTION_TEMPLATE_RE = re.compile(
     r"\s*scripts?\s+only:\s*no\s+experiment\s+was\s+run\s+and\s+"
     r"no\s+result\s+is\s+claimed\.\s*",
@@ -448,7 +451,7 @@ def _raise_tex(code: str, message: str) -> None:
     raise ManuscriptTexViolation(code, message)
 
 
-def _validate_tex_allowlist(text: str) -> None:
+def _validate_tex_allowlist(text: str, *, source_root: Path) -> None:
     for match in _CONTROL_SEQUENCE_RE.finditer(text):
         if match.group("name") not in _SAFE_TEX_COMMANDS:
             _raise_tex("TEX_UNSUPPORTED_COMMAND", "TeX control sequence is not allowlisted")
@@ -463,16 +466,28 @@ def _validate_tex_allowlist(text: str) -> None:
         _raise_tex("TEX_DYNAMIC_COMMAND", "package declaration is not a bounded literal")
     for declaration in packages:
         for package in declaration.group("names").split(","):
-            if package.strip() not in _SAFE_TEX_PACKAGES:
+            package = package.strip()
+            if package not in _SAFE_TEX_PACKAGES:
                 _raise_tex("TEX_UNSUPPORTED_COMMAND", "TeX package is not allowlisted")
+            if os.path.lexists(source_root / f"{package}.sty"):
+                _raise_tex("TEX_PACKAGE_SHADOW", "run-local TeX package shadowing is forbidden")
 
     class_starts = list(re.finditer(r"\\documentclass\b", text, re.IGNORECASE))
     classes = list(_DOCUMENT_CLASS_RE.finditer(text))
     if len(class_starts) != len(classes):
         _raise_tex("TEX_DYNAMIC_COMMAND", "document class declaration is not a bounded literal")
     for declaration in classes:
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+", declaration.group("name").strip()):
+        class_name = declaration.group("name").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", class_name):
             _raise_tex("TEX_EXTERNAL_PATH", "document class path is not a bounded identifier")
+        if class_name not in _SAFE_TEX_DOCUMENT_CLASSES:
+            _raise_tex(
+                "TEX_UNSUPPORTED_DOCUMENT_CLASS", "TeX document class is not allowlisted"
+            )
+        if os.path.lexists(source_root / f"{class_name}.cls"):
+            _raise_tex(
+                "TEX_DOCUMENT_CLASS_SHADOW", "run-local TeX class shadowing is forbidden"
+            )
 
 
 def _validate_tex_reference(reference: str, *, source_root: Path, run_root: Path) -> None:
@@ -566,7 +581,7 @@ def validate_tex_sources(
             for reference in references:
                 _validate_tex_reference(reference, source_root=source_path, run_root=run_path)
             directives_checked += 1
-        _validate_tex_allowlist(text)
+        _validate_tex_allowlist(text, source_root=source_path)
 
     return {
         "ok": True,
