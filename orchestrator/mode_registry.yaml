@@ -627,6 +627,12 @@ modes:
       candidate_bundles_per_required_section: 1
       integrator: manuscript-integrator
       integrator_may_author_missing_prose: false
+      generation_evidence_eligible_as_independent_review: false
+      instance_isolation:
+        run_id_scope: manuscript_authoring
+        authorization_receipt_scope: manuscript_authoring
+        blind_scope: manuscript_authoring_quality
+        cross_mode_instance_or_receipt_reuse: forbidden
     scheduler_contract:
       dependency_model: sparse_dag
       frozen_common_snapshot: manuscript_contract
@@ -722,7 +728,7 @@ modes:
           - id: independently_audit_and_package
             workers: [manuscript-factual-auditor, manuscript-citation-auditor,
                       manuscript-style-latex-auditor, manuscript-submission-packager]
-            produces: "Independent authoring audits and a reviewable authoring evidence package."
+            produces: "Independent authoring audits and an authoring-scoped evidence package."
       productization_gaps:
         - "Add the operated sparse-DAG recipe with scheduler authorization receipts and adaptive section instances."
         - "Add deterministic candidate-cardinality, integration, build, and quality reducers."
@@ -741,6 +747,11 @@ modes:
                    manuscript-submission-packager]
     review_contract:
       frozen_input_hashes: [contract_sha256, manuscript_sha256, source_tree_sha256, pdf_sha256]
+      instance_isolation:
+        run_id_scope: manuscript_review
+        authorization_receipt_scope: manuscript_review
+        blind_scope: manuscript_review_independent
+        cross_mode_instance_or_receipt_reuse: forbidden
       required_capability_ids: [domain_contribution, methods_reproducibility, figure_table,
                                 factual, citation, venue_style_latex]
       capability_workers:
@@ -753,6 +764,10 @@ modes:
       blind_authorization:
         minimum_distinct_reviewer_receipts: 2
         distinct_reviewer_instance_ids: true
+        review_run_must_differ_from_authoring_run: true
+        authoring_receipts_count_as_review_receipts: false
+        authoring_reviewer_instance_ids_may_be_reused: false
+        one_capability_bound_receipt_per_verdict: true
         sibling_conclusions_visible_before_freeze: false
         generation_evidence_counts_as_independent_review: false
       reconciliation_join:
@@ -814,6 +829,7 @@ modes:
       productization_gaps:
         - "Add a review-only operated recipe with frozen authoring inputs and blind scheduler receipts."
         - "Add deterministic capability closure, receipt uniqueness, reconciliation, and abstention reducers."
+        - "Freeze and path-enforce the review evidence namespace in task frames before the recipe becomes operated."
         - "Add the review Markdown renderer and operated tests without sharing generation conclusions."
     gate_level: record_only
     budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 2}

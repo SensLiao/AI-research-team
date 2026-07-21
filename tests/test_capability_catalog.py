@@ -193,6 +193,8 @@ def test_manuscript_authoring_contract_is_sparse_adaptive_and_section_complete()
     assert contract["candidate_bundles_per_required_section"] == 1
     assert contract["integrator"] == "manuscript-integrator"
     assert contract["integrator_may_author_missing_prose"] is False
+    assert contract["generation_evidence_eligible_as_independent_review"] is False
+    assert contract["instance_isolation"]["cross_mode_instance_or_receipt_reuse"] == "forbidden"
     assert scheduler["dependency_model"] == "sparse_dag"
     assert scheduler["adaptive_instances"]["fixed_section_worker_count"] is False
     assert fixture_contract["fixed_section_count"] is False
@@ -251,6 +253,10 @@ def test_manuscript_review_contract_requires_blind_capability_closure_and_join()
     blind = contract["blind_authorization"]
     assert blind["minimum_distinct_reviewer_receipts"] == 2
     assert blind["distinct_reviewer_instance_ids"] is True
+    assert blind["review_run_must_differ_from_authoring_run"] is True
+    assert blind["authoring_receipts_count_as_review_receipts"] is False
+    assert blind["authoring_reviewer_instance_ids_may_be_reused"] is False
+    assert blind["one_capability_bound_receipt_per_verdict"] is True
     assert blind["sibling_conclusions_visible_before_freeze"] is False
     assert blind["generation_evidence_counts_as_independent_review"] is False
 
@@ -264,6 +270,18 @@ def test_manuscript_review_contract_requires_blind_capability_closure_and_join()
     assert set(groups["blind_capability_reviews"]["workers"]) == set(
         contract["capability_workers"].values()
     )
+    authoring_contract = load_mode_registry()["modes"]["manuscript_authoring"][
+        "authoring_contract"
+    ]
+    authoring_isolation = authoring_contract["instance_isolation"]
+    review_isolation = contract["instance_isolation"]
+    assert authoring_isolation["cross_mode_instance_or_receipt_reuse"] == "forbidden"
+    assert review_isolation["cross_mode_instance_or_receipt_reuse"] == "forbidden"
+    assert authoring_isolation["run_id_scope"] != review_isolation["run_id_scope"]
+    assert authoring_isolation["authorization_receipt_scope"] != review_isolation[
+        "authorization_receipt_scope"
+    ]
+    assert authoring_isolation["blind_scope"] != review_isolation["blind_scope"]
     assert groups["deterministic_reconciliation_and_meta_review"]["depends_on"] == [
         "blind_capability_reviews"
     ]
