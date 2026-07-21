@@ -323,12 +323,14 @@ def test_safe_run_relative_tex_directives_pass_with_spaces_and_unicode(tmp_path)
         (r"\RequirePackage{minted}", "TEX_EXECUTION_DIRECTIVE"),
         (r"\inputminted{python}{outside.py}", "TEX_EXECUTION_DIRECTIVE"),
         (r"\begin{filecontents}{outside.txt}", "TEX_WRITE_DIRECTIVE"),
+        (r"\makeatletter\@@input{/etc/passwd}", "TEX_UNSUPPORTED_COMMAND"),
+        (r"\usepackage{verbatim}\verbatiminput{/etc/passwd}", "TEX_UNSUPPORTED_COMMAND"),
     ],
     ids=[
         "write18", "openout", "parent-input", "absolute-include",
         "windows-graphics", "url-bibliography", "directlua", "dynamic-command",
         "caret-obfuscation", "conditional-input", "minted-package", "input-minted",
-        "filecontents-write",
+        "filecontents-write", "internal-input-alias", "verbatim-input",
     ],
 )
 def test_unsafe_tex_directives_and_external_paths_fail_closed(tmp_path, source, code):
@@ -402,12 +404,13 @@ def test_secret_scanner_decodes_lowercase_percent_and_form_url_encodings():
 def test_frozen_non_llm_receipt_allows_supported_execution_prose():
     facts = _auditable_fixture_result()
     result = validate_execution_claim(
-        "We executed the registered evaluation and observed accuracy 0.81.",
+        "In a synthetic fixture, we executed the registered evaluation and observed accuracy 0.81.",
         facts,
     )
 
     assert result["ok"] is True
     assert result["execution_claim"] is True
+    assert result["evidence_class"] == "synthetic_fixture"
     assert result["receipt_sha256"] == facts["executor_receipt"]["receipt_sha256"]
     json.dumps(result)
 
@@ -449,6 +452,28 @@ def test_mixed_negative_and_positive_execution_language_still_requires_evidence(
         validate_execution_claim(
             "No experiment was run in the pilot; we achieved 0.99 on a real GPU experiment.",
             {},
+        )
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "We conducted and completed the experiment, obtaining a score of 0.99.",
+        "The study was performed and yielded an accuracy of 0.99.",
+        "我们已完成实验，并得到了0.99的准确率。",
+    ],
+    ids=["synonyms", "passive-voice", "chinese"],
+)
+def test_any_non_template_execution_entry_requires_evidence(prose):
+    with pytest.raises(ManuscriptExecutionViolation, match="UNSUPPORTED_EXECUTION_CLAIM"):
+        validate_execution_claim(prose, {})
+
+
+def test_fixture_execution_must_be_disclosed_in_prose():
+    with pytest.raises(ManuscriptExecutionViolation, match="FIXTURE_DISCLOSURE_REQUIRED"):
+        validate_execution_claim(
+            "We executed the registered evaluation and observed accuracy 0.81.",
+            _auditable_fixture_result(),
         )
 
 
