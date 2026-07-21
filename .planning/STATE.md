@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
 status: executing
-stopped_at: Completed 01-13-PLAN.md
-last_updated: "2026-07-21T14:52:56.870Z"
+stopped_at: Completed 01-14-PLAN.md
+last_updated: "2026-07-21T15:49:45.121Z"
 last_activity: 2026-07-21
 last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 20
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-21)
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 13 of 20 in current phase
+Plan: 14 of 20 in current phase
 Status: Ready to execute
 Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
 
@@ -68,6 +68,7 @@ Progress: [██████░░░░] 60%
 | Phase 01 P11 | 42min | 1 tasks | 6 files |
 | Phase 01 P12 | 22min | 1 tasks | 2 files |
 | Phase 01 P13 | 64min | 1 tasks | 3 files |
+| Phase 01 P14 | 50min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,9 @@ Decisions are logged in PROJECT.md Key Decisions.
 - [Phase 01]: Freeze one query and an exact provider-attempt set per deficit, executed only through injected paper_search.search_many.
 - [Phase 01]: Require exact plan/trace/response closure for NO_EVIDENCE_AFTER_VALID_SEARCH; malformed or incomplete responses remain failure or unresolved.
 - [Phase 01]: Project every search result to metadata-only fields with no entailment, exact-span, local-full-text, or manuscript-admission authority.
+- [Phase 01]: Derive numeric manuscript truth only from signed-receipt-bound raw result bytes; manuscript-provided values are untrusted. — Prevents a valid receipt from laundering altered metric claims.
+- [Phase 01]: Require trusted build attestation for COMPILED readiness; schema validity and self-hashes do not establish authenticity. — Binds run, snapshot, current source, process, and PDF facts to an external verifier.
+- [Phase 01]: Keep build-only deficits submission-only while D-22 truth and safety defects block daily delivery. — Preserves readable work without weakening submission truth.
 
 ### Pending Todos
 
@@ -129,6 +133,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T14:52:56.860Z
-Stopped at: Completed 01-13-PLAN.md
+Last session: 2026-07-21T15:49:45.112Z
+Stopped at: Completed 01-14-PLAN.md
 Resume file: None
