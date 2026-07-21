@@ -105,7 +105,7 @@ status: complete
 - Implemented exact `base -> paper_type -> venue -> project -> run` resolution independent of input mapping order, with canonical token hashes, prior-value history, source provenance, and visible nonblocking advisory caveats.
 - Locked the six generic truth controls to exact base values and restricted venue hard policy—including both `requires_pdf=true` and `requires_pdf=false`—to the current frozen official rule/template source pair.
 - Added complete contract freeze validation for official-source freshness, schema completeness, evidence/result/source closure, outline integrity, immutable dependency slices, replayed token provenance, and injected verified result/receipt facts.
-- Replaced overwrite-capable persistence with unique temporary files and atomic create-once publication; identical retries are idempotent and different concurrent snapshots cannot replace the first freeze.
+- Replaced overwrite-capable persistence with unique temporary files and atomic create-once publication; identical retries are idempotent, different concurrent snapshots cannot replace the first freeze, and a losing writer tolerates only the bounded internal link-removal window.
 - Added domain-neutral base tokens, all six registered paper-type overlays, and AI-research defaults whose structure/voice/caption/visual choices remain advisory under the 90/10 usability boundary.
 
 ## Task Commits
@@ -113,10 +113,13 @@ status: complete
 1. **TDD RED: Define manuscript contract behavior gates** - `3ef6967`
 2. **TDD GREEN: Implement resolver, profiles, and frozen contract** - `a8e84b0`
 3. **Security fix: Close provenance, receipt, and concurrent-freeze bypasses** - `15f16e1`
+4. **Post-completion fix: Stabilize the create-once link-removal race** - `90f2846`
 
 ## Verification
 
 - `python -m pytest tests/test_manuscript_contract.py tests/test_manuscript_schema_contracts.py -q` passed all 73 tests.
+- The forced concurrent-freeze regression passed 5 consecutive focused runs; each run exercised 12 deterministic winner/loser link windows.
+- `python -m pytest tests/test_manuscript_security.py::test_hardlink_output_alias_is_rejected_without_touching_director_asset -q` passed, confirming persistent hard links remain rejected.
 - `python -m pytest tests/test_manuscript_contract.py -q` passed all 37 new behavior/security tests.
 - `python -m pytest tests/test_manuscript_schema_contracts.py -q` passed all 36 central schema regressions.
 - `ruff check tools/manuscript_contract.py tools/_manuscript_contract_validation.py tests/test_manuscript_contract.py` passed.
@@ -157,15 +160,24 @@ status: complete
 
 - **Found during:** GREEN implementation quality check
 - **Issue:** The first single-file implementation exceeded the repository's roughly 800-line limit.
-- **Fix:** Moved semantic/source validation and secure create-once persistence into a private focused helper; the public module is 797 lines and the helper is 440 lines.
+- **Fix:** Moved semantic/source validation and secure create-once persistence into a private focused helper; the public module is 797 lines and the helper remains below the limit after the race fix.
 - **Files modified:** `tools/manuscript_contract.py`, `tools/_manuscript_contract_validation.py`
 - **Verification:** Ruff, compileall, and all 73 focused tests pass after the split.
 - **Committed in:** `a8e84b0`, `15f16e1`
 
+**3. [Rule 1 - Bug] Stabilized the transient create-once hard-link window**
+
+- **Found during:** Post-completion repeated concurrency verification
+- **Issue:** After a losing writer received `FileExistsError`, it could inspect the winner's target before the winner removed its temporary hard-link name, observe `st_nlink=2`, and raise `HARDLINK_PATH` instead of the expected immutable-contract conflict.
+- **Fix:** Added a 250 ms monotonic, bounded poll only in the internal `FileExistsError` branch. Normal path validation is unchanged and runs after stabilization; a persistent link count above one still raises `HARDLINK_PATH`.
+- **Files modified:** `tools/_manuscript_contract_validation.py`, `tests/test_manuscript_contract.py`
+- **Verification:** The focused race test passed 5/5 runs with 12 forced race iterations per run; the full 73-test 01-11 suite and the persistent-hardlink security regression passed.
+- **Committed in:** `90f2846`
+
 ---
 
-**Total deviations:** 2 auto-fixed (2 missing critical correctness/security requirements)
-**Impact on plan:** Both changes enforce the plan's stated threat model and repository quality rules without modifying the registered schema, adding a dependency, or expanding into a later plan.
+**Total deviations:** 3 auto-fixed (2 missing critical correctness/security requirements, 1 concurrency bug)
+**Impact on plan:** These changes enforce the plan's stated threat model, concurrency contract, and repository quality rules without modifying the registered schema, adding a dependency, or expanding into a later plan.
 
 ## Issues Encountered
 
@@ -186,7 +198,7 @@ Subsequent authoring work can consume one canonical contract hash, schema-safe r
 
 ## Self-Check: PASSED
 
-All six implementation/test/profile files and this summary exist on disk; RED `3ef6967`, GREEN `a8e84b0`, and security fix `15f16e1` resolve as commits; the final 73-test command, Ruff, compileall, AppSec rereview, and summary whitespace checks passed.
+All six implementation/test/profile files and this summary exist on disk; RED `3ef6967`, GREEN `a8e84b0`, security fix `15f16e1`, and race fix `90f2846` resolve as commits; the final 73-test command, five repeated forced-race runs, persistent-hardlink regression, Ruff, compileall, AppSec rereview, and summary whitespace checks passed.
 
 ---
 *Phase: 01-operated-ai-manuscript-authoring*
