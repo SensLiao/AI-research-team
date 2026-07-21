@@ -22,7 +22,7 @@
 
 - [x] **EVID-01**: Each authoring run recalls and reads relevant papers and notes from the read-only PhD-Research-OS database first, then emits an explicit local-literature coverage assessment.
 - [x] **EVID-02**: Only a documented comparison, implementation, method, dataset, metric, or industry-prior-art deficit activates the existing paper-search engine, and network/search failure remains distinguishable from genuine evidence absence.
-- [ ] **EVID-03**: The authoring and review paths contain no OpenAlex PDF downloader, bulk-download/content API, corpus-construction, or automatic PDF acquisition path; OpenAlex may remain metadata-only inside the existing search engine.
+- [x] **EVID-03**: The authoring and review paths contain no OpenAlex PDF downloader, bulk-download/content API, corpus-construction, or automatic PDF acquisition path; OpenAlex may remain metadata-only inside the existing search engine.
 
 ### Multi-Agent Authoring
 
@@ -44,7 +44,7 @@
 ### Safety and Platform Boundaries
 
 - [ ] **SAFE-01**: Authoring and review keep PhD-Research-OS read-only and never copy a draft, search result, manuscript, or PDF into it without a later explicit top-level `/promote-to-vault` command.
-- [ ] **SAFE-02**: Secrets never appear in request URLs, error artifacts, logs, generated LaTeX, build metadata, or director-review outputs.
+- [x] **SAFE-02**: Secrets never appear in request URLs, error artifacts, logs, generated LaTeX, build metadata, or director-review outputs.
 - [ ] **SAFE-03**: The capability does not run GPU experiments and accepts execution claims only from frozen, auditable result artifacts rather than scripts, model-authored metrics, or unsupported prose.
 - [ ] **PLAT-01**: The local CLI, path handling, fixtures, and optional LaTeX tool detection operate on the repository's supported Python runtime on Windows and Linux.
 - [ ] **PLAT-02**: The control plane remains domain-general, with AI-research defaults supplied through profile or Paper Design Token overlays rather than hardcoded domain rules.
@@ -86,7 +86,7 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | PREP-04 | Phase 1 | Pending |
 | EVID-01 | Phase 1 | Complete |
 | EVID-02 | Phase 1 | Complete |
-| EVID-03 | Phase 1 | Pending |
+| EVID-03 | Phase 1 | Complete |
 | ORCH-01 | Phase 1 | Complete |
 | ORCH-02 | Phase 1 | Complete |
 | LATX-01 | Phase 1 | Complete |
@@ -96,7 +96,7 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | DELV-01 | Phase 1 | Pending |
 | DELV-02 | Phase 1 | Complete |
 | SAFE-01 | Phase 1 | Pending |
-| SAFE-02 | Phase 1 | Pending |
+| SAFE-02 | Phase 1 | Complete |
 | SAFE-03 | Phase 1 | Pending |
 | PLAT-01 | Phase 1 | Pending |
 | PLAT-02 | Phase 1 | Pending |

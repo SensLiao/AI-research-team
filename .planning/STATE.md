@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
 status: executing
-stopped_at: Completed 01-06-PLAN.md
-last_updated: "2026-07-21T10:27:34.129Z"
+stopped_at: Completed 01-07-PLAN.md
+last_updated: "2026-07-21T10:48:09.335Z"
 last_activity: 2026-07-21
 last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 20
-  completed_plans: 6
-  percent: 0
+  completed_plans: 7
+  percent: 35
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-21)
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 6 of 20 in current phase
+Plan: 7 of 20 in current phase
 Status: Ready to execute
 Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
 
-Progress: [███░░░░░░░] 25%
+Progress: [████░░░░░░] 35%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 01 P04 | 9min | 1 tasks | 5 files |
 | Phase 01 P05 | 8min | 1 tasks | 5 files |
 | Phase 01 P06 | 11min | 2 tasks | 7 files |
+| Phase 01 P07 | 14min | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,10 @@ Decisions are logged in PROJECT.md Key Decisions.
 - [Phase 01]: Required-section completeness is dynamic exact-set equality with one authorized candidate per frozen required section.
 - [Phase 01]: Specialized roles retain introduction, related work, methods, and results; parameterized authors cover each remaining required section.
 - [Phase 01]: The integrator is the sole canonical owner and physical writes occur only through the deterministic atomic adapter.
+- [Phase 01]: Strip every scholarly URL query and fragment before diagnostics become durable while retaining safe scheme, host, path, provider, and status identity.
+- [Phase 01]: Fail closed before transport when RAT_OPENALEX_API_KEY is configured because supported OpenAlex authentication is query-only; continue other providers independently.
+- [Phase 01]: Keep contact identity only in User-Agent and preserve Semantic Scholar key authentication only in its existing header.
+- [Phase 01]: Redact source_errors independently at exception construction, provider collection, and bundle serialization boundaries.
 
 ### Pending Todos
 
@@ -102,6 +107,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T10:27:34.119Z
-Stopped at: Completed 01-06-PLAN.md
+Last session: 2026-07-21T10:48:09.326Z
+Stopped at: Completed 01-07-PLAN.md
 Resume file: None
