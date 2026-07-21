@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_version": "2026-07-21.1",
+  "fixture_only": true,
+  "network_required": false,
+  "profiles": [
+    {
+      "profile_id": "fixture-venue-pdf-2026",
+      "venue_id": "FIXTURECONF-2026-PDF",
+      "retrieved_at": "2026-07-15T00:00:00Z",
+      "valid_through": "2026-12-31T23:59:59Z",
+      "official_source": {
+        "url": "https://official.fixture.invalid/fixtureconf/2026/pdf-track",
+        "retrieval_status": "FROZEN_FIXTURE_COPY",
+        "sha256": "7f03dfa0ac9e10cb0f8bc2eac7d0c950c09d989ac9c1e22f3c33828af8283e88"
+      },
+      "template": {
+        "ref": "fixture://templates/fixtureconf-2026-pdf.zip",
+        "sha256": "ff1e637929321bcf75b8bacd382d73f4d673473180480123796103275dde615f",
+        "required": true
+      },
+      "requires_pdf": true,
+      "hard_rules": {
+        "anonymous": true,
+        "main_page_limit": 9,
+        "required_sections": [
+          "abstract",
+          "limitations",
+          "references"
+        ],
+        "submission_format": "PDF"
+      },
+      "missing_pdf_submission_ready": false,
+      "sentinel_marker": "FIXTURE_ONLY_NOT_A_REAL_SECRET_VENUE_PDF"
+    },
+    {
+      "profile_id": "fixture-venue-source-2026",
+      "venue_id": "FIXTURECONF-2026-SOURCE",
+      "retrieved_at": "2026-07-15T00:00:00Z",
+      "valid_through": "2026-12-31T23:59:59Z",
+      "official_source": {
+        "url": "https://official.fixture.invalid/fixtureconf/2026/source-track",
+        "retrieval_status": "FROZEN_FIXTURE_COPY",
+        "sha256": "160c285345961896ffc5c41b5c59c08f13dd7ee7c1585240ddfe9908efe9c5f8"
+      },
+      "template": {
+        "ref": "fixture://templates/fixtureconf-2026-source.zip",
+        "sha256": "5fbf21f3794fcc4609041989660afce35cad62f88815075266e0e6b0b2e6ed48",
+        "required": true
+      },
+      "requires_pdf": false,
+      "hard_rules": {
+        "anonymous": false,
+        "main_page_limit": 12,
+        "required_sections": [
+          "abstract",
+          "artifact_availability",
+          "references"
+        ],
+        "submission_format": "SOURCE_ARCHIVE"
+      },
+      "missing_pdf_submission_ready": true,
+      "sentinel_marker": "FIXTURE_ONLY_NOT_A_REAL_SECRET_VENUE_SOURCE"
+    }
+  ]
+}

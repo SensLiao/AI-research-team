@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_version": "2026-07-21.1",
+  "result_id": "fixture-result-accuracy-001",
+  "status": "FROZEN",
+  "synthetic_fixture": true,
+  "frozen_at": "2026-07-21T00:00:00Z",
+  "raw_source": {
+    "ref": "inline://frozen_result/raw_source_canonical_bytes",
+    "canonical_bytes": "fixture-raw-source:v1|seed=20260721|metric=accuracy|value=0.8125|n=32",
+    "sha256": "c89cf5146ad6be4ea02b33d925816716d9d3b1bdd8c7afd77f6a97310db25c77",
+    "byte_count": 69
+  },
+  "executor_receipt": {
+    "receipt_id": "fixture-non-llm-receipt-001",
+    "executor_kind": "DETERMINISTIC_FIXTURE_NON_LLM",
+    "fixture_only": true,
+    "executable": "fixture-runner",
+    "executable_sha256": "730e74eff3d83f07bf1c65c1508523bfafd5031e0b3aa9063cff90f3196ae168",
+    "argv": [
+      "fixture-runner",
+      "--input",
+      "inline://frozen_result/raw_source_canonical_bytes"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-07-21T00:00:00Z",
+    "finished_at": "2026-07-21T00:00:01Z",
+    "raw_source_sha256": "c89cf5146ad6be4ea02b33d925816716d9d3b1bdd8c7afd77f6a97310db25c77",
+    "receipt_canonical_bytes": "fixture-executor-receipt:v1|executor=deterministic-non-llm|exit=0|raw-bound=true",
+    "receipt_sha256": "809e5db454b0be778e21dac91dc91071dc43de184f7bc45e3220cd2249938a62"
+  },
+  "metrics": [
+    {
+      "metric_id": "fixture-accuracy",
+      "value": 0.8125,
+      "unit": "fraction",
+      "aggregation": "mean",
+      "split": "fixture-test",
+      "sample_count": 32,
+      "uncertainty": {
+        "kind": "bootstrap-95-percent-fixture",
+        "lower": 0.78125,
+        "upper": 0.84375
+      },
+      "raw_source_cell": "metric=accuracy|value=0.8125|n=32"
+    }
+  ],
+  "admissibility": {
+    "observed_evidence": true,
+    "plan_only": false,
+    "script_only": false,
+    "metadata_only": false,
+    "real_research_execution": false,
+    "claim_scope": "Hermetic fixture behavior only; this record cannot support a real research-result claim."
+  },
+  "allowed_claims": [
+    "The hermetic fixture records accuracy 0.8125 over 32 synthetic observations."
+  ],
+  "forbidden_claims": [
+    "A real GPU experiment was executed.",
+    "The fixture metric is thesis-citable evidence."
+  ],
+  "sentinel_marker": "FIXTURE_ONLY_NOT_A_REAL_SECRET_RESULT_001"
+}
