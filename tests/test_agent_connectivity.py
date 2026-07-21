@@ -18,6 +18,39 @@ from research_agent_teams.operate.panel_scheduler import validate_worker_spec_co
 from research_agent_teams.operate.modes import deep_research, evidence_deep, evidence_review
 
 
+MANUSCRIPT_ROLE_CONNECTIVITY = {
+    "manuscript-venue-corpus-scout": ("discover", "DISCOVER", ("manuscript_authoring",)),
+    "manuscript-architect": ("design", "DESIGN", ("manuscript_authoring",)),
+    "manuscript-evidence-steward": ("design", "DESIGN", ("manuscript_authoring",)),
+    "manuscript-introduction-author": ("analyze", "ANALYZE", ("manuscript_authoring",)),
+    "manuscript-related-work-author": ("analyze", "ANALYZE", ("manuscript_authoring",)),
+    "manuscript-methods-author": ("analyze", "ANALYZE", ("manuscript_authoring",)),
+    "manuscript-results-author": ("analyze", "ANALYZE", ("manuscript_authoring",)),
+    "manuscript-section-author": ("analyze", "ANALYZE", ("manuscript_authoring",)),
+    "manuscript-figure-table-engineer": ("analyze", "ANALYZE", ("manuscript_authoring",)),
+    "manuscript-integrator": ("analyze", "ANALYZE", ("manuscript_authoring",)),
+    "manuscript-factual-auditor": (
+        "verify", "VERIFY", ("manuscript_authoring", "manuscript_review")
+    ),
+    "manuscript-citation-auditor": (
+        "verify", "VERIFY", ("manuscript_authoring", "manuscript_review")
+    ),
+    "manuscript-style-latex-auditor": (
+        "verify", "VERIFY", ("manuscript_authoring", "manuscript_review")
+    ),
+    "manuscript-domain-contribution-reviewer": (
+        "verify", "VERIFY", ("manuscript_review",)
+    ),
+    "manuscript-methods-reproducibility-reviewer": (
+        "verify", "VERIFY", ("manuscript_review",)
+    ),
+    "manuscript-figure-table-reviewer": ("verify", "VERIFY", ("manuscript_review",)),
+    "manuscript-submission-packager": (
+        "report", "REPORT", ("manuscript_authoring", "manuscript_review")
+    ),
+}
+
+
 def test_agent_connectivity_contract_is_clean():
     assert validate_agent_connectivity() == []
 
@@ -25,11 +58,11 @@ def test_agent_connectivity_contract_is_clean():
 def test_every_non_control_agent_has_graph_and_mode_entry():
     report = build_agent_connectivity()
     summary = report["summary"]
-    assert summary["roster_agents"] == 140
+    assert summary["roster_agents"] == 157
     assert summary["control_agents"] == 6
-    assert summary["non_control_agents"] == 134
-    assert summary["graph_connected_non_control"] == 134
-    assert summary["mode_connected_non_control"] == 134
+    assert summary["non_control_agents"] == 151
+    assert summary["graph_connected_non_control"] == 151
+    assert summary["mode_connected_non_control"] == 151
 
     for agent, spec in report["agents"].items():
         if spec["status"] == "control":
@@ -84,7 +117,7 @@ def test_coverage_closure_modes_cover_previous_dark_matter_agents():
             "claim-strength-calibrator",
             "figure-vlm-critic",
         },
-        "manuscript_review_pack": {
+        "manuscript_review": {
             "synthesis-writer",
             "contribution-ledger-builder",
             "threats-to-validity-writer",
@@ -105,6 +138,34 @@ def test_coverage_closure_modes_cover_previous_dark_matter_agents():
     for mode, agents in expected.items():
         for agent in agents:
             assert mode in report[agent]["modes"], f"{agent} not connected through {mode}"
+
+
+def test_manuscript_roles_have_exact_roster_graph_and_mode_connectivity():
+    report = build_agent_connectivity()["agents"]
+
+    for agent, (group, stage, modes) in MANUSCRIPT_ROLE_CONNECTIVITY.items():
+        assert report[agent]["roster_group"] == group
+        assert report[agent]["graph_stages"] == [stage]
+        assert report[agent]["modes"] == sorted(modes)
+        worker_spec = {"workers": [{"label": agent}]}
+        for mode in modes:
+            assert validate_worker_spec_connectivity(mode, stage, worker_spec) == []
+
+
+def test_manuscript_author_and_expert_reviewer_scopes_remain_disjoint():
+    report = build_agent_connectivity()["agents"]
+    section_author = report["manuscript-section-author"]
+    assert section_author["graph_stages"] == ["ANALYZE"]
+    assert section_author["modes"] == ["manuscript_authoring"]
+
+    expert_reviewers = {
+        "manuscript-domain-contribution-reviewer",
+        "manuscript-methods-reproducibility-reviewer",
+        "manuscript-figure-table-reviewer",
+    }
+    for reviewer in expert_reviewers:
+        assert report[reviewer]["graph_stages"] == ["VERIFY"]
+        assert report[reviewer]["modes"] == ["manuscript_review"]
 
 
 def test_deep_ideation_worker_labels_are_real_roster_agents(tmp_path):
