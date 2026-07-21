@@ -32,7 +32,7 @@ stages:
                      math-algorithm-verifier, paper-relations-mapper, trend-card-builder,
                      project-context-aligner, domain-transfer-critic,
                      reproducibility-materials-auditor, independent-reading-critic, paper-reading-reconciler, paper-reading-quality-auditor,
-                     paper-markdown-writer,
+                     paper-markdown-writer, manuscript-venue-corpus-scout,
                      aers-sop-curator, literature-search-strategist,
                      future-work-miner, weakness-spotter, white-space-mapper,
                      cross-domain-transfer-scout, contrarian-angle-generator, gap-classifier, novelty-scorer,
@@ -52,7 +52,8 @@ stages:
                      statistics-critic, design-synthesizer, protocol-compiler, dataset-split-planner,
                      data-protocol-designer, config-unifier, method-integration-planner, baseline-fairness-planner,
                      variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor,
-                     statistics-power-auditor, data-wrangling-auditor, decision-surfacer]
+                     statistics-power-auditor, data-wrangling-auditor, decision-surfacer,
+                     manuscript-architect, manuscript-evidence-steward]
     blocking_gates: [variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor]
     exit_artifacts: [experiment_matrix]
     next: EXECUTE
@@ -71,7 +72,10 @@ stages:
                      result-analyzer, result-sanity-checker, baseline-comparison-auditor, variance-analyzer,
                      fairness-auditor, compliance-auditor, goal-alignment-checker, failure-case-miner,
                      figure-generator, visualization-auditor, claim-strength-calibrator, figure-vlm-critic,
-                     benchmark-evidence-auditor]
+                     benchmark-evidence-auditor, manuscript-introduction-author,
+                     manuscript-related-work-author, manuscript-methods-author,
+                     manuscript-results-author, manuscript-section-author,
+                     manuscript-figure-table-engineer, manuscript-integrator]
     blocking_gates: [result-sanity-checker]
     exit_artifacts: [result_summary]
     next: VERIFY
@@ -83,12 +87,17 @@ stages:
                      venue-selector, venue-reviewer-persona, venue-reviewer-methodology,
                      venue-reviewer-domain, venue-reviewer-adversarial, area-chair-synthesizer,
                      baseline-scout, sub-domain-historian, submission-guideline-scout,
-                     bibliography-validator]
+                     bibliography-validator, manuscript-factual-auditor,
+                     manuscript-citation-auditor, manuscript-style-latex-auditor,
+                     manuscript-domain-contribution-reviewer,
+                     manuscript-methods-reproducibility-reviewer,
+                     manuscript-figure-table-reviewer]
     blocking_gates: [adversarial-reviewer]
     exit_artifacts: [review_report]
     next: REPORT
   REPORT:
-    allowed_agents: [quality-controller, integrity-refusal-recommender, manuscript-polish-editor]   # RAT-2 Wave-3: deep_ideation REPORT aggregation 鈥?closes audit A2 (quality-controller scorecard route placed at REPORT) + A3 (integrity-refusal-recommender given a real FSM-stage home; ADVISORY-only, decision stays the director's)
+    allowed_agents: [quality-controller, integrity-refusal-recommender, manuscript-polish-editor,
+                     manuscript-submission-packager]   # RAT-2 Wave-3: deep_ideation REPORT aggregation 鈥?closes audit A2 (quality-controller scorecard route placed at REPORT) + A3 (integrity-refusal-recommender given a real FSM-stage home; ADVISORY-only, decision stays the director's)
     blocking_gates: []
     exit_artifacts: [report_note]
     next: null

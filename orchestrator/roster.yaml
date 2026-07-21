@@ -47,6 +47,7 @@ agents:
     - paper-reading-reconciler
     - paper-reading-quality-auditor
     - paper-markdown-writer
+    - manuscript-venue-corpus-scout
   gap_hunting:
     - future-work-miner
     - weakness-spotter
@@ -85,6 +86,8 @@ agents:
     - statistics-power-auditor
     - data-wrangling-auditor
     - decision-surfacer
+    - manuscript-architect
+    - manuscript-evidence-steward
   execute:
     - script-author
     - execution-evidence-auditor
@@ -124,6 +127,13 @@ agents:
     - claim-strength-calibrator
     - figure-vlm-critic
     - benchmark-evidence-auditor
+    - manuscript-introduction-author
+    - manuscript-related-work-author
+    - manuscript-methods-author
+    - manuscript-results-author
+    - manuscript-section-author
+    - manuscript-figure-table-engineer
+    - manuscript-integrator
   verify:
     - verify-synthesizer
     - review-configurator
@@ -147,7 +157,14 @@ agents:
     - sub-domain-historian
     - submission-guideline-scout
     - bibliography-validator
+    - manuscript-factual-auditor
+    - manuscript-citation-auditor
+    - manuscript-style-latex-auditor
+    - manuscript-domain-contribution-reviewer
+    - manuscript-methods-reproducibility-reviewer
+    - manuscript-figure-table-reviewer
   report:
     - quality-controller
     - integrity-refusal-recommender
     - manuscript-polish-editor
+    - manuscript-submission-packager
