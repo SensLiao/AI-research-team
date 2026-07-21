@@ -7,17 +7,19 @@ the research vault.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import re
 import stat
 import unicodedata
 from pathlib import Path, PureWindowsPath
 from typing import Any, Mapping, Pattern, Sequence
-from urllib.parse import quote
+from urllib.parse import quote, unquote_plus
 
 from research_agent_teams.tools.path_boundaries import (
     PathBoundaryError,
     assert_not_vault_path,
+    default_vault_root,
 )
 from research_agent_teams.tools.scope_guard import _within, decide
 
@@ -36,18 +38,26 @@ _TEX_DIRECTIVE_RE = re.compile(
 _EXECUTION_DIRECTIVE_RE = re.compile(
     r"(?:"
     r"\\(?:immediate\s*\\)?write18\b|"
-    r"\\(?:directlua|latelua|luaexec|ShellEscape|pdfshellescape)\b|"
-    r"\\usepackage(?:\[[^\]]*\])?\{(?:shellesc|minted|pythontex)\}|"
+    r"\\(?:directlua|latelua|luaexec|special|ShellEscape|pdfshellescape|inputminted)\b|"
+    r"\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?"
+    r"\s*\{(?:shellesc|shellescape|minted|pythontex)\}|"
     r"\\begin\{(?:pycode|python|minted)\}|"
     r"\b(?:subprocess|os\.system|powershell|cmd\.exe|/bin/sh|curl|wget)\b"
     r")",
     re.IGNORECASE,
 )
 _WRITE_DIRECTIVE_RE = re.compile(
-    r"\\(?:openout|closeout|newwrite|openin|read|write)(?=\d|\b)", re.IGNORECASE
+    r"\\(?:openout|closeout|newwrite|newread|openin|read|write)(?=\d|\b)|"
+    r"\\begin\s*\{filecontents\*?\}",
+    re.IGNORECASE,
 )
 _DYNAMIC_DIRECTIVE_RE = re.compile(
-    r"\\(?:def|edef|gdef|xdef|catcode|csname|endcsname)\b", re.IGNORECASE
+    r"\\(?:def|edef|gdef|xdef|catcode|csname|endcsname|expandafter|futurelet|"
+    r"scantokens|afterassignment|everyjob|everypar|everyeof|graphicspath)\b",
+    re.IGNORECASE,
+)
+_CONDITIONAL_INPUT_RE = re.compile(
+    r"\\(?:InputIfFileExists|IfFileExists)\b", re.IGNORECASE
 )
 _NEGATED_EXECUTION_RE = re.compile(
     r"(?:scripts?\s+only|no\s+experiment\s+was\s+run|"
@@ -266,12 +276,20 @@ def validate_run_owned_path(
         _raise_path("PATH_OUTSIDE_RUN", "cross-platform absolute paths are not run-owned")
     candidate = native_target.absolute() if native_target.is_absolute() else run_path / native_target
 
+    director_roots = tuple(Path(root).absolute() for root in director_asset_roots)
+    director_root = next((root for root in director_roots if _inside(candidate, root)), None)
+    effective_vault_root = Path(vault_root).absolute() if vault_root else default_vault_root()
+    if (
+        not _inside(candidate, run_path)
+        and director_root is None
+        and not _inside(candidate, effective_vault_root)
+    ):
+        _raise_path("PATH_OUTSIDE_RUN", "path is outside the active run")
+
     # Classify symlinks/junctions before resolving so the policy error remains
     # precise even when a link points outside the run.
     _reject_links(candidate)
 
-    director_roots = tuple(Path(root).absolute() for root in director_asset_roots)
-    director_root = next((root for root in director_roots if _inside(candidate, root)), None)
     if director_root is not None:
         if purpose == "write":
             _raise_path("DIRECTOR_ASSET_IMMUTABLE", "director assets are immutable inputs")
@@ -298,11 +316,10 @@ def validate_run_owned_path(
             "findings": [],
         }
 
-    if vault_root is not None:
-        try:
-            assert_not_vault_path(candidate, purpose=purpose, vault_root=vault_root)
-        except PathBoundaryError:
-            _raise_path("VAULT_WRITE", "direct vault access is forbidden")
+    try:
+        assert_not_vault_path(candidate, purpose=purpose, vault_root=vault_root)
+    except PathBoundaryError:
+        _raise_path("VAULT_WRITE", "direct vault access is forbidden")
 
     if not _inside(candidate, run_path):
         _raise_path("PATH_OUTSIDE_RUN", "path is outside the active run")
@@ -327,10 +344,12 @@ def validate_run_owned_path(
         guarded_scope = dict(scope)
         # Supplying explicit non-empty values prevents scope_guard from consulting
         # environment overrides.  The validator consumes caller-owned facts only.
-        guarded_scope.setdefault(
-            "vault_root", str(Path(vault_root).absolute() if vault_root else run_path.parent / ".no-vault")
-        )
-        guarded_scope.setdefault("projects_root", str(run_path.parent / ".no-projects"))
+        if not guarded_scope.get("vault_root"):
+            guarded_scope["vault_root"] = str(
+                Path(vault_root).absolute() if vault_root else run_path.parent / ".no-vault"
+            )
+        if not guarded_scope.get("projects_root"):
+            guarded_scope["projects_root"] = str(run_path.parent / ".no-projects")
         allowed, _reason = decide("Write", candidate, guarded_scope)
         if not allowed:
             _raise_path("SCOPE_DENIED", "permission scope rejected the manuscript path")
@@ -338,6 +357,8 @@ def validate_run_owned_path(
     kind = _path_kind(candidate)
     if kind in {"directory", "other"}:
         _raise_path("PATH_NOT_REGULAR_FILE", "manuscript target is not a regular file")
+    if purpose == "write" and kind == "file" and candidate.lstat().st_nlink != 1:
+        _raise_path("HARDLINK_PATH", "hard-linked files are not accepted as output targets")
     result: dict[str, Any] = {
         "ok": True,
         "policy": "run_owned_path",
@@ -448,10 +469,14 @@ def validate_tex_sources(
             ) from exc
 
         text = _strip_tex_comments(raw_text)
+        if "^^" in text:
+            _raise_tex("TEX_OBFUSCATED_COMMAND", "TeX character-code rewriting is forbidden")
         if _EXECUTION_DIRECTIVE_RE.search(text):
             _raise_tex("TEX_EXECUTION_DIRECTIVE", "executable TeX content is forbidden")
         if _WRITE_DIRECTIVE_RE.search(text):
             _raise_tex("TEX_WRITE_DIRECTIVE", "TeX file-write directives are forbidden")
+        if _CONDITIONAL_INPUT_RE.search(text):
+            _raise_tex("TEX_EXTERNAL_PATH", "conditional TeX file discovery is forbidden")
         if _DYNAMIC_DIRECTIVE_RE.search(text):
             _raise_tex("TEX_DYNAMIC_COMMAND", "dynamic TeX command construction is forbidden")
 
@@ -499,14 +524,19 @@ def scan_persisted_text(
         if not isinstance(name, str) or not isinstance(sentinel, str) or not sentinel:
             continue
         representations = {sentinel, quote(sentinel, safe=""), quote(sentinel, safe="-._~")}
-        offsets = [text.find(value) for value in representations if value and text.find(value) >= 0]
-        if offsets:
+        matched_line = None
+        for line_number, line in enumerate(text.splitlines() or [text], start=1):
+            decoded_line = unquote_plus(line)
+            if any(value and value in line for value in representations) or sentinel in decoded_line:
+                matched_line = line_number
+                break
+        if matched_line is not None:
             findings.append(
                 {
                     "code": "SECRET_SENTINEL",
                     "channel": channel,
                     "sentinel": name,
-                    "line": _line_number(text, min(offsets)),
+                    "line": matched_line,
                 }
             )
     for name, expression in (patterns or {}).items():
@@ -544,8 +574,8 @@ def validate_execution_claim(prose: str, result_facts: Mapping[str, Any]) -> dic
 
     if not isinstance(prose, str) or not isinstance(result_facts, Mapping):
         raise TypeError("prose must be text and result_facts must be a mapping")
-    explicitly_negative = bool(_NEGATED_EXECUTION_RE.search(prose))
-    claims_execution = bool(_POSITIVE_EXECUTION_RE.search(prose)) and not explicitly_negative
+    prose_without_negative_templates = _NEGATED_EXECUTION_RE.sub("", prose)
+    claims_execution = bool(_POSITIVE_EXECUTION_RE.search(prose_without_negative_templates))
     if not claims_execution:
         return {
             "ok": True,
@@ -557,11 +587,11 @@ def validate_execution_claim(prose: str, result_facts: Mapping[str, Any]) -> dic
     admissibility = result_facts.get("admissibility")
     if not isinstance(admissibility, Mapping):
         _raise_execution("UNSUPPORTED_EXECUTION_CLAIM", "execution evidence is missing")
-    if bool(admissibility.get("script_only")):
+    if admissibility.get("script_only") is True:
         _raise_execution("SCRIPTS_ONLY", "scripts-only evidence cannot support execution prose")
-    if bool(admissibility.get("plan_only")):
+    if admissibility.get("plan_only") is True:
         _raise_execution("PLAN_ONLY", "plan-only evidence cannot support execution prose")
-    if bool(admissibility.get("metadata_only")):
+    if admissibility.get("metadata_only") is True:
         _raise_execution("METADATA_ONLY", "metadata-only evidence cannot support execution prose")
     if result_facts.get("status") != "FROZEN":
         _raise_execution("RESULT_NOT_FROZEN", "only frozen results can support execution prose")
@@ -571,28 +601,54 @@ def validate_execution_claim(prose: str, result_facts: Mapping[str, Any]) -> dic
     if not isinstance(receipt, Mapping) or not isinstance(raw_source, Mapping):
         _raise_execution("MISSING_EXECUTOR_RECEIPT", "an auditable executor receipt is required")
     executor_kind = str(receipt.get("executor_kind") or "")
-    if re.search(r"(?:LLM|MODEL|REASONING)", executor_kind, re.IGNORECASE):
+    fixture_executor = executor_kind == "DETERMINISTIC_FIXTURE_NON_LLM"
+    if not fixture_executor and re.search(r"(?:LLM|MODEL|REASONING)", executor_kind, re.IGNORECASE):
         _raise_execution("MODEL_AUTHORED_RECEIPT", "model-authored receipts are inadmissible")
-    if executor_kind != "SIGNED_EXTERNAL_EXECUTOR":
+    if executor_kind == "SIGNED_EXTERNAL_EXECUTOR":
+        _raise_execution(
+            "EXECUTION_REVERIFY_REQUIRED",
+            "real executor receipts require independent signature and file reverification",
+        )
+    if not fixture_executor:
         _raise_execution("UNSUPPORTED_EXECUTOR_RECEIPT", "receipt is not from an approved executor")
 
     raw_sha = str(raw_source.get("sha256") or "")
     receipt_raw_sha = str(receipt.get("raw_source_sha256") or "")
     receipt_sha = str(receipt.get("receipt_sha256") or "")
-    if not _SHA256_RE.fullmatch(raw_sha) or receipt_raw_sha.lower() != raw_sha.lower():
+    raw_bytes = raw_source.get("canonical_bytes")
+    if (
+        not isinstance(raw_bytes, str)
+        or not _SHA256_RE.fullmatch(raw_sha)
+        or not hmac.compare_digest(hashlib.sha256(raw_bytes.encode("utf-8")).hexdigest(), raw_sha.lower())
+        or not hmac.compare_digest(receipt_raw_sha.lower(), raw_sha.lower())
+    ):
         _raise_execution("RECEIPT_SOURCE_MISMATCH", "receipt is not bound to the raw result")
-    if not _SHA256_RE.fullmatch(receipt_sha) or receipt.get("exit_code") != 0:
+    receipt_bytes = receipt.get("receipt_canonical_bytes")
+    if (
+        not isinstance(receipt_bytes, str)
+        or not _SHA256_RE.fullmatch(receipt_sha)
+        or not hmac.compare_digest(
+            hashlib.sha256(receipt_bytes.encode("utf-8")).hexdigest(), receipt_sha.lower()
+        )
+        or receipt.get("exit_code") != 0
+    ):
         _raise_execution("INVALID_EXECUTOR_RECEIPT", "executor receipt is incomplete or unsuccessful")
-    if not bool(admissibility.get("observed_evidence")):
+    if admissibility.get("observed_evidence") is not True:
         _raise_execution("UNOBSERVED_EXECUTION", "execution prose requires observed evidence")
 
     requires_real_execution = bool(_REAL_EXECUTION_RE.search(prose))
-    if (
-        bool(receipt.get("fixture_only"))
-        or not bool(admissibility.get("real_research_execution"))
-    ):
-        code = "NOT_REAL_EXECUTION" if requires_real_execution else "UNSUPPORTED_EXECUTION_CLAIM"
-        _raise_execution(code, "evidence does not establish real research execution")
+    is_bounded_fixture = (
+        result_facts.get("synthetic_fixture") is True
+        and receipt.get("fixture_only") is True
+        and admissibility.get("real_research_execution") is False
+    )
+    if requires_real_execution:
+        _raise_execution("NOT_REAL_EXECUTION", "fixture evidence cannot establish real execution")
+    if not is_bounded_fixture:
+        _raise_execution(
+            "EXECUTION_REVERIFY_REQUIRED",
+            "non-fixture execution requires independent signature and file reverification",
+        )
 
     return {
         "ok": True,
