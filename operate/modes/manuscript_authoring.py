@@ -343,6 +343,8 @@ def _prompt(role: str, stage: str, request: str, assignment: Mapping[str, str] |
         )
     return (
         f"You are {role} in manuscript_authoring/{stage}. Use only the frozen local-first inputs, "
+        "NORTH STAR: deliver a useful, evidence-grounded AI-research manuscript without overstating "
+        "evidence, execution, or venue readiness. "
         "do not access a vault for writing, run a GPU, download content, invoke arbitrary commands, "
         "claim a PDF without the deterministic build receipt, submit, or promote. Return the declared "
         f"JSON bundle only. Director request: {request.strip() or '(pinned task frame)'}{target}"
@@ -437,6 +439,13 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str | None = None,
                 "worker_order": [architect["label"], steward["label"]],
                 "parallel_groups": [[architect["label"]], [steward["label"]]], "group_barriers": False}
     if stage == "ANALYZE":
+        # The adaptive section panel is derived from the frozen contract.  A
+        # just-created run has not reached DESIGN yet, so it legitimately has
+        # no analysis workers to schedule rather than a fabricated outline.
+        # Once the contract exists, invalid content still fails closed in
+        # ``_author_panel``/``load_frozen_contract``.
+        if not (Path(run_dir) / CONTRACT_REL).is_file():
+            return None
         return _author_panel(run_dir, request)
     if stage == "VERIFY":
         workers = [
