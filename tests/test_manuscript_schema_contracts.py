@@ -139,12 +139,12 @@ def test_every_registered_manuscript_payload_remains_closed(artifact_type):
         (
             "manuscript_quality_report",
             lambda payload: payload.update(daily_state="BLOCK"),
-            "<root>",
+            "daily_state",
         ),
         (
             "manuscript_review_verdict",
             lambda payload: payload.update(disposition="BLOCK"),
-            "<root>",
+            "disposition",
         ),
     ],
 )
@@ -171,13 +171,13 @@ def test_exhaustive_zero_result_claim_requires_a_complete_successful_empty_trace
     assert any("result_count" in error or "<root>" in error for error in errors)
 
 
-def test_official_requires_pdf_truth_cannot_be_weakened_in_registered_contract():
+def test_official_requires_pdf_policy_cannot_be_weakened_in_registered_contract():
     payload = valid_manuscript_contract()
-    payload["venue_profile"]["requires_pdf"] = False
+    payload["venue_profile"]["hard_field_policy"]["requires_pdf"]["weakenable"] = True
 
     errors = _errors("manuscript_contract", payload)
     assert errors
-    assert any("requires_pdf" in error or "<root>" in error for error in errors)
+    assert any("requires_pdf/weakenable" in error for error in errors)
 
 
 def test_toolchain_missing_registered_receipt_cannot_expose_pdf_facts():
