@@ -59,17 +59,62 @@ _DYNAMIC_DIRECTIVE_RE = re.compile(
 _CONDITIONAL_INPUT_RE = re.compile(
     r"\\(?:InputIfFileExists|IfFileExists)\b", re.IGNORECASE
 )
-_NEGATED_EXECUTION_RE = re.compile(
-    r"(?:scripts?\s+only|no\s+experiment\s+was\s+run|"
-    r"no\s+result\s+is\s+claimed|did\s+not\s+(?:run|execute)|not\s+executed)",
+_CONTROL_SEQUENCE_RE = re.compile(r"\\(?P<name>[A-Za-z@]+)")
+_ENVIRONMENT_RE = re.compile(r"\\(?:begin|end)\s*\{(?P<name>[A-Za-z*]+)\}")
+_PACKAGE_RE = re.compile(
+    r"\\usepackage\s*(?:\[[^\[\]]*\]\s*)?\{(?P<names>[^{}]+)\}",
     re.IGNORECASE,
 )
-_POSITIVE_EXECUTION_RE = re.compile(
-    r"(?:\bwe\s+)?\b(?:ran|executed|trained|evaluated|observed|achieved)\b|"
-    r"\b(?:real\s+)?gpu\s+(?:experiment|run)\b",
+_DOCUMENT_CLASS_RE = re.compile(
+    r"\\documentclass\s*(?:\[[^\[\]]*\]\s*)?\{(?P<name>[^{}]+)\}",
+    re.IGNORECASE,
+)
+_SAFE_TEX_COMMANDS = frozenset(
+    """
+    documentclass usepackage begin end input include includegraphics bibliography
+    addbibresource bibliographystyle title author date maketitle thanks section
+    subsection subsubsection paragraph subparagraph label ref pageref eqref autoref
+    cite citep citet Cref cref caption centering footnote emph textbf textit texttt
+    textrm textsf textsc underline url href item hline cline topmidrule toprule
+    midrule bottomrule multicolumn multirow resizebox rotatebox color textcolor
+    newline linebreak pagebreak newpage clearpage appendix tableofcontents
+    listoffigures listoftables vspace hspace smallskip medskip bigskip noindent
+    quad qquad left right frac sqrt sum prod int lim min max argmin argmax log exp
+    sin cos tan softmax mathbb mathbf mathcal mathrm mathit operatorname text
+    alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta iota kappa
+    lambda mu nu xi pi varpi rho varrho sigma varsigma tau upsilon phi varphi
+    chi psi omega Gamma Delta Theta Lambda Xi Pi Sigma Upsilon Phi Psi Omega
+    infty partial nabla ell cdot times pm mp leq geq neq approx sim equiv propto
+    in subset subseteq supset supseteq cup cap setminus forall exists neg land lor
+    to mapsto leftarrow rightarrow Leftrightarrow Rightarrow ldots cdots vdots ddots
+    linewidth textwidth columnwidth baselineskip
+    """.split()
+)
+_SAFE_TEX_ENVIRONMENTS = frozenset(
+    """
+    document abstract figure figure* table table* tabular tabular* tabularx
+    itemize enumerate description equation equation* align align* aligned gather
+    gather* multline multline* split cases matrix pmatrix bmatrix vmatrix Vmatrix
+    theorem lemma proposition corollary definition assumption remark example proof
+    minipage center flushleft flushright quote quotation
+    """.split()
+)
+_SAFE_TEX_PACKAGES = frozenset(
+    """
+    amsmath amssymb amsfonts amsthm array balance booktabs caption cleveref enumitem
+    fontenc geometry graphicx hyperref inputenc mathtools microtype multirow natbib
+    newtxmath newtxtext subcaption tabularx times url verbatim xcolor
+    """.split()
+)
+_NO_EXECUTION_TEMPLATE_RE = re.compile(
+    r"\s*scripts?\s+only:\s*no\s+experiment\s+was\s+run\s+and\s+"
+    r"no\s+result\s+is\s+claimed\.\s*",
     re.IGNORECASE,
 )
 _REAL_EXECUTION_RE = re.compile(r"\b(?:real\s+)?gpu\b|\breal\s+experiment\b", re.IGNORECASE)
+_FIXTURE_DISCLOSURE_RE = re.compile(
+    r"\b(?:synthetic\s+fixture|test-only|fixture-only)\b", re.IGNORECASE
+)
 
 
 class _ManuscriptViolation(Exception):
@@ -403,6 +448,33 @@ def _raise_tex(code: str, message: str) -> None:
     raise ManuscriptTexViolation(code, message)
 
 
+def _validate_tex_allowlist(text: str) -> None:
+    for match in _CONTROL_SEQUENCE_RE.finditer(text):
+        if match.group("name") not in _SAFE_TEX_COMMANDS:
+            _raise_tex("TEX_UNSUPPORTED_COMMAND", "TeX control sequence is not allowlisted")
+
+    for match in _ENVIRONMENT_RE.finditer(text):
+        if match.group("name") not in _SAFE_TEX_ENVIRONMENTS:
+            _raise_tex("TEX_UNSUPPORTED_COMMAND", "TeX environment is not allowlisted")
+
+    package_starts = list(re.finditer(r"\\usepackage\b", text, re.IGNORECASE))
+    packages = list(_PACKAGE_RE.finditer(text))
+    if len(package_starts) != len(packages):
+        _raise_tex("TEX_DYNAMIC_COMMAND", "package declaration is not a bounded literal")
+    for declaration in packages:
+        for package in declaration.group("names").split(","):
+            if package.strip() not in _SAFE_TEX_PACKAGES:
+                _raise_tex("TEX_UNSUPPORTED_COMMAND", "TeX package is not allowlisted")
+
+    class_starts = list(re.finditer(r"\\documentclass\b", text, re.IGNORECASE))
+    classes = list(_DOCUMENT_CLASS_RE.finditer(text))
+    if len(class_starts) != len(classes):
+        _raise_tex("TEX_DYNAMIC_COMMAND", "document class declaration is not a bounded literal")
+    for declaration in classes:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", declaration.group("name").strip()):
+            _raise_tex("TEX_EXTERNAL_PATH", "document class path is not a bounded identifier")
+
+
 def _validate_tex_reference(reference: str, *, source_root: Path, run_root: Path) -> None:
     reference = reference.strip()
     if not reference:
@@ -494,6 +566,7 @@ def validate_tex_sources(
             for reference in references:
                 _validate_tex_reference(reference, source_root=source_path, run_root=run_path)
             directives_checked += 1
+        _validate_tex_allowlist(text)
 
     return {
         "ok": True,
@@ -574,9 +647,7 @@ def validate_execution_claim(prose: str, result_facts: Mapping[str, Any]) -> dic
 
     if not isinstance(prose, str) or not isinstance(result_facts, Mapping):
         raise TypeError("prose must be text and result_facts must be a mapping")
-    prose_without_negative_templates = _NEGATED_EXECUTION_RE.sub("", prose)
-    claims_execution = bool(_POSITIVE_EXECUTION_RE.search(prose_without_negative_templates))
-    if not claims_execution:
+    if not prose.strip() or _NO_EXECUTION_TEMPLATE_RE.fullmatch(prose):
         return {
             "ok": True,
             "policy": "execution_truth",
@@ -649,11 +720,18 @@ def validate_execution_claim(prose: str, result_facts: Mapping[str, Any]) -> dic
             "EXECUTION_REVERIFY_REQUIRED",
             "non-fixture execution requires independent signature and file reverification",
         )
+    if not _FIXTURE_DISCLOSURE_RE.search(prose):
+        _raise_execution(
+            "FIXTURE_DISCLOSURE_REQUIRED",
+            "synthetic execution evidence must be disclosed in manuscript prose",
+        )
 
     return {
         "ok": True,
         "policy": "execution_truth",
         "execution_claim": True,
+        "evidence_class": "synthetic_fixture",
+        "publishable": False,
         "receipt_sha256": receipt_sha.lower(),
         "findings": [],
     }
