@@ -8,6 +8,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -19,6 +20,8 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REFERENCE_RE = re.compile(
     r"^(?!/)(?![A-Za-z]:)(?!.*\.\.)(?!.*\\)[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
 )
+_CREATE_ONCE_STABILIZATION_SECONDS = 0.25
+_CREATE_ONCE_POLL_SECONDS = 0.001
 
 
 class ManuscriptContractError(ValueError):
@@ -365,6 +368,34 @@ def _existing_contract_or_conflict(
     )
 
 
+def _existing_contract_after_create_once_race(
+    target: Path,
+    candidate: Mapping[str, Any],
+    *,
+    run_root: str | Path,
+) -> dict[str, Any]:
+    """Let a winning publisher remove its temporary hard-link name.
+
+    This bounded wait is exclusive to the ``FileExistsError`` branch after our
+    own create-once link attempt.  The normal path validator remains unchanged;
+    a target whose link count stays above one is still rejected as
+    ``HARDLINK_PATH`` by ``_existing_contract_or_conflict``.
+    """
+
+    deadline = time.monotonic() + _CREATE_ONCE_STABILIZATION_SECONDS
+    while True:
+        try:
+            if target.lstat().st_nlink == 1:
+                break
+        except OSError:
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(_CREATE_ONCE_POLL_SECONDS, remaining))
+    return _existing_contract_or_conflict(target, candidate, run_root=run_root)
+
+
 def atomic_create_once(
     target: Path,
     text: str,
@@ -397,7 +428,7 @@ def atomic_create_once(
         try:
             os.link(temporary, target, follow_symlinks=False)
         except FileExistsError:
-            return _existing_contract_or_conflict(
+            return _existing_contract_after_create_once_race(
                 target, candidate, run_root=run_root
             )
         except OSError:

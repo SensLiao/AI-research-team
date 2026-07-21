@@ -6,14 +6,17 @@ import copy
 import hashlib
 import json
 import re
+import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 import yaml
 
+from research_agent_teams.tools import _manuscript_contract_validation
 from research_agent_teams.tests.test_manuscript_predraft_schemas import (
     valid_manuscript_contract,
 )
@@ -614,25 +617,51 @@ def test_freeze_is_idempotent_but_never_overwrites_a_different_snapshot(tmp_path
     assert json.loads((tmp_path / "state" / "contract.json").read_text("utf-8")) == first
 
 
-def test_concurrent_freeze_is_create_once_and_leaves_no_temporary_files(tmp_path: Path):
+def test_concurrent_freeze_is_create_once_and_leaves_no_temporary_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     first = _valid_frozen_contract()
     second = _valid_frozen_contract()
     second["north_star"] = "A concurrent but different immutable contract."
 
-    def attempt(payload: dict):
+    real_link = _manuscript_contract_validation.os.link
+    link_barrier = Barrier(2)
+
+    def delayed_successful_link(source, target, *, follow_symlinks=True):
+        link_barrier.wait(timeout=1)
+        result = real_link(source, target, follow_symlinks=follow_symlinks)
+        # Hold the winner between link creation and temporary-name removal so
+        # every iteration exercises the loser's FileExistsError race window.
+        time.sleep(0.02)
+        return result
+
+    monkeypatch.setattr(
+        _manuscript_contract_validation.os, "link", delayed_successful_link
+    )
+
+    def attempt(payload: dict, run_root: Path):
         try:
-            return _freeze(payload, tmp_path, name="concurrent.json")
+            return _freeze(payload, run_root, name="concurrent.json")
         except ManuscriptContractError as exc:
             return exc.code
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        outcomes = list(pool.map(attempt, (first, second)))
+    for iteration in range(12):
+        run_root = tmp_path / f"iteration-{iteration}"
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(
+                pool.map(
+                    lambda payload: attempt(payload, run_root),
+                    (first, second),
+                )
+            )
 
-    assert sum(isinstance(outcome, dict) for outcome in outcomes) == 1
-    assert outcomes.count("FROZEN_CONTRACT_CONFLICT") == 1
-    written = json.loads((tmp_path / "state" / "concurrent.json").read_text("utf-8"))
-    assert written in [outcome for outcome in outcomes if isinstance(outcome, dict)]
-    assert list((tmp_path / "state").glob("*.tmp")) == []
+        assert sum(isinstance(outcome, dict) for outcome in outcomes) == 1
+        assert outcomes.count("FROZEN_CONTRACT_CONFLICT") == 1
+        written = json.loads(
+            (run_root / "state" / "concurrent.json").read_text("utf-8")
+        )
+        assert written in [outcome for outcome in outcomes if isinstance(outcome, dict)]
+        assert list((run_root / "state").glob("*.tmp")) == []
 
 
 def test_freeze_rejects_output_path_outside_injected_run_root(tmp_path: Path):
