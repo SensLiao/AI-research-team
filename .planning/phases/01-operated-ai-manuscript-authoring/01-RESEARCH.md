@@ -723,7 +723,7 @@ Security enforcement is treated as enabled because this phase handles untrusted 
 |---|-------|---------|---------------|
 | — | None. All factual claims are grounded in the bounded repository inputs or orchestrator-supplied local command evidence; proposed filenames/symbols are prescriptive planning recommendations, not claims that files already exist. | All | No user confirmation is required before planning. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 None requiring a user decision. The agent-discretion choices are resolved here as: native framework only; authoritative JSON Schema; `latexmk` first, bounded direct `pdflatex`/bibliography fallback, venue-selected Xe/Lua only when required; focused tool modules; separate review recipe; adaptive optional section specialists but non-skippable evidence/integration/independent truth capabilities. [VERIFIED: `01-CONTEXT.md` discretion]
 
