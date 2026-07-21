@@ -356,6 +356,10 @@ def _worker(role: str, stage: str, request: str, *, output: str, assignment: Map
             forbidden_inputs: Sequence[str] = (), blind: bool = False) -> dict[str, Any]:
     return {
         "label": role,
+        # These authoring and audit roles reason over a frozen research
+        # contract; keep their logical workload tier explicit so the standard
+        # provider-neutral runtime decorator can attach capabilities.
+        "model": "opus",
         "output": output,
         "prompt": _prompt(role, stage, request, assignment),
         "assignment": dict(assignment or {}),
