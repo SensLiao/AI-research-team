@@ -186,3 +186,81 @@ def test_normalizers():
     assert normalize_arxiv_id("arXiv:2403.12345v3") == "2403.12345"
     assert normalize_arxiv_id("2403.12345") == "2403.12345"
     assert normalize_arxiv_id("v3") is None
+
+
+def test_openalex_contact_stays_in_user_agent_and_out_of_url(monkeypatch):
+    from urllib.parse import quote, urlsplit
+
+    contact = "contact-sentinel@example.invalid"
+    monkeypatch.delenv("RAT_OPENALEX_API_KEY", raising=False)
+    monkeypatch.setenv("RAT_CONTACT_MAIL", contact)
+    seen = []
+
+    search_openalex("safe metadata", transport=fixed(OPENALEX_BODY, capture=seen))
+
+    assert len(seen) == 1
+    url, headers = seen[0]
+    assert urlsplit(url).query == "search=safe+metadata&per-page=10"
+    assert contact not in url
+    assert quote(contact, safe="") not in url
+    assert f"mailto:{contact}" in headers["User-Agent"]
+
+
+def test_openalex_key_fails_closed_before_transport(monkeypatch):
+    key = "openalex-key-sentinel"
+    contact = "contact-sentinel@example.invalid"
+    monkeypatch.setenv("RAT_OPENALEX_API_KEY", key)
+    monkeypatch.setenv("RAT_CONTACT_MAIL", contact)
+    seen = []
+
+    with pytest.raises(ScholarLookupError) as caught:
+        search_openalex("safe metadata", transport=fixed(OPENALEX_BODY, capture=seen))
+
+    detail = str(caught.value)
+    assert seen == []
+    assert "openalex" in detail.lower()
+    assert "blocked before transport" in detail.lower()
+    assert key not in detail
+    assert contact not in detail
+
+
+def test_scholar_errors_keep_safe_request_identity_but_strip_query_values(monkeypatch):
+    key = "credential-sentinel"
+    contact = "contact-sentinel@example.invalid"
+    query_value = "private-query-sentinel"
+    monkeypatch.setenv("RAT_OPENALEX_API_KEY", key)
+    monkeypatch.setenv("RAT_CONTACT_MAIL", contact)
+    unsafe_url = (
+        "https://api.crossref.org/works?"
+        f"query={query_value}&api_key={key}&mailto={contact}"
+    )
+
+    http_detail = str(_HTTPStatusError(503, unsafe_url))
+    network_detail = str(ScholarLookupError(
+        f"network failure for {unsafe_url}: credential={key}; contact={contact}"
+    ))
+
+    for detail in (http_detail, network_detail):
+        assert "crossref" in detail.lower()
+        assert "api.crossref.org/works" in detail
+        assert "?" not in detail
+        assert query_value not in detail
+        assert key not in detail
+        assert contact not in detail
+    assert "HTTP 503" in http_detail
+
+
+def test_parse_failure_redacts_request_query(monkeypatch):
+    query_value = "parse-query-sentinel"
+    contact = "parse-contact@example.invalid"
+    monkeypatch.delenv("RAT_OPENALEX_API_KEY", raising=False)
+    monkeypatch.setenv("RAT_CONTACT_MAIL", contact)
+
+    with pytest.raises(ScholarLookupError) as caught:
+        search_crossref(query_value, transport=fixed(b"{not-json"))
+
+    detail = str(caught.value)
+    assert "crossref" in detail.lower()
+    assert "api.crossref.org/works" in detail
+    assert query_value not in detail
+    assert contact not in detail
