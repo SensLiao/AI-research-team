@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
 status: executing
-stopped_at: Completed 01-09-PLAN.md
-last_updated: "2026-07-21T11:43:55.262Z"
+stopped_at: Completed 01-10-PLAN.md
+last_updated: "2026-07-21T12:13:20.554Z"
 last_activity: 2026-07-21
 last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 20
-  completed_plans: 9
-  percent: 45
+  completed_plans: 10
+  percent: 50
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-21)
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 9 of 20 in current phase
+Plan: 10 of 20 in current phase
 Status: Ready to execute
 Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
 
-Progress: [█████░░░░░] 45%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [█████░░░░░] 45%
 | Phase 01 P07 | 14min | 1 tasks | 4 files |
 | Phase 01 P08 | 35min | 1 tasks | 2 files |
 | Phase 01 P09 | 10min | 1 tasks | 3 files |
+| Phase 01 P10 | 23min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,9 @@ Decisions are logged in PROJECT.md Key Decisions.
 - [Phase 01]: Keep secret scanning caller-supplied and side-effect free. — The validator must not discover environment values, secret files, credentials, or broader worker context.
 - [Phase 01]: Use the existing PAYLOAD_SCHEMAS and validate_payload boundary as the sole authority for all eight manuscript artifact contracts.
 - [Phase 01]: Require field-specific invalid assertions so unknown-type rejection cannot masquerade as schema truth coverage.
+- [Phase 01]: Keep manuscript_authoring and manuscript_review registry-routable but spec-only until concrete recipes, reducers, renderers, and operated tests exist.
+- [Phase 01]: Derive non-specialized section instances from frozen required_sections and require exact-one candidate closure before integration.
+- [Phase 01]: Reusable audit roles require distinct authoring/review run IDs, authorization receipts, blind scopes, and worker instances; authoring evidence never counts as independent review.
 
 ### Pending Todos
 
@@ -115,6 +119,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T11:43:55.254Z
-Stopped at: Completed 01-09-PLAN.md
+Last session: 2026-07-21T12:13:20.545Z
+Stopped at: Completed 01-10-PLAN.md
 Resume file: None
