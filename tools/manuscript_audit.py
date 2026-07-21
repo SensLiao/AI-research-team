@@ -10,7 +10,9 @@ import hashlib
 import hmac
 import json
 import math
+import os
 import re
+import stat
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -40,7 +42,8 @@ _ORDER = (
     "UNOWNED_ASSET_OVERWRITE", "ANONYMITY_VIOLATION", "OFFICIAL_RULE_VIOLATION",
     "PATH_ESCAPE_OR_AMBIGUITY", "SECRET_LEAKAGE", "UNSAFE_TEX_SOURCE",
     "CORRUPT_BUILD_RECEIPT", "BUILD_REQUIRED_UNAVAILABLE", "BUILD_SOURCE_STALE",
-    "BUILD_PDF_MISSING", "BUILD_PDF_HASH_MISMATCH", "FALSE_PDF_CLAIM",
+    "BUILD_RECEIPT_UNVERIFIED", "BUILD_PDF_MISSING", "BUILD_PDF_HASH_MISMATCH",
+    "FALSE_PDF_CLAIM",
 )
 _RANK = {code: index for index, code in enumerate(_ORDER)}
 _POLICY = {
@@ -76,6 +79,45 @@ def _hash(value: Any) -> str | None:
 
 def _safe_hash(value: Any, label: str) -> str:
     return _hash(value) or _digest(label.encode())
+
+
+def _read_bound_file(
+    run_root: Path, relative_path: str, *, expected_sha256: str,
+    expected_size: int | None, max_bytes: int,
+) -> bytes:
+    """Read one verified regular file through a stable, no-follow descriptor."""
+    checked = validate_run_owned_path(relative_path, run_root=run_root, purpose="read")
+    path = Path(checked["path"])
+    before = os.lstat(path)
+    if not stat.S_ISREG(before.st_mode) or before.st_size > max_bytes:
+        raise ValueError("bound file is not a bounded regular file")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        identity = (before.st_dev, before.st_ino) == (opened.st_dev, opened.st_ino)
+        if not identity or not stat.S_ISREG(opened.st_mode) or opened.st_size > max_bytes:
+            raise ValueError("bound file identity changed before open")
+        if expected_size is not None and opened.st_size != expected_size:
+            raise ValueError("bound file size mismatch")
+        chunks, remaining = [], opened.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                raise ValueError("bound file ended early")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        after = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino, opened.st_size) != (
+            after.st_dev, after.st_ino, after.st_size,
+        ):
+            raise ValueError("bound file changed during read")
+    finally:
+        os.close(descriptor)
+    raw = b"".join(chunks)
+    if not hmac.compare_digest(_digest(raw), expected_sha256):
+        raise ValueError("bound file hash mismatch")
+    return raw
 
 
 def _rows(value: Any) -> list[Mapping[str, Any]]:
@@ -247,6 +289,7 @@ def _numeric_truth(
     facts = {str(row.get("result_ref")): row for row in _rows(manuscript.get("result_facts"))
              if row.get("result_ref")}
     verified: dict[str, bool] = {}
+    derived_values: dict[str, Mapping[str, Any]] = {}
     for result_ref, fact in sorted(facts.items()):
         frozen = expected.get(result_ref)
         evidence_ref = _ref("manuscript/results", result_ref)
@@ -254,6 +297,8 @@ def _numeric_truth(
             isinstance(frozen, Mapping) and frozen.get("status") == "FROZEN"
             and fact.get("metadata_only") is not True
             and _hash(fact.get("sha256")) == _hash(frozen.get("sha256"))
+            and fact.get("raw_result_ref") == frozen.get("ref")
+            and _hash(fact.get("raw_result_sha256")) == _hash(frozen.get("sha256"))
             and fact.get("receipt_ref") == frozen.get("receipt_ref")
             and _hash(fact.get("receipt_sha256")) == _hash(frozen.get("receipt_sha256"))
         )
@@ -267,25 +312,38 @@ def _numeric_truth(
             except Exception:  # fail closed; never persist verifier/secret-bearing error text
                 normalized = {}
         files = _rows(normalized.get("result_files"))
-        file_bound = any(
-            row.get("path") == fact.get("raw_result_ref")
+        bound_file = next((
+            row for row in files if row.get("path") == fact.get("raw_result_ref")
             and _hash(row.get("sha256")) == _hash(fact.get("raw_result_sha256"))
-            for row in files
-        )
-        verified[result_ref] = bool(
+        ), None)
+        receipt_ok = bool(
             bound and normalized.get("receipt_ref") == frozen.get("receipt_ref")
             and _hash(normalized.get("receipt_sha256")) == _hash(frozen.get("receipt_sha256"))
             and normalized.get("exit_status") == 0
-            and str(normalized.get("attestation_key_id") or "").strip() and file_bound
+            and str(normalized.get("attestation_key_id") or "").strip() and bound_file
         )
+        verified[result_ref] = False
+        if receipt_ok and isinstance(bound_file, Mapping):
+            try:
+                raw = _read_bound_file(
+                    run_root, str(bound_file["path"]),
+                    expected_sha256=str(_hash(bound_file.get("sha256"))),
+                    expected_size=bound_file.get("size_bytes"), max_bytes=16 * 1024 * 1024,
+                )
+                payload = json.loads(raw.decode("utf-8"))
+                metrics = payload.get("metrics") if isinstance(payload, Mapping) else None
+                if not isinstance(metrics, Mapping):
+                    raise ValueError("receipt-bound result has no metrics object")
+                derived_values[result_ref] = metrics
+                verified[result_ref] = True
+            except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError):
+                verified[result_ref] = False
         if not verified[result_ref]:
             out.add("FALSE_EXECUTION_CLAIM", evidence_ref, "BOTH")
 
     for index, claim in enumerate(_rows(manuscript.get("numeric_claims")), 1):
         result_ref, metric = str(claim.get("result_ref") or ""), str(claim.get("metric") or "")
-        fact = facts.get(result_ref)
-        values = fact.get("values") if isinstance(fact, Mapping) else None
-        observed = values.get(metric) if isinstance(values, Mapping) else None
+        observed = derived_values.get(result_ref, {}).get(metric)
         claimed, actual = claim.get("value"), observed.get("value") if isinstance(observed, Mapping) else None
         same_number = (
             isinstance(claimed, (int, float)) and not isinstance(claimed, bool)
@@ -382,7 +440,7 @@ def _missing_build(run_id: str, source_hash: str) -> dict[str, Any]:
 def _build_checks(
     contract: Mapping[str, Any], receipt_value: Mapping[str, Any] | None, *,
     run_root: Path, source_hash: str, requires_pdf: bool, receipt_ref: str,
-    out: _Findings,
+    out: _Findings, verifier: Callable[..., Mapping[str, Any]] | None,
 ) -> tuple[dict[str, Any], bool, Mapping[str, Any] | None]:
     run_id = str(contract.get("run_id") or "unknown-run")
     if receipt_value is None:
@@ -442,6 +500,40 @@ def _build_checks(
             out.add("BUILD_REQUIRED_UNAVAILABLE", safe_ref, "SUBMISSION")
         return summary, False, receipt
 
+    trusted = False
+    if verifier is not None:
+        try:
+            attested = verifier(
+                run_root, safe_ref, expected_run_id=run_id,
+                expected_snapshot_sha256=str(contract.get("manuscript_snapshot_sha256") or ""),
+                expected_source_sha256=source_hash,
+            )
+            attested_pdf = attested.get("pdf") if isinstance(attested, Mapping) else None
+            trusted = bool(
+                isinstance(attested, Mapping) and isinstance(attested_pdf, Mapping)
+                and _hash(attested.get("receipt_sha256")) == full_hash
+                and attested.get("run_id") == run_id
+                and attested.get("manuscript_snapshot_sha256")
+                == contract.get("manuscript_snapshot_sha256")
+                and attested.get("requires_pdf") is requires_pdf
+                and attested.get("build_state") == "COMPILED"
+                and _hash(attested.get("source_tree_sha256")) == recorded_source
+                and _hash(attested.get("current_source_sha256")) == source_hash
+                and _hash(attested.get("process_receipt_sha256"))
+                == _hash((process or {}).get("receipt_sha256"))
+                and attested_pdf.get("path") == (pdf or {}).get("path")
+                and _hash(attested_pdf.get("sha256")) == recorded_pdf
+                and attested_pdf.get("byte_size") == (pdf or {}).get("byte_size")
+                and str(attested.get("attestation_key_id") or "").strip()
+                and attested.get("signature_verified") is True
+                and attested.get("source_tree_verified") is True
+                and attested.get("pdf_verified") is True
+            )
+        except Exception:  # trusted-verifier details may contain secrets
+            trusted = False
+    if not trusted:
+        out.add("BUILD_RECEIPT_UNVERIFIED", safe_ref, "SUBMISSION")
+
     current = recorded_source == source_hash
     if requires_pdf and not current:
         out.add("BUILD_SOURCE_STALE", safe_ref, "SUBMISSION")
@@ -451,8 +543,15 @@ def _build_checks(
                                           run_root=run_root, purpose="read")
         path = run_root / checked["relative_path"]
         if path.is_file():
-            raw = path.read_bytes()
-            pdf_ok = (recorded_pdf == _digest(raw) and len(raw) == (pdf or {}).get("byte_size"))
+            try:
+                raw = _read_bound_file(
+                    run_root, str((pdf or {}).get("path") or ""),
+                    expected_sha256=str(recorded_pdf), expected_size=(pdf or {}).get("byte_size"),
+                    max_bytes=512 * 1024 * 1024,
+                )
+                pdf_ok = len(raw) == (pdf or {}).get("byte_size")
+            except (OSError, TypeError, ValueError):
+                pdf_ok = False
             if requires_pdf and not pdf_ok:
                 out.add("BUILD_PDF_HASH_MISMATCH", safe_ref, "SUBMISSION")
         elif requires_pdf:
@@ -460,7 +559,7 @@ def _build_checks(
     except (ManuscriptPathViolation, OSError, TypeError, ValueError):
         if requires_pdf:
             out.add("BUILD_PDF_MISSING", safe_ref, "SUBMISSION")
-    return summary, current and pdf_ok, receipt
+    return summary, trusted and current and pdf_ok, receipt
 
 
 def _pdf_claim(
@@ -474,14 +573,6 @@ def _pdf_claim(
     valid = isinstance(claim, Mapping) and isinstance(pdf, Mapping) and build_verified
     valid = bool(valid and claim.get("path") == pdf.get("path")
                  and _hash(claim.get("sha256")) == _hash(pdf.get("sha256")))
-    if valid:
-        try:
-            checked = validate_run_owned_path(str(claim.get("path") or ""),
-                                              run_root=run_root, purpose="read")
-            path = run_root / checked["relative_path"]
-            valid = path.is_file() and _digest(path.read_bytes()) == _hash(claim.get("sha256"))
-        except (ManuscriptPathViolation, OSError, TypeError, ValueError):
-            valid = False
     if not valid:
         out.add("FALSE_PDF_CLAIM", "manuscript/pdf-claim", "BOTH")
 
@@ -492,6 +583,7 @@ def audit_manuscript(
     build_receipt: Mapping[str, Any] | None = None,
     build_receipt_ref: str = "audit/manuscript-build-receipt.json",
     executor_receipt_verifier: Callable[..., Mapping[str, Any]] = verify_executor_receipt,
+    build_receipt_verifier: Callable[..., Mapping[str, Any]] | None = None,
     executor_key_resolver: Callable[[str], bytes | None] | None = None,
     secret_sentinels: Mapping[str, str] | None = None,
     secret_patterns: Mapping[str, str | re.Pattern[str]] | None = None,
@@ -526,6 +618,7 @@ def audit_manuscript(
     build, build_verified, verified_receipt = _build_checks(
         frozen, build_receipt, run_root=root, source_hash=source_hash,
         requires_pdf=requires_pdf, receipt_ref=build_receipt_ref, out=out,
+        verifier=build_receipt_verifier,
     )
     _pdf_claim(facts, verified_receipt, run_root=root, build_verified=build_verified, out=out)
 
