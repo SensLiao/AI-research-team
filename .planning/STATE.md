@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
 status: executing
-stopped_at: Completed 01-14-PLAN.md
-last_updated: "2026-07-21T15:49:45.121Z"
+stopped_at: Completed 01-15-PLAN.md
+last_updated: "2026-07-21T17:13:01.580Z"
 last_activity: 2026-07-21
 last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 20
-  completed_plans: 14
+  completed_plans: 15
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-21)
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 14 of 20 in current phase
+Plan: 15 of 20 in current phase
 Status: Ready to execute
 Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
 
@@ -69,6 +69,8 @@ Progress: [██████░░░░] 60%
 | Phase 01 P12 | 22min | 1 tasks | 2 files |
 | Phase 01 P13 | 64min | 1 tasks | 3 files |
 | Phase 01 P14 | 50min | 1 tasks | 2 files |
+| Phase 01 P15 | 76min | 1 tasks | 5 files |
+| Phase 01 P15 | 76min | 1 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -116,6 +118,9 @@ Decisions are logged in PROJECT.md Key Decisions.
 - [Phase 01]: Derive numeric manuscript truth only from signed-receipt-bound raw result bytes; manuscript-provided values are untrusted. — Prevents a valid receipt from laundering altered metric claims.
 - [Phase 01]: Require trusted build attestation for COMPILED readiness; schema validity and self-hashes do not establish authenticity. — Binds run, snapshot, current source, process, and PDF facts to an external verifier.
 - [Phase 01]: Keep build-only deficits submission-only while D-22 truth and safety defects block daily delivery. — Preserves readable work without weakening submission truth.
+- [Phase 01]: Select latexmk only after its Perl-backed readiness probe succeeds under the exact sanitized compilation environment. — Executable presence alone cannot prove the driver is runnable; a failed probe falls through to the direct pipeline.
+- [Phase 01]: Compile descriptor-verified manuscript bytes from a private run-owned staging tree. — This closes preflight-to-compile source mutation and keeps director assets immutable.
+- [Phase 01]: Publish COMPILED only after stable PDF and recorder reads plus source, process, log, recorder, and PDF hash closure. — Return codes and stale pathname outputs cannot establish build truth.
 
 ### Pending Todos
 
@@ -133,6 +138,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T15:49:45.112Z
-Stopped at: Completed 01-14-PLAN.md
+Last session: 2026-07-21T17:13:01.570Z
+Stopped at: Completed 01-15-PLAN.md
 Resume file: None
