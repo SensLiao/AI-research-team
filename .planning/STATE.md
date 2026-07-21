@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-07-21T09:46:34.240Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-07-21T10:00:23.269Z"
 last_activity: 2026-07-21
 last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 20
-  completed_plans: 3
-  percent: 15
+  completed_plans: 4
+  percent: 20
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-21)
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 3 of 20 in current phase
+Plan: 4 of 20 in current phase
 Status: Ready to execute
 Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
 
-Progress: [██░░░░░░░░] 15%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [██░░░░░░░░] 15%
 | Phase 01 P01 | 8min | 1 tasks | 5 files |
 | Phase 01 P02 | 15min | 1 tasks | 5 files |
 | Phase 01 P03 | 11min | 1 tasks | 5 files |
+| Phase 01 P04 | 9min | 1 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,9 @@ Decisions are logged in PROJECT.md Key Decisions.
 - [Phase 01]: Keep the manuscript gold set at exactly 17 top-level cases, with paired failure variants nested inside their assigned cases.
 - [Phase 01]: Bind companion fixtures and synthetic executor evidence with deterministic SHA-256 values.
 - [Phase 01]: Keep network, vault, GPU, credentials, and host TeX disabled; inject deterministic fixture drivers instead.
+- [Phase 01]: Reconnaissance uses bounded recall and deficit-only query authorization; it never calls scholarly providers directly.
+- [Phase 01]: Evidence handbacks bind exact spans and frozen receipts to existing schema fragments and the manuscript snapshot hash.
+- [Phase 01]: Section authors consume one frozen contract plus declared slices and can emit candidate bundles only.
 
 ### Pending Todos
 
@@ -93,6 +97,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T09:46:34.230Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-07-21T10:00:23.260Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None

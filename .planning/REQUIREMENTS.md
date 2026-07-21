@@ -13,7 +13,7 @@
 
 ### Pre-Draft Contract
 
-- [ ] **PREP-01**: Before drafting, the run selects and freezes a paper type and realistic target-venue family, prioritizing current top AI or CCF A-class-equivalent venues while treating official venue rules as authoritative.
+- [x] **PREP-01**: Before drafting, the run selects and freezes a paper type and realistic target-venue family, prioritizing current top AI or CCF A-class-equivalent venues while treating official venue rules as authoritative.
 - [x] **PREP-02**: Before parallel authoring, the run freezes a manuscript snapshot containing the paper brief, outline, claim ledger, evidence/result references, terminology/notation, venue profile, bibliography state, figure/table plan, and resolved Paper Design Tokens.
 - [ ] **PREP-03**: Paper Design Tokens resolve deterministically with precedence `base -> paper type -> venue -> project -> run override`.
 - [ ] **PREP-04**: The resolved token contract distinguishes the small hard-rule set—official template/anonymity, traceability, terminology/notation, figure provenance, compile/cross-reference integrity, and no fabrication—from advisory structure, voice, caption, rhetoric, and formatting guidance.
@@ -21,12 +21,12 @@
 ### Evidence Coverage
 
 - [x] **EVID-01**: Each authoring run recalls and reads relevant papers and notes from the read-only PhD-Research-OS database first, then emits an explicit local-literature coverage assessment.
-- [ ] **EVID-02**: Only a documented comparison, implementation, method, dataset, metric, or industry-prior-art deficit activates the existing paper-search engine, and network/search failure remains distinguishable from genuine evidence absence.
+- [x] **EVID-02**: Only a documented comparison, implementation, method, dataset, metric, or industry-prior-art deficit activates the existing paper-search engine, and network/search failure remains distinguishable from genuine evidence absence.
 - [ ] **EVID-03**: The authoring and review paths contain no OpenAlex PDF downloader, bulk-download/content API, corpus-construction, or automatic PDF acquisition path; OpenAlex may remain metadata-only inside the existing search engine.
 
 ### Multi-Agent Authoring
 
-- [ ] **ORCH-01**: Authoring runs use a sparse dependency DAG with explicit venue/corpus reconnaissance, paper architecture, evidence stewardship, section author, figure/table, integration, independent factual/citation/style/LaTeX audit, and submission-packaging roles.
+- [x] **ORCH-01**: Authoring runs use a sparse dependency DAG with explicit venue/corpus reconnaissance, paper architecture, evidence stewardship, section author, figure/table, integration, independent factual/citation/style/LaTeX audit, and submission-packaging roles.
 - [x] **ORCH-02**: Each section author receives the frozen shared context plus only its declared dependency slice, and one integrator owns terminology, notation, claim, citation, number, figure, and cross-section coherence.
 
 ### LaTeX and Assets
@@ -80,14 +80,14 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | OPER-01 | Phase 1 | Pending |
 | OPER-02 | Phase 1 | Complete |
 | OPER-03 | Phase 1 | Pending |
-| PREP-01 | Phase 1 | Pending |
+| PREP-01 | Phase 1 | Complete |
 | PREP-02 | Phase 1 | Complete |
 | PREP-03 | Phase 1 | Pending |
 | PREP-04 | Phase 1 | Pending |
 | EVID-01 | Phase 1 | Complete |
-| EVID-02 | Phase 1 | Pending |
+| EVID-02 | Phase 1 | Complete |
 | EVID-03 | Phase 1 | Pending |
-| ORCH-01 | Phase 1 | Pending |
+| ORCH-01 | Phase 1 | Complete |
 | ORCH-02 | Phase 1 | Complete |
 | LATX-01 | Phase 1 | Pending |
 | LATX-02 | Phase 1 | Complete |
