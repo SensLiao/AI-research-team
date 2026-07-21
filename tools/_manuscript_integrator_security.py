@@ -14,6 +14,7 @@ import re
 import stat
 from pathlib import Path
 from typing import Any, Callable, Mapping, Pattern, Sequence
+from xml.etree import ElementTree
 
 from research_agent_teams.tools.manuscript_contract import canonical_contract_hash
 from research_agent_teams.tools.manuscript_security import (
@@ -34,6 +35,34 @@ _DEFAULT_SECRET_PATTERNS: dict[str, Pattern[str]] = {
     "aws_access_key": re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
     "github_token": re.compile(r"\bgh(?:p|o|u|s|r)_[A-Za-z0-9]{20,}\b"),
 }
+_DEFAULT_SECRET_BYTE_PATTERNS = {
+    name: re.compile(pattern.pattern.encode("ascii"), pattern.flags & ~re.UNICODE)
+    for name, pattern in _DEFAULT_SECRET_PATTERNS.items()
+}
+_TRUSTED_ASSET_INPUT_KINDS = {
+    "RESULT": "FROZEN_RESULT",
+    "EVIDENCE": "EXTERNAL_EVIDENCE",
+    "ASSET": "DIRECTOR_ASSET",
+    "TEMPLATE": "SOURCE_DATA",
+    "VENUE_RULE": "SOURCE_DATA",
+    "TOKEN_OVERLAY": "SOURCE_DATA",
+}
+_SAFE_SVG_ELEMENTS = {
+    "svg", "g", "defs", "title", "desc", "path", "rect", "circle", "ellipse",
+    "line", "polyline", "polygon", "text", "tspan", "clipPath", "mask",
+    "linearGradient", "radialGradient", "stop", "pattern", "symbol", "use",
+}
+_SAFE_SVG_ATTRIBUTES = {
+    "xmlns", "version", "viewBox", "width", "height", "x", "y", "x1", "x2",
+    "y1", "y2", "cx", "cy", "r", "rx", "ry", "d", "points", "fill",
+    "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-opacity",
+    "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset",
+    "opacity", "transform", "id", "class", "clip-path", "mask", "offset",
+    "stop-color", "stop-opacity", "gradientUnits", "gradientTransform",
+    "spreadMethod", "fx", "fy", "font-family", "font-size", "font-weight",
+    "text-anchor", "dominant-baseline", "aria-label", "role", "href",
+}
+_DANGEROUS_SVG_VALUE = re.compile(r"(?:javascript|vbscript|data|file|https?):|expression\s*\(", re.I)
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -265,18 +294,99 @@ def verify_result(reference: str, contract: dict[str, Any], run_root: Path,
     )
 
 
+def validate_asset_source_inputs(
+    source_inputs: Sequence[Mapping[str, Any]], *, source_inventory: Mapping[str, Mapping[str, Any]],
+    provenance_kind: str, contract: dict[str, Any], run_root: Path,
+    result_verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
+    fail: Callable[..., None],
+) -> list[dict[str, str]]:
+    """Bind every manifest source to its trusted frozen kind, bytes, and receipt."""
+    trusted: list[dict[str, str]] = []
+    for source_input in source_inputs:
+        frozen = source_inventory.get(source_input["ref"])
+        expected_kind = _TRUSTED_ASSET_INPUT_KINDS.get(frozen.get("kind")) if frozen else None
+        if frozen is None or frozen["sha256"] != source_input["sha256"]:
+            fail("ASSET_SOURCE_INPUT_MISMATCH", "asset input hash is absent or stale")
+        if expected_kind is None or source_input["kind"] != expected_kind:
+            fail(
+                "ASSET_SOURCE_KIND_MISMATCH",
+                "asset input kind differs from the trusted frozen source inventory",
+                source_input["ref"],
+            )
+        row = {"ref": frozen["ref"], "sha256": frozen["sha256"], "kind": frozen["kind"]}
+        trusted.append(row)
+        if frozen["kind"] == "RESULT":
+            verify_result(source_input["ref"], contract, run_root, result_verifier, fail=fail)
+        elif frozen["kind"] == "ASSET":
+            if provenance_kind != "EXTERNAL":
+                fail(
+                    "ASSET_SOURCE_PATH_MISSING",
+                    "generated assets cannot consume a director input without an explicit input path",
+                    source_input["ref"],
+                )
+        else:
+            input_path = safe_run_file(
+                source_input["ref"], run_root=run_root, owned_roots=(run_root,), fail=fail
+            )
+            stable_bytes(input_path, fail=fail, expected_sha256=source_input["sha256"])
+    return trusted
+
+
+def validate_svg(data: bytes, asset_ref: str, *, fail: Callable[..., None]) -> None:
+    """Accept a small inert SVG subset; reject scripting, foreign content, and external refs."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        fail("UNSAFE_ASSET_CONTENT", "SVG asset is not UTF-8", asset_ref)
+    if re.search(r"<!DOCTYPE|<!ENTITY", text, re.I):
+        fail("UNSAFE_ASSET_CONTENT", "SVG document declarations are not allowed", asset_ref)
+    try:
+        root = ElementTree.fromstring(text)
+    except ElementTree.ParseError:
+        fail("UNSAFE_ASSET_CONTENT", "SVG is not well-formed XML", asset_ref)
+    for element in root.iter():
+        tag = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
+        if tag not in _SAFE_SVG_ELEMENTS:
+            fail("UNSAFE_ASSET_CONTENT", f"SVG element {tag!r} is not allowed", asset_ref)
+        for qualified_name, value in element.attrib.items():
+            name = qualified_name.rsplit("}", 1)[-1]
+            if name.lower().startswith("on") or name not in _SAFE_SVG_ATTRIBUTES:
+                fail("UNSAFE_ASSET_CONTENT", f"SVG attribute {name!r} is not allowed", asset_ref)
+            stripped = value.strip()
+            if _DANGEROUS_SVG_VALUE.search(stripped):
+                fail("UNSAFE_ASSET_CONTENT", "SVG contains an active or external value", asset_ref)
+            if name == "href" and not stripped.startswith("#"):
+                fail("UNSAFE_ASSET_CONTENT", "SVG href must be a local fragment", asset_ref)
+            for reference in re.findall(r"url\(([^)]+)\)", stripped, re.I):
+                if not reference.strip(" \t\r\n'\"").startswith("#"):
+                    fail("UNSAFE_ASSET_CONTENT", "SVG URL must be a local fragment", asset_ref)
+
+
 def scan_candidate_text(files: Mapping[str, bytes], *, fail: Callable[..., None],
                         sentinels: Mapping[str, str] | None,
                         patterns: Mapping[str, str | Pattern[str]] | None) -> None:
     combined_patterns = dict(_DEFAULT_SECRET_PATTERNS)
     combined_patterns.update(patterns or {})
     for path, data in files.items():
+        for name, pattern in _DEFAULT_SECRET_BYTE_PATTERNS.items():
+            if pattern.search(data):
+                fail("SECRET_LEAKAGE", f"default secret pattern {name!r} found in durable output", path)
         for name, sentinel in (sentinels or {}).items():
             if sentinel and sentinel.encode("utf-8") in data:
                 fail("SECRET_LEAKAGE", f"secret sentinel {name!r} found in durable output", path)
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
+            if Path(path).suffix.lower() in {".tex", ".bib", ".json", ".svg", ".txt", ".md"}:
+                fail("TEXT_ENCODING_INVALID", "durable text is not complete UTF-8", path)
+            for name, pattern in (patterns or {}).items():
+                raw = pattern.pattern if hasattr(pattern, "pattern") else str(pattern)
+                try:
+                    byte_pattern = re.compile(raw.encode("ascii"))
+                except (UnicodeEncodeError, re.error):
+                    fail("SECRET_SCAN_INDETERMINATE", f"pattern {name!r} cannot scan binary bytes", path)
+                if byte_pattern.search(data):
+                    fail("SECRET_LEAKAGE", f"secret pattern {name!r} found in durable output", path)
             continue
         try:
             scan_persisted_text(path, text, sentinels=sentinels, patterns=combined_patterns)
