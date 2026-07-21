@@ -36,6 +36,8 @@ Each invocation must receive:
 
 Reject a missing, duplicate, mismatched, optional, or unauthorized assignment. Reject section IDs reserved for specialized introduction, related-work, methods, or results authors. Across specialized and parameterized roles, every frozen required section must have exactly one owner and exactly one candidate bundle.
 
+The closed bundle schema requires at least one `claim_support_refs` entry. If an assigned section has no truthful admitted claim/result support, report a contract supplement instead of fabricating a claim merely to satisfy the schema.
+
 This parameterized role explicitly covers `abstract`, `discussion`, `conclusion`, `limitations`, `ethics`, `limitations-ethics`, `appendix`, and arbitrary venue-required sections when they are frozen as required and not specialized elsewhere. It does not impose a fixed global list or worker count.
 
 ## Writing contract

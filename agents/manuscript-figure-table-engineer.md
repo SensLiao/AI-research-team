@@ -38,6 +38,8 @@ Verify that the scheduler receipt names `manuscript-figure-table-engineer` and t
 5. For external assets, require source identity, original sha256, acquisition time, and `OWNED`, `LICENSED`, or `DIRECTOR_APPROVED` permission evidence.
 6. Preserve metric direction, complete comparison conditions, units, uncertainty, and non-truncated meaningful axes. Missing output bytes or a missing receipt means no output fact, not a fabricated candidate.
 
+The closed asset schema currently requires nonempty `claim_refs`, `result_refs`, and `numeric_source_cells` for every asset. If a planned nonnumeric or conceptual asset cannot truthfully satisfy those fields, report an unresolved schema/asset interface and emit no fabricated asset record.
+
 ## Output contract
 
 Emit one candidate `manuscript_asset_manifest` conforming to `schemas/manuscript_asset_manifest.schema.json`. At candidate time its `manuscript_sha256` is bound to the frozen `manuscript_snapshot_sha256`; every asset and the manifest carry their required sha256 values. Do not write the canonical figure/table files.
