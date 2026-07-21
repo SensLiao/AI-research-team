@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -717,6 +718,35 @@ def test_binary_default_secret_patterns_and_active_svg_fail_closed(tmp_path):
         _prepare_external_asset_case(
             tmp_path,
             b'<svg><foreignObject onpointerenter="run()"><a href="javascript:run()"/></foreignObject></svg>',
+        )
+    )
+    _assert_code(
+        "UNSAFE_ASSET_CONTENT",
+        lambda: _integrate(
+            run_root, contract, refs, asset_manifest=manifest,
+            asset_sources={"asset-director-figure": director_file},
+            director_asset_roots=[director_root],
+        ),
+    )
+
+
+def test_binary_custom_secret_pattern_preserves_regex_flags():
+    _assert_code(
+        "SECRET_LEAKAGE",
+        lambda: integrator_module._scan_candidate_text(
+            {"figures/opaque.png": b"\xffSECRET"},
+            sentinels=None,
+            patterns={"case-insensitive": re.compile("secret", re.IGNORECASE)},
+        ),
+    )
+
+
+def test_svg_processing_instructions_fail_closed(tmp_path):
+    run_root, contract, refs, director_root, director_file, manifest = (
+        _prepare_external_asset_case(
+            tmp_path,
+            b'<?xml-stylesheet href="https://attacker.invalid/style.css"?>'
+            b"<svg><title>apparently inert</title></svg>",
         )
     )
     _assert_code(
