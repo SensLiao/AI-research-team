@@ -26,6 +26,7 @@ from typing import Dict, List, Optional
 from research_agent_teams.tools.scholar_clients import (
     ScholarLookupError,
     Transport,
+    sanitize_scholar_error,
     search_arxiv,
     search_crossref,
     search_openalex,
@@ -49,6 +50,14 @@ _SEARCHERS = {
     "crossref": search_crossref,
     "s2": search_s2,
 }
+
+
+def _sanitize_source_errors(source_errors) -> Dict[str, str]:
+    """Return a fresh, persistence-safe provider-error mapping."""
+    return {
+        str(source): sanitize_scholar_error(detail)
+        for source, detail in dict(source_errors or {}).items()
+    }
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
@@ -85,7 +94,7 @@ def search(query: str, sources=DEFAULT_SOURCES, limit_per_source: int = 10,
         try:
             recs = _SEARCHERS[src](query, limit=limit_per_source, transport=transport)
         except ScholarLookupError as e:
-            errors[src] = str(e)
+            errors[src] = sanitize_scholar_error(e)
             continue
         for r in recs:
             key = _dedup_key(r)
@@ -172,7 +181,8 @@ def write_search_bundle(run_dir, query: str, result: dict, ts: str) -> str:
     _reject_vault_path(p)
     p.parent.mkdir(parents=True, exist_ok=True)
     payload = {"query": query, "retrieved_at": ts,
-               "records": result.get("records", []), "source_errors": result.get("source_errors", {}),
+               "records": result.get("records", []),
+               "source_errors": _sanitize_source_errors(result.get("source_errors", {})),
                "evidence_rows": to_evidence_sources(result.get("records", []))}
     p.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     return str(p)

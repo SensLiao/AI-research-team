@@ -50,8 +50,62 @@ _ARXIV_ID_RE = re.compile(r"(?:arxiv[:/\s]*)?(\d{4}\.\d{4,5})(?:v\d+)?$", re.IGN
 _DOI_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/)?(10\.\d{4,9}/\S+)$", re.IGNORECASE)
 
 
+_SCHOLAR_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+_SENSITIVE_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(api[_-]?key|access[_-]?token|token|credential|secret|mailto|contact|email)="
+    r"([^\s&;,]+)"
+)
+_SENSITIVE_ENV_NAMES = (
+    "RAT_OPENALEX_API_KEY",
+    "RAT_S2_API_KEY",
+    "RAT_CONTACT_MAIL",
+)
+
+
+def sanitize_scholar_url(url: object) -> str:
+    """Return a request identity that cannot retain query values or fragments."""
+    value = str(url or "")
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+            return "[invalid scholarly request]"
+        host = parsed.hostname.lower()
+        if parsed.port is not None:
+            host = f"{host}:{parsed.port}"
+        return urllib.parse.urlunsplit(
+            (parsed.scheme.lower(), host, parsed.path or "/", "", "")
+        )
+    except (TypeError, ValueError):
+        return "[invalid scholarly request]"
+
+
+def sanitize_scholar_error(detail: object) -> str:
+    """Strip URL queries and configured credential/contact values from durable diagnostics."""
+    text = str(detail or "scholarly provider failure")
+    text = _SCHOLAR_URL_RE.sub(lambda match: sanitize_scholar_url(match.group(0)), text)
+    text = _SENSITIVE_ASSIGNMENT_RE.sub(
+        lambda match: f"{match.group(1)}=[REDACTED]", text
+    )
+    for name in _SENSITIVE_ENV_NAMES:
+        value = os.environ.get(name, "").strip()
+        if not value:
+            continue
+        encoded_values = {
+            value,
+            urllib.parse.quote(value, safe=""),
+            urllib.parse.quote_plus(value),
+        }
+        for candidate in encoded_values:
+            if candidate:
+                text = text.replace(candidate, "[REDACTED]")
+    return text
+
+
 class ScholarLookupError(RuntimeError):
     """A lookup could not be completed (network / HTTP / parse failure) — NOT 'does not exist'."""
+
+    def __init__(self, detail: object):
+        super().__init__(sanitize_scholar_error(detail))
 
 
 class _HTTPStatusError(ScholarLookupError):
@@ -202,11 +256,17 @@ def search_arxiv(query: str, limit: int = 10, transport: Optional[Transport] = N
     return _fetch_parse(url, _parse_arxiv_atom, transport)[:limit]
 
 
+def _reject_openalex_query_key() -> None:
+    if os.environ.get("RAT_OPENALEX_API_KEY", "").strip():
+        raise ScholarLookupError(
+            "OpenAlex provider failure: configured RAT_OPENALEX_API_KEY uses query-only "
+            "authentication; request blocked before transport"
+        )
+
+
 def search_openalex(query: str, limit: int = 10, transport: Optional[Transport] = None) -> List[dict]:
+    _reject_openalex_query_key()
     params = {"search": query, "per-page": int(limit)}
-    mail = os.environ.get("RAT_CONTACT_MAIL", "").strip()
-    if mail:
-        params["mailto"] = mail
     url = f"{OPENALEX_API}?{urllib.parse.urlencode(params)}"
     return _fetch_parse(url, _parse_openalex, transport)[:limit]
 
@@ -254,10 +314,8 @@ def lookup_doi_openalex(doi: str, transport: Optional[Transport] = None) -> Opti
     ndoi = normalize_doi(doi)
     if not ndoi:
         return None
+    _reject_openalex_query_key()
     url = f"{OPENALEX_API}/doi:{urllib.parse.quote(ndoi, safe='')}"
-    mail = os.environ.get("RAT_CONTACT_MAIL", "").strip()
-    if mail:
-        url += f"?mailto={urllib.parse.quote(mail)}"
     try:
         body = _get(url, transport)
     except _HTTPStatusError as e:
