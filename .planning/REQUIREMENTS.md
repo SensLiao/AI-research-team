@@ -8,7 +8,7 @@
 ### Operated Product
 
 - [ ] **OPER-01**: The director can start and resume a one-button `manuscript_authoring` run through the existing validated, checkpointed, tamper-evident operated lifecycle.
-- [ ] **OPER-02**: The director can run manuscript review/rebuttal through a distinct operated recipe that consumes a manuscript without conflating review evidence with generation evidence.
+- [x] **OPER-02**: The director can run manuscript review/rebuttal through a distinct operated recipe that consumes a manuscript without conflating review evidence with generation evidence.
 - [ ] **OPER-03**: Capability facts and the mode registry expose authoring or review as operated only when the corresponding concrete recipe exists and is runnable.
 
 ### Pre-Draft Contract
@@ -32,14 +32,14 @@
 ### LaTeX and Assets
 
 - [ ] **LATX-01**: The run produces a native LaTeX project containing `main.tex`, `refs.bib`, section files, figure/table manifests, build metadata, and a deterministic quality report.
-- [ ] **LATX-02**: The run detects an available LaTeX engine and builds a real PDF when possible; otherwise it reports `TOOLCHAIN_MISSING`, delivers the complete source project, and never claims that a PDF was compiled.
-- [ ] **ASST-01**: Every included figure and table has provenance, caption/label ownership, source/result references, and either a local source asset or reproducible generation/rendering command, without silently overwriting director-owned assets.
+- [x] **LATX-02**: The run detects an available LaTeX engine and builds a real PDF when possible; otherwise it reports `TOOLCHAIN_MISSING`, delivers the complete source project, and never claims that a PDF was compiled.
+- [x] **ASST-01**: Every included figure and table has provenance, caption/label ownership, source/result references, and either a local source asset or reproducible generation/rendering command, without silently overwriting director-owned assets.
 
 ### Audit and Delivery
 
-- [ ] **AUDT-01**: Deterministic audits cover abstract/body/conclusion claim closure, claim-evidence entailment references, result numbers against frozen sources, BibTeX/in-text citation closure, terminology/notation, labels/cross-references, required sections, anonymity, official venue constraints, LaTeX compilation, and PDF existence whenever compilation is claimed.
+- [x] **AUDT-01**: Deterministic audits cover abstract/body/conclusion claim closure, claim-evidence entailment references, result numbers against frozen sources, BibTeX/in-text citation closure, terminology/notation, labels/cross-references, required sections, anonymity, official venue constraints, LaTeX compilation, and PDF existence whenever compilation is claimed.
 - [ ] **DELV-01**: The run delivers human-first outputs under `director-review/` plus machine evidence bundles, including a manuscript overview, local-literature coverage report, authoring plan, LaTeX source tree, compiled PDF when available, quality report, reviewer report, and submission checklist.
-- [ ] **DELV-02**: The run reports `USABLE`, `USABLE_WITH_CAVEATS`, `NEEDS_SUPPLEMENT`, or `BLOCK`; readable work survives advisory defects, only truth/permission/irrecoverable-input/false-execution defects hard-block daily delivery, and submission readiness remains strict.
+- [x] **DELV-02**: The run reports `USABLE`, `USABLE_WITH_CAVEATS`, `NEEDS_SUPPLEMENT`, or `BLOCK`; readable work survives advisory defects, only truth/permission/irrecoverable-input/false-execution defects hard-block daily delivery, and submission readiness remains strict.
 
 ### Safety and Platform Boundaries
 
@@ -78,7 +78,7 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | OPER-01 | Phase 1 | Pending |
-| OPER-02 | Phase 1 | Pending |
+| OPER-02 | Phase 1 | Complete |
 | OPER-03 | Phase 1 | Pending |
 | PREP-01 | Phase 1 | Pending |
 | PREP-02 | Phase 1 | Complete |
@@ -90,11 +90,11 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | ORCH-01 | Phase 1 | Pending |
 | ORCH-02 | Phase 1 | Complete |
 | LATX-01 | Phase 1 | Pending |
-| LATX-02 | Phase 1 | Pending |
-| ASST-01 | Phase 1 | Pending |
-| AUDT-01 | Phase 1 | Pending |
+| LATX-02 | Phase 1 | Complete |
+| ASST-01 | Phase 1 | Complete |
+| AUDT-01 | Phase 1 | Complete |
 | DELV-01 | Phase 1 | Pending |
-| DELV-02 | Phase 1 | Pending |
+| DELV-02 | Phase 1 | Complete |
 | SAFE-01 | Phase 1 | Pending |
 | SAFE-02 | Phase 1 | Pending |
 | SAFE-03 | Phase 1 | Pending |

@@ -27,10 +27,10 @@ The accepted scope is one coherent vertical product capability: the director can
   4. The director can read the overview, coverage report, authoring plan, manuscript, quality report, independent reviewer report, and submission checklist under `director-review/`, with an honest usability status and deterministic findings for claim/evidence/number/citation closure, terminology, labels, venue rules, anonymity, execution truth, secret safety, and build integrity.
   5. A developer can run the local-first end-to-end fixture and the relevant unit, integration, operated-mode, AI-eval, security, and completion checks on the supported Windows/Linux Python runtime, obtaining evidence that search activation, token precedence, unsafe-path/database boundaries, required roles, false claims, and PDF status behave as specified.
 
-**Plans**: 1/20 plans executed
+**Plans**: 2/20 plans executed
 
 - [x] 01-01-PLAN.md
-- [ ] 01-02-PLAN.md
+- [x] 01-02-PLAN.md
 - [ ] 01-03-PLAN.md
 - [ ] 01-04-PLAN.md
 - [ ] 01-05-PLAN.md
@@ -54,7 +54,7 @@ The accepted scope is one coherent vertical product capability: the director can
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Operated AI Manuscript Authoring | 1/20 | In Progress|  |
+| 1. Operated AI Manuscript Authoring | 2/20 | In Progress|  |
 
 ## Requirement Coverage
 

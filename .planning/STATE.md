@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-07-21T09:08:42.855Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-07-21T09:30:20.559Z"
 last_activity: 2026-07-21
 last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 20
-  completed_plans: 1
-  percent: 0
+  completed_plans: 2
+  percent: 10
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-21)
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 1 of 20 in current phase
+Plan: 2 of 20 in current phase
 Status: Ready to execute
 Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 10%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 8min | 1 tasks | 5 files |
+| Phase 01 P02 | 15min | 1 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,10 @@ Decisions are logged in PROJECT.md Key Decisions.
 - [Phase 1]: Keep authoring and manuscript review/rebuttal as distinct operated recipes.
 - [Phase 1]: Preserve local-first retrieval, no OpenAlex download path, database read-only operation, and the 90/10 usable-first boundary.
 - [Phase 1]: Treat the LaTeX engine as optional and report `TOOLCHAIN_MISSING` instead of fabricating a PDF.
+- [Phase 01]: Only COMPILED may expose a PDF fact, with source, process, log, recorder, and PDF hashes.
+- [Phase 01]: Daily usability and strict submission readiness remain separate derived axes; a required-PDF deficit can leave readable source while blocking submission.
+- [Phase 01]: Visible assets require immutable inputs, run-owned CREATE_NEW outputs, explicit permissions, and generated-or-external provenance.
+- [Phase 01]: Independent review verdicts require blind scheduler authorization and frozen contract, manuscript, and PDF hashes.
 
 ### Pending Todos
 
@@ -84,6 +89,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T09:08:42.844Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-07-21T09:29:11.979Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
