@@ -16,6 +16,45 @@ from research_agent_teams.tools.venue_readiness_markdown import venue_readiness_
 
 
 TS = "2026-07-10T00:00:00Z"
+HEX = "a" * 64
+
+
+def _write_manuscript_report(run_dir: Path, name: str, text: str) -> Path:
+    path = run_dir / "director-review" / "manuscript" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _write_review_verdict(
+    run_dir: Path,
+    *,
+    review_run_id: str,
+    manuscript_ref: str = "runs/paper-001/manuscript/main.tex",
+    manuscript_sha256: str = HEX,
+    independent: bool = True,
+) -> Path:
+    path = run_dir / "evidence" / "VERIFY" / "manuscript-review-verdict.artifact.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "artifact_type": "manuscript_review_verdict",
+                "payload": {
+                    "review_run_id": review_run_id,
+                    "reviewer_identity": {"independent_from_authoring": independent},
+                    "blind_read_receipt": {"scheduler_authorization_sha256": "c" * 64},
+                    "frozen_inputs": {
+                        "manuscript_ref": manuscript_ref,
+                        "manuscript_sha256": manuscript_sha256,
+                    },
+                    "verdict_sha256": "b" * 64,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
 
 
 def test_director_packet_renders_markdown_and_blocks_json_in_review_dir(tmp_path):
@@ -332,3 +371,69 @@ def test_director_packet_backfills_and_links_venue_readiness_markdown(tmp_path):
     assert "Venue readiness summary: verdict `NOT-YET`, venue `NeurIPS-2025`, unresolved triggers 1." in text
     assert "Unresolved trigger ids: `RT-D4-BASELINE`" in text
     assert not any("director-review/venue/venue-readiness.md" in p.replace("\\", "/") for p in paths)
+
+
+def test_manuscript_authoring_packet_links_the_primary_overview_not_an_internal_review(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "paper-001", "author a paper", "manuscript_authoring", TS)
+    rd = Path(plan["run_dir"])
+    _write_manuscript_report(rd, "00-OVERVIEW.md", "# Manuscript overview\n\nReadable source product.")
+    _write_manuscript_report(rd, "reviewer-report.md", "# Internal audit\n\nNot independent review.")
+
+    text = write_packet(rd, generated_at=TS).read_text(encoding="utf-8")
+
+    assert "[00-OVERVIEW.md](./manuscript/00-OVERVIEW.md)" in text
+    assert "No independently operated `manuscript_review` product is linked" in text
+    assert "./manuscript/reviewer-report.md" not in text
+
+
+def test_manuscript_review_packet_requires_distinct_verified_verdict_before_linking_report(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "review-001", "review a paper", "manuscript_review", TS)
+    rd = Path(plan["run_dir"])
+    _write_manuscript_report(rd, "reviewer-report.md", "# Independent review\n\nReadable findings.")
+    _write_review_verdict(rd, review_run_id="review-001")
+
+    text = write_packet(rd, generated_at=TS).read_text(encoding="utf-8")
+
+    assert "[reviewer-report.md](./manuscript/reviewer-report.md)" in text
+    assert "review run `review-001`" in text
+    assert "runs/paper-001/manuscript/main.tex" in text
+    assert "`" + ("b" * 64) + "`" in text
+
+
+def test_manuscript_review_packet_fails_closed_on_cross_run_hash_and_unsafe_input(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "review-002", "review a paper", "manuscript_review", TS)
+    rd = Path(plan["run_dir"])
+    _write_manuscript_report(rd, "reviewer-report.md", "# Independent review\n\nReadable findings.")
+    _write_review_verdict(
+        rd,
+        review_run_id="paper-001",
+        manuscript_ref="../outside/main.tex",
+        manuscript_sha256="not-a-hash",
+    )
+
+    text = write_packet(rd, generated_at=TS).read_text(encoding="utf-8")
+
+    assert "./manuscript/reviewer-report.md" not in text
+    assert "no verified independent manuscript-review verdict" in text.lower()
+    assert "../outside/main.tex" not in text
+
+
+def test_manuscript_packet_rejects_secret_bearing_review_reference_without_hiding_packet(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "review-secret", "review a paper", "manuscript_review", TS)
+    rd = Path(plan["run_dir"])
+    _write_manuscript_report(rd, "reviewer-report.md", "# Independent review\n\nReadable findings.")
+    _write_review_verdict(
+        rd,
+        review_run_id="review-secret",
+        manuscript_ref="runs/paper-001/main.tex?api_key=super-secret",
+    )
+
+    text = write_packet(rd, generated_at=TS).read_text(encoding="utf-8")
+
+    assert "# Director Review Packet" in text
+    assert "./manuscript/reviewer-report.md" not in text
+    assert "super-secret" not in text
