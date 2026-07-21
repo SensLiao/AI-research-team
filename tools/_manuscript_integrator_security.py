@@ -1,0 +1,284 @@
+"""Private fail-closed validators used by manuscript integration.
+
+This module owns descriptor-stable input reads, bounded JSON repair checks,
+run/receipt binding, and durable-output secret scanning.  It has no publishing
+authority and deliberately receives the caller's typed ``fail`` function.
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import os
+import re
+import stat
+from pathlib import Path
+from typing import Any, Callable, Mapping, Pattern, Sequence
+
+from research_agent_teams.tools.manuscript_contract import canonical_contract_hash
+from research_agent_teams.tools.manuscript_security import (
+    ManuscriptPathViolation,
+    ManuscriptSecretViolation,
+    scan_persisted_text,
+    validate_run_owned_path,
+)
+from research_agent_teams.tools.validate_artifact import validate_payload
+
+
+_JSON_SCALAR_RE = re.compile(
+    r'"(?:\\.|[^"\\])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null'
+)
+_DEFAULT_SECRET_PATTERNS: dict[str, Pattern[str]] = {
+    "private_key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    "credential_url": re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s/:]+:[^\s/@]+@"),
+    "aws_access_key": re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
+    "github_token": re.compile(r"\bgh(?:p|o|u|s|r)_[A-Za-z0-9]{20,}\b"),
+}
+
+
+def _canonical_bytes(value: Any) -> bytes:
+    return json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+
+
+def _canonical_hash(value: Any) -> str:
+    return hashlib.sha256(_canonical_bytes(value)).hexdigest()
+
+
+def _hash_without(value: Mapping[str, Any], field: str) -> str:
+    return _canonical_hash({key: item for key, item in value.items() if key != field})
+
+
+def _bytes_hash(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def stable_bytes(path: Path, *, fail: Callable[..., None],
+                 expected_sha256: str | None = None) -> bytes:
+    """Read one regular file through a no-follow descriptor and detect swaps."""
+    flags = os.O_RDONLY | int(getattr(os, "O_BINARY", 0)) | int(getattr(os, "O_NOFOLLOW", 0))
+    try:
+        before_path = path.lstat()
+        descriptor = os.open(path, flags)
+        try:
+            before_fd = os.fstat(descriptor)
+            if not stat.S_ISREG(before_fd.st_mode) or not os.path.samestat(before_path, before_fd):
+                fail("UNSTABLE_INPUT", "input path changed before its secure read", path.as_posix())
+            chunks = []
+            while True:
+                chunk = os.read(descriptor, 1024 * 1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            after_fd = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
+        after_path = path.lstat()
+    except OSError as exc:
+        fail("UNSTABLE_INPUT", f"input could not be read safely: {type(exc).__name__}", path.as_posix())
+    if not os.path.samestat(before_fd, after_fd) or not os.path.samestat(after_fd, after_path):
+        fail("UNSTABLE_INPUT", "input path changed during its secure read", path.as_posix())
+    data = b"".join(chunks)
+    if expected_sha256 is not None and _bytes_hash(data) != expected_sha256:
+        fail("HASH_MISMATCH", "securely read input bytes do not match their frozen hash", path.as_posix())
+    return data
+
+
+def _json_tokens(text: str) -> tuple[str, ...]:
+    return tuple(match.group(0) for match in _JSON_SCALAR_RE.finditer(text))
+
+
+def _format_skeleton(text: str) -> str:
+    output, quoted, escaped = [], False, False
+    for character in text:
+        if quoted:
+            output.append(character)
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                quoted = False
+        elif character == '"':
+            quoted = True
+            output.append(character)
+        elif character != "," and not character.isspace():
+            output.append(character)
+    return "".join(output)
+
+
+def _object_without_duplicates(pairs: list[tuple[str, Any]],
+                               *, fail: Callable[..., None]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            fail("DUPLICATE_JSON_KEY", "section bundle JSON contains a duplicate object key", key)
+        value[key] = item
+    return value
+
+
+def read_json(path: Path, *, format_repair: Callable[[str, list[str], int], str] | None,
+              fail: Callable[..., None], max_format_repairs: int) -> tuple[dict[str, Any], int, bytes, str]:
+    raw = stable_bytes(path, fail=fail)
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        fail("BUNDLE_ENCODING_INVALID", "section bundle must be UTF-8", path.as_posix())
+    current = text
+    errors: list[str] = []
+    for attempt in range(max_format_repairs + 1):
+        try:
+            value = json.loads(
+                current, object_pairs_hook=lambda pairs: _object_without_duplicates(pairs, fail=fail)
+            )
+        except json.JSONDecodeError as exc:
+            errors = [f"line {exc.lineno}, column {exc.colno}: {exc.msg}"]
+            if attempt == max_format_repairs:
+                code = "REPAIR_LIMIT_EXCEEDED" if format_repair else "BUNDLE_INVALID_JSON"
+                fail(code, "section bundle is not valid JSON after the bounded repair budget", path.as_posix())
+            if format_repair is None:
+                fail("BUNDLE_INVALID_JSON", errors[0], path.as_posix())
+            repaired = format_repair(current, list(errors), attempt + 1)
+            if not isinstance(repaired, str):
+                fail("FORMAT_REPAIR_INVALID", "format repair must return JSON text", path.as_posix())
+            if (_json_tokens(repaired) != _json_tokens(current)
+                    or _format_skeleton(repaired) != _format_skeleton(current)):
+                fail(
+                    "FORMAT_REPAIR_CHANGED_CONTENT",
+                    "format repair changed scalar content instead of punctuation or whitespace",
+                    path.as_posix(),
+                )
+            current = repaired
+            continue
+        if not isinstance(value, dict):
+            fail("BUNDLE_INVALID_JSON", "section bundle must decode to an object", path.as_posix())
+        return value, attempt, raw, _bytes_hash(current.encode("utf-8"))
+    raise AssertionError("bounded JSON parser exhausted without returning")
+
+
+def safe_run_file(reference: str | Path, *, run_root: Path, owned_roots: Sequence[Path],
+                  fail: Callable[..., None], expected_sha256: str | None = None) -> Path:
+    try:
+        result = validate_run_owned_path(
+            reference, run_root=run_root, purpose="read", owned_output_roots=owned_roots
+        )
+    except ManuscriptPathViolation as exc:
+        fail("UNSAFE_INPUT_PATH", str(exc), os.fspath(reference))
+    path = Path(result["path"])
+    if expected_sha256 is not None:
+        stable_bytes(path, fail=fail, expected_sha256=expected_sha256)
+    return path
+
+
+def validate_contract(contract: Mapping[str, Any], run_root: Path,
+                      *, fail: Callable[..., None]) -> dict[str, Any]:
+    if not isinstance(contract, Mapping):
+        fail("CONTRACT_INVALID", "manuscript contract must be an object")
+    frozen = copy.deepcopy(dict(contract))
+    errors = validate_payload("manuscript_contract", frozen)
+    if errors:
+        fail("CONTRACT_INVALID", "; ".join(errors[:5]))
+    if frozen["run_id"] != run_root.name:
+        fail("RUN_ID_MISMATCH", "contract run_id does not identify the active run")
+    if canonical_contract_hash(frozen) != frozen["manuscript_snapshot_sha256"]:
+        fail("CONTRACT_HASH_MISMATCH", "frozen manuscript snapshot hash does not verify")
+    for row in frozen["dependency_slices"]:
+        if _hash_without(row, "slice_sha256") != row["slice_sha256"]:
+            fail(
+                "DEPENDENCY_SLICE_HASH_MISMATCH",
+                "declared dependency slice hash does not verify",
+                row["slice_id"],
+            )
+    return frozen
+
+
+def require_verification(verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
+                         facts: dict[str, Any], *, fail: Callable[..., None],
+                         missing: str, invalid: str) -> None:
+    if verifier is None:
+        fail(missing, "an external authority verifier is required")
+    try:
+        verdict = verifier(copy.deepcopy(facts))
+    except Exception:
+        fail(invalid, "external authority rejected the bound facts")
+    if (not isinstance(verdict, Mapping) or verdict.get("verified") is not True
+            or any(verdict.get(key) != value for key, value in facts.items())):
+        fail(invalid, "external authority did not return the exact bound facts")
+
+
+def receipt_row(bundle: dict[str, Any], *, bundle_ref: str, run_root: Path,
+                stage: str, fail: Callable[..., None]) -> dict[str, Any]:
+    authorization = bundle["authorization_receipt"]
+    receipt_path = safe_run_file(
+        authorization["ref"], run_root=run_root, owned_roots=(run_root / "inbox",), fail=fail
+    )
+    try:
+        receipt = json.loads(stable_bytes(receipt_path, fail=fail).decode("utf-8"))
+    except (UnicodeError, ValueError):
+        fail(
+            "AUTHORIZATION_RECEIPT_INVALID",
+            "scheduler receipt is not valid UTF-8 JSON",
+            authorization["ref"],
+        )
+    if receipt.get("contract_version") != "panel-dispatch/v1" or receipt.get("stage") != stage:
+        fail("UNAUTHORIZED_STAGE", "scheduler receipt does not authorize the requested stage", authorization["ref"])
+    rows = [
+        row for row in receipt.get("authorizations", [])
+        if isinstance(row, dict) and bundle_ref in {row.get("output"), row.get("logical_output")}
+    ]
+    if len(rows) != 1:
+        fail("AUTHORIZATION_MISMATCH", "bundle has no unique scheduler authorization", bundle_ref)
+    row = rows[0]
+    if row.get("agent") != bundle["worker_role"] or authorization["worker_role"] != bundle["worker_role"]:
+        fail("AUTHORIZATION_MISMATCH", "authorization role does not match bundle worker", bundle_ref)
+    if row.get("authorization_kind") not in {"initial", "supplement"}:
+        fail("AUTHORIZATION_MISMATCH", "authorization kind is invalid", bundle_ref)
+    if _canonical_hash(row) != authorization["sha256"]:
+        fail("AUTHORIZATION_HASH_MISMATCH", "immutable authorization row hash does not verify", bundle_ref)
+    return row
+
+
+def verify_result(reference: str, contract: dict[str, Any], run_root: Path,
+                  verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
+                  *, fail: Callable[..., None]) -> None:
+    rows = {row["ref"]: row for row in contract["result_refs"]}
+    row = rows.get(reference)
+    if row is None:
+        fail("UNKNOWN_RESULT", "bundle or asset cites an undeclared result", reference)
+    if row["status"] != "FROZEN":
+        fail("RESULT_RECEIPT_UNVERIFIED", "result is not frozen", reference)
+    path = safe_run_file(reference, run_root=run_root, owned_roots=(run_root,), fail=fail)
+    if _bytes_hash(stable_bytes(path, fail=fail)) != row["sha256"]:
+        fail("STALE_RESULT", "frozen result bytes no longer match the contract", reference)
+    receipt_path = safe_run_file(row["receipt_ref"], run_root=run_root, owned_roots=(run_root,), fail=fail)
+    if _bytes_hash(stable_bytes(receipt_path, fail=fail)) != row["receipt_sha256"]:
+        fail("RESULT_RECEIPT_UNVERIFIED", "result receipt bytes do not match the contract", reference)
+    facts = {
+        "result_ref": reference, "result_sha256": row["sha256"],
+        "receipt_ref": row["receipt_ref"], "receipt_sha256": row["receipt_sha256"],
+        "run_id": contract["run_id"],
+    }
+    require_verification(
+        verifier, facts, fail=fail,
+        missing="RESULT_RECEIPT_UNVERIFIED", invalid="RESULT_RECEIPT_UNVERIFIED",
+    )
+
+
+def scan_candidate_text(files: Mapping[str, bytes], *, fail: Callable[..., None],
+                        sentinels: Mapping[str, str] | None,
+                        patterns: Mapping[str, str | Pattern[str]] | None) -> None:
+    combined_patterns = dict(_DEFAULT_SECRET_PATTERNS)
+    combined_patterns.update(patterns or {})
+    for path, data in files.items():
+        for name, sentinel in (sentinels or {}).items():
+            if sentinel and sentinel.encode("utf-8") in data:
+                fail("SECRET_LEAKAGE", f"secret sentinel {name!r} found in durable output", path)
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        try:
+            scan_persisted_text(path, text, sentinels=sentinels, patterns=combined_patterns)
+        except ManuscriptSecretViolation as exc:
+            fail("SECRET_LEAKAGE", str(exc), path)

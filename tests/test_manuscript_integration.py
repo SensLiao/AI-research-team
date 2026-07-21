@@ -249,6 +249,9 @@ def _rewrite_bundle(run_root: Path, ref: str, change) -> dict:
 
 
 def _integrate(run_root: Path, contract: dict, refs: list[str], **kwargs) -> dict:
+    kwargs.setdefault("authorization_verifier", _verified)
+    kwargs.setdefault("result_receipt_verifier", _verified)
+    kwargs.setdefault("generated_command_verifier", _verified)
     return integrate_manuscript(
         run_root=run_root,
         manuscript_contract=contract,
@@ -258,6 +261,10 @@ def _integrate(run_root: Path, contract: dict, refs: list[str], **kwargs) -> dic
         stage=STAGE,
         **kwargs,
     )
+
+
+def _verified(facts) -> dict:
+    return {"verified": True, **copy.deepcopy(dict(facts))}
 
 
 def _assert_code(expected: str, action) -> ManuscriptIntegrationError:
@@ -373,6 +380,7 @@ def test_validate_section_bundle_allows_only_two_format_repairs(tmp_path):
         required_section=SECTIONS[0],
         stage=STAGE,
         format_repair=repaired,
+        authorization_verifier=_verified,
     )
     assert validated["repair_attempts"] == 2
     assert calls == [1, 2]
@@ -388,6 +396,7 @@ def test_validate_section_bundle_allows_only_two_format_repairs(tmp_path):
             required_section=SECTIONS[0],
             stage=STAGE,
             format_repair=lambda raw, _errors, attempt: calls.append(attempt) or raw,
+            authorization_verifier=_verified,
         ),
     )
     assert calls == [1, 2]
@@ -585,7 +594,10 @@ def test_result_use_requires_a_real_frozen_receipt_binding(tmp_path):
         run_root, refs[1],
         lambda payload: payload["claim_support_refs"][0]["result_refs"].append(RESULT_REF),
     )
-    _assert_code("RESULT_RECEIPT_UNVERIFIED", lambda: _integrate(run_root, contract, refs))
+    _assert_code(
+        "RESULT_RECEIPT_UNVERIFIED",
+        lambda: _integrate(run_root, contract, refs, result_receipt_verifier=None),
+    )
 
 
 def test_materialization_rejects_cross_run_replay_and_preserves_foreign_lock(tmp_path):
@@ -625,6 +637,7 @@ def test_format_repair_cannot_change_json_structure(tmp_path):
             refs[0], run_root=run_root, manuscript_contract=contract,
             required_section=SECTIONS[0], stage=STAGE,
             format_repair=lambda *_args: valid_text,
+            authorization_verifier=_verified,
         ),
     )
 

@@ -15,16 +15,24 @@ import re
 import shutil
 import tempfile
 from collections import Counter
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Mapping, Pattern, Sequence
 
 from research_agent_teams.operate.output_versions import resolve_effective_output
-from research_agent_teams.tools.manuscript_contract import canonical_contract_hash
+from research_agent_teams.tools._manuscript_integrator_security import (
+    read_json as _security_read_json,
+    receipt_row as _security_receipt_row,
+    require_verification as _security_require_verification,
+    safe_run_file as _security_safe_run_file,
+    scan_candidate_text as _security_scan_candidate_text,
+    stable_bytes as _security_stable_bytes,
+    validate_contract as _security_validate_contract,
+    verify_result as _security_verify_result,
+)
 from research_agent_teams.tools.manuscript_security import (
     ManuscriptPathViolation,
-    ManuscriptSecretViolation,
     ManuscriptTexViolation,
-    scan_persisted_text,
     validate_run_owned_path,
     validate_tex_sources,
 )
@@ -40,15 +48,11 @@ _CITATION_RE = re.compile(r"\\cite(?:p|t)?\s*\{([^{}]+)\}")
 _GRAPHIC_RE = re.compile(r"\\includegraphics(?:\[[^\[\]]*\])?\s*\{([^{}]+)\}")
 _CAPTION_RE = re.compile(r"\\caption\s*\{([^{}]+)\}")
 _BIB_KEY_RE = re.compile(r"@[A-Za-z]+\s*\{\s*([^,\s{}]+)\s*,")
-_JSON_SCALAR_RE = re.compile(
-    r'"(?:\\.|[^"\\])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null'
-)
-_DEFAULT_SECRET_PATTERNS: dict[str, Pattern[str]] = {
-    "private_key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
-    "credential_url": re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s/:]+:[^\s/@]+@"),
-    "aws_access_key": re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
-    "github_token": re.compile(r"\bgh(?:p|o|u|s|r)_[A-Za-z0-9]{20,}\b"),
-}
+_ACTIVE_CANDIDATES: dict[int, dict[str, Any]] = {}
+
+
+class _IntegrationCandidate(dict):
+    """Ephemeral capability returned only by the validated integration path."""
 
 
 class ManuscriptIntegrationError(ValueError):
@@ -68,6 +72,16 @@ class ManuscriptIntegrationError(ValueError):
 
 def _fail(code: str, message: str, *refs: str) -> None:
     raise ManuscriptIntegrationError(code, message, affected_refs=refs)
+
+
+_stable_bytes = partial(_security_stable_bytes, fail=_fail)
+_read_json = partial(_security_read_json, fail=_fail, max_format_repairs=MAX_FORMAT_REPAIRS)
+_safe_run_file = partial(_security_safe_run_file, fail=_fail)
+_validate_contract = partial(_security_validate_contract, fail=_fail)
+_require_verification = partial(_security_require_verification, fail=_fail)
+_receipt_row = partial(_security_receipt_row, fail=_fail)
+_verify_result = partial(_security_verify_result, fail=_fail)
+_scan_candidate_text = partial(_security_scan_candidate_text, fail=_fail)
 
 def _canonical_bytes(value: Any) -> bytes:
     try:
@@ -92,74 +106,6 @@ def _file_hash(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-def _json_tokens(text: str) -> tuple[str, ...]:
-    return tuple(match.group(0) for match in _JSON_SCALAR_RE.finditer(text))
-
-def _read_json(path: Path, *, format_repair: Callable[[str, list[str], int], str] | None
-               ) -> tuple[dict[str, Any], int, bytes]:
-    raw = path.read_bytes()
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        _fail("BUNDLE_ENCODING_INVALID", "section bundle must be UTF-8", path.as_posix())
-    current = text
-    errors: list[str] = []
-    for attempt in range(MAX_FORMAT_REPAIRS + 1):
-        try:
-            value = json.loads(current)
-        except json.JSONDecodeError as exc:
-            errors = [f"line {exc.lineno}, column {exc.colno}: {exc.msg}"]
-            if attempt == MAX_FORMAT_REPAIRS:
-                code = "REPAIR_LIMIT_EXCEEDED" if format_repair else "BUNDLE_INVALID_JSON"
-                _fail(code, "section bundle is not valid JSON after the bounded repair budget", path.as_posix())
-            if format_repair is None:
-                _fail("BUNDLE_INVALID_JSON", errors[0], path.as_posix())
-            repaired = format_repair(current, list(errors), attempt + 1)
-            if not isinstance(repaired, str):
-                _fail("FORMAT_REPAIR_INVALID", "format repair must return JSON text", path.as_posix())
-            if _json_tokens(repaired) != _json_tokens(current):
-                _fail(
-                    "FORMAT_REPAIR_CHANGED_CONTENT",
-                    "format repair changed scalar content instead of punctuation or whitespace",
-                    path.as_posix(),
-                )
-            current = repaired
-            continue
-        if not isinstance(value, dict):
-            _fail("BUNDLE_INVALID_JSON", "section bundle must decode to an object", path.as_posix())
-        return value, attempt, raw
-    raise AssertionError("bounded JSON parser exhausted without returning")
-
-def _safe_run_file(reference: str | Path, *, run_root: Path, owned_roots: Sequence[Path],
-                   expected_sha256: str | None = None) -> Path:
-    try:
-        result = validate_run_owned_path(
-            reference,
-            run_root=run_root,
-            purpose="read",
-            owned_output_roots=owned_roots,
-            expected_sha256=expected_sha256,
-        )
-    except ManuscriptPathViolation as exc:
-        _fail("UNSAFE_INPUT_PATH", str(exc), os.fspath(reference))
-    return Path(result["path"])
-
-def _validate_contract(contract: Mapping[str, Any], run_root: Path) -> dict[str, Any]:
-    if not isinstance(contract, Mapping):
-        _fail("CONTRACT_INVALID", "manuscript contract must be an object")
-    frozen = copy.deepcopy(dict(contract))
-    errors = validate_payload("manuscript_contract", frozen)
-    if errors:
-        _fail("CONTRACT_INVALID", "; ".join(errors[:5]))
-    if frozen["run_id"] != run_root.name:
-        _fail("RUN_ID_MISMATCH", "contract run_id does not identify the active run")
-    if canonical_contract_hash(frozen) != frozen["manuscript_snapshot_sha256"]:
-        _fail("CONTRACT_HASH_MISMATCH", "frozen manuscript snapshot hash does not verify")
-    for row in frozen["dependency_slices"]:
-        if _hash_without(row, "slice_sha256") != row["slice_sha256"]:
-            _fail("DEPENDENCY_SLICE_HASH_MISMATCH", "declared dependency slice hash does not verify", row["slice_id"])
-    return frozen
 
 def _required_assignments(contract: dict[str, Any], required: Sequence[Mapping[str, str]]
                           ) -> list[dict[str, str]]:
@@ -189,41 +135,11 @@ def _required_assignments(contract: dict[str, Any], required: Sequence[Mapping[s
             _fail("UNAUTHORIZED_DEPENDENCY", "section assignment is not bound to its declared slice", row["section_id"])
     return [assignments[section_id] for section_id in outline_order]
 
-def _receipt_row(bundle: dict[str, Any], *, bundle_ref: str, run_root: Path,
-                 stage: str) -> dict[str, Any]:
-    authorization = bundle["authorization_receipt"]
-    receipt_path = _safe_run_file(
-        authorization["ref"],
-        run_root=run_root,
-        owned_roots=(run_root / "inbox",),
-    )
-    try:
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError):
-        _fail("AUTHORIZATION_RECEIPT_INVALID", "scheduler receipt is not valid UTF-8 JSON", authorization["ref"])
-    if receipt.get("contract_version") != "panel-dispatch/v1" or receipt.get("stage") != stage:
-        _fail("UNAUTHORIZED_STAGE", "scheduler receipt does not authorize the requested stage", authorization["ref"])
-    rows = [
-        row
-        for row in receipt.get("authorizations", [])
-        if isinstance(row, dict)
-        and bundle_ref in {row.get("output"), row.get("logical_output")}
-    ]
-    if len(rows) != 1:
-        _fail("AUTHORIZATION_MISMATCH", "bundle has no unique scheduler authorization", bundle_ref)
-    row = rows[0]
-    if row.get("agent") != bundle["worker_role"] or authorization["worker_role"] != bundle["worker_role"]:
-        _fail("AUTHORIZATION_MISMATCH", "authorization role does not match bundle worker", bundle_ref)
-    if row.get("authorization_kind") not in {"initial", "supplement"}:
-        _fail("AUTHORIZATION_MISMATCH", "authorization kind is invalid", bundle_ref)
-    if _canonical_hash(row) != authorization["sha256"]:
-        _fail("AUTHORIZATION_HASH_MISMATCH", "immutable authorization row hash does not verify", bundle_ref)
-    return row
-
 def validate_section_bundle(bundle_ref: str, *, run_root: str | Path,
                             manuscript_contract: Mapping[str, Any],
                             required_section: Mapping[str, str], stage: str,
                             format_repair: Callable[[str, list[str], int], str] | None = None,
+                            authorization_verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
                             ) -> dict[str, Any]:
     """Load and verify one explicitly assigned section bundle without mutating it."""
 
@@ -240,7 +156,9 @@ def validate_section_bundle(bundle_ref: str, *, run_root: str | Path,
             _fail("REQUIRED_SECTION_ASSIGNMENT_INVALID", "section, role, and dependency slice are required")
         slices = {row["slice_id"]: row for row in contract["dependency_slices"]}
         dependency = slices.get(raw_assignment["dependency_slice_id"])
-        if dependency is None or dependency["worker_role"] != raw_assignment["worker_role"]:
+        required_ids = {row["section_id"] for row in contract["outline"] if row["required"]}
+        if (raw_assignment["section_id"] not in required_ids or dependency is None
+                or dependency["worker_role"] != raw_assignment["worker_role"]):
             _fail("UNAUTHORIZED_DEPENDENCY", "section assignment is not bound to its declared slice")
         assignment = raw_assignment
     else:
@@ -254,7 +172,9 @@ def validate_section_bundle(bundle_ref: str, *, run_root: str | Path,
     except ValueError as exc:
         _fail("STALE_BUNDLE", str(exc), bundle_ref)
     effective = _safe_run_file(effective, run_root=root, owned_roots=(root / "inbox",))
-    bundle, repair_attempts, raw_bytes = _read_json(effective, format_repair=format_repair)
+    bundle, repair_attempts, raw_bytes, normalized_sha256 = _read_json(
+        effective, format_repair=format_repair
+    )
     errors = validate_payload("manuscript_section_bundle", bundle)
     if errors:
         _fail("SECTION_BUNDLE_INVALID", "; ".join(errors[:5]), bundle_ref)
@@ -276,6 +196,22 @@ def validate_section_bundle(bundle_ref: str, *, run_root: str | Path,
     if sorted(map(_canonical_bytes, visible)) != sorted(map(_canonical_bytes, declared)):
         _fail("UNAUTHORIZED_DEPENDENCY", "bundle inputs do not exactly equal its frozen dependency slice", bundle_ref)
     receipt_row = _receipt_row(bundle, bundle_ref=bundle_ref, run_root=root, stage=stage)
+    slice_row = slices[assignment["dependency_slice_id"]]
+    authorization_facts = {
+        "run_id": contract["run_id"],
+        "manuscript_snapshot_sha256": contract["manuscript_snapshot_sha256"],
+        "stage": stage,
+        "section_id": assignment["section_id"],
+        "worker_role": assignment["worker_role"],
+        "dependency_slice_id": assignment["dependency_slice_id"],
+        "dependency_slice_sha256": slice_row["slice_sha256"],
+        "bundle_ref": bundle_ref,
+        "authorization_sha256": _canonical_hash(receipt_row),
+    }
+    _require_verification(
+        authorization_verifier, authorization_facts,
+        missing="AUTHORIZATION_VERIFIER_REQUIRED", invalid="AUTHORIZATION_UNVERIFIED",
+    )
     return {
         "payload": copy.deepcopy(bundle),
         "bundle_ref": bundle_ref,
@@ -283,6 +219,7 @@ def validate_section_bundle(bundle_ref: str, *, run_root: str | Path,
         "bundle_sha256": _bytes_hash(raw_bytes),
         "content_hash": bundle["content_hash"],
         "repair_attempts": repair_attempts,
+        "normalized_sha256": normalized_sha256,
         "authorization_sha256": _canonical_hash(receipt_row),
         "dependency_slice_id": assignment["dependency_slice_id"],
     }
@@ -309,18 +246,11 @@ def _parse_bundle_tex(bundle: dict[str, Any], bundle_ref: str
         "captions": _CAPTION_RE.findall(text),
     }
 
-def _verify_result(reference: str, contract: dict[str, Any], run_root: Path) -> None:
-    rows = {row["ref"]: row for row in contract["result_refs"]}
-    row = rows.get(reference)
-    if row is None:
-        _fail("UNKNOWN_RESULT", "bundle or asset cites an undeclared result", reference)
-    path = _safe_run_file(reference, run_root=run_root, owned_roots=(run_root,))
-    if _file_hash(path) != row["sha256"]:
-        _fail("STALE_RESULT", "frozen result bytes no longer match the contract", reference)
-
 def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any],
                  run_root: Path, asset_sources: Mapping[str, str | Path],
-                 director_asset_roots: Sequence[str | Path]
+                 director_asset_roots: Sequence[str | Path],
+                 result_verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
+                 command_verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
                  ) -> tuple[dict[str, Any], dict[str, bytes]]:
     if manifest is None:
         value: dict[str, Any] = {
@@ -367,6 +297,8 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
     seen_paths: set[str] = set()
     claims = {row["claim_id"] for row in contract["claim_ledger"]}
     results = {row["ref"] for row in contract["result_refs"]}
+    planned = {row["asset_id"]: row for row in contract["asset_plan"]}
+    source_hashes = {row["ref"]: row["sha256"] for row in contract["source_hashes"]}
     for asset in assets:
         asset_id = asset["asset_id"]
         output = asset["output"]
@@ -388,10 +320,26 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
         ).issubset(results):
             _fail("ASSET_PROVENANCE_UNKNOWN", "asset cites an unknown claim or result", asset_id)
         for result_ref in set(asset["result_refs"]):
-            _verify_result(result_ref, contract, run_root)
+            _verify_result(result_ref, contract, run_root, result_verifier)
         source_value = asset_sources.get(asset_id)
         if source_value is None:
             _fail("ASSET_SOURCE_MISSING", "asset has no explicitly declared source file", asset_id)
+        plan = planned.get(asset_id)
+        input_refs = {row["ref"] for row in asset["source_inputs"]}
+        if (plan is None or input_refs != set(plan["source_refs"])
+                or set(asset["result_refs"]) != set(plan["result_refs"])):
+            _fail("ASSET_SOURCE_INPUT_MISMATCH", "asset inputs differ from the frozen asset plan", asset_id)
+        for source_input in asset["source_inputs"]:
+            expected = source_hashes.get(source_input["ref"])
+            if expected is None or expected != source_input["sha256"]:
+                _fail("ASSET_SOURCE_INPUT_MISMATCH", "asset input hash is absent or stale", asset_id)
+            if source_input["kind"] == "FROZEN_RESULT":
+                _verify_result(source_input["ref"], contract, run_root, result_verifier)
+            elif source_input["kind"] != "DIRECTOR_ASSET":
+                input_path = _safe_run_file(
+                    source_input["ref"], run_root=run_root, owned_roots=(run_root,)
+                )
+                _stable_bytes(input_path, expected_sha256=source_input["sha256"])
         source_path = Path(source_value).absolute()
         provenance = asset["provenance"]
         if provenance["kind"] == "EXTERNAL":
@@ -401,12 +349,14 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
                     run_root=run_root,
                     purpose="read",
                     director_asset_roots=director_asset_roots,
-                    expected_sha256=output["sha256"],
                 )
             except ManuscriptPathViolation as exc:
                 _fail("UNSAFE_ASSET_PATH", str(exc), asset_id)
             external = provenance["external_source"]
-            if external["original_sha256"] != output["sha256"] or checked.get("owner") != "director":
+            if (external["original_sha256"] != output["sha256"]
+                    or external["source_ref"] not in input_refs
+                    or checked.get("owner") != "director"
+                    or checked.get("relative_path") != external["source_ref"]):
                 _fail("DIRECTOR_ASSET_HASH_MISMATCH", "director asset provenance does not match source bytes", asset_id)
         else:
             source_path = _safe_run_file(source_path, run_root=run_root, owned_roots=(run_root,))
@@ -418,17 +368,32 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
                 expected_sha256=command["script_sha256"],
             )
             del script_path  # Validation only: this reducer never invokes the command.
-        before = _file_hash(source_path)
-        data = source_path.read_bytes()
-        after = _file_hash(source_path)
-        if before != after or before != output["sha256"] or len(data) != output["byte_size"]:
+        data = _stable_bytes(source_path, expected_sha256=output["sha256"])
+        if len(data) != output["byte_size"]:
             _fail("ASSET_SOURCE_CHANGED", "asset bytes changed or do not match output facts", asset_id)
         director_inputs = [row for row in asset["source_inputs"] if row["kind"] == "DIRECTOR_ASSET"]
-        if director_inputs and any(row["sha256"] != before for row in director_inputs):
+        if director_inputs and any(row["sha256"] != _bytes_hash(data) for row in director_inputs):
             _fail("DIRECTOR_ASSET_HASH_MISMATCH", "director input hash does not match copied bytes", asset_id)
+        if provenance["kind"] == "GENERATED":
+            command = provenance["render_command"]
+            facts = {
+                "asset_id": asset_id, "argv": command["argv"],
+                "command_receipt_sha256": command["command_receipt_sha256"],
+                "source_inputs": asset["source_inputs"], "output_sha256": output["sha256"],
+            }
+            _require_verification(
+                command_verifier, facts, missing="GENERATED_RECEIPT_UNVERIFIED",
+                invalid="GENERATED_RECEIPT_UNVERIFIED",
+            )
+        if output_path.lower().endswith(".svg"):
+            try:
+                svg = data.decode("utf-8")
+            except UnicodeDecodeError:
+                _fail("UNSAFE_ASSET_CONTENT", "SVG asset is not UTF-8", asset_id)
+            if re.search(r"<script\b|\bonload\s*=|\bhref\s*=\s*['\"](?:https?:|file:|data:)", svg, re.I):
+                _fail("UNSAFE_ASSET_CONTENT", "SVG contains active or external content", asset_id)
         files[output_path] = data
 
-    planned = {row["asset_id"]: row for row in contract["asset_plan"]}
     if set(planned) != seen_ids:
         _fail("ASSET_PLAN_MISMATCH", "asset manifest must exactly realize the frozen asset plan")
     for asset in assets:
@@ -440,23 +405,6 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
     return value, files
 
 
-def _scan_candidate_text(files: Mapping[str, bytes], *, sentinels: Mapping[str, str] | None,
-                         patterns: Mapping[str, str | Pattern[str]] | None) -> None:
-    combined_patterns = dict(_DEFAULT_SECRET_PATTERNS)
-    combined_patterns.update(patterns or {})
-    for path, data in files.items():
-        if not path.endswith((".tex", ".bib", ".json")):
-            continue
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
-            _fail("TEXT_ENCODING_INVALID", "durable manuscript text must be UTF-8", path)
-        try:
-            scan_persisted_text(path, text, sentinels=sentinels, patterns=combined_patterns)
-        except ManuscriptSecretViolation as exc:
-            _fail("SECRET_LEAKAGE", str(exc), path)
-
-
 def integrate_manuscript(*, run_root: str | Path, manuscript_contract: Mapping[str, Any],
                          section_bundle_refs: Sequence[str],
                          required_sections: Sequence[Mapping[str, str]], bibliography_text: str,
@@ -464,9 +412,12 @@ def integrate_manuscript(*, run_root: str | Path, manuscript_contract: Mapping[s
                          asset_sources: Mapping[str, str | Path] | None = None,
                          director_asset_roots: Sequence[str | Path] = (),
                          format_repair: Callable[[str, list[str], int], str] | None = None,
-                         secret_sentinels: Mapping[str, str] | None = None,
-                         secret_patterns: Mapping[str, str | Pattern[str]] | None = None,
-                         ) -> dict[str, Any]:
+                          secret_sentinels: Mapping[str, str] | None = None,
+                          secret_patterns: Mapping[str, str | Pattern[str]] | None = None,
+                          authorization_verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+                          result_receipt_verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+                          generated_command_verifier: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+                          ) -> dict[str, Any]:
     """Reduce frozen bundles into a byte-complete, unpublished source candidate."""
 
     root = Path(run_root).absolute()
@@ -492,6 +443,7 @@ def integrate_manuscript(*, run_root: str | Path, manuscript_contract: Mapping[s
                     required_section=assignment,
                     stage=stage,
                     format_repair=format_repair,
+                    authorization_verifier=authorization_verifier,
                 )
             except ManuscriptIntegrationError as exc:
                 if exc.code == "SECTION_ASSIGNMENT_MISMATCH":
@@ -540,7 +492,7 @@ def integrate_manuscript(*, run_root: str | Path, manuscript_contract: Mapping[s
             _fail("REFERENCE_METADATA_MISMATCH", "declared references differ from TeX references", item["bundle_ref"])
         for support in bundle["claim_support_refs"]:
             for result_ref in support["result_refs"]:
-                _verify_result(result_ref, contract, root)
+                _verify_result(result_ref, contract, root, result_receipt_verifier)
             claim = known_claims.get(support["claim_id"])
             if claim is None:
                 _fail("UNKNOWN_CLAIM", "section owns a claim absent from the frozen ledger", support["claim_id"])
@@ -565,6 +517,8 @@ def integrate_manuscript(*, run_root: str | Path, manuscript_contract: Mapping[s
     normalized_assets, asset_files = _asset_files(
         asset_manifest, contract=contract, run_root=root,
         asset_sources=asset_sources or {}, director_asset_roots=director_asset_roots,
+        result_verifier=result_receipt_verifier,
+        command_verifier=generated_command_verifier,
     )
     assets = {row["asset_id"]: row for row in normalized_assets["assets"]}
     declared_assets = {ref for item in validated for ref in item["payload"]["asset_refs"]}
@@ -627,7 +581,7 @@ def integrate_manuscript(*, run_root: str | Path, manuscript_contract: Mapping[s
     files["build/integration-metadata.json"] = _canonical_bytes(build_metadata)
 
     tex_sources = {
-        path: data.decode("utf-8") for path, data in files.items() if path.endswith(".tex")
+        path: data.decode("utf-8") for path, data in files.items() if path.endswith((".tex", ".bib"))
     }
     try:
         validate_tex_sources(tex_sources, run_root=root, source_root=root / "source")
@@ -670,7 +624,19 @@ def integrate_manuscript(*, run_root: str | Path, manuscript_contract: Mapping[s
         ],
         "canonical_file_inventory": inventory,
         "source_tree_sha256": _canonical_hash(inventory),
-        "reconciliation_findings": [],
+        "reconciliation_findings": [
+            {
+                "finding_id": f"REC-format-{item['payload']['section_id']}",
+                "category": "NARRATIVE",
+                "disposition": "RESOLVED",
+                "details": (
+                    "Bounded punctuation-only JSON repair; "
+                    f"attempts={item['repair_attempts']}; normalized_sha256={item['normalized_sha256']}."
+                ),
+                "affected_refs": [item["bundle_ref"]],
+            }
+            for item in validated if item["repair_attempts"]
+        ],
         "unresolved_interfaces": [],
     }
     integration["integration_hash"] = _hash_without(integration, "integration_hash")
@@ -679,11 +645,20 @@ def integrate_manuscript(*, run_root: str | Path, manuscript_contract: Mapping[s
         _fail("INTEGRATION_INVALID", "; ".join(errors[:5]))
     files["manifests/manuscript-integration.json"] = _canonical_bytes(integration)
     _scan_candidate_text(files, sentinels=secret_sentinels, patterns=secret_patterns)
-    return {
+    candidate = _IntegrationCandidate({
         "integration": integration,
         "asset_manifest": normalized_assets,
         "files": files,
+    })
+    _ACTIVE_CANDIDATES[id(candidate)] = {
+        "candidate": candidate,
+        "run_root": str(root),
+        "integration_hash": integration["integration_hash"],
+        "sentinels": copy.deepcopy(dict(secret_sentinels or {})),
+        "patterns": dict(secret_patterns or {}),
+        "consumed": False,
     }
+    return candidate
 
 
 def _write_candidate_file(path: Path, data: bytes) -> None:
@@ -704,6 +679,12 @@ def materialize_source_tree(candidate: Mapping[str, Any], *, run_root: str | Pat
     destination = Path(target).absolute() if target is not None else canonical
     if destination != canonical:
         _fail("CANONICAL_TARGET_REQUIRED", "the integrator may publish only the active run's source directory")
+    binding = _ACTIVE_CANDIDATES.get(id(candidate))
+    if (type(candidate) is not _IntegrationCandidate or binding is None
+            or binding.get("candidate") is not candidate):
+        _fail("CANDIDATE_UNAUTHORIZED", "candidate was not issued by this integration process")
+    if binding["run_root"] != str(root):
+        _fail("CANDIDATE_RUN_MISMATCH", "candidate belongs to a different run")
     integration = candidate.get("integration") if isinstance(candidate, Mapping) else None
     asset_manifest = candidate.get("asset_manifest") if isinstance(candidate, Mapping) else None
     files = candidate.get("files") if isinstance(candidate, Mapping) else None
@@ -719,6 +700,11 @@ def materialize_source_tree(candidate: Mapping[str, Any], *, run_root: str | Pat
         _fail("CANDIDATE_INVALID", "candidate payload no longer satisfies its schema")
     if _hash_without(integration, "integration_hash") != integration["integration_hash"]:
         _fail("CANDIDATE_HASH_MISMATCH", "integration hash no longer verifies")
+    if binding["integration_hash"] != integration["integration_hash"]:
+        _fail("CANDIDATE_HASH_MISMATCH", "candidate capability is not bound to this integration")
+    if (asset_manifest.get("run_id") != root.name
+            or any(row["output"]["owner_run_id"] != root.name for row in asset_manifest["assets"])):
+        _fail("CANDIDATE_RUN_MISMATCH", "asset ownership differs from the target run")
 
     expected = {row["path"]: row["sha256"] for row in integration["canonical_file_inventory"]}
     if len(expected) != len(integration["canonical_file_inventory"]):
@@ -734,6 +720,15 @@ def materialize_source_tree(candidate: Mapping[str, Any], *, run_root: str | Pat
         _fail("CANDIDATE_HASH_MISMATCH", "integration manifest bytes do not verify")
     if _canonical_hash(integration["canonical_file_inventory"]) != integration["source_tree_sha256"]:
         _fail("CANDIDATE_HASH_MISMATCH", "source-tree inventory hash does not verify")
+    tex_sources = {
+        path: data.decode("utf-8") for path, data in files.items()
+        if path.endswith((".tex", ".bib"))
+    }
+    try:
+        validate_tex_sources(tex_sources, run_root=root, source_root=canonical)
+    except ManuscriptTexViolation as exc:
+        _fail("UNSAFE_TEX", str(exc))
+    _scan_candidate_text(files, sentinels=binding["sentinels"], patterns=binding["patterns"])
 
     try:
         for path in files:
@@ -751,9 +746,11 @@ def materialize_source_tree(candidate: Mapping[str, Any], *, run_root: str | Pat
     lock = root / ".source-integration.lock"
     staging: Path | None = None
     lock_fd: int | None = None
+    lock_owned = False
     try:
         try:
             lock_fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            lock_owned = True
         except FileExistsError:
             _fail("SOURCE_WRITER_BUSY", "another canonical source writer holds the run lock")
         os.write(lock_fd, integration["integration_hash"].encode("ascii"))
@@ -784,6 +781,7 @@ def materialize_source_tree(candidate: Mapping[str, Any], *, run_root: str | Pat
             _fail("UNSAFE_OUTPUT_PATH", str(exc))
         os.rename(staging, destination)
         staging = None
+        binding["consumed"] = True
         return destination
     except ManuscriptIntegrationError:
         raise
@@ -794,5 +792,5 @@ def materialize_source_tree(candidate: Mapping[str, Any], *, run_root: str | Pat
             os.close(lock_fd)
         if staging is not None and staging.exists():
             shutil.rmtree(staging)
-        if lock.exists():
+        if lock_owned and lock.exists():
             lock.unlink()
