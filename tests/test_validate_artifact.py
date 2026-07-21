@@ -12,12 +12,27 @@ import pytest
 import yaml
 
 from research_agent_teams.tools.validate_artifact import (
+    PAYLOAD_SCHEMAS,
     PROFILE_DIR,
+    SCHEMA_DIR,
     is_valid,
     validate_against,
     validate_artifact,
+    validate_payload,
     validate_profile_dict,
 )
+
+
+MANUSCRIPT_PAYLOAD_SCHEMAS = {
+    "manuscript_contract": "manuscript_contract.schema.json",
+    "local_literature_coverage": "local_literature_coverage.schema.json",
+    "manuscript_section_bundle": "manuscript_section_bundle.schema.json",
+    "manuscript_integration": "manuscript_integration.schema.json",
+    "manuscript_build_receipt": "manuscript_build_receipt.schema.json",
+    "manuscript_asset_manifest": "manuscript_asset_manifest.schema.json",
+    "manuscript_quality_report": "manuscript_quality_report.schema.json",
+    "manuscript_review_verdict": "manuscript_review_verdict.schema.json",
+}
 
 
 def valid_task_frame_artifact() -> dict:
@@ -199,3 +214,22 @@ def test_gate_verdict_pass_with_violations_is_rejected(schema):
 def test_gate_verdict_legitimate_shapes_validate(schema):
     assert validate_against(schema, {"verdict": "BLOCK", "violations": ["x"]}) == []
     assert validate_against(schema, {"verdict": "PASS", "violations": []}) == []
+
+
+def test_all_manuscript_payload_schemas_have_one_authoritative_registry_entry():
+    registered = {
+        artifact_type: PAYLOAD_SCHEMAS.get(artifact_type)
+        for artifact_type in MANUSCRIPT_PAYLOAD_SCHEMAS
+    }
+
+    assert registered == MANUSCRIPT_PAYLOAD_SCHEMAS
+    assert len(set(registered.values())) == len(registered)
+    assert all((SCHEMA_DIR / schema_name).is_file() for schema_name in registered.values())
+
+
+def test_unknown_manuscript_payload_type_remains_rejected_centrally():
+    errors = validate_payload("manuscript_unregistered_result", {})
+
+    assert errors == [
+        "payload: unknown artifact_type 'manuscript_unregistered_result' (no registered schema)"
+    ]
