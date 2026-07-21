@@ -1,0 +1,650 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_version": "2026-07-21.1",
+  "case_count": 17,
+  "family_counts": {
+    "local_corpus": 2,
+    "retrieval_truth": 2,
+    "token_snapshot": 2,
+    "bundle_dag": 2,
+    "scientific_truth": 3,
+    "asset_path": 2,
+    "build": 2,
+    "review_separation": 1,
+    "end_to_end": 1
+  },
+  "hermetic_contract": {
+    "network": "INJECTED_TRANSPORT_ONLY",
+    "vault": "ABSENT_AND_READ_ONLY",
+    "gpu": "DISABLED",
+    "host_tex": "NOT_USED",
+    "write_root": "tmp://manuscript-run",
+    "live_credentials": false,
+    "fixture_only": true,
+    "sentinel_markers": [
+      "FIXTURE_ONLY_NOT_A_REAL_SECRET_GOLD_001",
+      "FIXTURE_ONLY_NOT_A_REAL_SECRET_GOLD_002"
+    ]
+  },
+  "validation_case_map": {
+    "1": "local-sufficient",
+    "2": "local-named-deficit",
+    "3": "retrieval-provider-matrix#provider-outage",
+    "4": "retrieval-provider-matrix#partial-unresolved-zero",
+    "5": "retrieval-exhaustive-no-evidence",
+    "6": "token-official-hard-override",
+    "7": "snapshot-targeted-invalidation",
+    "8": "bundle-section-and-integrator-closure#paper-type-mapping",
+    "9": "bundle-section-and-integrator-closure#missing-or-duplicate",
+    "10": "dag-bounded-repair-and-authorization",
+    "11": "truth-unsupported-load-bearing-claim",
+    "12": "truth-citation-identity-entailment",
+    "13": "truth-numeric-receipt-false-execution",
+    "14": "asset-path-escape-matrix",
+    "15": "build-fake-compiler-matrix",
+    "16": "build-toolchain-missing",
+    "17": "end-to-end-authoring"
+  },
+  "cases": [
+    {
+      "case_id": "local-sufficient",
+      "family": "local_corpus",
+      "title": "Sufficient local evidence suppresses scholarly search",
+      "input_manifest": {
+        "manifest_id": "input-local-sufficient",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/local-sufficient",
+        "network_policy": "INJECTED_TRANSPORT_ONLY",
+        "vault_policy": "ABSENT",
+        "inputs": [
+          {
+            "ref": "local_evidence.md",
+            "sha256": "efcc6f72db31319d6d0acabe89f6e4f04bcda544b55034b5d2f781c7925da46a",
+            "exact_spans": ["span:local-001", "span:local-002"]
+          }
+        ]
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["local_literature_coverage"],
+      "expected_hard_findings": [],
+      "expected_status": {
+        "daily_state": "USABLE",
+        "submission_ready": false,
+        "coverage_status": "SUFFICIENT"
+      },
+      "expected_assertions": {
+        "scholarly_network_call_count": 0,
+        "coverage_artifact_frozen": true,
+        "absence_claimed": false
+      },
+      "rationale": "Exact local spans cover the requested claims, so any scholarly search call would violate local-first routing."
+    },
+    {
+      "case_id": "local-named-deficit",
+      "family": "local_corpus",
+      "title": "Only a schema-valid named deficit authorizes its targeted query",
+      "input_manifest": {
+        "manifest_id": "input-local-named-deficit",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/local-named-deficit",
+        "network_policy": "INJECTED_TRANSPORT_ONLY",
+        "vault_policy": "ABSENT",
+        "inputs": [
+          {
+            "ref": "local_evidence.md",
+            "sha256": "efcc6f72db31319d6d0acabe89f6e4f04bcda544b55034b5d2f781c7925da46a"
+          },
+          {
+            "deficit_id": "deficit-baseline-comparison",
+            "axis": "baseline_comparison",
+            "status": "DEFICIT",
+            "query_plan_id": "qp-baseline-gap"
+          }
+        ]
+      },
+      "expected_tool_calls": [
+        {
+          "tool": "paper_search",
+          "port": "existing",
+          "query_plan_id": "qp-baseline-gap",
+          "transport": "injected_fixture_transport",
+          "live_network": false
+        }
+      ],
+      "expected_bundles": ["local_literature_coverage", "search_trace"],
+      "expected_hard_findings": [],
+      "expected_status": {
+        "daily_state": "NEEDS_SUPPLEMENT",
+        "submission_ready": false,
+        "coverage_status": "DEFICIT"
+      },
+      "expected_assertions": {
+        "authorized_query_count": 1,
+        "unauthorized_query_count": 0,
+        "query_matches_deficit": true
+      },
+      "rationale": "A concrete comparison gap may use only the existing search port and only the frozen targeted query plan."
+    },
+    {
+      "case_id": "retrieval-provider-matrix",
+      "family": "retrieval_truth",
+      "title": "Provider outage and partial unresolved zero results remain distinct",
+      "input_manifest": {
+        "manifest_id": "input-retrieval-provider-matrix",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/retrieval-provider-matrix",
+        "network_policy": "INJECTED_TRANSPORT_ONLY",
+        "vault_policy": "ABSENT",
+        "variants": [
+          {
+            "variant_id": "provider-outage",
+            "attempts": [
+              {"provider": "fixture-a", "status": "PROVIDER_ERROR", "closed": true},
+              {"provider": "fixture-b", "status": "PROVIDER_ERROR", "closed": true}
+            ]
+          },
+          {
+            "variant_id": "partial-unresolved-zero",
+            "attempts": [
+              {"provider": "fixture-a", "status": "PARTIAL_RESPONSE", "closed": false},
+              {"provider": "fixture-b", "status": "SUCCESS_EMPTY", "closed": true, "result_count": 0}
+            ]
+          }
+        ]
+      },
+      "expected_tool_calls": [
+        {"tool": "paper_search", "transport": "injected_fixture_transport", "live_network": false}
+      ],
+      "expected_bundles": ["search_trace", "local_literature_coverage"],
+      "expected_hard_findings": [],
+      "expected_status": {
+        "daily_state": "NEEDS_SUPPLEMENT",
+        "submission_ready": false,
+        "retrieval_outcome_by_variant": {
+          "provider-outage": "PROVIDER_FAILURE",
+          "partial-unresolved-zero": "PARTIAL_OR_UNRESOLVED_ZERO_RESULT"
+        }
+      },
+      "expected_assertions": {
+        "forbidden_outcome": "NO_EVIDENCE_AFTER_VALID_SEARCH",
+        "empty_array_is_absence_proof": false
+      },
+      "rationale": "Failed or incomplete providers cannot be laundered into an evidence-absence claim."
+    },
+    {
+      "case_id": "retrieval-exhaustive-no-evidence",
+      "family": "retrieval_truth",
+      "title": "Only a closed frozen plan and terminal trace establish no evidence",
+      "input_manifest": {
+        "manifest_id": "input-retrieval-exhaustive-no-evidence",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/retrieval-exhaustive-no-evidence",
+        "network_policy": "INJECTED_TRANSPORT_ONLY",
+        "vault_policy": "ABSENT",
+        "query_plan": {
+          "plan_id": "qp-exhaustive-001",
+          "sha256": "8c9cc41347684ab4a9c24707bdc6ab2118b17f36e5e129d88a0c379e379cc984",
+          "attempt_order": ["attempt-a", "attempt-b"],
+          "exhaustive": true
+        },
+        "attempts": {
+          "attempt-a": {"provider": "fixture-a", "status": "SUCCESS_EMPTY", "closed": true, "result_count": 0, "admissible_count": 0, "response_sha256": "7b8feb4938f5646c2c30c38b9f07d2c5cf0cbc4cda257d51eff546d6ec1f09d2"},
+          "attempt-b": {"provider": "fixture-b", "status": "SUCCESS_EMPTY", "closed": true, "result_count": 0, "admissible_count": 0, "response_sha256": "1d7d8002da2e8dbeeeec9ffcb7dca9c3c4d4e88b50c4a4c647e5012badb42e9a"}
+        },
+        "terminal_trace_sha256": "5665a46e9e4b92f61c42e692708b177f034a3c78f25ec870c90586cab45a5a76"
+      },
+      "expected_tool_calls": [
+        {"tool": "paper_search", "attempt_id": "attempt-a", "transport": "injected_fixture_transport", "live_network": false},
+        {"tool": "paper_search", "attempt_id": "attempt-b", "transport": "injected_fixture_transport", "live_network": false}
+      ],
+      "expected_bundles": ["search_trace", "local_literature_coverage"],
+      "expected_hard_findings": [],
+      "expected_status": {
+        "daily_state": "USABLE_WITH_CAVEATS",
+        "submission_ready": false,
+        "retrieval_outcome": "NO_EVIDENCE_AFTER_VALID_SEARCH"
+      },
+      "expected_assertions": {
+        "all_attempts_closed": true,
+        "all_attempts_valid_empty": true,
+        "claim_must_be_limited": true
+      },
+      "rationale": "The outcome rests on the frozen query plan, two hashed valid-empty responses, and a closed terminal trace rather than an empty result array."
+    },
+    {
+      "case_id": "token-official-hard-override",
+      "family": "token_snapshot",
+      "title": "Official hard venue rules cannot be overridden downstream",
+      "input_manifest": {
+        "manifest_id": "input-token-hard-override",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/token-hard-override",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "inputs": [
+          {"ref": "venue_profile.json", "sha256": "d80b24e98abc3dbdf72d22f56d220b62d9bf1d01fdaf49abc864e0c7db575d59"}
+        ],
+        "layers": [
+          {"layer": "venue", "requires_pdf": true, "hard": true},
+          {"layer": "run", "requires_pdf": false, "hard": false}
+        ]
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["paper_design_token_snapshot", "quality_report"],
+      "expected_hard_findings": ["OFFICIAL_HARD_RULE_OVERRIDE"],
+      "expected_status": {
+        "daily_state": "BLOCK",
+        "submission_ready": false,
+        "resolved_requires_pdf": true
+      },
+      "expected_assertions": {
+        "precedence": ["base", "paper_type", "venue", "project", "run"],
+        "conflicting_override_rejected": true
+      },
+      "rationale": "Deterministic precedence never grants a lower layer authority to weaken a frozen official rule."
+    },
+    {
+      "case_id": "snapshot-targeted-invalidation",
+      "family": "token_snapshot",
+      "title": "Changed upstream hashes invalidate only reachable descendants",
+      "input_manifest": {
+        "manifest_id": "input-snapshot-invalidation",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/snapshot-invalidation",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "before": {"contract_sha256": "fa419927eaf70a78b046429ff98cb90b2db76b13d9b15a15be7a32d051a405a6"},
+        "after": {"contract_sha256": "49cfc1ebdc2cbfcc22bb1f7b215eddaee8291edc7891041d8f825e4969ea58f2"},
+        "dependency_graph": {
+          "contract": ["section-method", "integration"],
+          "unrelated-asset": []
+        }
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["invalidation_report", "checkpoint_manifest"],
+      "expected_hard_findings": [],
+      "expected_status": {
+        "daily_state": "NEEDS_SUPPLEMENT",
+        "submission_ready": false
+      },
+      "expected_assertions": {
+        "invalidated": ["section-method", "integration"],
+        "reusable": ["unrelated-asset"],
+        "full_rerun": false
+      },
+      "rationale": "Hash-linked replay must refresh affected consumers without discarding unrelated immutable work."
+    },
+    {
+      "case_id": "bundle-section-and-integrator-closure",
+      "family": "bundle_dag",
+      "title": "Paper-type sections map once and the integrator cannot author omissions",
+      "input_manifest": {
+        "manifest_id": "input-bundle-section-closure",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/bundle-section-closure",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "paper_type_matrix": {
+          "empirical": ["methods", "results"],
+          "theory": ["formalism", "proofs"],
+          "dataset": ["dataset_card", "data_governance"],
+          "survey": ["taxonomy", "landscape"],
+          "system": ["architecture", "system_evaluation"]
+        },
+        "variants": ["paper-type-mapping", "missing-required-section", "duplicate-required-section"]
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["section_bundle", "manuscript_integration"],
+      "expected_hard_findings": ["MISSING_REQUIRED_SECTION", "DUPLICATE_REQUIRED_SECTION"],
+      "expected_status": {
+        "daily_state": "BLOCK",
+        "submission_ready": false,
+        "by_variant": {
+          "paper-type-mapping": "PASS",
+          "missing-required-section": "BLOCK",
+          "duplicate-required-section": "BLOCK"
+        }
+      },
+      "expected_assertions": {
+        "required_section_mapping_cardinality": 1,
+        "integrator_authors_replacement_prose": false
+      },
+      "rationale": "Adaptive sections remain explicit worker-owned bundles; integration detects absence or duplication instead of silently writing around it."
+    },
+    {
+      "case_id": "dag-bounded-repair-and-authorization",
+      "family": "bundle_dag",
+      "title": "Repair stops after two attempts and unauthorized DAG access fails closed",
+      "input_manifest": {
+        "manifest_id": "input-dag-bounded-repair",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/dag-bounded-repair",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "repair_attempts": [1, 2, 3],
+        "dependency_attacks": ["undeclared-predecessor", "orphan-node"]
+      },
+      "expected_tool_calls": [
+        {"tool": "structured_format_repair", "attempt": 1},
+        {"tool": "structured_format_repair", "attempt": 2}
+      ],
+      "expected_bundles": ["repair_trace", "scheduler_authorization_report"],
+      "expected_hard_findings": ["REPAIR_LIMIT_EXCEEDED", "UNAUTHORIZED_DEPENDENCY", "ORPHAN_NODE"],
+      "expected_status": {
+        "daily_state": "BLOCK",
+        "submission_ready": false
+      },
+      "expected_assertions": {
+        "repair_call_count": 2,
+        "third_attempt_executed": false,
+        "unauthorized_bundle_visible": false
+      },
+      "rationale": "A third repair or undeclared dependency would bypass bounded validation and least-privilege scheduling."
+    },
+    {
+      "case_id": "truth-unsupported-load-bearing-claim",
+      "family": "scientific_truth",
+      "title": "Unsupported load-bearing claims block scientific truth",
+      "input_manifest": {
+        "manifest_id": "input-truth-unsupported-claim",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/truth-unsupported-claim",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "claim": {"claim_id": "claim-headline-001", "load_bearing": true, "evidence_refs": [], "result_refs": []}
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["claim_evidence_audit", "quality_report"],
+      "expected_hard_findings": ["UNSUPPORTED_LOAD_BEARING_CLAIM"],
+      "expected_status": {
+        "daily_state": "BLOCK",
+        "submission_ready": false
+      },
+      "expected_assertions": {
+        "claim_retained_as_supported": false,
+        "submission_blocker_visible": true
+      },
+      "rationale": "A headline claim without exact evidence or frozen result support is a truth failure, not a style caveat."
+    },
+    {
+      "case_id": "truth-citation-identity-entailment",
+      "family": "scientific_truth",
+      "title": "Citation identity and entailment mismatch stays visible",
+      "input_manifest": {
+        "manifest_id": "input-truth-citation-mismatch",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/truth-citation-mismatch",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "inputs": [
+          {"ref": "local_evidence.md", "sha256": "efcc6f72db31319d6d0acabe89f6e4f04bcda544b55034b5d2f781c7925da46a", "exact_span": "span:local-002"}
+        ],
+        "citation": {"claimed_key": "WrongIdentity2026", "observed_key": "FixtureLocal2026", "entailment": "CONTRADICTED"}
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["exact_citation_audit", "director_review_packet"],
+      "expected_hard_findings": ["CITATION_IDENTITY_MISMATCH", "CITATION_ENTAILMENT_CONTRADICTED"],
+      "expected_status": {
+        "daily_state": "BLOCK",
+        "submission_ready": false
+      },
+      "expected_assertions": {
+        "finding_visible_in_readable_packet": true,
+        "metadata_counts_as_entailment": false
+      },
+      "rationale": "A citation must identify the frozen source and support the actual proposition; metadata cannot substitute for an exact span."
+    },
+    {
+      "case_id": "truth-numeric-receipt-false-execution",
+      "family": "scientific_truth",
+      "title": "Numeric and executor-receipt mismatch rejects false execution",
+      "input_manifest": {
+        "manifest_id": "input-truth-numeric-receipt",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/truth-numeric-receipt",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "gpu_policy": "DISABLED",
+        "inputs": [
+          {"ref": "frozen_result.json", "sha256": "df4cc51552dff87503037db8922f41e8ad1fea59da16a53a8477395c7256f8a7"}
+        ],
+        "manuscript_claim": {"value": 0.91, "unit": "fraction", "execution_language": "real GPU experiment"},
+        "frozen_fact": {"value": 0.8125, "unit": "fraction", "receipt_sha256": "809e5db454b0be778e21dac91dc91071dc43de184f7bc45e3220cd2249938a62", "fixture_only": true}
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["numeric_result_audit", "execution_truth_audit", "quality_report"],
+      "expected_hard_findings": ["NUMERIC_RESULT_MISMATCH", "FALSE_EXECUTION_CLAIM"],
+      "expected_status": {
+        "daily_state": "BLOCK",
+        "submission_ready": false
+      },
+      "expected_assertions": {
+        "frozen_value_preserved": 0.8125,
+        "fixture_receipt_treated_as_real_research_execution": false
+      },
+      "rationale": "The synthetic receipt proves only hermetic binding; neither a changed number nor a real-GPU claim is admissible."
+    },
+    {
+      "case_id": "asset-path-escape-matrix",
+      "family": "asset_path",
+      "title": "Traversal, link, reparse, and Unicode-space escapes fail closed",
+      "input_manifest": {
+        "manifest_id": "input-asset-path-escapes",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/asset-path-escapes",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "attacks": [
+          "../outside/figure.svg",
+          "symlink://outside/figure.svg",
+          "reparse://outside/figure.svg",
+          "tmp://manuscript-run/assets/figure\u00a0.svg"
+        ]
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["path_boundary_audit", "quality_report"],
+      "expected_hard_findings": ["PATH_ESCAPE_OR_AMBIGUITY"],
+      "expected_status": {
+        "daily_state": "BLOCK",
+        "submission_ready": false
+      },
+      "expected_assertions": {
+        "outside_write_count": 0,
+        "link_target_followed": false,
+        "unicode_space_normalized_silently": false
+      },
+      "rationale": "Every candidate resolves under the temporary run root before any write; ambiguous or escaping paths are rejected."
+    },
+    {
+      "case_id": "asset-director-owned-immutability",
+      "family": "asset_path",
+      "title": "Director-owned source assets cannot be overwritten",
+      "input_manifest": {
+        "manifest_id": "input-director-asset-immutability",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/director-asset-immutability",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "inputs": [
+          {"ref": "director_figure.svg", "owner": "director", "sha256": "95a9a7e01fd1684a2d3a8ab90d2e75017486dc74209a5f9cbf8baee2389f34b3"}
+        ],
+        "mutation_attempt": {"operation": "OVERWRITE", "target": "director_figure.svg"}
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["asset_manifest", "asset_mutation_audit"],
+      "expected_hard_findings": ["UNOWNED_ASSET_OVERWRITE"],
+      "expected_status": {
+        "daily_state": "BLOCK",
+        "submission_ready": false
+      },
+      "expected_assertions": {
+        "original_sha256_before": "95a9a7e01fd1684a2d3a8ab90d2e75017486dc74209a5f9cbf8baee2389f34b3",
+        "original_sha256_after": "95a9a7e01fd1684a2d3a8ab90d2e75017486dc74209a5f9cbf8baee2389f34b3",
+        "output_policy": "CREATE_NEW"
+      },
+      "rationale": "A generated derivative must use a new run-owned path while the director asset remains byte-identical."
+    },
+    {
+      "case_id": "build-fake-compiler-matrix",
+      "family": "build",
+      "title": "Deterministic fake drivers cover compiled and PDF-optional branches",
+      "input_manifest": {
+        "manifest_id": "input-build-fake-compiler",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/build-fake-compiler",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "host_tex_policy": "IGNORED",
+        "inputs": [
+          {"ref": "venue_profile.json", "sha256": "d80b24e98abc3dbdf72d22f56d220b62d9bf1d01fdaf49abc864e0c7db575d59"}
+        ],
+        "source_sha256": "292dce48e6c455dfb115c3e3a62b7b34050dbd38a3ca12310da5055113b40546",
+        "variants": [
+          {"variant_id": "fake-latexmk-ready", "profile_id": "fixture-venue-pdf-2026", "selected_driver": "fixture-latexmk", "argv": ["fixture-latexmk", "-norc", "-pdf", "-halt-on-error", "-recorder", "main.tex"]},
+          {"variant_id": "fake-latexmk-without-perl", "profile_id": "fixture-venue-pdf-2026", "selected_driver": "fixture-pdflatex-bibtex-fallback", "argv": ["fixture-pdflatex", "-halt-on-error", "-recorder", "main.tex"]},
+          {"variant_id": "pdf-not-required", "profile_id": "fixture-venue-source-2026", "selected_driver": null, "argv": []}
+        ],
+        "deterministic_pdf_sha256": "eec559f0c663a44a1809aed9c975a11de559160d54cdc438c8ea5d4442fb30b2"
+      },
+      "expected_tool_calls": [
+        {"tool": "fixture_compiler", "variants": ["fake-latexmk-ready", "fake-latexmk-without-perl"], "shell": false, "live_process": false}
+      ],
+      "expected_bundles": ["manuscript_build_receipt", "manuscript_quality_report"],
+      "expected_hard_findings": [],
+      "expected_status": {
+        "daily_state": "USABLE",
+        "submission_ready": true,
+        "by_variant": {
+          "fake-latexmk-ready": {"build_state": "COMPILED", "pdf_present": true},
+          "fake-latexmk-without-perl": {"build_state": "COMPILED", "pdf_present": true},
+          "pdf-not-required": {"build_state": "TOOLCHAIN_MISSING", "pdf_present": false, "pdf_absence_blocker": false}
+        }
+      },
+      "expected_assertions": {
+        "receipt_source_hash_matches": true,
+        "compiled_pdf_hash_matches": true,
+        "selected_driver_evidence_present": true,
+        "fixture_compilation_claim_scope": "HERMETIC_ONLY"
+      },
+      "rationale": "Injected deterministic drivers test receipt truth without depending on host TeX, while a PDF-optional venue remains ready without a PDF."
+    },
+    {
+      "case_id": "build-toolchain-missing",
+      "family": "build",
+      "title": "A truly isolated missing toolchain never claims a PDF",
+      "input_manifest": {
+        "manifest_id": "input-build-toolchain-missing",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/build-toolchain-missing",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "profile_id": "fixture-venue-pdf-2026",
+        "sanitized_path_entries": [],
+        "injected_compilers": [],
+        "source_sha256": "292dce48e6c455dfb115c3e3a62b7b34050dbd38a3ca12310da5055113b40546"
+      },
+      "expected_tool_calls": [
+        {"tool": "compiler_discovery", "environment": "isolated-empty-path", "live_process": false}
+      ],
+      "expected_bundles": ["manuscript_build_receipt", "manuscript_quality_report"],
+      "expected_hard_findings": ["BUILD_REQUIRED_UNAVAILABLE"],
+      "expected_status": {
+        "daily_state": "USABLE",
+        "submission_ready": false,
+        "build_state": "TOOLCHAIN_MISSING",
+        "pdf_present": false
+      },
+      "expected_assertions": {
+        "pdf_claim_present": false,
+        "source_project_delivered": true,
+        "submission_blocker_explicit": true
+      },
+      "rationale": "A missing compiler is an honest submission deficit, not permission to fabricate a PDF or hide readable source."
+    },
+    {
+      "case_id": "review-frozen-input-separation",
+      "family": "review_separation",
+      "title": "Review consumes frozen authoring output without mutating it",
+      "input_manifest": {
+        "manifest_id": "input-review-separation",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/review-separation",
+        "network_policy": "DISABLED",
+        "vault_policy": "ABSENT",
+        "authoring_run": {"run_id": "authoring-fixture-001", "mode": "READ_ONLY"},
+        "contract_sha256": "d2f29864c4770ea70395f5af7532d9cf3210885efaf69b6f6e03784e4230665d",
+        "manuscript_sha256": "a7ee92558fe3310846e72bff69b15b9232a11ef65af6426886d2613ade558b11",
+        "pdf_sha256": "eec559f0c663a44a1809aed9c975a11de559160d54cdc438c8ea5d4442fb30b2",
+        "blind_receipts": ["blind-review-001", "blind-review-002"]
+      },
+      "expected_tool_calls": [],
+      "expected_bundles": ["manuscript_review_verdict", "review_reconciliation", "review_packet"],
+      "expected_hard_findings": [],
+      "expected_status": {
+        "daily_state": "USABLE",
+        "submission_ready": true,
+        "review_disposition": "PASS"
+      },
+      "expected_assertions": {
+        "authoring_mutation_count": 0,
+        "distinct_blind_receipt_count": 2,
+        "peer_conclusions_visible_during_blind_read": false,
+        "separate_review_packet": true
+      },
+      "rationale": "Generation evidence cannot certify itself; a separate review run reads frozen hashes and emits its own immutable result."
+    },
+    {
+      "case_id": "end-to-end-authoring",
+      "family": "end_to_end",
+      "title": "Full authoring product remains hermetic and truth-calibrated",
+      "input_manifest": {
+        "manifest_id": "input-end-to-end-authoring",
+        "frozen": true,
+        "run_root": "tmp://manuscript-run/end-to-end-authoring",
+        "network_policy": "INJECTED_TRANSPORT_ONLY",
+        "vault_policy": "ABSENT",
+        "gpu_policy": "DISABLED",
+        "host_tex_policy": "IGNORED",
+        "inputs": [
+          {"ref": "local_evidence.md", "sha256": "efcc6f72db31319d6d0acabe89f6e4f04bcda544b55034b5d2f781c7925da46a"},
+          {"ref": "frozen_result.json", "sha256": "df4cc51552dff87503037db8922f41e8ad1fea59da16a53a8477395c7256f8a7"},
+          {"ref": "director_figure.svg", "sha256": "95a9a7e01fd1684a2d3a8ab90d2e75017486dc74209a5f9cbf8baee2389f34b3"},
+          {"ref": "venue_profile.json", "sha256": "d80b24e98abc3dbdf72d22f56d220b62d9bf1d01fdaf49abc864e0c7db575d59"}
+        ],
+        "blind_receipts": ["blind-e2e-scientific", "blind-e2e-citation"]
+      },
+      "expected_tool_calls": [
+        {"tool": "fixture_compiler", "transport": "in_process_fake", "live_process": false}
+      ],
+      "expected_bundles": [
+        "manuscript_contract",
+        "local_literature_coverage",
+        "authoring_plan",
+        "section_bundle",
+        "manuscript_integration",
+        "asset_manifest",
+        "manuscript_build_receipt",
+        "manuscript_quality_report",
+        "manuscript_review_verdict",
+        "submission_checklist"
+      ],
+      "expected_hard_findings": [],
+      "expected_status": {
+        "daily_state": "USABLE",
+        "submission_ready": true,
+        "build_state": "COMPILED",
+        "review_disposition": "PASS"
+      },
+      "expected_assertions": {
+        "human_outputs": ["overview", "coverage_report", "authoring_plan", "latex_source", "pdf", "quality_report", "reviewer_report", "submission_checklist"],
+        "machine_evidence_retained": true,
+        "distinct_blind_receipt_count": 2,
+        "review_mutates_authoring": false,
+        "live_network_call_count": 0,
+        "vault_write_count": 0,
+        "real_gpu_execution_claimed": false
+      },
+      "rationale": "The end-to-end fixture proves the complete human-first and machine-evidence shape without external state, and every delivery claim is derived from fixture receipts."
+    }
+  ]
+}
