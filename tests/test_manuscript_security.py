@@ -307,6 +307,41 @@ def test_safe_run_relative_tex_directives_pass_with_spaces_and_unicode(tmp_path)
     json.dumps(result, ensure_ascii=False)
 
 
+def test_unapproved_document_class_fails_closed(tmp_path):
+    run_root = tmp_path / "runs" / "r1"
+    source_root = run_root / "manuscript"
+    source_root.mkdir(parents=True)
+
+    with pytest.raises(ManuscriptTexViolation, match="TEX_UNSUPPORTED_DOCUMENT_CLASS"):
+        validate_tex_sources(
+            {"main.tex": r"\documentclass{evil}\begin{document}x\end{document}"},
+            run_root=run_root,
+            source_root=source_root,
+        )
+
+
+@pytest.mark.parametrize(
+    ("shadow_name", "source", "code"),
+    [
+        ("article.cls", r"\documentclass{article}", "TEX_DOCUMENT_CLASS_SHADOW"),
+        ("hyperref.sty", r"\usepackage{hyperref}", "TEX_PACKAGE_SHADOW"),
+    ],
+    ids=["class-shadow", "package-shadow"],
+)
+def test_local_tex_class_or_package_shadow_is_rejected(tmp_path, shadow_name, source, code):
+    run_root = tmp_path / "runs" / "r1"
+    source_root = run_root / "manuscript"
+    source_root.mkdir(parents=True)
+    (source_root / shadow_name).write_text("untrusted local shadow", encoding="utf-8")
+
+    with pytest.raises(ManuscriptTexViolation, match=code):
+        validate_tex_sources(
+            {"main.tex": source},
+            run_root=run_root,
+            source_root=source_root,
+        )
+
+
 @pytest.mark.parametrize(
     ("source", "code"),
     [
