@@ -15,8 +15,8 @@
 
 - [x] **PREP-01**: Before drafting, the run selects and freezes a paper type and realistic target-venue family, prioritizing current top AI or CCF A-class-equivalent venues while treating official venue rules as authoritative.
 - [x] **PREP-02**: Before parallel authoring, the run freezes a manuscript snapshot containing the paper brief, outline, claim ledger, evidence/result references, terminology/notation, venue profile, bibliography state, figure/table plan, and resolved Paper Design Tokens.
-- [ ] **PREP-03**: Paper Design Tokens resolve deterministically with precedence `base -> paper type -> venue -> project -> run override`.
-- [ ] **PREP-04**: The resolved token contract distinguishes the small hard-rule set—official template/anonymity, traceability, terminology/notation, figure provenance, compile/cross-reference integrity, and no fabrication—from advisory structure, voice, caption, rhetoric, and formatting guidance.
+- [x] **PREP-03**: Paper Design Tokens resolve deterministically with precedence `base -> paper type -> venue -> project -> run override`.
+- [x] **PREP-04**: The resolved token contract distinguishes the small hard-rule set—official template/anonymity, traceability, terminology/notation, figure provenance, compile/cross-reference integrity, and no fabrication—from advisory structure, voice, caption, rhetoric, and formatting guidance.
 
 ### Evidence Coverage
 
@@ -47,7 +47,7 @@
 - [x] **SAFE-02**: Secrets never appear in request URLs, error artifacts, logs, generated LaTeX, build metadata, or director-review outputs.
 - [x] **SAFE-03**: The capability does not run GPU experiments and accepts execution claims only from frozen, auditable result artifacts rather than scripts, model-authored metrics, or unsupported prose.
 - [x] **PLAT-01**: The local CLI, path handling, fixtures, and optional LaTeX tool detection operate on the repository's supported Python runtime on Windows and Linux.
-- [ ] **PLAT-02**: The control plane remains domain-general, with AI-research defaults supplied through profile or Paper Design Token overlays rather than hardcoded domain rules.
+- [x] **PLAT-02**: The control plane remains domain-general, with AI-research defaults supplied through profile or Paper Design Token overlays rather than hardcoded domain rules.
 
 ### Verification Evidence
 
@@ -82,8 +82,8 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | OPER-03 | Phase 1 | Pending |
 | PREP-01 | Phase 1 | Complete |
 | PREP-02 | Phase 1 | Complete |
-| PREP-03 | Phase 1 | Pending |
-| PREP-04 | Phase 1 | Pending |
+| PREP-03 | Phase 1 | Complete |
+| PREP-04 | Phase 1 | Complete |
 | EVID-01 | Phase 1 | Complete |
 | EVID-02 | Phase 1 | Complete |
 | EVID-03 | Phase 1 | Complete |
@@ -99,7 +99,7 @@ None committed. Scope discovered during Phase 1 must be explicitly accepted befo
 | SAFE-02 | Phase 1 | Complete |
 | SAFE-03 | Phase 1 | Complete |
 | PLAT-01 | Phase 1 | Complete |
-| PLAT-02 | Phase 1 | Pending |
+| PLAT-02 | Phase 1 | Complete |
 | VERI-01 | Phase 1 | Complete |
 | VERI-02 | Phase 1 | Complete |
 | VERI-03 | Phase 1 | Complete |

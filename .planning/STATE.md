@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
 status: executing
-stopped_at: Completed 01-10-PLAN.md
-last_updated: "2026-07-21T12:13:20.554Z"
+stopped_at: Completed 01-11-PLAN.md
+last_updated: "2026-07-21T13:02:21.071Z"
 last_activity: 2026-07-21
 last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 20
-  completed_plans: 10
-  percent: 50
+  completed_plans: 11
+  percent: 55
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-21)
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 10 of 20 in current phase
+Plan: 11 of 20 in current phase
 Status: Ready to execute
 Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 55%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████░░░░░] 50%
 | Phase 01 P08 | 35min | 1 tasks | 2 files |
 | Phase 01 P09 | 10min | 1 tasks | 3 files |
 | Phase 01 P10 | 23min | 2 tasks | 5 files |
+| Phase 01 P11 | 42min | 1 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,9 @@ Decisions are logged in PROJECT.md Key Decisions.
 - [Phase 01]: Keep manuscript_authoring and manuscript_review registry-routable but spec-only until concrete recipes, reducers, renderers, and operated tests exist.
 - [Phase 01]: Derive non-specialized section instances from frozen required_sections and require exact-one candidate closure before integration.
 - [Phase 01]: Reusable audit roles require distinct authoring/review run IDs, authorization receipts, blind scopes, and worker instances; authoring evidence never counts as independent review.
+- [Phase 01]: Resolve Paper Design Tokens only in base -> paper_type -> venue -> project -> run order, replaying rich provenance before closed-schema projection.
+- [Phase 01]: Lock six generic truth controls at base and accept venue hard policy only from the frozen official rule/template pair; presentation style remains advisory.
+- [Phase 01]: Inject venue freshness and result/receipt verification facts, and publish contracts through create-once atomic filesystem semantics.
 
 ### Pending Todos
 
@@ -119,6 +123,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T12:13:20.545Z
-Stopped at: Completed 01-10-PLAN.md
+Last session: 2026-07-21T13:02:21.063Z
+Stopped at: Completed 01-11-PLAN.md
 Resume file: None
