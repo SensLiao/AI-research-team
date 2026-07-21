@@ -1,0 +1,772 @@
+"""Bounded, receipt-producing LaTeX builds for run-owned manuscript trees.
+
+The adapter deliberately separates executable discovery from durable facts.  Host
+paths are used only in memory; receipts and logs contain portable executable names
+and run-relative paths.  Every subprocess receives the same sanitized environment,
+an argv list, a timeout, and ``shell=False``.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import platform
+import re
+import shutil
+import subprocess
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
+
+from research_agent_teams.tools.manuscript_security import (
+    ManuscriptSecretViolation,
+    ManuscriptTexViolation,
+    scan_persisted_text,
+    validate_run_owned_path,
+    validate_tex_sources,
+)
+from research_agent_teams.tools.runstore import atomic_write_text
+from research_agent_teams.tools.validate_artifact import validate_payload
+
+
+_ALLOWED_ENV = frozenset(
+    {
+        "PATH",
+        "PATHEXT",
+        "SYSTEMROOT",
+        "WINDIR",
+        "COMSPEC",
+        "TEMP",
+        "TMP",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "PROGRAMDATA",
+        "HOME",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "LANG",
+        "LC_ALL",
+        "TZ",
+        "SOURCE_DATE_EPOCH",
+    }
+)
+_OUTPUT_LIMIT = 512_000
+_PROBE_TIMEOUT = 15
+_BUILD_TIMEOUT = 180
+_STAMP = "%Y-%m-%dT%H:%M:%SZ"
+_REF_RE = re.compile(r"\\(?:ref|pageref|eqref|autoref|Cref|cref)\s*\{([^{}]+)\}")
+_LABEL_RE = re.compile(r"\\label\s*\{([^{}]+)\}")
+_ASSET_RE = re.compile(
+    r"\\(?P<kind>input|include|includegraphics|addbibresource|bibliography)"
+    r"\*?\s*(?:\[[^\[\]]*\]\s*)?\{(?P<value>[^{}]+)\}",
+    re.IGNORECASE,
+)
+_UNRESOLVED_LOG_RE = re.compile(
+    r"(?:undefined references?|citation [`'].+?[`'] .* undefined|"
+    r"reference [`'].+?[`'] .* undefined)",
+    re.IGNORECASE,
+)
+
+
+class LatexBuildError(RuntimeError):
+    """Raised when the caller crosses a build boundary rather than a build failing."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(f"{code}: {message}")
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime(_STAMP)
+
+
+def _canonical(value: Any) -> bytes:
+    return json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+
+
+def _digest_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _digest_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _object_digest(value: Mapping[str, Any], omitted: str) -> str:
+    return _digest_bytes(_canonical({key: item for key, item in value.items() if key != omitted}))
+
+
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _safe_root(run_root: str | os.PathLike[str], source_root: str | os.PathLike[str]) -> tuple[Path, Path]:
+    run = Path(run_root).absolute().resolve(strict=True)
+    source = Path(source_root).absolute()
+    try:
+        source = source.resolve(strict=True)
+    except OSError as exc:
+        raise LatexBuildError("SOURCE_MISSING", "manuscript source tree is unavailable") from exc
+    if not source.is_dir() or not _inside(source, run):
+        raise LatexBuildError("SOURCE_OUTSIDE_RUN", "source tree must be an existing run-owned directory")
+    cursor = source
+    while cursor != run:
+        if cursor.is_symlink():
+            raise LatexBuildError("SOURCE_OUTSIDE_RUN", "source tree may not traverse a link")
+        cursor = cursor.parent
+    return run, source
+
+
+def _kind(relative: str) -> str:
+    if relative == "main.tex":
+        return "MAIN_TEX"
+    if relative == "refs.bib":
+        return "BIBLIOGRAPHY"
+    if relative.startswith("sections/"):
+        return "SECTION"
+    if relative == "manifests/asset-manifest.json":
+        return "ASSET_MANIFEST"
+    if relative.startswith("figures/"):
+        return "FIGURE"
+    if relative.startswith("tables/"):
+        return "TABLE"
+    return "OTHER"
+
+
+def _source_snapshot(run: Path, source: Path) -> tuple[str, dict[str, str]]:
+    inventory: list[dict[str, str]] = []
+    tex_sources: dict[str, str] = {}
+    for path in sorted((item for item in source.rglob("*") if item.is_file()), key=lambda item: item.as_posix()):
+        if path.is_symlink():
+            raise LatexBuildError("SOURCE_OUTSIDE_RUN", "source files may not be links")
+        checked = validate_run_owned_path(
+            path, run_root=run, purpose="read", owned_output_roots=(source,)
+        )
+        before = path.stat()
+        data = path.read_bytes()
+        after = path.stat()
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise LatexBuildError("SOURCE_CHANGED", "source changed while it was being hashed")
+        relative = checked["relative_path"]
+        source_relative = path.relative_to(source).as_posix()
+        inventory.append(
+            {"path": source_relative, "sha256": _digest_bytes(data), "kind": _kind(source_relative)}
+        )
+        if path.suffix.casefold() in {".tex", ".bib"}:
+            try:
+                tex_sources[source_relative] = data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise LatexBuildError("SOURCE_ENCODING", f"{relative} is not UTF-8") from exc
+    if "main.tex" not in tex_sources:
+        raise LatexBuildError("MAIN_TEX_MISSING", "source/main.tex is required")
+    return _digest_bytes(_canonical(inventory)), tex_sources
+
+
+def _asset_exists(source: Path, kind: str, raw: str) -> bool:
+    values = raw.split(",") if kind.casefold() == "bibliography" else [raw]
+    for value in values:
+        value = value.strip()
+        candidate = source / value
+        suffixes: Sequence[str]
+        if candidate.suffix:
+            suffixes = ("",)
+        elif kind.casefold() in {"input", "include"}:
+            suffixes = ("", ".tex")
+        elif kind.casefold() in {"bibliography", "addbibresource"}:
+            suffixes = ("", ".bib")
+        else:
+            suffixes = ("", ".pdf", ".png", ".jpg", ".jpeg", ".eps")
+        if not any((Path(str(candidate) + suffix)).is_file() for suffix in suffixes):
+            return False
+    return True
+
+
+def _preflight(
+    run: Path,
+    source: Path,
+    tex_sources: Mapping[str, str],
+    *,
+    sentinels: Mapping[str, str] | None,
+    patterns: Mapping[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    try:
+        validate_tex_sources(tex_sources, run_root=run, source_root=source)
+    except ManuscriptTexViolation:
+        return "UNSAFE_TEX_SOURCE", "TeX source failed the bounded command policy"
+    combined = "\n".join(tex_sources.values())
+    try:
+        scan_persisted_text("latex-source", combined, sentinels=sentinels, patterns=patterns)
+    except ManuscriptSecretViolation:
+        return "SECRET_LEAKAGE", "TeX source contains caller-identified secret material"
+    for match in _ASSET_RE.finditer(combined):
+        if not _asset_exists(source, match.group("kind"), match.group("value")):
+            return "MISSING_BUILD_ASSET", "a referenced manuscript asset is missing"
+    labels = set(_LABEL_RE.findall(combined))
+    references = set(_REF_RE.findall(combined))
+    if references - labels:
+        return "UNRESOLVED_REFERENCE", "a manuscript reference has no matching label"
+    return None, None
+
+
+def _sanitize_environment(environment: Mapping[str, str] | None) -> tuple[dict[str, str], str | None]:
+    supplied = dict(os.environ if environment is None else environment)
+    raw_candidates = supplied.get("RAT_LATEX_DRIVER_RUNTIME_CANDIDATES")
+    clean = {
+        key: str(value)
+        for key, value in supplied.items()
+        if key.upper() in _ALLOWED_ENV and value is not None
+    }
+    clean.setdefault("PATH", "")
+    return clean, raw_candidates
+
+
+def _prepend_path(environment: dict[str, str], parents: Sequence[Path], platform_name: str) -> None:
+    current = [item for item in environment.get("PATH", "").split(os.pathsep) if item]
+    combined = [str(parent) for parent in parents] + current
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in combined:
+        key = os.path.normcase(os.path.abspath(item)) if platform_name == "nt" else os.path.abspath(item)
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    environment["PATH"] = os.pathsep.join(unique)
+
+
+def _which_call(which: Callable[..., str | None], name: str, environment: Mapping[str, str]) -> str | None:
+    try:
+        found = which(name, path=environment.get("PATH", ""))
+    except TypeError:
+        found = which(name)
+    return str(Path(found).absolute()) if found else None
+
+
+def _candidate_perl(raw: str | None, platform_name: str) -> Path | None:
+    if raw is None:
+        return None
+    names = ("perl.exe", "perl") if platform_name == "nt" else ("perl", "perl.exe")
+    seen: set[str] = set()
+    for item in raw.split(os.pathsep):
+        if not item.strip():
+            continue
+        candidate = Path(item.strip()).absolute()
+        candidates = [candidate] if candidate.name.casefold() in names else [candidate / name for name in names]
+        for executable in candidates:
+            key = os.path.normcase(str(executable)) if platform_name == "nt" else str(executable)
+            if key in seen:
+                continue
+            seen.add(key)
+            if executable.is_file():
+                return executable.resolve()
+    return None
+
+
+def _windows_miktex(environment: Mapping[str, str], name: str) -> str | None:
+    local = environment.get("LOCALAPPDATA")
+    if not local:
+        return None
+    candidate = Path(local) / "Programs" / "MiKTeX" / "miktex" / "bin" / "x64" / f"{name}.exe"
+    return str(candidate.resolve()) if candidate.is_file() else None
+
+
+def _default_runner(
+    argv: Sequence[str],
+    *,
+    cwd: str | os.PathLike[str],
+    env: Mapping[str, str],
+    timeout: int,
+    output_limit: int,
+    shell: bool,
+) -> dict[str, Any]:
+    if shell is not False:
+        raise LatexBuildError("SHELL_FORBIDDEN", "LaTeX processes must not use a shell")
+    started_at = _now()
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            list(argv), cwd=cwd, env=dict(env), shell=False, capture_output=True,
+            timeout=timeout, check=False,
+        )
+        stdout = completed.stdout[:output_limit].decode("utf-8", errors="replace")
+        stderr = completed.stderr[:output_limit].decode("utf-8", errors="replace")
+        return_code = completed.returncode
+        timed_out = False
+    except subprocess.TimeoutExpired as exc:
+        stdout = (exc.stdout or b"")[:output_limit].decode("utf-8", errors="replace")
+        stderr = (exc.stderr or b"")[:output_limit].decode("utf-8", errors="replace")
+        return_code = 124
+        timed_out = True
+    return {
+        "returncode": int(return_code),
+        "stdout": stdout,
+        "stderr": stderr,
+        "timed_out": timed_out,
+        "duration_ms": max(0, int((time.monotonic() - started) * 1000)),
+        "started_at": started_at,
+        "finished_at": _now(),
+    }
+
+
+def _invoke(
+    runner: Callable[..., Mapping[str, Any]],
+    argv: Sequence[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+    timeout: int,
+    output_limit: int,
+) -> dict[str, Any]:
+    result = dict(
+        runner(
+            list(argv), cwd=str(cwd), env=environment, timeout=timeout,
+            output_limit=output_limit, shell=False,
+        )
+    )
+    result.setdefault("returncode", 1)
+    result.setdefault("stdout", "")
+    result.setdefault("stderr", "")
+    result.setdefault("timed_out", False)
+    result.setdefault("duration_ms", 0)
+    result.setdefault("started_at", _now())
+    result.setdefault("finished_at", _now())
+    result["stdout"] = str(result["stdout"])[:output_limit]
+    result["stderr"] = str(result["stderr"])[:output_limit]
+    return result
+
+
+def _version(result: Mapping[str, Any], fallback: str) -> str:
+    text = f"{result.get('stdout', '')}\n{result.get('stderr', '')}".strip()
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    first = next(
+        (line for line in lines if re.search(r"(?:latexmk|version|pdftex)", line, re.IGNORECASE)),
+        lines[0] if lines else fallback,
+    )
+    return first[:240] or fallback
+
+
+def detect_latex_toolchain(
+    run_root: str | os.PathLike[str],
+    *,
+    environment: Mapping[str, str] | None = None,
+    which: Callable[..., str | None] = shutil.which,
+    runner: Callable[..., Mapping[str, Any]] | None = None,
+    platform_name: str | None = None,
+    runtime_candidates: str | None = None,
+    timeout: int = _PROBE_TIMEOUT,
+    output_limit: int = _OUTPUT_LIMIT,
+) -> dict[str, Any]:
+    """Discover a runnable driver using the exact environment later used to build."""
+
+    run = Path(run_root).absolute()
+    clean, declared = _sanitize_environment(environment)
+    if runtime_candidates is not None:
+        declared = runtime_candidates
+    host = platform_name or os.name
+    invoke = runner or _default_runner
+    perl = _which_call(which, "perl", clean)
+    if not perl:
+        candidate = _candidate_perl(declared, host)
+        perl = str(candidate) if candidate else None
+    if perl:
+        _prepend_path(clean, (Path(perl).parent,), host)
+
+    def discover(name: str) -> str | None:
+        found = _which_call(which, name, clean)
+        if not found and host == "nt":
+            found = _windows_miktex(clean, name)
+        if found:
+            _prepend_path(clean, (Path(found).parent,), host)
+        return found
+
+    diagnostics: list[str] = []
+    latexmk = discover("latexmk")
+    if latexmk and perl:
+        probe = _invoke(
+            invoke, (latexmk, "-v"), cwd=run, environment=clean,
+            timeout=timeout, output_limit=output_limit,
+        )
+        if probe["returncode"] == 0 and not probe["timed_out"]:
+            return {
+                "state": "READY", "driver": "latexmk",
+                "executables": {"latexmk": latexmk, "perl": perl},
+                "environment": clean, "version": _version(probe, "latexmk version unavailable"),
+                "diagnostics": diagnostics,
+            }
+        diagnostics.append("LATEXMK_READINESS_FAILED")
+    elif latexmk:
+        diagnostics.append("LATEXMK_RUNTIME_UNAVAILABLE")
+
+    pdflatex = discover("pdflatex")
+    bibliography = "bibtex" if discover("bibtex") else None
+    bibliography_path = discover("biber") if bibliography is None else discover("bibtex")
+    if pdflatex and bibliography and bibliography_path:
+        engine_probe = _invoke(
+            invoke, (pdflatex, "--version"), cwd=run, environment=clean,
+            timeout=timeout, output_limit=output_limit,
+        )
+        bib_probe = _invoke(
+            invoke, (bibliography_path, "--version"), cwd=run, environment=clean,
+            timeout=timeout, output_limit=output_limit,
+        )
+        if all(result["returncode"] == 0 and not result["timed_out"] for result in (engine_probe, bib_probe)):
+            return {
+                "state": "READY", "driver": "direct", "bibliography": bibliography,
+                "executables": {"pdflatex": pdflatex, bibliography: bibliography_path},
+                "environment": clean,
+                "version": _version(engine_probe, "pdflatex version unavailable"),
+                "diagnostics": diagnostics,
+            }
+        diagnostics.append("DIRECT_READINESS_FAILED")
+    elif pdflatex:
+        biber = discover("biber")
+        if biber:
+            engine_probe = _invoke(
+                invoke, (pdflatex, "--version"), cwd=run, environment=clean,
+                timeout=timeout, output_limit=output_limit,
+            )
+            bib_probe = _invoke(
+                invoke, (biber, "--version"), cwd=run, environment=clean,
+                timeout=timeout, output_limit=output_limit,
+            )
+            if all(result["returncode"] == 0 and not result["timed_out"] for result in (engine_probe, bib_probe)):
+                return {
+                    "state": "READY", "driver": "direct", "bibliography": "biber",
+                    "executables": {"pdflatex": pdflatex, "biber": biber},
+                    "environment": clean,
+                    "version": _version(engine_probe, "pdflatex version unavailable"),
+                    "diagnostics": diagnostics,
+                }
+            diagnostics.append("DIRECT_READINESS_FAILED")
+    return {
+        "state": "TOOLCHAIN_MISSING", "driver": None, "executables": {},
+        "environment": clean, "diagnostics": diagnostics + ["NO_RUNNABLE_LATEX_DRIVER"],
+    }
+
+
+def _process_receipt(
+    *,
+    executable: str,
+    version: str,
+    argv: list[str],
+    tex_engine: str,
+    result: Mapping[str, Any],
+) -> dict[str, Any]:
+    process = {
+        "executable": executable,
+        "executable_version": version,
+        "argv": argv,
+        "operating_system": platform.system() or os.name,
+        "tex_engine": tex_engine,
+        "return_code": int(result["returncode"]),
+        "duration_ms": max(0, int(result["duration_ms"])),
+        "timed_out": bool(result["timed_out"]),
+        "shell": False,
+        "shell_escape": False,
+        "started_at": str(result["started_at"]),
+        "finished_at": str(result["finished_at"]),
+    }
+    process["receipt_sha256"] = _object_digest(process, "receipt_sha256")
+    return process
+
+
+def _base_receipt(
+    run_id: str, snapshot_hash: str, source_ref: str, source_hash: str,
+    requires_pdf: bool, state: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0.0", "run_id": run_id,
+        "manuscript_snapshot_sha256": snapshot_hash,
+        "source_tree_ref": source_ref, "source_tree_sha256": source_hash,
+        "requires_pdf": bool(requires_pdf), "build_state": state,
+    }
+
+
+def _finish_receipt(run: Path, receipt: dict[str, Any]) -> dict[str, Any]:
+    receipt["build_receipt_sha256"] = _object_digest(receipt, "build_receipt_sha256")
+    errors = validate_payload("manuscript_build_receipt", receipt)
+    if errors:
+        raise LatexBuildError("INVALID_BUILD_RECEIPT", "; ".join(errors[:3]))
+    destination = run / "evidence" / "manuscript-build-receipt.json"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    validate_run_owned_path(destination, run_root=run, purpose="write")
+    atomic_write_text(destination, json.dumps(receipt, ensure_ascii=False, indent=2) + "\n")
+    return receipt
+
+
+def _safe_log_text(
+    records: Sequence[tuple[list[str], Mapping[str, Any]]],
+    diagnostics: Sequence[str],
+    *,
+    run: Path,
+) -> str:
+    rows = list(diagnostics)
+    for argv, result in records:
+        portable = [Path(argv[0]).name, *[str(arg).replace(str(run), "<RUN>") for arg in argv[1:]]]
+        rows.extend(
+            [
+                f"argv={json.dumps(portable, ensure_ascii=False)}",
+                f"return_code={int(result['returncode'])}",
+                f"duration_ms={max(0, int(result['duration_ms']))}",
+                f"timed_out={str(bool(result['timed_out'])).lower()}",
+                f"stdout={str(result.get('stdout', ''))}",
+                f"stderr={str(result.get('stderr', ''))}",
+            ]
+        )
+    text = "\n".join(rows) + "\n"
+    text = text.replace(str(run), "<RUN>").replace(str(Path.home()), "<HOME>")
+    text = re.sub(r"(?i)[A-Z]:[/\\]Users[/\\][^/\\\r\n]+", "<HOME>", text)
+    return text[:_OUTPUT_LIMIT]
+
+
+def build_latex_project(
+    run_root: str | os.PathLike[str],
+    source_root: str | os.PathLike[str],
+    *,
+    run_id: str,
+    manuscript_snapshot_sha256: str,
+    requires_pdf: bool,
+    environment: Mapping[str, str] | None = None,
+    which: Callable[..., str | None] = shutil.which,
+    runner: Callable[..., Mapping[str, Any]] | None = None,
+    platform_name: str | None = None,
+    runtime_candidates: str | None = None,
+    timeout: int = _BUILD_TIMEOUT,
+    output_limit: int = _OUTPUT_LIMIT,
+    secret_sentinels: Mapping[str, str] | None = None,
+    secret_patterns: Mapping[str, Any] | None = None,
+    clock: Callable[[], str] = _now,
+) -> dict[str, Any]:
+    """Build a run-owned source tree and return a schema-valid truthful receipt."""
+
+    run, source = _safe_root(run_root, source_root)
+    try:
+        source_hash, tex_sources = _source_snapshot(run, source)
+    except LatexBuildError:
+        raise
+    source_ref = source.relative_to(run).as_posix()
+    preflight_code, preflight_message = _preflight(
+        run, source, tex_sources, sentinels=secret_sentinels, patterns=secret_patterns
+    )
+    build = run / "build"
+    build.mkdir(parents=True, exist_ok=True)
+    log_path = build / "build.log"
+    pdf_path = build / "main.pdf"
+    recorder_path = build / "main.fls"
+    for stale in (log_path, pdf_path, recorder_path):
+        validate_run_owned_path(
+            stale, run_root=run, purpose="write", owned_output_roots=(build,)
+        )
+        if stale.exists() and stale.is_file():
+            stale.unlink()
+
+    if preflight_code:
+        observed = clock()
+        result = {
+            "returncode": 2, "duration_ms": 0, "timed_out": False,
+            "started_at": observed, "finished_at": observed,
+        }
+        argv = ["preflight", "-norc", "-recorder", "-halt-on-error"]
+        process = _process_receipt(
+            executable="preflight", version="bounded-source-policy/1.0", argv=argv,
+            tex_engine="preflight", result=result,
+        )
+        log_text = f"{preflight_code}: {preflight_message}\n"
+        atomic_write_text(log_path, log_text)
+        receipt = _base_receipt(
+            run_id, manuscript_snapshot_sha256, source_ref, source_hash,
+            requires_pdf, "COMPILE_FAILED",
+        )
+        receipt.update(
+            {
+                "process_receipt": process,
+                "log_ref": log_path.relative_to(run).as_posix(),
+                "log_sha256": _digest_file(log_path),
+                "failure": {
+                    "kind": "COMPILE_FAILED", "code": preflight_code,
+                    "safe_message": preflight_message or "manuscript preflight failed",
+                    "observed_at": observed,
+                },
+            }
+        )
+        return _finish_receipt(run, receipt)
+
+    selected = detect_latex_toolchain(
+        run, environment=environment, which=which, runner=runner,
+        platform_name=platform_name, runtime_candidates=runtime_candidates,
+        output_limit=output_limit,
+    )
+    if selected["state"] != "READY":
+        receipt = _base_receipt(
+            run_id, manuscript_snapshot_sha256, source_ref, source_hash,
+            requires_pdf, "TOOLCHAIN_MISSING",
+        )
+        receipt["failure"] = {
+            "kind": "TOOLCHAIN_MISSING", "code": "NO_RUNNABLE_LATEX_DRIVER",
+            "safe_message": "no runnable LaTeX driver was found in the sanitized build environment",
+            "observed_at": clock(),
+        }
+        return _finish_receipt(run, receipt)
+
+    invoke = runner or _default_runner
+    env = selected["environment"]
+    records: list[tuple[list[str], Mapping[str, Any]]] = []
+    if selected["driver"] == "latexmk":
+        executable_path = selected["executables"]["latexmk"]
+        actual = [
+            executable_path, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
+            "-halt-on-error", "-file-line-error", "-recorder",
+            f"-outdir={build}", "main.tex",
+        ]
+        result = _invoke(
+            invoke, actual, cwd=source, environment=env, timeout=timeout,
+            output_limit=output_limit,
+        )
+        records.append((actual, result))
+        executable = Path(executable_path).name
+        portable_argv = [
+            executable, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
+            "-halt-on-error", "-file-line-error", "-recorder", "-outdir=build", "main.tex",
+        ]
+        tex_engine = "pdflatex"
+        aggregate = dict(result)
+    else:
+        engine = selected["executables"]["pdflatex"]
+        bib_name = selected["bibliography"]
+        bib = selected["executables"][bib_name]
+        passes = [
+            [engine, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-recorder", f"-output-directory={build}", "main.tex"],
+            [bib, "main"],
+            [engine, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-recorder", f"-output-directory={build}", "main.tex"],
+            [engine, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-recorder", f"-output-directory={build}", "main.tex"],
+        ]
+        for index, command in enumerate(passes):
+            cwd = build if index == 1 else source
+            result = _invoke(
+                invoke, command, cwd=cwd, environment=env, timeout=timeout,
+                output_limit=output_limit,
+            )
+            records.append((command, result))
+            if result["returncode"] != 0 or result["timed_out"]:
+                break
+        executable = "direct-pipeline"
+        portable_argv = [
+            executable, "-norc", "-recorder", "-halt-on-error",
+            "pdflatex", bib_name, "pdflatex", "pdflatex",
+        ]
+        tex_engine = "pdflatex"
+        aggregate = {
+            "returncode": int(result["returncode"]),
+            "timed_out": any(bool(item[1]["timed_out"]) for item in records),
+            "duration_ms": sum(int(item[1]["duration_ms"]) for item in records),
+            "started_at": records[0][1]["started_at"],
+            "finished_at": records[-1][1]["finished_at"],
+        }
+
+    log_text = _safe_log_text(records, selected.get("diagnostics", ()), run=run)
+    engine_log_path = build / "main.log"
+    engine_log_text = ""
+    if engine_log_path.is_file():
+        engine_log_text = engine_log_path.read_bytes()[:output_limit].decode(
+            "utf-8", errors="replace"
+        )
+    secret_leak = False
+    try:
+        scan_persisted_text(
+            "latex-build-log", log_text, sentinels=secret_sentinels, patterns=secret_patterns
+        )
+        scan_persisted_text(
+            "latex-engine-log", engine_log_text,
+            sentinels=secret_sentinels, patterns=secret_patterns,
+        )
+    except ManuscriptSecretViolation:
+        secret_leak = True
+        log_text = "[REDACTED_SECRET_OUTPUT]\n"
+    atomic_write_text(log_path, log_text)
+
+    failure_code: str | None = None
+    failure_message: str | None = None
+    if secret_leak:
+        failure_code, failure_message = "SECRET_LEAKAGE", "build output contained caller-identified secret material"
+    elif aggregate["timed_out"]:
+        failure_code, failure_message = "PROCESS_TIMEOUT", "LaTeX build exceeded its bounded timeout"
+    elif aggregate["returncode"] != 0:
+        failure_code, failure_message = "PROCESS_NONZERO", "LaTeX build process returned a non-zero status"
+    elif engine_log_text and _UNRESOLVED_LOG_RE.search(engine_log_text):
+        failure_code, failure_message = "UNRESOLVED_REFERENCE", "LaTeX build left unresolved references or citations"
+    elif not pdf_path.is_file() or pdf_path.stat().st_size < 1:
+        failure_code, failure_message = "PDF_MISSING", "LaTeX build did not produce a fresh non-empty PDF"
+    elif not recorder_path.is_file() or recorder_path.stat().st_size < 1:
+        failure_code, failure_message = "RECORDER_MISSING", "LaTeX build did not produce a recorder file"
+    else:
+        try:
+            current_source_hash, _ = _source_snapshot(run, source)
+        except LatexBuildError:
+            current_source_hash = ""
+        if current_source_hash != source_hash:
+            failure_code, failure_message = "SOURCE_CHANGED", "source tree changed during compilation"
+
+    if failure_code:
+        if pdf_path.is_file():
+            pdf_path.unlink()
+        failed = dict(aggregate)
+        if failed["returncode"] == 0 and not failed["timed_out"]:
+            failed["returncode"] = 1
+        process = _process_receipt(
+            executable=executable, version=selected["version"], argv=portable_argv,
+            tex_engine=tex_engine, result=failed,
+        )
+        receipt = _base_receipt(
+            run_id, manuscript_snapshot_sha256, source_ref, source_hash,
+            requires_pdf, "COMPILE_FAILED",
+        )
+        receipt.update(
+            {
+                "process_receipt": process,
+                "log_ref": log_path.relative_to(run).as_posix(),
+                "log_sha256": _digest_file(log_path),
+                "failure": {
+                    "kind": "COMPILE_FAILED", "code": failure_code,
+                    "safe_message": failure_message or "LaTeX build failed",
+                    "observed_at": clock(),
+                },
+            }
+        )
+        return _finish_receipt(run, receipt)
+
+    process = _process_receipt(
+        executable=executable, version=selected["version"], argv=portable_argv,
+        tex_engine=tex_engine, result=aggregate,
+    )
+    receipt = _base_receipt(
+        run_id, manuscript_snapshot_sha256, source_ref, source_hash,
+        requires_pdf, "COMPILED",
+    )
+    receipt.update(
+        {
+            "process_receipt": process,
+            "log_ref": log_path.relative_to(run).as_posix(),
+            "log_sha256": _digest_file(log_path),
+            "recorder_ref": recorder_path.relative_to(run).as_posix(),
+            "recorder_sha256": _digest_file(recorder_path),
+            "pdf": {
+                "path": pdf_path.relative_to(run).as_posix(),
+                "sha256": _digest_file(pdf_path), "byte_size": pdf_path.stat().st_size,
+            },
+        }
+    )
+    return _finish_receipt(run, receipt)
+
+
+__all__ = ["LatexBuildError", "build_latex_project", "detect_latex_toolchain"]
