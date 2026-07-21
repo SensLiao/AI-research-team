@@ -27,10 +27,10 @@ def _canonical_hash(value: dict, omitted: str | None = None) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _contract(*, requires_pdf: bool = True) -> dict:
+def _contract(*, requires_pdf: bool = True, result_sha256: str = HEX["d"]) -> dict:
     venue_rule_ref = "venue/fixture-2026-author-instructions"
     evidence_ref = "evidence/local-paper-001"
-    result_ref = "results/frozen-result-001"
+    result_ref = "execution-results/result.json"
     return {
         "contract_version": "1.0",
         "contract_id": "manuscript-contract/run-001",
@@ -92,7 +92,7 @@ def _contract(*, requires_pdf: bool = True) -> dict:
         "result_refs": [
             {
                 "ref": result_ref,
-                "sha256": HEX["d"],
+                "sha256": result_sha256,
                 "status": "FROZEN",
                 "receipt_ref": "executor-receipts/result-001.json",
                 "receipt_sha256": HEX["e"],
@@ -160,7 +160,7 @@ def _contract(*, requires_pdf: bool = True) -> dict:
         "source_hashes": [
             {"ref": venue_rule_ref, "sha256": HEX["a"], "kind": "VENUE_RULE"},
             {"ref": evidence_ref, "sha256": HEX["c"], "kind": "EVIDENCE"},
-            {"ref": result_ref, "sha256": HEX["d"], "kind": "RESULT"},
+            {"ref": result_ref, "sha256": result_sha256, "kind": "RESULT"},
         ],
         "manuscript_snapshot_sha256": HEX["e"],
     }
@@ -307,6 +307,39 @@ def _write_pdf(run_root: Path, content: bytes = b"pdf") -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _write_result(run_root: Path, value: float = 0.8125) -> tuple[str, int]:
+    path = run_root / "execution-results" / "result.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = json.dumps(
+        {"metrics": {"accuracy": {"value": value, "unit": "fraction"}}},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    path.write_bytes(raw)
+    return hashlib.sha256(raw).hexdigest(), len(raw)
+
+
+def _trusted_build_verifier(receipt: dict, *, current_source_sha256: str):
+    def verifier(*_args, **_kwargs):
+        return {
+            "receipt_sha256": _canonical_hash(receipt),
+            "run_id": receipt["run_id"],
+            "manuscript_snapshot_sha256": receipt["manuscript_snapshot_sha256"],
+            "requires_pdf": receipt["requires_pdf"],
+            "build_state": receipt["build_state"],
+            "source_tree_sha256": receipt["source_tree_sha256"],
+            "current_source_sha256": current_source_sha256,
+            "process_receipt_sha256": receipt["process_receipt"]["receipt_sha256"],
+            "pdf": copy.deepcopy(receipt["pdf"]),
+            "attestation_key_id": "fixture-build-executor",
+            "signature_verified": True,
+            "source_tree_verified": True,
+            "pdf_verified": True,
+        }
+
+    return verifier
+
+
 def _audit(
     tmp_path: Path,
     *,
@@ -391,6 +424,11 @@ def test_required_pdf_build_deficits_are_not_ready_but_remain_readable(
         run_root=run_root,
         current_source_sha256=HEX["a"],
         build_receipt=receipt,
+        build_receipt_verifier=(
+            _trusted_build_verifier(receipt, current_source_sha256=HEX["a"])
+            if receipt and receipt["build_state"] == "COMPILED"
+            else None
+        ),
     )
 
     _assert_schema_valid(report)
@@ -414,6 +452,9 @@ def test_current_compiled_pdf_is_the_only_required_pdf_ready_branch(tmp_path):
         run_root=run_root,
         current_source_sha256=HEX["a"],
         build_receipt=receipt,
+        build_receipt_verifier=_trusted_build_verifier(
+            receipt, current_source_sha256=HEX["a"]
+        ),
     )
 
     _assert_schema_valid(report)
@@ -450,26 +491,28 @@ def test_claim_evidence_and_citation_truth_fail_closed(tmp_path):
     assert report["submission_ready"] is False
 
 
-def _with_numeric_result(contract: dict, manuscript: dict, *, value: float) -> None:
+def _with_numeric_result(
+    contract: dict, manuscript: dict, *, value: float, raw_sha256: str
+) -> None:
     contract["claim_ledger"].append(
         {
             "claim_id": "CLM-RESULT",
             "text": "The frozen evaluation achieved accuracy 0.8125.",
             "importance": "LOAD_BEARING",
             "evidence_refs": [],
-            "result_refs": ["results/frozen-result-001"],
+            "result_refs": ["execution-results/result.json"],
         }
     )
     for section in manuscript["sections"]:
         section["claim_ids"].append("CLM-RESULT")
     manuscript["result_facts"] = [
         {
-            "result_ref": "results/frozen-result-001",
-            "sha256": HEX["d"],
+            "result_ref": "execution-results/result.json",
+            "sha256": raw_sha256,
             "receipt_ref": "executor-receipts/result-001.json",
             "receipt_sha256": HEX["e"],
             "raw_result_ref": "execution-results/result.json",
-            "raw_result_sha256": HEX["d"],
+            "raw_result_sha256": raw_sha256,
             "metadata_only": False,
             "values": {"accuracy": {"value": 0.8125, "unit": "fraction"}},
         }
@@ -477,7 +520,7 @@ def _with_numeric_result(contract: dict, manuscript: dict, *, value: float) -> N
     manuscript["numeric_claims"] = [
         {
             "claim_id": "CLM-RESULT",
-            "result_ref": "results/frozen-result-001",
+            "result_ref": "execution-results/result.json",
             "metric": "accuracy",
             "value": value,
             "unit": "fraction",
@@ -486,7 +529,7 @@ def _with_numeric_result(contract: dict, manuscript: dict, *, value: float) -> N
     ]
 
 
-def _verified_result_receipt(*_args, **_kwargs) -> dict:
+def _verified_result_receipt(raw_sha256: str, size_bytes: int) -> dict:
     return {
         "receipt_ref": "executor-receipts/result-001.json",
         "receipt_sha256": "sha256:" + HEX["e"],
@@ -495,22 +538,24 @@ def _verified_result_receipt(*_args, **_kwargs) -> dict:
         "result_files": [
             {
                 "path": "execution-results/result.json",
-                "sha256": "sha256:" + HEX["d"],
-                "size_bytes": 128,
+                "sha256": "sha256:" + raw_sha256,
+                "size_bytes": size_bytes,
             }
         ],
     }
 
 
 def test_numeric_truth_reverifies_external_receipt_and_bound_result(tmp_path):
-    contract = _contract(requires_pdf=False)
+    run_root = tmp_path / "run-001"
+    raw_sha, size = _write_result(run_root)
+    contract = _contract(requires_pdf=False, result_sha256=raw_sha)
     manuscript = _manuscript()
-    _with_numeric_result(contract, manuscript, value=0.8125)
+    _with_numeric_result(contract, manuscript, value=0.8125, raw_sha256=raw_sha)
     calls = []
 
     def verifier(*args, **kwargs):
         calls.append((args, kwargs))
-        return _verified_result_receipt()
+        return _verified_result_receipt(raw_sha, size)
 
     report = _audit(
         tmp_path,
@@ -530,9 +575,11 @@ def test_numeric_truth_reverifies_external_receipt_and_bound_result(tmp_path):
 
 
 def test_numeric_mismatch_and_failed_receipt_reverification_block(tmp_path):
-    contract = _contract(requires_pdf=False)
+    run_root = tmp_path / "run-001"
+    raw_sha, _size = _write_result(run_root)
+    contract = _contract(requires_pdf=False, result_sha256=raw_sha)
     manuscript = _manuscript()
-    _with_numeric_result(contract, manuscript, value=0.91)
+    _with_numeric_result(contract, manuscript, value=0.91, raw_sha256=raw_sha)
 
     def rejected(*_args, **_kwargs):
         raise ValueError("signature mismatch containing sensitive internal detail")
@@ -548,6 +595,28 @@ def test_numeric_mismatch_and_failed_receipt_reverification_block(tmp_path):
     assert {"NUMERIC_RESULT_MISMATCH", "FALSE_EXECUTION_CLAIM"} <= _codes(report)
     assert report["daily_state"] == "BLOCK"
     assert "sensitive internal detail" not in json.dumps(report)
+
+
+def test_numeric_values_are_rebuilt_from_receipt_bound_raw_bytes(tmp_path):
+    run_root = tmp_path / "run-001"
+    raw_sha, size = _write_result(run_root, value=0.8125)
+    contract = _contract(requires_pdf=False, result_sha256=raw_sha)
+    manuscript = _manuscript()
+    _with_numeric_result(contract, manuscript, value=0.99, raw_sha256=raw_sha)
+    manuscript["result_facts"][0]["values"]["accuracy"]["value"] = 0.99
+
+    report = _audit(
+        tmp_path,
+        contract=contract,
+        manuscript=manuscript,
+        executor_receipt_verifier=lambda *_args, **_kwargs: _verified_result_receipt(
+            raw_sha, size
+        ),
+    )
+
+    _assert_schema_valid(report)
+    assert "NUMERIC_RESULT_MISMATCH" in _codes(report)
+    assert report["daily_state"] == "BLOCK"
 
 
 @pytest.mark.parametrize(
@@ -699,9 +768,58 @@ def test_explicit_pdf_claim_requires_current_verified_pdf(tmp_path):
         run_root=run_root,
         current_source_sha256=HEX["a"],
         build_receipt=receipt,
+        build_receipt_verifier=_trusted_build_verifier(
+            receipt, current_source_sha256=HEX["a"]
+        ),
     )
 
     _assert_schema_valid(report)
     assert "FALSE_PDF_CLAIM" in _codes(report)
     assert report["daily_state"] == "BLOCK"
     assert report["submission_ready"] is False
+
+
+def test_unsigned_compiled_build_cannot_make_submission_ready(tmp_path):
+    run_root = tmp_path / "run-001"
+    run_root.mkdir()
+    pdf_sha = _write_pdf(run_root)
+    receipt = _build_receipt("COMPILED", source_sha256=HEX["a"], pdf_sha256=pdf_sha)
+
+    report = audit_manuscript(
+        _contract(),
+        _manuscript(),
+        run_root=run_root,
+        current_source_sha256=HEX["a"],
+        build_receipt=receipt,
+    )
+
+    _assert_schema_valid(report)
+    assert "BUILD_RECEIPT_UNVERIFIED" in _codes(report)
+    assert report["daily_state"] == "USABLE"
+    assert report["submission_ready"] is False
+
+
+def test_pdf_hashing_uses_one_stable_descriptor_not_path_reopen(tmp_path, monkeypatch):
+    run_root = tmp_path / "run-001"
+    run_root.mkdir()
+    pdf_sha = _write_pdf(run_root)
+    receipt = _build_receipt("COMPILED", source_sha256=HEX["a"], pdf_sha256=pdf_sha)
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        lambda *_args, **_kwargs: pytest.fail("path reopened after validation"),
+    )
+
+    report = audit_manuscript(
+        _contract(),
+        _manuscript(),
+        run_root=run_root,
+        current_source_sha256=HEX["a"],
+        build_receipt=receipt,
+        build_receipt_verifier=_trusted_build_verifier(
+            receipt, current_source_sha256=HEX["a"]
+        ),
+    )
+
+    _assert_schema_valid(report)
+    assert report["submission_ready"] is True
