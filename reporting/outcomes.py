@@ -34,7 +34,10 @@ _SEAT_NOTE = ("> 两个数别读成承诺：「席可上场」是这条路**允�
 
 
 def _size_words(view: dict[str, Any]) -> str:
-    return f"{view['seats']} 席可上场 · 最多派 {view['cost']['agent_hops']} 轮"
+    words = f"{view['seats']} 席可上场 · 最多派 {view['cost']['agent_hops']} 轮"
+    if view.get("council_only"):
+        words += f"（其中 {view['council_only']} 席只在 council 路径上场）"
+    return words
 
 
 def _relative_weight(views: list[dict[str, Any]]) -> dict[str, str]:

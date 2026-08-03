@@ -12,6 +12,7 @@ means a navigation command can never start a run by accident.
     open      resolve an artifact id to its real path
     outcomes  the six-choice "你想得到什么" menu — outcomes, not mode names
     outcome   ONE outcome compiled into its exact command chain + what it cannot claim
+    team      seat census: who is rostered, who a recipe really dispatches, what can be scaled
 
 `reindex` is the only verb that writes, and it only ever writes inside `.workbench/` plus
 one generated `PROJECT-HOME.md` per existing workspace.  Nothing here writes the vault,
@@ -28,7 +29,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..reporting.outcomes import render_menu, render_recipe
-from ..tools import outcome_recipes
+from ..tools import outcome_recipes, worker_census
 from .indexer import build_projection
 from .model import EVIDENCE_STATE_WORDS, WORK_STATE_WORDS, coerce_evidence_state, coerce_work_state
 from .projectors import render_research_home, write_home_pages
@@ -241,6 +242,20 @@ def cmd_outcome(args: argparse.Namespace) -> None:
         sys.exit(2)
 
 
+def cmd_team(args: argparse.Namespace) -> None:
+    """Who is on the bench, who actually plays, and which modes can be run cheaper."""
+    if args.json:
+        _emit({"census": worker_census.census(), "teams": worker_census.mode_teams(),
+               "verify": worker_census.verify()})
+        return
+    print(worker_census.render_report())
+    result = worker_census.verify()
+    if not result["ok"]:
+        for violation in result["violations"]:
+            print(f"⚠️  {violation}", file=sys.stderr)
+        sys.exit(2)
+
+
 def cmd_destroy(args: argparse.Namespace) -> None:
     """Prove the rebuildable claim: this is safe, because the store holds no source of truth."""
     _emit({**destroy(args.workbench_root),
@@ -302,6 +317,10 @@ def build_parser() -> argparse.ArgumentParser:
     on.add_argument("--request", default=None,
                     help="你的原话（会被钉成运行的北极星）；不给就在命令里留占位提示")
     on.set_defaults(func=cmd_outcome)
+
+    tm = sub.add_parser("team", parents=[common],
+                        help="席位盘点：谁在册、谁真被派、哪个模式能缩规模")
+    tm.set_defaults(func=cmd_team)
 
     de = sub.add_parser("destroy", parents=[common], help="删掉投影（安全 —— reindex 可完整恢复）")
     de.set_defaults(func=cmd_destroy)
