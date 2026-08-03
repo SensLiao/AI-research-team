@@ -51,6 +51,14 @@ ideas/<idea-key>/
 └── idea.json                      # 可选机器字段
 ```
 
+当一次 ideation 同时产生多个方向时，必须交付两层界面：
+
+- `idea-bet-menu.md` 只是短的组合导航页，用于横向比较和进入 `/idea-bet`；
+- `cards/<direction>.md` 才是每个方向的完整人类 Idea 卡。
+
+不得把六张完整卡连续堆进一个超长菜单，再让读者自行寻找边界。菜单回答“有哪些选择、
+先看哪张”；单卡回答“这个方向为什么值得做、怎样证伪、成功后能贡献什么”。
+
 主卡片中默认隐藏：
 
 - `idea_id`、`parent_ids`、`contribution_id`；

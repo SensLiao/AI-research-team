@@ -24,14 +24,13 @@ from pathlib import Path
 from typing import Optional
 
 from . import _shared
-from ..artifacts import GateBlock, write_artifact
+from ..artifacts import GateBlock, TargetedGateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
 from ...tools.ingest_paper_markdown import (
     legacy_verification,
     verify_and_filter_panel,
     write_quick_note_markdown,
 )
-from ...tools.validate_artifact import validate_payload
 
 STAGES = ["DISCOVER", "REPORT"]
 DEFAULT_VAULT = "AI agent database/PhD-Research-OS"
@@ -207,6 +206,30 @@ def _read_json(path: Path) -> dict:
     return payload
 
 
+def _extract_ingest_worker_bundle(raw: dict, agent: str) -> dict:
+    required = (
+        ("worker_contract", "source_snapshot", "paper_note", "claim_records")
+        if agent == "paper-note-extractor"
+        else ("worker_contract", "verification")
+    )
+    extracted = {
+        key: _shared.extract_worker_bundle_value(
+            raw, key, stage="DISCOVER", mode="ingest_paper", agent=agent,
+        )
+        for key in required
+    }
+    # Preserve explicit verifier overreach so the deterministic independence
+    # check can reject it; representation unwrapping must never hide a worker
+    # that attempted to rewrite the extractor's scientific output.
+    if agent == "source-claim-verifier":
+        for forbidden in ("paper_note", "claim_records"):
+            if _shared.worker_bundle_has_key(raw, forbidden):
+                extracted[forbidden] = _shared.extract_worker_bundle_value(
+                    raw, forbidden, stage="DISCOVER", mode="ingest_paper", agent=agent,
+                )
+    return extracted
+
+
 def _load_bundle(run_dir, stage) -> dict:
     root = Path(run_dir) / "inbox"
     if stage == "DISCOVER":
@@ -218,8 +241,10 @@ def _load_bundle(run_dir, stage) -> dict:
                 raise GateBlock(f"ingest_paper panel missing bundle(s): {missing}")
             return {
                 "contract": "ingest-panel/v1",
-                "extractor": _read_json(extractor),
-                "verifier": _read_json(verifier),
+                "extractor": _extract_ingest_worker_bundle(
+                    _read_json(extractor), "paper-note-extractor"),
+                "verifier": _extract_ingest_worker_bundle(
+                    _read_json(verifier), "source-claim-verifier"),
             }
 
     legacy = root / f"{stage}.bundle.json"
@@ -248,9 +273,10 @@ def _discover_dets(run_dir, ts, bundle) -> tuple:
         created_by = "ingest-panel-deterministic-filter"
     elif contract == "legacy-single-worker":
         legacy = bundle["legacy_bundle"]
-        _shared.require_bundle_keys(
-            legacy, ("paper_note",), stage="DISCOVER", mode="ingest_paper")
-        paper_note = legacy["paper_note"] or {}
+        paper_note = _shared.extract_worker_bundle_value(
+            legacy, "paper_note", stage="DISCOVER", mode="ingest_paper",
+            agent="legacy-single-worker",
+        ) or {}
         verification = legacy_verification(paper_note)
         created_by = "literature-ingest-legacy-unverified"
     else:
@@ -262,13 +288,38 @@ def _discover_dets(run_dir, ts, bundle) -> tuple:
     drift_texts.append(str(contract_body.get("contract_sentence") or ""))
     drift_path, _ = _shared.run_drift_gate(run_dir, "DISCOVER", ts, drift_texts)
 
-    errors = validate_payload("paper_note", paper_note if isinstance(paper_note, dict) else {})
+    paper_note, errors, note_norm = _shared.normalize_worker_payload(
+        run_dir, "DISCOVER", "paper-note-extractor", "paper_note", paper_note,
+        label="paper-note",
+    )
+    verification, verification_errors, verification_norm = _shared.normalize_worker_payload(
+        run_dir, "DISCOVER", "source-claim-verifier", "paper_note_verification",
+        verification, label="paper-note-verification",
+    )
+    schema_defects = []
     if errors:
-        raise GateBlock(f"ingest_paper paper_note schema BLOCK: {errors}")
-    verification_errors = validate_payload("paper_note_verification", verification)
+        schema_defects.append({
+            "defect_id": "ingest-paper-note-schema",
+            "category": "schema-semantic-gap",
+            "location": "DISCOVER/paper_note",
+            "summary": "; ".join(errors)[:4000],
+            "target_agents": ["paper-note-extractor"],
+            "refresh_agents": ["source-claim-verifier"],
+        })
     if verification_errors:
-        raise GateBlock(
-            f"ingest_paper paper_note_verification schema BLOCK: {verification_errors}")
+        schema_defects.append({
+            "defect_id": "ingest-paper-verification-schema",
+            "category": "schema-semantic-gap",
+            "location": "DISCOVER/paper_note_verification",
+            "summary": "; ".join(verification_errors)[:4000],
+            "target_agents": ["source-claim-verifier"],
+            "refresh_agents": [],
+        })
+    if schema_defects:
+        raise TargetedGateBlock(
+            "ingest_paper payload needs a local supplement after automatic normalization",
+            schema_defects,
+        )
 
     note_path = write_artifact(
         run_dir, "DISCOVER", "paper-note.artifact.json", "paper_note", created_by,
@@ -285,6 +336,19 @@ def _discover_dets(run_dir, ts, bundle) -> tuple:
         "verification_verdict": verification.get("verdict"),
         "legacy_unverified": verification.get("legacy_unverified", False),
         "director_markdown": _relative_to_run(markdown_path, run_dir),
+        "representation_normalization": {
+            "normalized_payloads": sum(
+                1 for row in (note_norm, verification_norm)
+                if row.get("changes") or row.get("preserved_extras")
+            ),
+            "format_changes": sum(
+                len(row.get("changes") or []) for row in (note_norm, verification_norm)
+            ),
+            "preserved_extra_fields": sum(
+                len(row.get("preserved_extras") or [])
+                for row in (note_norm, verification_norm)
+            ),
+        },
     }
     return [drift_path, note_path, verification_path], report
 

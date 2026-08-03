@@ -18,8 +18,10 @@ from typing import Callable, Optional
 from research_agent_teams.orchestrator.model_policy import (
     codex_runtime_fields,
     load_agent_models,
+    runtime_observability_fields,
     safe_resolve_model,
 )
+from research_agent_teams.orchestrator.gate_policy import director_gate_required
 from research_agent_teams.orchestrator.router import resolve_task, validate_routing
 from research_agent_teams.tools.budget_tracker import assert_within
 from research_agent_teams.tools.obslog import append_log
@@ -73,7 +75,7 @@ def _validate_artifact_file(path) -> dict:
 
 def _drive(run_dir, task_frame, start_stage_name, agent_fn, gate_fn, ts, vault_root):
     p = task_frame["payload"]
-    budget, subset, gate_level = p["budget"], p["agent_subset"], p["gate_level"]
+    budget, subset = p["budget"], p["agent_subset"]
     policy = p.get("model_policy", "default")            # backward-compatible: old frames -> default
     agent_models = load_agent_models()                   # spec frontmatter = single source of truth
     # The run's LEAD agent (subset[0]) labels the whole run's model in obslog — the same lead-proxy
@@ -90,7 +92,8 @@ def _drive(run_dir, task_frame, start_stage_name, agent_fn, gate_fn, ts, vault_r
     # The mode's path is authoritative (a forward-skip like evidence_review=[DISCOVER,REPORT] must
     # survive a crash). Remaining = path stages not yet checkpointed; a crashed mid-stage is not in
     # completed_work, so it re-runs. start_stage_name is kept for signature stability only.
-    remaining = [s for s in _resolve_path(task_frame) if s not in done]
+    stage_path = _resolve_path(task_frame)
+    remaining = [s for s in stage_path if s not in done]
     usage = {"agent_hops": len(manifest["completed_work"])}
     obs = Path(run_dir) / "obs.jsonl"
 
@@ -107,15 +110,19 @@ def _drive(run_dir, task_frame, start_stage_name, agent_fn, gate_fn, ts, vault_r
         obs_event = {"agent_name": lead or "stub", "task_id": p["task_id"], "stage": stage,
                      "started_at": ts, "tool_calls": 1, "model": lead_model}
         obs_event.update(codex_runtime_fields(lead_model))
+        obs_event.update(runtime_observability_fields(lead_model))
         append_log(obs, obs_event)  # observability
-        if gate_level == "director_signoff":                # REVIEW (director gate) — BEFORE the checkpoint
-            decision = gate_fn(stage, task_frame) or "approved"
+        if director_gate_required(p, stage):                 # REVIEW (director gate) — BEFORE the checkpoint
+            decision = gate_fn(stage, task_frame)
+            if decision is None or not str(decision).strip():
+                raise RuntimeError(f"director decision required at {stage}; refusing default approval")
             record_gate(run_dir, stage, decision, ts)       # durable, tamper-evident signoff (the veto fix)
             if str(decision).strip().lower() == "reject":
                 # vetoed: do NOT checkpoint — a rejected stage never becomes a clean boundary, and the run
                 # is now terminal (status=rejected), so a plain resume can no longer walk past the veto.
                 raise RuntimeError(f"director rejected at {stage}")
-        checkpoint_stage(run_dir, stage, [art_path], f"idem-{stage}", ts)     # RECORD (boundary; only if not rejected)
+        checkpoint_stage(run_dir, stage, [art_path], f"idem-{stage}", ts,
+                         stage_path=stage_path)              # RECORD (boundary; only if not rejected)
     return read_manifest(run_dir)
 
 

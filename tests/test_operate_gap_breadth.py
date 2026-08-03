@@ -10,6 +10,11 @@ import pytest
 from research_agent_teams.operate import spine
 from research_agent_teams.operate.artifacts import GateBlock
 from research_agent_teams.operate.modes import _shared, gap_breadth
+from research_agent_teams.operate.output_versions import (
+    finalize_output,
+    physical_output,
+    prepare_plan,
+)
 from research_agent_teams.tools.research_output_quality import audit_markdown_text
 
 TS = "2026-06-13T00:00:00Z"
@@ -201,6 +206,35 @@ def _drop_bundles(rd, only=None, override=None):
         p.write_text(json.dumps({"signals": signals}), encoding="utf-8")
 
 
+def test_gap_breadth_uses_hash_linked_supplement_bundle(tmp_path):
+    """Hunter bundles repaired through the scheduler are the ones the gate reads."""
+    rd = Path(_begin(tmp_path))
+    _drop_bundles(rd)
+    logical = rd / "inbox" / "DISCOVER.future-work-miner.bundle.json"
+    original = json.loads(logical.read_text(encoding="utf-8"))
+    original["signals"][0]["statement"] = "original wording"
+    logical.write_text(json.dumps(original), encoding="utf-8")
+    node = {
+        "id": "future-work-miner",
+        "label": "future-work-miner",
+        "output_path": logical,
+        "output_rel": "inbox/DISCOVER.future-work-miner.bundle.json",
+    }
+    plan = prepare_plan(
+        rd, "DISCOVER", 1, [node], {"future-work-miner"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    corrected_path = physical_output(rd, plan, "future-work-miner")
+    corrected = json.loads(logical.read_text(encoding="utf-8"))
+    corrected["signals"][0]["statement"] = "corrected wording"
+    corrected_path.parent.mkdir(parents=True, exist_ok=True)
+    corrected_path.write_text(json.dumps(corrected), encoding="utf-8")
+    finalize_output(rd, "DISCOVER", 1, "future-work-miner", TS)
+
+    bundles = gap_breadth._load_hunter_bundles(rd)
+    assert bundles["future-work-miner"]["signals"][0]["statement"] == "corrected wording"
+
+
 def _with_closure_snapshots(rd, prosecutor):
     payload = json.loads(json.dumps(prosecutor))
     for row in payload.get("prosecutions", []):
@@ -267,6 +301,8 @@ def test_llm_step_returns_blind_hunters_then_three_ordered_workers(tmp_path):
     assert {w["label"] for w in hunter_workers} == set(gap_breadth.HUNTERS)
     for w in hunter_workers:
         assert "NORTH STAR" in w["prompt"] and "ONLY this" in w["prompt"]
+        assert "doi:..." in w["prompt"] and "search-results.json" in w["prompt"]
+        assert "reference papers ONLY by their real" not in w["prompt"]
         assert "DISCOVER.gap-prosecutor.bundle.json" not in w["prompt"]
         assert w["depends_on"] == [] and w["execution_group"] == "blind-hunters"
     assert panel["worker_order"] == [*gap_breadth.HUNTERS, *gap_breadth.POST_HUNTER_AGENTS]

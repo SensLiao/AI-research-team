@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from research_agent_teams.operate.panel_scheduler import (
     PanelContractError,
+    _infer_plain_repair_targets,
     _normalize_nodes,
+    capability_overlay_block,
     canonical_agent_label,
     schedule_next_wave,
 )
@@ -55,6 +58,28 @@ def _write_output(worker: dict, payload: dict | None = None) -> None:
     path.write_text(json.dumps(payload or {"ok": True}), encoding="utf-8")
 
 
+def _link_directory_or_skip(link: Path, target: Path) -> str:
+    """Create a real symlink, or a Windows junction where link privilege is absent."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return "symlink"
+    except OSError as symlink_error:
+        if os.name != "nt":
+            pytest.skip(f"symbolic links unavailable on this filesystem: {symlink_error}")
+        result = subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            pytest.skip(
+                "symbolic links and Windows junctions unavailable on this filesystem: "
+                f"{symlink_error}; {result.stderr or result.stdout}"
+            )
+        return "junction"
+
+
 def test_scheduler_releases_blind_wave_before_synthesizer(tmp_path):
     run_dir = _run(tmp_path)
     first = [
@@ -92,6 +117,27 @@ def test_scheduler_releases_blind_wave_before_synthesizer(tmp_path):
     assert wave_2["workers"][0]["scheduler_contract"]["predecessor_outputs"]
 
 
+def test_scheduler_receipt_write_rejects_linked_parent_before_touching_outside(tmp_path):
+    """An actual symlink/reparse parent cannot redirect a receipt outside the run."""
+    run_dir = _run(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    marker = outside / "director-owned.txt"
+    marker.write_text("unchanged", encoding="utf-8")
+    linked_parent = run_dir / "inbox" / "panel-scheduler"
+    predictable_tmp = outside / "DESIGN.json.tmp"
+    link_kind = _link_directory_or_skip(linked_parent, outside)
+    if link_kind == "symlink":
+        predictable_tmp.symlink_to(marker)
+
+    worker = _worker(run_dir, "baseline-fairness-critic", "baseline.bundle.json")
+    with pytest.raises(PanelContractError, match="unsafe scheduler receipt path.*(?:SYMLINK_PATH|REPARSE_PATH)"):
+        schedule_next_wave(run_dir, "DESIGN", worker, ts=TS)
+
+    assert marker.read_text(encoding="utf-8") == "unchanged"
+    assert not (outside / "DESIGN.json").exists()
+
+
 def test_scheduler_refuses_unknown_or_missing_predecessor(tmp_path):
     run_dir = _run(tmp_path)
     synth = _worker(
@@ -102,6 +148,43 @@ def test_scheduler_refuses_unknown_or_missing_predecessor(tmp_path):
     )
     with pytest.raises(PanelContractError, match="unknown predecessor"):
         schedule_next_wave(run_dir, "DESIGN", synth, ts=TS)
+
+
+def test_evidence_deep_legacy_linker_bundle_blocks_citation_auditor_release(tmp_path):
+    """A file-shaped old linker output must not unlock the strict citation wave."""
+    run_dir = tmp_path / "run"
+    (run_dir / "inbox").mkdir(parents=True)
+    (run_dir / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "evidence_deep",
+        "budget": {"max_agent_hops": 4},
+        "agent_subset": ["claim-evidence-linker", "citation-coverage-auditor"],
+    }}), encoding="utf-8")
+    linker = _worker(run_dir, "claim-evidence-linker", "DISCOVER.claim-evidence-linker.bundle.json")
+    auditor = _worker(
+        run_dir,
+        "citation-coverage-auditor",
+        "DISCOVER.citation-coverage-auditor.bundle.json",
+        depends_on=["claim-evidence-linker"],
+    )
+    panel = {
+        "workers": [linker, auditor],
+        "worker_order": [linker["label"], auditor["label"]],
+        "parallel_groups": [[linker["label"]], [auditor["label"]]],
+    }
+
+    first = schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)
+    assert [worker["label"] for worker in first["workers"]] == ["claim-evidence-linker"]
+    _write_output(first["workers"][0], {
+        "claim_evidence_map": {"claims": [{"evidence": "legacy shape"}]},
+    })
+
+    with pytest.raises(PanelContractError) as exc_info:
+        schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)
+    message = str(exc_info.value)
+    assert "claim-span/v1" in message
+    assert "Citation-coverage-auditor and downstream workers are not released" in message
+    assert "Re-run claim-evidence-linker" in message
+    assert "start a new evidence_deep run" in message
 
 
 def test_scheduler_derives_maximal_wave_from_dependencies_when_groups_are_omitted(tmp_path):
@@ -271,7 +354,7 @@ def test_supplement_budget_is_independent_from_initial_budget(tmp_path):
         schedule_next_wave(run_dir, "DESIGN", worker, ts=TS)
 
 
-def test_plain_repair_targets_only_terminal_worker(tmp_path):
+def test_targeted_repair_targets_only_terminal_worker(tmp_path):
     run_dir = _run(tmp_path, budget=2)
     a = _worker(run_dir, "baseline-fairness-critic", "a.bundle.json")
     b = _worker(run_dir, "design-synthesizer", "b.bundle.json", depends_on=[a["label"]])
@@ -287,16 +370,19 @@ def test_plain_repair_targets_only_terminal_worker(tmp_path):
     _write_output(second["workers"][0])
     assert schedule_next_wave(run_dir, "DESIGN", panel, ts=TS)["status"] == "complete"
 
-    def plain_block():
-        from research_agent_teams.operate.artifacts import GateBlock
-        raise GateBlock("legacy format gap")
+    def targeted_block():
+        raise TargetedGateBlock("legacy format gap", [{
+            "defect_id": "D-format", "location": "DESIGN/synthesis",
+            "summary": "repair the final synthesis format",
+            "target_agents": ["design-synthesizer"], "refresh_agents": [],
+        }])
 
-    attempt_with_repair(run_dir, "DESIGN", {"max_debug_retries_per_run": 1}, TS, plain_block)
+    attempt_with_repair(run_dir, "DESIGN", {"max_debug_retries_per_run": 1}, TS, targeted_block)
     repair = schedule_next_wave(run_dir, "DESIGN", panel, ts=TS)
     assert [row["label"] for row in repair["workers"]] == ["design-synthesizer"]
 
 
-def test_plain_repair_routes_named_bundle_to_owner_before_terminal_fallback(tmp_path):
+def test_targeted_repair_routes_named_bundle_to_owner_before_terminal_fallback(tmp_path):
     run_dir = _run(tmp_path, budget=2)
     mechanism = _worker(run_dir, "baseline-fairness-critic", "MECHANISM.bundle.json")
     analogy = _worker(
@@ -317,13 +403,42 @@ def test_plain_repair_routes_named_bundle_to_owner_before_terminal_fallback(tmp_
     _write_output(second["workers"][0])
     assert schedule_next_wave(run_dir, "DESIGN", panel, ts=TS)["status"] == "complete"
 
-    def plain_block():
-        from research_agent_teams.operate.artifacts import GateBlock
-        raise GateBlock("mechanism_graph schema wording mismatch")
+    def targeted_block():
+        raise TargetedGateBlock("mechanism_graph schema wording mismatch", [{
+            "defect_id": "D-mechanism", "location": "DESIGN/mechanism_graph",
+            "summary": "repair the mechanism graph schema wording",
+            "target_agents": ["baseline-fairness-critic"], "refresh_agents": [],
+        }])
 
-    attempt_with_repair(run_dir, "DESIGN", {"max_debug_retries_per_run": 1}, TS, plain_block)
+    attempt_with_repair(run_dir, "DESIGN", {"max_debug_retries_per_run": 1}, TS, targeted_block)
     repair = schedule_next_wave(run_dir, "DESIGN", panel, ts=TS)
     assert [row["label"] for row in repair["workers"]] == ["baseline-fairness-critic"]
+
+
+def test_plain_repair_routes_typed_staleness_collection_to_leaf_owner(tmp_path):
+    del tmp_path  # The inference helper is intentionally independent of a mode graph.
+    nodes = [
+        {"label": "staleness-auditor", "output_rel": "inbox/DISCOVER.staleness-auditor.bundle.json"},
+        {"label": "landscape-mapper", "output_rel": "inbox/DISCOVER.landscape-mapper.bundle.json"},
+    ]
+    targets = _infer_plain_repair_targets(
+        nodes,
+        {"reason": "evidence_deep artifact schema BLOCK: staleness_reports[1] payload"},
+    )
+    assert targets == {"staleness-auditor"}
+
+
+def test_plain_repair_routes_source_quality_contract_to_ranker(tmp_path):
+    del tmp_path
+    nodes = [
+        {"label": "source-quality-ranker", "output_rel": "inbox/DISCOVER.source-quality-ranker.bundle.json"},
+        {"label": "landscape-mapper", "output_rel": "inbox/DISCOVER.landscape-mapper.bundle.json"},
+    ]
+    targets = _infer_plain_repair_targets(
+        nodes,
+        {"reason": "current source quality must declare source-methodology/v1"},
+    )
+    assert targets == {"source-quality-ranker"}
 
 
 def test_preexisting_outputs_cannot_bypass_dispatch_receipt(tmp_path):
@@ -449,3 +564,46 @@ def test_first_run_worker_after_completed_repair_uses_logical_output_without_rep
     assert [row["label"] for row in continued["workers"]] == ["protocol-critic"]
     assert Path(continued["workers"][0]["output"]) == Path(d["output"])
     assert "TARGETED REPAIR" not in continued["workers"][0]["prompt"]
+
+
+def test_capability_overlay_block_is_stage_filtered_and_advisory(tmp_path):
+    run_dir = _run(tmp_path)
+    frame_path = run_dir / "task_frame.artifact.json"
+    frame = json.loads(frame_path.read_text(encoding="utf-8"))
+    frame["payload"]["capability_overlay_plan"] = {
+        "contract_version": "research-capability-route/v1",
+        "overlays": [
+            {
+                "overlay_id": "hypothesis_prediction_contract",
+                "title": "Hypothesis and prediction contract",
+                "guidance": "Name a falsifier before looking at results.",
+                "target_stages": ["DESIGN"],
+                "non_goals": ["reinterpret_results_post_hoc"],
+            },
+            {
+                "overlay_id": "results_to_claim_contract",
+                "title": "Results-to-claim contract",
+                "guidance": "Bind claims to named evidence.",
+                "target_stages": ["REPORT"],
+                "non_goals": ["create_results"],
+            },
+        ],
+    }
+    frame_path.write_text(json.dumps(frame), encoding="utf-8")
+
+    block, contract = capability_overlay_block(run_dir, "DESIGN")
+    assert "Name a falsifier" in block
+    assert "Bind claims" not in block
+    assert contract == {
+        "contract_version": "research-capability-route/v1",
+        "stage": "DESIGN",
+        "overlay_ids": ["hypothesis_prediction_contract"],
+        "advisory_only": True,
+        "external_skill_execution": False,
+        "network_access": False,
+    }
+
+
+def test_legacy_task_frame_has_no_capability_overlay_block(tmp_path):
+    run_dir = _run(tmp_path)
+    assert capability_overlay_block(run_dir, "DESIGN") == ("", None)

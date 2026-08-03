@@ -61,7 +61,9 @@ notes field instead of silently following them. You never re-scope the run — o
 3. **Deeply audit your owned dimensions** and score another applicable dimension only when you
    have independent evidence (D1..D7, 1-4 scale: 4=excellent, 3=good, 2=fair, 1=poor). Each score
    MUST carry at minimum one `evidence_ref` pointer (file path, section,
-   figure, metric value — never a vague claim).  Missing evidence for a score = **score 1**.
+   figure, metric value — never a vague claim). Missing evidence that the submission itself should
+   contain may justify **score 1**. Missing external closest-prior full text instead makes global
+   novelty `UNVERIFIED` and lowers confidence; it is not by itself a rejection.
    Dimensions not applicable to this tier/paper_type may be omitted.
 
 4. **Run the venue's reject-triggers** (from `venue-profile.md`).  For each trigger that fires:
@@ -84,8 +86,9 @@ notes field instead of silently following them. You never re-scope the run — o
      incorrect metric aggregation.
    - Apply D3 (novelty) and D4 (evaluation rigor) with the venue's anti-leaderboard suppressor.
 
-7. **Default to LOW when uncertain** (asymmetric cost: a weak paper wrongly scored high wastes
-   an entire submission cycle; a strong paper wrongly scored low is recoverable by rebuttal).
+7. **Expose uncertainty rather than converting it into a defect.** Score conservatively only on
+   dimensions whose required submission evidence is actually missing. Keep external novelty
+   coverage uncertainty in confidence and notes.
 
 8. **Emit `overall`** mapped to the venue's own scale (e.g. "5 — Weak Accept" for NeurIPS 1-10,
    "Accept" / "Reject" for MICCAI, "Minor Revision" for journals).

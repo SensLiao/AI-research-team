@@ -19,6 +19,10 @@ paper and the other papers it engages — `inherits / refutes / unifies / replac
 / uses` — into a typed `paper_relations` artifact carried **by reference**. Every edge must trace
 to evidence actually read; never fabricate a relationship. Draft knowledge only.
 
+This is the focal paper's cited lineage and author-positioning map. It is not an independently
+verified closest-prior novelty audit: unless a target paper's full method/results were separately
+provided and read, do not infer that it covers the focal paper's central claim.
+
 ## What you do
 
 ## North-star discipline (run alignment)

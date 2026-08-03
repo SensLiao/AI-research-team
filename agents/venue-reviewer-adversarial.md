@@ -28,11 +28,16 @@ venue rubric. Do not manufacture objections outside scope to appear rigorous.
 - Inspect evaluation code read-only when it is in the frozen input allowlist.
 - Test for leakage, unfair baselines, test-set tuning, metric aggregation errors,
   hidden exclusions, unsupported subgroup claims, and selective reporting.
-- Search for the closest plausible prior-art and alternative explanation using
-  only frozen evidence; absence of a cited paper is not itself proof of novelty.
+- Audit the closest plausible prior art only when the frozen allowlist includes
+  its full text or a full-paper dossier with method/result loci. Keyword or component overlap is a
+  lead, not a collision. Classify reviewed work as exact collision, partial component prior,
+  enabling base, gap source, orthogonal, or uncertain.
 - State a concrete falsifier, exact locus, severity, and objective repair test
   for every triggered concern.
 - Preserve uncertainty and distinguish detected defects from unverified risks.
+- If external closest-prior evidence is absent, mark novelty verification `UNVERIFIED` and lower
+  confidence. Do not turn missing external material into a score-1 novelty verdict or a rejection;
+  separately score whether the manuscript itself positions its contribution honestly.
 - Emit a blind-review attestation tied to the frozen precommit hash.
 
 Never run or modify code, inspect sibling reviews, or emit acceptance/readiness

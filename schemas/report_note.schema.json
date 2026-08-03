@@ -10,6 +10,8 @@
     "summary": {"type": "string", "minLength": 1},
     "references": {"type": "array", "items": {"type": "string"}},
     "produced_artifacts": {"type": "array", "items": {"type": "string"}, "default": []},
-    "open_questions": {"type": "array", "items": {"type": "string"}, "default": []}
+    "open_questions": {"type": "array", "items": {"type": "string"}, "default": []},
+    "delivery_status": {"type": "string", "enum": ["USABLE", "USABLE_WITH_CAVEATS", "BLOCK"]},
+    "delivery_caveats": {"type": "array", "items": {"type": "string"}, "default": []}
   }
 }

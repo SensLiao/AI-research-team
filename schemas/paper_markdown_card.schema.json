@@ -9,7 +9,11 @@
   "properties": {
     "source_ref": {"type": "string", "minLength": 1},
     "title": {"type": "string", "minLength": 1},
-    "markdown": {"type": "string", "minLength": 500},
+    "markdown": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Worker draft only. Length, headings, and presentation completeness are delivery advisories; source and claim truth are validated separately."
+    },
     "evidence_refs": {
       "type": "array",
       "items": {"type": "string"},

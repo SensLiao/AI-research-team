@@ -53,7 +53,9 @@ stages:
                      data-protocol-designer, config-unifier, method-integration-planner, baseline-fairness-planner,
                      variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor,
                      statistics-power-auditor, data-wrangling-auditor, decision-surfacer,
-                     manuscript-architect, manuscript-evidence-steward]
+                     manuscript-architect, manuscript-evidence-steward,
+                     domain-reality-auditor, cognitive-intent-modeler,
+                     curriculum-design-specialist, research-engineering-planner]
     blocking_gates: [variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor]
     exit_artifacts: [experiment_matrix]
     next: EXECUTE
@@ -91,13 +93,13 @@ stages:
                      manuscript-citation-auditor, manuscript-style-latex-auditor,
                      manuscript-domain-contribution-reviewer,
                      manuscript-methods-reproducibility-reviewer,
-                     manuscript-figure-table-reviewer]
+                     manuscript-figure-table-reviewer, causal-mechanism-critic]
     blocking_gates: [adversarial-reviewer]
     exit_artifacts: [review_report]
     next: REPORT
   REPORT:
     allowed_agents: [quality-controller, integrity-refusal-recommender, manuscript-polish-editor,
-                     manuscript-submission-packager]   # RAT-2 Wave-3: deep_ideation REPORT aggregation 鈥?closes audit A2 (quality-controller scorecard route placed at REPORT) + A3 (integrity-refusal-recommender given a real FSM-stage home; ADVISORY-only, decision stays the director's)
+                     manuscript-submission-packager, hypothesis-compiler]   # RAT-2 Wave-3: deep_ideation REPORT aggregation 鈥?closes audit A2 (quality-controller scorecard route placed at REPORT) + A3 (integrity-refusal-recommender given a real FSM-stage home; ADVISORY-only, decision stays the director's)
     blocking_gates: []
     exit_artifacts: [report_note]
     next: null

@@ -12,8 +12,13 @@ from pathlib import Path
 
 import pytest
 
-from research_agent_teams.operate.artifacts import GateBlock
+from research_agent_teams.operate.artifacts import GateBlock, TargetedGateBlock
 from research_agent_teams.operate.modes import deep_ideation, new_direction
+from research_agent_teams.operate.output_versions import (
+    finalize_output,
+    physical_output,
+    prepare_plan,
+)
 from research_agent_teams.tests.test_operate_deep_ideation import (
     COLLISION_BUNDLE,
     EXPERIMENT_BUNDLE,
@@ -24,6 +29,7 @@ from research_agent_teams.tests.test_operate_deep_ideation import (
     _drop_discover,
     _payload,
 )
+from research_agent_teams.tools import idea_bet_markdown as idea_bet_md
 from research_agent_teams.tools.idea_bet_markdown import lint_idea_bet_menu
 from research_agent_teams.tools.research_output_quality import audit_markdown_text
 
@@ -128,7 +134,7 @@ def _rich_split_bundles():
             {
                 "ref": "[[a]]",
                 "title": "Adapter tuning baseline",
-                "relationship": "adjacent",
+                "relationship": "partial_component_prior",
                 "difference": "2D adaptation without the oracle topology intervention.",
             }
         ],
@@ -141,7 +147,7 @@ def _rich_split_bundles():
             {
                 "ref": "[[b]]",
                 "title": "Published SAM-medical leaderboard",
-                "relationship": "benchmark precursor",
+                "relationship": "enabling_base",
                 "difference": "No compute-matched reranking.",
             }
         ],
@@ -341,6 +347,182 @@ def test_split_worker_bundles_render_complete_bet_memos_and_staged_ladder(tmp_pa
     assert text.index("Oracle topology intervention") < text.index("Learned topology proxy")
     assert "records_selection: false" in text
     assert audit_markdown_text("deep_ideation", text)["status"] == "pass"
+    cards = sorted(Path(rd, "director-review", "ideas", "cards").glob("direction-*.md"))
+    assert [p.name for p in cards] == ["direction-01.md", "direction-02.md"]
+    assert cards[0].read_text(encoding="utf-8").startswith("# ")
+    assert "# Rank" not in cards[0].read_text(encoding="utf-8")
+
+
+def test_idea_bet_heading_alias_is_advisory_but_human_gate_stays_ready(
+    tmp_path, monkeypatch
+):
+    rd = _begin(tmp_path)
+    _drop_discover(rd)
+    deep_ideation.run_dets(rd, "DISCOVER", TS)
+    proposal, ranking, collision, experiment = _rich_split_bundles()
+    _drop(rd, "IDEATE", proposal)
+    _drop(rd, "RANKING", ranking)
+    _drop(rd, "COLLISION", collision)
+    _drop(rd, "EXPERIMENT", experiment)
+    original_builder = idea_bet_md.build_idea_bet_menu_markdown
+
+    def _aliased_builder(*args, **kwargs):
+        return original_builder(*args, **kwargs).replace(
+            "## Evidence And Quality", "## Evidence & Quality"
+        )
+
+    monkeypatch.setattr(
+        idea_bet_md,
+        "build_idea_bet_menu_markdown",
+        _aliased_builder,
+    )
+
+    _paths, report = deep_ideation.run_dets(rd, "IDEATE", TS)
+
+    assert report["director_idea_bet_menu"]
+    assert "## Evidence & Quality" in Path(report["director_idea_bet_menu"]).read_text(
+        encoding="utf-8"
+    )
+    advisory = json.loads(
+        (Path(rd) / "inbox" / "idea-bet-markdown-quality-advisory.json")
+        .read_text(encoding="utf-8")
+    )
+    assert advisory["delivery_blocking"] is False
+    assert advisory["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert advisory["gate_ready"] is True
+    assert "missing heading: ## Evidence And Quality" in advisory["warnings"]
+
+
+def test_idea_bet_hidden_human_boundary_still_blocks_gate(tmp_path, monkeypatch):
+    rd = _begin(tmp_path)
+    _drop_discover(rd)
+    deep_ideation.run_dets(rd, "DISCOVER", TS)
+    proposal, ranking, collision, experiment = _rich_split_bundles()
+    _drop(rd, "IDEATE", proposal)
+    _drop(rd, "RANKING", ranking)
+    _drop(rd, "COLLISION", collision)
+    _drop(rd, "EXPERIMENT", experiment)
+    original_builder = idea_bet_md.build_idea_bet_menu_markdown
+
+    def _hidden_boundary_builder(*args, **kwargs):
+        return original_builder(*args, **kwargs).replace(
+            "records_selection: false", "records_selection: hidden"
+        )
+
+    monkeypatch.setattr(
+        idea_bet_md,
+        "build_idea_bet_menu_markdown",
+        _hidden_boundary_builder,
+    )
+
+    with pytest.raises(GateBlock, match="records_selection: false"):
+        deep_ideation.run_dets(rd, "IDEATE", TS)
+
+    advisory = json.loads(
+        (Path(rd) / "inbox" / "idea-bet-markdown-quality-advisory.json")
+        .read_text(encoding="utf-8")
+    )
+    assert advisory["gate_ready"] is False
+    assert advisory["gate_blockers"] == [
+        "Markdown menu must state records_selection: false"
+    ]
+
+
+def test_idea_bet_without_true_candidates_remains_hard_block(tmp_path):
+    with pytest.raises(ValueError, match="idea-backlog has no ranked_ideas"):
+        idea_bet_md.write_idea_bet_menu(tmp_path, generated_at=TS)
+
+
+def test_current_panel_uses_hash_linked_collision_supplement(tmp_path):
+    """A targeted collision repair must replace the logical bundle for every IDEATE gate."""
+    rd = _begin(tmp_path)
+    _drop_discover(rd)
+    deep_ideation.run_dets(rd, "DISCOVER", TS)
+    proposal, ranking, collision, experiment = _rich_split_bundles()
+    collision.pop("memo_contract_version")
+    _drop(rd, "IDEATE", proposal)
+    _drop(rd, "RANKING", ranking)
+    _drop(rd, "COLLISION", collision)
+    _drop(rd, "EXPERIMENT", experiment)
+
+    run_dir = Path(rd)
+    logical = run_dir / "inbox" / "COLLISION.bundle.json"
+    node = {
+        "id": "2:novelty-collision-checker:inbox/COLLISION.bundle.json",
+        "label": "novelty-collision-checker",
+        "output_path": logical,
+        "output_rel": "inbox/COLLISION.bundle.json",
+    }
+    plan = prepare_plan(
+        run_dir, "IDEATE", 1, [node], {"novelty-collision-checker"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    corrected = copy.deepcopy(collision)
+    corrected["memo_contract_version"] = MEMO_VERSION
+    corrected_path = physical_output(run_dir, plan, node["id"])
+    corrected_path.parent.mkdir(parents=True, exist_ok=True)
+    corrected_path.write_text(json.dumps(corrected), encoding="utf-8")
+    finalize_output(run_dir, "IDEATE", 1, node["id"], TS)
+
+    deep_ideation.run_dets(rd, "IDEATE", TS)
+
+    backlog = _payload(rd, "IDEATE", "idea-backlog.artifact.json")
+    assert backlog["ranked_ideas"]
+
+
+def test_current_panel_format_gap_is_targeted_supplement_not_terminal_block(tmp_path):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "RANKING.bundle.json").write_text(
+        json.dumps({"tournament": []}), encoding="utf-8"
+    )
+
+    with pytest.raises(TargetedGateBlock) as exc_info:
+        new_direction._load_current_panel_bundle(
+            str(tmp_path), "RANKING", ("tournament", "investment_assessments")
+        )
+
+    exc = exc_info.value
+    assert exc.verdict == "NEEDS_SUPPLEMENT"
+    assert exc.defects[0]["target_agents"] == ["idea-tournament-ranker"]
+    assert "memo_contract_version" in str(exc)
+
+
+def test_deep_ideation_uses_hash_linked_experiment_supplement(tmp_path):
+    """Deep sketch validation must consume the effective repaired planner bundle too."""
+    rd = _begin(tmp_path)
+    _drop_discover(rd)
+    deep_ideation.run_dets(rd, "DISCOVER", TS)
+    proposal, ranking, collision, experiment = _rich_split_bundles()
+    experiment["sketches"][0].pop("kill_criteria")
+    _drop(rd, "IDEATE", proposal)
+    _drop(rd, "RANKING", ranking)
+    _drop(rd, "COLLISION", collision)
+    _drop(rd, "EXPERIMENT", experiment)
+
+    run_dir = Path(rd)
+    logical = run_dir / "inbox" / "EXPERIMENT.bundle.json"
+    node = {
+        "id": "3:experiment-planner:inbox/EXPERIMENT.bundle.json",
+        "label": "experiment-planner",
+        "output_path": logical,
+        "output_rel": "inbox/EXPERIMENT.bundle.json",
+    }
+    plan = prepare_plan(
+        run_dir, "IDEATE", 1, [node], {"experiment-planner"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    corrected = copy.deepcopy(experiment)
+    corrected["sketches"][0]["kill_criteria"] = ["stop if the oracle branch has no material gain"]
+    corrected_path = physical_output(run_dir, plan, node["id"])
+    corrected_path.parent.mkdir(parents=True, exist_ok=True)
+    corrected_path.write_text(json.dumps(corrected), encoding="utf-8")
+    finalize_output(run_dir, "IDEATE", 1, node["id"], TS)
+
+    deep_ideation.run_dets(rd, "IDEATE", TS)
+
+    sketches = list((run_dir / "evidence" / "IDEATE").glob("experiment-sketch-*.artifact.json"))
+    assert sketches
 
 
 def test_strict_memo_contract_blocks_a_survivor_without_kill_criteria(tmp_path):

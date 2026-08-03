@@ -33,6 +33,18 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 
+SOURCE_KINDS = frozenset({
+    "future_work", "weakness", "white_space", "transfer", "contrarian",
+})
+DERIVED_FROM_TO_SOURCE_KIND = {
+    "future_work": "future_work",
+    "weakness_opportunity": "weakness",
+    "white_space_present": "white_space",
+    "transfer_potential": "transfer",
+    "contrarian_angle": "contrarian",
+}
+
+
 def classify_gap(signal: dict, profile: Optional[dict] = None) -> Tuple[str, str]:
     """Classify a gap signal dict into a (gap_type, reason_code) pair.
 
@@ -145,8 +157,9 @@ def build_classification(
         # from gap_classification ALONE — no runtime re-injection, no agent prose.
         if isinstance(sig, dict) and sig.get("derived_from"):
             gap["derived_from"] = list(sig["derived_from"])
-        if "source_kind" in sig:
-            gap["source_kind"] = sig["source_kind"]
+        source_kind = _canonical_source_kind(sig)
+        if source_kind is not None:
+            gap["source_kind"] = source_kind
         if "notes" in sig:
             gap["notes"] = sig["notes"]
 
@@ -162,3 +175,28 @@ def build_classification(
 def _nonempty(value: object) -> bool:
     """Return True if value is a non-empty string (or coerces to one)."""
     return isinstance(value, str) and bool(value.strip())
+
+
+def _canonical_source_kind(signal: dict) -> Optional[str]:
+    """Return the schema enum for optional provenance, never worker prose.
+
+    Hunter bundles already expose authoritative machine provenance through
+    ``derived_from``.  A worker may also attach a human-readable label such as
+    ``author-stated future work``; copying that label verbatim makes the
+    deterministic classification artifact fail its own JSON schema.  Prefer an
+    explicit canonical enum, otherwise derive the enum from the unambiguous
+    machine provenance.  Unknown optional prose is intentionally omitted.
+    """
+    raw = signal.get("source_kind")
+    if isinstance(raw, str) and raw.strip() in SOURCE_KINDS:
+        return raw.strip()
+
+    derived = signal.get("derived_from")
+    if not isinstance(derived, list):
+        return None
+    candidates = {
+        DERIVED_FROM_TO_SOURCE_KIND[item]
+        for item in derived
+        if isinstance(item, str) and item in DERIVED_FROM_TO_SOURCE_KIND
+    }
+    return next(iter(candidates)) if len(candidates) == 1 else None

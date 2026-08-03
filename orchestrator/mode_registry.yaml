@@ -283,14 +283,15 @@ modes:
     operated: true   # wired in operate/modes/__init__.py::REGISTRY (audit B1/B3; wiring test enforces the mirror)
     stage_path: [DESIGN, EXECUTE, ANALYZE, VERIFY, REPORT]   # M2-a spine slice: the full tail with execution+analysis depth
     agent_subset: [experiment-planner, baseline-fairness-critic, protocol-critic, statistics-critic,
-                   design-synthesizer, protocol-compiler, variable-control-auditor,
+                   domain-reality-auditor, cognitive-intent-modeler, curriculum-design-specialist,
+                   research-engineering-planner, design-synthesizer, protocol-compiler, variable-control-auditor,
                    train-test-alignment-auditor, metric-implementation-auditor, script-author,
                    execution-evidence-auditor, execute-synthesizer, trainset-builder, testset-builder,
                    variable-touch-guard, preflight-checker, ablation-runner, experiment-journaler,
                    train-test-parity-verifier, result-extractor, statistician,
                    failure-attribution-skeptic, analysis-synthesizer, result-analyzer,
                    result-sanity-checker, methodology-reviewer, domain-reviewer,
-                   adversarial-reviewer, verify-synthesizer]
+                   adversarial-reviewer, causal-mechanism-critic, verify-synthesizer, hypothesis-compiler]
     gate_level: director_signoff     # keeps all DESIGN hard gates mandatory (router guardrail 1); EXECUTE+ANALYZE gates live in-stage
     budget: {max_agent_hops: 24}
     handoff:
@@ -358,11 +359,12 @@ modes:
     stage_path: [DISCOVER, IDEATE, REPORT]   # gap-hunting -> ideate -> NOVELTY-COLLISION gate -> idea_backlog (the ranked MENU) -> director reviews at the IDEATE gate
     # NOVELTY-COLLISION gate (director lock 2026-06-18): IDEATE dispatches a SECOND, independent worker
     # (novelty-collision-checker) AFTER the ideate worker; before the /idea-bet menu is built,
-    # _shared.run_collision_gate checks each idea for an EVIDENCED prior-art collision (a real,
-    # existence-verified paper that already did this method×problem AND ran it) and CUTS it from the menu
-    # (hard_block, profile novelty_collision.hard_block default True), recording it to the project's
-    # known-prior-art ledger so future runs never re-output it. A novelty SCORE still never cuts — only an
-    # evidenced collision does. Offline -> nothing cut, all UNVERIFIED, the report says novelty was NOT
+    # _shared.run_collision_gate cuts only an EVIDENCED full-paper exact collision: the paper exists,
+    # its full method/results were inspected from a hash-verified run-local snapshot, and it tested the
+    # same central claim, input/output contract, and causal assay with concrete loci and required
+    # experiments. Keyword/component overlap and the
+    # cross-run lexical ledger are retrieval leads only, never inherited vetoes. A novelty score still
+    # never cuts. Offline or abstract-only -> nothing cut, all UNVERIFIED; the report says novelty was NOT verified.
     # Connectivity note: novelty-collision-checker is listed here intentionally; it remains an
     # independent operate sub-worker, but the registry must expose every worker it may call.
     agent_subset: [direction-grounding-scout, future-work-miner, gap-classifier, novelty-scorer,
@@ -370,7 +372,8 @@ modes:
                    mathematical-formalizer, contradiction-miner,
                    hypothesis-generator, idea-tournament-ranker, feasibility-reranker,
                    novelty-collision-checker, experiment-planner]
-    gate_level: director_signoff     # a new direction commits GPU+writing time (high-stakes): both DISCOVER hard gates (evidence-verifier + citation-integrity-auditor) fire so ideation is grounded in VERIFIED evidence (router guardrail 1). The director gate fires at each stage; the IDEATE boundary IS the /idea-bet review (a reject = "none of these — pivot"). idea_backlog has NO self-bet field (structural); the chosen bet is recorded by the human /idea-bet slash as an adr. Downstream experiment rigor (DESIGN..VERIFY hard gates) fires only AFTER a bet.
+    gate_level: director_signoff     # DISCOVER hard gates ground the menu; the only human decision point is /idea-bet after IDEATE has rendered it.
+    director_gate_stages: [IDEATE]
     budget: {max_agent_hops: 10}
     handoff:
       contract_version: mode-handoff/v2
@@ -400,6 +403,7 @@ modes:
                    hypothesis-generator, idea-tournament-ranker, idea-evolver, feasibility-reranker,
                    novelty-collision-checker, experiment-planner, quality-controller, integrity-refusal-recommender]
     gate_level: director_signoff
+    director_gate_stages: [IDEATE]
     budget: {max_agent_hops: 9}
     handoff:
       contract_version: mode-handoff/v2
@@ -407,6 +411,7 @@ modes:
       primary_markdown: director-review/ideas/idea-bet-menu.md
       reusable_artifacts: [idea-backlog.artifact.json, idea-lineage.artifact.json, idea-tournament.artifact.json, novelty-collision-verdict.artifact.json]
       accepts: [paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2, research-brief/v2, gap-dossier/v1]
+      accepts_delivery_statuses: [USABLE, USABLE_WITH_CAVEATS]
   # --- M3-c (gap-hunting breadth) — the differentiation engine, focused scan ---
   gap_breadth:
     entry_stage: DISCOVER
@@ -421,8 +426,9 @@ modes:
       contract_version: mode-handoff/v2
       product_version: gap-dossier/v1
       primary_markdown: director-review/gaps/gap-scan.md
-      reusable_artifacts: [gap-dossier.artifact.json, gap-classification.artifact.json, gap-quality-audit.artifact.json]
+      reusable_artifacts: [gap-dossiers.artifact.json, gap-classification.artifact.json, gap-quality-audit.artifact.json]
       accepts: [paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2, research-brief/v2]
+      accepts_delivery_statuses: [USABLE, USABLE_WITH_CAVEATS]
   # --- M3-f (IDEATE-ring completion) — the full ring as a focused mode ---
   ideate_ring:
     entry_stage: IDEATE
@@ -615,7 +621,7 @@ modes:
                    manuscript-results-author, manuscript-section-author,
                    manuscript-figure-table-engineer, manuscript-integrator,
                    manuscript-factual-auditor, manuscript-citation-auditor,
-                   manuscript-style-latex-auditor, manuscript-submission-packager]
+                   manuscript-style-latex-auditor]
     authoring_contract:
       required_sections_ref: manuscript_contract.required_sections
       specialized_owners:
@@ -674,9 +680,6 @@ modes:
           workers: [manuscript-factual-auditor, manuscript-citation-auditor,
                     manuscript-style-latex-auditor]
           depends_on: [integrate_canonical_tree]
-        - id: package_authoring_evidence
-          workers: [manuscript-submission-packager]
-          depends_on: [independent_authoring_audits]
     paper_type_contract_fixtures:
       section_set_source: frozen_contract_required_sections
       fixed_section_count: false
@@ -694,7 +697,7 @@ modes:
     handoff:
       contract_version: mode-handoff/v2
       product_version: manuscript-authoring/v1
-      primary_markdown: director-review/manuscript/manuscript-authoring.md
+      primary_markdown: director-review/manuscript/00-OVERVIEW.md
       evidence_namespace: evidence/manuscript-authoring/
       reusable_artifacts: [manuscript-contract.artifact.json, local-literature-coverage.artifact.json,
                            manuscript-section-bundles.artifact.json, manuscript-integration.artifact.json,
@@ -764,7 +767,7 @@ modes:
     handoff:
       contract_version: mode-handoff/v2
       product_version: manuscript-review/v1
-      primary_markdown: director-review/manuscript/manuscript-review.md
+      primary_markdown: director-review/manuscript/reviewer-report.md
       evidence_namespace: evidence/manuscript-review/
       reusable_artifacts: [manuscript-review-verdicts.artifact.json,
                            manuscript-review-reconciliation.artifact.json,
@@ -820,13 +823,16 @@ modes:
                    cross-domain-transfer-scout, weakness-spotter, claim-extractor,
                    claim-evidence-linker, citation-coverage-auditor, contradiction-miner, landscape-mapper,
                    evidence-verifier, citation-integrity-auditor]
-    gate_level: director_signoff     # both DISCOVER hard gates fire (router guardrail 1); the brief feeds bets/designs downstream
+    # Research delivery itself is record-only: deterministic scientific gates
+    # still run inside DISCOVER, but producing a brief is not a director choice.
+    # Human sign-off belongs to /idea-bet, /venue-* and /promote-to-vault.
+    gate_level: record_only
     budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 3, max_fulltext_reads: 20, max_debug_retries_per_run: 3}
     handoff:
       contract_version: mode-handoff/v2
       product_version: research-brief/v2
       primary_markdown: director-review/research/research-brief.md
-      reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, landscape-map.artifact.json]
+      reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, research-brief.artifact.json, research-markdown-brief.artifact.json]
       accepts: [ingest-paper/v1, paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2]
   # --- M3-d (VR-1 venue-targeted peer-review) — VERIFY-entry, reuses the M2 panel + venue agents ---
   venue_readiness:

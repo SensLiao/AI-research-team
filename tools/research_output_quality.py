@@ -8,6 +8,7 @@ well-formed Markdown.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -132,6 +133,32 @@ MODE_OUTPUT_CONTRACTS: dict[str, OutputContract] = {
             "next_action": ("next action", "next experiment", "下一步"),
         },
     ),
+    "manuscript_authoring": OutputContract(
+        ("director-review/manuscript/00-OVERVIEW.md",),
+        600,
+        {
+            "local_evidence": ("local-literature coverage", "local evidence", "coverage"),
+            "frozen_contract": ("frozen manuscript-contract", "manuscript-contract", "frozen"),
+            "canonical_source": ("canonical source", "source-tree", "source/"),
+            "build_truth": ("build state", "compiled PDF", "toolchain_missing"),
+            "quality_status": ("daily_state", "submission_ready", "quality-report"),
+            "review_boundary": ("independent manuscript review", "review separation", "self-audit"),
+            "decision_boundary": ("does not submit", "does not publish", "does not promote"),
+        },
+    ),
+    "manuscript_review": OutputContract(
+        ("director-review/manuscript/reviewer-report.md",),
+        600,
+        {
+            "review_status": ("daily state", "submission ready", "separate review-run"),
+            "frozen_input": ("frozen", "authoring", "manuscript"),
+            "findings": ("reconciled findings", "finding", "severity"),
+            "evidence": ("evidence", "origin", "receipt"),
+            "repair": ("required fix", "repair", "advisory"),
+            "independence_limit": ("not independent", "not independently", "advisory"),
+            "decision_boundary": ("unapplied", "does not submit", "director"),
+        },
+    ),
 }
 
 
@@ -247,6 +274,28 @@ def audit_run_output(run_dir: str | Path, mode: str) -> dict[str, Any]:
     return result
 
 
+def _contract_era(run_dir: Path) -> str:
+    """`current` if the run pinned a product contract, else `legacy`.
+
+    A run that predates the product contract cannot grow a conforming Markdown
+    product by re-rendering — only by re-running it, which is the director's
+    call and not always worth the compute.  Grading such runs against today's
+    contract and then blocking on the result produces a board that is red
+    forever and therefore stops being read.  So the era is recorded, and the
+    caller decides what blocks.  This hides nothing: a legacy failure is still
+    counted, listed and named.
+    """
+    frame = run_dir / "task_frame.artifact.json"
+    if not frame.is_file():
+        return "legacy"
+    try:
+        payload = (json.loads(frame.read_text(encoding="utf-8")) or {}).get("payload") or {}
+    except (OSError, ValueError):
+        return "legacy"
+    contract = payload.get("product_contract")
+    return "current" if isinstance(contract, dict) and contract.get("product_version") else "legacy"
+
+
 def audit_completed_runs(runs_dir: str | Path) -> dict[str, Any]:
     """Audit only completed operated runs; unfinished historical work is reported separately."""
     root = Path(runs_dir)
@@ -265,13 +314,20 @@ def audit_completed_runs(runs_dir: str | Path) -> dict[str, Any]:
             result.update({
                 "run_id": str(manifest.get("run_id") or manifest_path.parent.name),
                 "project": manifest.get("project"),
+                "contract_era": _contract_era(manifest_path.parent),
             })
             rows.append(result)
+    failures = [row for row in rows if row.get("status") == "fail"]
     return {
         "completed_run_count": len(rows),
         "pass": sum(1 for row in rows if row.get("status") == "pass"),
         "advisory": sum(1 for row in rows if row.get("status") == "advisory"),
-        "fail": sum(1 for row in rows if row.get("status") == "fail"),
+        "fail": len(failures),
+        # Split so a permanently-unrepairable backlog cannot mask a fresh regression.
+        "fail_current": sum(1 for row in failures if row.get("contract_era") == "current"),
+        "fail_legacy": sum(1 for row in failures if row.get("contract_era") != "current"),
+        "legacy_failure_run_ids": sorted(str(row.get("run_id") or "") for row in failures
+                                         if row.get("contract_era") != "current"),
         "not_scored": sum(1 for row in rows if row.get("status") == "not_scored"),
         "runs": rows,
     }

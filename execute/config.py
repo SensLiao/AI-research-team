@@ -7,10 +7,32 @@ directly from `os.environ` at connect time and used only there.
 """
 from __future__ import annotations
 
+import ipaddress
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
+
+
+_ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+_LEGACY_ENV_REFS = {
+    "host": "RAT_SERVER_HOST",
+    "endpoint": "RAT_SERVER_HOST",
+    "port": "RAT_SERVER_PORT",
+    "user": "RAT_SERVER_USER",
+    "password": "RAT_SERVER_PASSWORD",
+    "ssh_key": "RAT_SERVER_SSH_KEY",
+    "remote_workdir": "RAT_REMOTE_WORKDIR",
+    "python": "RAT_REMOTE_PYTHON",
+    "conda_env": "RAT_REMOTE_CONDA_ENV",
+    "conda_sh": "RAT_REMOTE_CONDA_SH",
+    "scheduler": "RAT_SCHEDULER",
+    "results_pull_dir": "RAT_RESULTS_PULL_DIR",
+    "known_hosts": "RAT_SERVER_KNOWN_HOSTS",
+    "connect_host": "RAT_SERVER_CONNECT_HOST",
+}
 
 
 @dataclass(frozen=True, repr=False)
@@ -27,6 +49,12 @@ class ServerConfig:
     known_hosts: str          # ⑥ path to a known_hosts file for SSH host-key verification (RAT_SERVER_KNOWN_HOSTS)
     has_password: bool        # booleans only — never the secret itself
     has_ssh_key: bool
+    # Env-var NAMES only. Values remain outside the object and are fetched at connect time.
+    password_env: str = "RAT_SERVER_PASSWORD"
+    ssh_key_env: str = "RAT_SERVER_SSH_KEY"
+    # Optional TCP endpoint used when local DNS is overridden.  Host-key verification still uses
+    # ``host`` (the canonical DNS identity); this IP is deliberately omitted from repr/summary.
+    connect_host: str = ""
 
     def __repr__(self) -> str:
         """Custom repr (dataclass default disabled) so a stray repr()/log line / traceback NEVER spills
@@ -51,34 +79,75 @@ def _load_dotenv(env_path) -> None:
         os.environ.setdefault(k.strip(), v.strip())
 
 
-def load_config(env_path: str = "research_agent_teams/.env") -> ServerConfig:
+def _normalise_env_refs(env_refs: Optional[Mapping[str, str]]) -> dict[str, str]:
+    """Return role -> env-var NAME without ever resolving a value.
+
+    ``None`` preserves the original single-server RAT_SERVER_* contract. Supplying a mapping is an
+    explicit multi-resource path: server-specific roles do not silently fall back to the primary
+    server, which prevents credentials or endpoints from being mixed across resources.
+    """
+    if env_refs is None:
+        return dict(_LEGACY_ENV_REFS)
+    refs = dict(env_refs)
+    for role, name in refs.items():
+        if not isinstance(role, str) or not isinstance(name, str) or not _ENV_NAME_RE.fullmatch(name):
+            raise ValueError(
+                f"invalid environment reference for {role!r}: expected a bare UPPER_SNAKE name")
+    if "host" not in refs and "endpoint" in refs:
+        refs["host"] = refs["endpoint"]
+    return refs
+
+
+def load_config(env_path: str = "research_agent_teams/.env", *,
+                env_refs: Optional[Mapping[str, str]] = None) -> ServerConfig:
     _load_dotenv(env_path)
 
-    def g(k: str, default: str = "") -> str:
-        return (os.environ.get(k, default) or default).strip()
+    refs = _normalise_env_refs(env_refs)
 
-    host = g("RAT_SERVER_HOST")
+    def ref(role: str) -> str:
+        return refs.get(role, "")
+
+    def g(role: str, default: str = "") -> str:
+        name = ref(role)
+        if not name:
+            return default
+        return (os.environ.get(name, default) or default).strip()
+
+    host = g("host")
     if not host:
         raise RuntimeError(
-            "RAT_SERVER_HOST is not set — wire research_agent_teams/.env first (CLAUDE.md §6). "
+            "server host is not set through the selected resource's env references — wire "
+            "research_agent_teams/.env first (CLAUDE.md §6). "
             "Until the server is wired, the no-GPU operate flows still run; only GPU EXECUTE is gated.")
     try:
-        port = int(g("RAT_SERVER_PORT", "22") or "22")
+        port = int(g("port", "22") or "22")
     except ValueError:
         port = 22
+    connect_host = g("connect_host")
+    if connect_host:
+        try:
+            ipaddress.ip_address(connect_host)
+        except ValueError as exc:
+            raise RuntimeError(
+                "RAT_SERVER_CONNECT_HOST must be an IP literal. Keep RAT_SERVER_HOST as the "
+                "canonical hostname used for pinned host-key verification."
+            ) from exc
     return ServerConfig(
         host=host,
         port=port,
-        user=g("RAT_SERVER_USER"),
-        workdir=g("RAT_REMOTE_WORKDIR"),
-        python=g("RAT_REMOTE_PYTHON", "python3") or "python3",
-        conda_env=g("RAT_REMOTE_CONDA_ENV"),
-        conda_sh=g("RAT_REMOTE_CONDA_SH"),
-        scheduler=g("RAT_SCHEDULER"),
-        results_pull_dir=g("RAT_RESULTS_PULL_DIR", "runs") or "runs",
-        known_hosts=g("RAT_SERVER_KNOWN_HOSTS"),
-        has_password=bool(g("RAT_SERVER_PASSWORD")),
-        has_ssh_key=bool(g("RAT_SERVER_SSH_KEY")),
+        user=g("user"),
+        workdir=g("remote_workdir"),
+        python=g("python", "python3") or "python3",
+        conda_env=g("conda_env"),
+        conda_sh=g("conda_sh"),
+        scheduler=g("scheduler"),
+        results_pull_dir=g("results_pull_dir", "runs") or "runs",
+        known_hosts=g("known_hosts"),
+        has_password=bool(g("password")),
+        has_ssh_key=bool(g("ssh_key")),
+        password_env=ref("password"),
+        ssh_key_env=ref("ssh_key"),
+        connect_host=connect_host,
     )
 
 
@@ -96,4 +165,7 @@ def redacted_summary(cfg: ServerConfig) -> dict:
         "scheduler": cfg.scheduler or "(none — tmux/nohup)",
         "auth": "password" if cfg.has_password else ("ssh-key" if cfg.has_ssh_key else "NONE-set"),
         "results_pull_dir": cfg.results_pull_dir,
+        "connection_route": (
+            "direct-ip/canonical-host-key" if cfg.connect_host else "canonical-host"
+        ),
     }

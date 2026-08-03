@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/manuscript_evidence_slice.schema.json",
+  "title": "Manuscript Evidence Slice",
+  "description": "Closed, hash-bound evidence admission slice for a frozen manuscript snapshot. It carries only safe references, exact source digests, frozen result receipts, and bibliography identities admitted by manuscript-evidence-steward.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "evidence_slice_id",
+    "worker_role",
+    "authorization_receipt",
+    "manuscript_snapshot_sha256",
+    "claim_evidence_map_ref",
+    "claim_evidence_map_sha256",
+    "evidence_refs",
+    "result_refs",
+    "bibliography",
+    "evidence_slice_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0"
+    },
+    "evidence_slice_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "worker_role": {
+      "const": "manuscript-evidence-steward"
+    },
+    "authorization_receipt": {
+      "$ref": "#/$defs/authorization_receipt"
+    },
+    "manuscript_snapshot_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "claim_evidence_map_ref": {
+      "$ref": "#/$defs/safe_ref"
+    },
+    "claim_evidence_map_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence_ref"
+      }
+    },
+    "result_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/result_ref"
+      }
+    },
+    "bibliography": {
+      "$ref": "#/$defs/bibliography"
+    },
+    "evidence_slice_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonempty": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "safe_ref": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^\\u0000-\\u001f]+$"
+    },
+    "authorization_receipt": {
+      "type": "object",
+      "required": [
+        "ref",
+        "sha256",
+        "worker_role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "worker_role": {
+          "const": "manuscript-evidence-steward"
+        }
+      }
+    },
+    "evidence_ref": {
+      "type": "object",
+      "required": [
+        "ref",
+        "sha256",
+        "source_kind",
+        "claim_support"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_kind": {
+          "type": "string",
+          "enum": [
+            "LOCAL_FULL_TEXT",
+            "LOCAL_NOTE",
+            "VENUE_RULE",
+            "DATASET_CARD",
+            "OTHER_LOCAL"
+          ]
+        },
+        "claim_support": {
+          "type": "string",
+          "enum": [
+            "EXACT_SPAN",
+            "CLAIM_LEVEL",
+            "NONCITABLE_CONTEXT"
+          ]
+        }
+      }
+    },
+    "result_ref": {
+      "type": "object",
+      "required": [
+        "ref",
+        "sha256",
+        "status",
+        "receipt_ref",
+        "receipt_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "status": {
+          "const": "FROZEN"
+        },
+        "receipt_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "bibliography": {
+      "type": "object",
+      "required": [
+        "style",
+        "entries"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "style": {
+          "$ref": "#/$defs/identifier"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/bibliography_entry"
+          }
+        }
+      }
+    },
+    "bibliography_entry": {
+      "type": "object",
+      "required": [
+        "citation_key",
+        "source_ref",
+        "source_sha256",
+        "identity_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "citation_key": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9:_-]*$"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "identity_status": {
+          "type": "string",
+          "enum": [
+            "VERIFIED",
+            "UNVERIFIED"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,350 @@
+{
+  "schema_version": "research-capability-overlay-stage-b-requests/v1",
+  "holdout_from_stage_a": true,
+  "blinding_salt": "stage-b-v1-20260731-holdout-freeze",
+  "stage_a_prompt_sha256": [
+    "267b1a13e59b72947de3a72f0ff3f6a811f36d12faed99afaf95ce7641769c69",
+    "733615dceb7c5b5da2b268d39c897c821374ba5f5ab7bce660385bc977e18d9c",
+    "376a5a28dcd860a566cb20172d55c5a3bdc1e7c413ff1e17588758b17cfa5d20",
+    "75446e753bebec82359e633a04afa5de7223278abee675dcd9fff3a3ff903993",
+    "00ec937d2bbae71e599c430d7066ab32636f12e85c827918ce5940dc1b95084f"
+  ],
+  "preregistration": {
+    "minimum_pairs": 20,
+    "judge_count": 3,
+    "judge_aggregation": "mean_per_request_per_candidate",
+    "primary_score": "sum_Q1_to_Q8_then_mean_three_judges",
+    "minimum_mean_difference_points": 1.0,
+    "missing_score_policy": "FAIL",
+    "tie_rule": "equal_after_three_judge_mean",
+    "core_dimensions": ["Q1", "Q3", "Q4", "Q6"],
+    "core_non_degradation_floor": 0.0,
+    "confidence_level": 0.95,
+    "bootstrap_method": "paired_case_percentile",
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 20260731,
+    "permutation_method": "exact_sign_flip_for_20_pairs",
+    "agreement_metric": "raw_exact_winner_agreement_fraction",
+    "failure_disclosure": "ALL_CASES"
+  },
+  "requests": [
+    {
+      "request_id": "HB-01",
+      "domain": "medical_imaging",
+      "task_type": "experiment_design",
+      "expected_mode": "design_experiment",
+      "publication_kind": "manuscript_methods",
+      "request_text": "Design a patient-level experiment for a PET/CT residual-correction model. Separate the independent analysis unit from slice-level episodes, pre-register a primary estimand and falsifier, and prevent test-label access during model or prompt selection.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB01-A", "claim": "Multiple episodes may arise from one patient.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB01-B", "claim": "The expected effect size is known.", "evidence_status": "UNKNOWN"}
+        ],
+        "constraints": ["patient-level split", "no post-hoc endpoint switching"]
+      }
+    },
+    {
+      "request_id": "HB-02",
+      "domain": "molecular_biology",
+      "task_type": "experiment_design",
+      "expected_mode": "design_experiment",
+      "request_text": "Plan a perturbation study testing whether a candidate regulator changes stress-response recovery. Distinguish causal hypothesis from observable prediction, include batch and plate effects, and state what result would falsify the mechanism.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB02-A", "claim": "Pilot observations are from two plates in one batch.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB02-B", "claim": "The regulator directly binds the target.", "evidence_status": "UNVERIFIED"}
+        ],
+        "constraints": ["batch is not a biological replicate", "blind image quantification"]
+      }
+    },
+    {
+      "request_id": "HB-03",
+      "domain": "ml_systems",
+      "task_type": "experiment_design",
+      "expected_mode": "design_experiment_minimal",
+      "request_text": "Create a minimal but decisive benchmark for a cache-aware inference scheduler. Define workload unit, latency and quality estimands, paired comparisons under equal hardware budgets, and a negative control that detects benchmark-specific tuning.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB03-A", "claim": "Two schedulers can be replayed on identical traces.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB03-B", "claim": "Production traffic is stationary.", "evidence_status": "CONFLICTED"}
+        ],
+        "constraints": ["same accelerator", "same model weights", "report tail latency"]
+      }
+    },
+    {
+      "request_id": "HB-04",
+      "domain": "cognitive_science",
+      "task_type": "ideation",
+      "expected_mode": "new_direction",
+      "request_text": "Propose a testable research direction connecting uncertainty monitoring to adaptive hint timing in human-AI collaboration. Keep the analogy separate from evidence and expose one discriminating prediction against a simpler workload explanation.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB04-A", "claim": "Adaptive hints can change task completion time.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB04-B", "claim": "Metacognitive uncertainty is the causal mediator.", "evidence_status": "UNVERIFIED"}
+        ],
+        "constraints": ["no novelty claim without search", "include alternative explanation"]
+      }
+    },
+    {
+      "request_id": "HB-05",
+      "domain": "control_robotics",
+      "task_type": "ideation",
+      "expected_mode": "deep_ideation",
+      "request_text": "Explore whether control-theoretic hysteresis can inspire safer intervention timing for a shared-control robot. Produce an explicit source-to-target mapping, name broken assumptions, and define a negative-transfer test before suggesting an implementation.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB05-A", "claim": "Hysteresis suppresses rapid switching in a specified controller.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB05-B", "claim": "Human intent obeys the same stationarity assumptions.", "evidence_status": "UNVERIFIED"}
+        ],
+        "constraints": ["simulation first", "no safety certification claim"]
+      }
+    },
+    {
+      "request_id": "HB-06",
+      "domain": "ecology",
+      "task_type": "ideation",
+      "expected_mode": "new_direction",
+      "request_text": "Generate a research direction for detecting regime shifts from sparse ecological monitoring. Contrast a mechanistic early-warning hypothesis with a descriptive forecasting baseline and identify what observation would invalidate the proposed mechanism.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB06-A", "claim": "Sampling intervals differ across sites.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB06-B", "claim": "Rising autocorrelation always precedes a shift.", "evidence_status": "CONFLICTED"}
+        ],
+        "constraints": ["site is the analysis unit", "disclose missingness"]
+      }
+    },
+    {
+      "request_id": "HB-07",
+      "domain": "biomedicine",
+      "task_type": "evidence_synthesis",
+      "expected_mode": "evidence_deep",
+      "request_text": "Synthesize the frozen evidence about whether a biomarker is prognostic or merely correlated with treatment allocation. Keep source quality, contradiction, population, endpoint, and claim strength explicit; do not infer causality from the packet.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB07-A", "claim": "A retrospective cohort reports an adjusted association.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB07-B", "claim": "A small prospective cohort reports no association.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB07-C", "claim": "Randomized evidence establishes causality.", "evidence_status": "UNKNOWN"}
+        ],
+        "constraints": ["preserve contradiction", "no pooled effect without compatible estimands"]
+      }
+    },
+    {
+      "request_id": "HB-08",
+      "domain": "materials_science",
+      "task_type": "evidence_synthesis",
+      "expected_mode": "deep_research",
+      "request_text": "Map competing explanations for improved fatigue life in a composite from the supplied source claims. Separate processing, microstructure, and measurement artifacts, and identify the evidence needed to discriminate among mechanisms.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB08-A", "claim": "Study A changes cure cycle and reinforcement together.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB08-B", "claim": "Study B uses a different fatigue endpoint.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB08-C", "claim": "One mechanism is uniquely established.", "evidence_status": "UNVERIFIED"}
+        ],
+        "constraints": ["do not merge incompatible endpoints", "rank discriminating tests"]
+      }
+    },
+    {
+      "request_id": "HB-09",
+      "domain": "llm_safety",
+      "task_type": "evidence_synthesis",
+      "expected_mode": "evidence_deep",
+      "request_text": "Audit evidence for a claimed reduction in unsafe model behavior. Track evaluation-set contamination, judge dependence, confidence intervals, subgroup failures, and whether the result supports the advertised safety claim.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB09-A", "claim": "The reported aggregate score improves on one benchmark.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB09-B", "claim": "Judge prompts overlap with development prompts.", "evidence_status": "CONFLICTED"},
+          {"source_ref": "SRC-HB09-C", "claim": "Real-world harm is reduced.", "evidence_status": "UNVERIFIED"}
+        ],
+        "constraints": ["no deployment-safety certification", "report subgroup regressions"]
+      }
+    },
+    {
+      "request_id": "HB-10",
+      "domain": "drug_discovery",
+      "task_type": "evidence_synthesis",
+      "expected_mode": "deep_research",
+      "request_text": "Build a bounded landscape of evidence for a target-selection hypothesis using only the frozen claims. Distinguish genetic support, assay evidence, animal evidence, and clinical relevance; surface contradictions and missing translational links.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB10-A", "claim": "A genetic association exists in one ancestry group.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB10-B", "claim": "Cell assays show pathway modulation at high concentration.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB10-C", "claim": "Clinical efficacy follows from these findings.", "evidence_status": "UNVERIFIED"}
+        ],
+        "constraints": ["no unsupported translational leap", "state population limits"]
+      }
+    },
+    {
+      "request_id": "HB-11",
+      "domain": "medical_imaging",
+      "task_type": "repo_audit",
+      "expected_mode": "repo_code_audit",
+      "publication_kind": "manuscript_methods",
+      "request_text": "Audit a hypothetical medical-imaging repository contract for patient-level split integrity, DICOM geometry preservation, preprocessing lineage, checkpoint provenance, and train-versus-test entry-point parity. Return missing evidence as blockers.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB11-A", "claim": "The split file lists study identifiers but not patient identifiers.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB11-B", "claim": "Orientation checks are implemented.", "evidence_status": "UNKNOWN"}
+        ],
+        "constraints": ["read-only audit", "no code execution", "no de-identification certification"]
+      }
+    },
+    {
+      "request_id": "HB-12",
+      "domain": "ml_systems",
+      "task_type": "result_verification",
+      "expected_mode": "verify_result",
+      "request_text": "Verify a claimed throughput improvement from frozen summary records. Require raw-result binding, paired workload comparability, uncertainty, failure disclosure, and a calibrated claim that cannot exceed the supplied evidence.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB12-A", "claim": "Summary means are available for both systems.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB12-B", "claim": "Raw per-trace measurements are hash-bound.", "evidence_status": "UNKNOWN"},
+          {"source_ref": "SRC-HB12-C", "claim": "Hardware and model versions are identical.", "evidence_status": "CONFLICTED"}
+        ],
+        "constraints": ["no result validation without raw binding", "list every failed gate"]
+      }
+    },
+    {
+      "request_id": "HB-13",
+      "domain": "biostatistics",
+      "task_type": "power_review",
+      "expected_mode": "power_analysis_review",
+      "request_text": "Review a planned clustered longitudinal study whose draft power calculation treats every measurement as independent. Correct the analysis unit, state the estimand and plausible sensitivity range, and identify decisions that cannot be resolved from the packet.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB13-A", "claim": "Ten measurements are expected per participant.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB13-B", "claim": "Intraclass correlation is 0.05.", "evidence_status": "UNVERIFIED"},
+          {"source_ref": "SRC-HB13-C", "claim": "Attrition is negligible.", "evidence_status": "UNKNOWN"}
+        ],
+        "constraints": ["no fabricated effect size", "show sensitivity assumptions"]
+      }
+    },
+    {
+      "request_id": "HB-14",
+      "domain": "general_science",
+      "task_type": "manuscript_review",
+      "expected_mode": "manuscript_review",
+      "publication_kind": "manuscript_review",
+      "request_text": "Review a manuscript package with a strong abstract but incomplete raw-result provenance. Score contribution, validity, statistics, reproducibility, figures, citations, ethics, and claim calibration separately before giving bounded rebuttal advice.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB14-A", "claim": "The abstract claims broad superiority.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB14-B", "claim": "Two comparison baselines use different data splits.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB14-C", "claim": "Raw result files are available.", "evidence_status": "UNKNOWN"}
+        ],
+        "constraints": ["independent review axes", "do not simulate a venue decision"]
+      }
+    },
+    {
+      "request_id": "HB-15",
+      "domain": "medical_ai",
+      "task_type": "manuscript_authoring",
+      "expected_mode": "manuscript_authoring",
+      "publication_kind": "manuscript_methods",
+      "request_text": "Draft a Methods-section contract for a multimodal correction model from the frozen module inventory. For every block state motivation, interface-level mechanism, implementation requirement, and supporting experiment, while preserving all unimplemented items as gaps.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB15-A", "claim": "Image, state mask, and structured intent are declared inputs.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB15-B", "claim": "Cross-attention is implemented and tested.", "evidence_status": "UNKNOWN"}
+        ],
+        "constraints": ["no invented implementation", "separate method from evidence"]
+      }
+    },
+    {
+      "request_id": "HB-16",
+      "domain": "scientific_visualization",
+      "task_type": "figure_design",
+      "expected_mode": "analysis_audit_panel",
+      "publication_kind": "quantitative_figure",
+      "request_text": "Specify and audit a quantitative figure comparing four methods across repeated patient-level folds. Freeze source data, analysis unit, uncertainty, panel intent, caption claims, accessibility, dimensions, font, and DPI before rendering.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB16-A", "claim": "Fold-level values are repeated measurements over overlapping training sets.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB16-B", "claim": "Slice-level standard error is an appropriate uncertainty measure.", "evidence_status": "CONFLICTED"}
+        ],
+        "constraints": ["do not invent values", "caption cannot exceed analysis"]
+      }
+    },
+    {
+      "request_id": "HB-17",
+      "domain": "scientific_communication",
+      "task_type": "diagram_design",
+      "expected_mode": "manuscript_authoring",
+      "publication_kind": "scientific_diagram",
+      "request_text": "Create a reviewed declarative specification for an offline scientific workflow diagram. Separate data, model, evaluation, and human gates, bind each node to a source or declared design decision, and define export QA without calling any live rendering backend.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB17-A", "claim": "The workflow contains design, execution, analysis, and verification stages.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB17-B", "claim": "A live browser renderer is required.", "evidence_status": "CONFLICTED"}
+        ],
+        "constraints": ["offline adapter only", "no MCP or auto-update", "review graph before rendering"]
+      }
+    },
+    {
+      "request_id": "HB-18",
+      "domain": "ai_for_science",
+      "task_type": "venue_readiness",
+      "expected_mode": "venue_readiness",
+      "publication_kind": "manuscript_review",
+      "request_text": "Assess venue readiness for a first paper whose design is frozen but whose external validation is incomplete. Re-check manuscript and venue-profile freshness, separate scientific blockers from presentation repairs, and leave the publish decision to the director.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB18-A", "claim": "Internal experiments and their receipts are complete.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB18-B", "claim": "External validation is complete.", "evidence_status": "UNKNOWN"},
+          {"source_ref": "SRC-HB18-C", "claim": "The venue profile predates the latest manuscript edit.", "evidence_status": "SUPPORTED"}
+        ],
+        "constraints": ["no submission action", "stale review cannot authorize readiness"]
+      }
+    },
+    {
+      "request_id": "HB-19",
+      "domain": "statistics",
+      "task_type": "negative_result_analysis",
+      "expected_mode": "analysis_audit_panel",
+      "request_text": "Audit a negative primary result with several positive subgroup findings. Preserve the pre-registered estimand, account for multiplicity and clustering, distinguish absence of evidence from evidence of absence, and constrain every claim to a named analysis.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB19-A", "claim": "The primary comparison is non-significant with a wide interval.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB19-B", "claim": "Eight subgroups were inspected after unblinding.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB19-C", "claim": "The intervention is equivalent to control.", "evidence_status": "UNVERIFIED"}
+        ],
+        "constraints": ["all subgroup analyses are exploratory", "report uncertainty"]
+      }
+    },
+    {
+      "request_id": "HB-20",
+      "domain": "interdisciplinary_methods",
+      "task_type": "mechanism_translation",
+      "expected_mode": "deep_ideation",
+      "publication_kind": "manuscript_methods",
+      "request_text": "Evaluate a proposal to borrow predictive-coding ideas for an adaptive scientific annotation tool. Return a compact evidence matrix covering source reference, borrowed principle, target mapping, preserved and broken assumptions, evidence status, prior-art collision status, and a falsifier; unsupported links must stay unverified.",
+      "source_packet": {
+        "status": "SYNTHETIC_FROZEN_FIXTURE",
+        "source_refs": [
+          {"source_ref": "SRC-HB20-A", "claim": "A frozen conceptual source describes prediction-error updating in a bounded setting.", "evidence_status": "SUPPORTED"},
+          {"source_ref": "SRC-HB20-B", "claim": "The principle transfers unchanged to human annotation behavior.", "evidence_status": "UNVERIFIED"},
+          {"source_ref": "SRC-HB20-C", "claim": "No prior annotation system uses an equivalent mechanism.", "evidence_status": "UNKNOWN"}
+        ],
+        "constraints": ["do not equate analogy with evidence", "do not claim novelty without collision search"]
+      }
+    }
+  ]
+}

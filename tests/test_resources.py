@@ -2,7 +2,10 @@
 that the registry stores secret REFERENCES (env-var names) only, never values."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from research_agent_teams.tools import resources as rp
 
@@ -22,6 +25,9 @@ resources:
   - resource_id: srv.y
     type: hardware.ssh_server
     endpoint_ref: RAT_Y_HOST
+    port_ref: RAT_Y_PORT
+    remote_workdir_ref: RAT_Y_WORKDIR
+    known_hosts_ref: RAT_Y_KNOWN_HOSTS
     secret_refs: {host: RAT_Y_HOST, password: RAT_Y_PASS}
     capabilities: [query_status, submit_job]
 """
@@ -70,6 +76,19 @@ def test_load_registry_indexes_by_id(pool):
     reg = rp.load_registry(str(pool / "resources"))
     assert set(reg) == {"api.x", "srv.y"}
     assert reg["api.x"]["scope"] == "shared"            # defaulted
+
+
+def test_connection_env_refs_are_resource_specific(pool):
+    reg = rp.load_registry(str(pool / "resources"))
+    refs = rp.connection_env_refs(reg["srv.y"])
+    assert refs == {
+        "host": "RAT_Y_HOST",
+        "password": "RAT_Y_PASS",
+        "endpoint": "RAT_Y_HOST",
+        "port": "RAT_Y_PORT",
+        "remote_workdir": "RAT_Y_WORKDIR",
+        "known_hosts": "RAT_Y_KNOWN_HOSTS",
+    }
 
 
 def test_registry_rejects_a_secret_value_in_a_ref(tmp_path):
@@ -155,3 +174,94 @@ def test_real_shipped_pool_validates(monkeypatch):
     # submit_job (live execute) is NOT policy-allowed — stays gated
     ok2, _, _ = rp.policy_allows(pol, "server.honor.gpu", "submit_job", "iac-cbct-seg")
     assert ok2 is False
+
+
+def test_real_bdav_3090_director_resolution_still_requires_live_execution_admission(monkeypatch):
+    """A director-reported fix cannot expose values or silently grant execute access."""
+    monkeypatch.delenv("RAT_RESOURCES_ROOT", raising=False)
+    reg = rp.load_registry()
+    pol = rp.load_policy()
+    resource = reg["server.usyd.bdav_z390_3090"]
+
+    assert resource["status"] == "director_reported_resolved_reverification_pending"
+    assert resource["execution_ready"] is False
+    assert resource["execution_status"] == (
+        "director_reported_resolved_live_reverification_pending"
+    )
+    assert resource["execution_blockers"] == ["live_execution_admission_not_reverified"]
+    assert resource["known_hosts_ref"] == "RAT_BDAV_Z390_KNOWN_HOSTS"
+    assert resource["connect_host_ref"] == "RAT_BDAV_Z390_CONNECT_HOST"
+    refs = rp.connection_env_refs(resource)
+    assert refs["host"] == "RAT_BDAV_Z390_HOST"
+    assert refs["user"] == "RAT_BDAV_Z390_USER"
+    assert refs["password"] == "RAT_BDAV_Z390_PASSWORD"
+    assert refs["known_hosts"] == "RAT_BDAV_Z390_KNOWN_HOSTS"
+    assert refs["connect_host"] == "RAT_BDAV_Z390_CONNECT_HOST"
+
+    for capability in ("query_status", "pull_logs"):
+        allowed, _, rule = rp.policy_allows(
+            pol, resource["resource_id"], capability, "petct-residual-correction"
+        )
+        assert allowed is True
+        assert rule["requires_human_approval"] is True
+    denied, _, _ = rp.policy_allows(
+        pol, resource["resource_id"], "submit_job", "petct-residual-correction"
+    )
+    assert denied is False
+
+    pkg_root = Path(rp.__file__).resolve().parents[1]
+    bindings = rp.load_bindings(pkg_root / "projects", "petct-residual-correction")
+    primary = rp.binding_for(bindings, "primary_gpu")
+    assert primary["resource_ref"] == "server.honor.gpu"
+    binding = rp.binding_for(bindings, "secondary_gpu")
+    assert binding["resource_ref"] == resource["resource_id"]
+    assert binding["allowed_capabilities"] == ["query_status", "pull_logs"]
+    assert binding["allowed_skills"] == ["server-query"]
+    assert binding["requires_human_approval"] is True
+
+
+def test_bdav_3090_preflight_keeps_transport_separate_from_readiness():
+    """A DNS/TCP check must not be promoted into authenticated, GPU, or execute readiness."""
+    pkg_root = Path(rp.__file__).resolve().parents[1]
+    path = (
+        pkg_root
+        / "resources"
+        / "verification"
+        / "server.usyd.bdav_z390_3090-preflight-2026-07-31.yaml"
+    )
+    evidence = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert evidence["verification_state"] == "read_only_verified_execution_blocked"
+    assert evidence["secret_material_recorded"] is False
+    assert evidence["trust_gate"]["expected_fingerprint_from_trusted_out_of_band_channel"] is None
+    offline = evidence["historical_offline_verification"]
+    assert offline["secret_store_inspected"] is False
+    assert offline["ssh_authentication_attempted"] is False
+    assert offline["ssh_session_opened"] is False
+    assert offline["server_write_attempted"] is False
+    assert offline["direct_tcp_22_observed_reachable"] is True
+    assert offline["decision"] == "remain_credential_recovery_required"
+
+    live = evidence["fresh_authenticated_read_only_inventory"]
+    assert live["credential_value_observed_or_recorded"] is False
+    assert live["strict_host_key_verification"] is True
+    assert live["gpu_inventory"][0]["model"] == "NVIDIA GeForce RTX 3090"
+    assert live["gpu_inventory"][1]["model"] == "NVIDIA GeForce GTX 1080 Ti"
+    assert live["disk"]["reported_use_percent"] == 100
+    assert live["conda"]["project_environment_verified"] is False
+    assert live["scheduler"]["slurm_usable"] is False
+    assert live["decision"] == "READ_ONLY_VERIFIED_EXECUTION_BLOCKED"
+
+    plan = evidence["recovery_and_first_inventory_plan"]
+    assert plan["state"] == "COMPLETED_THROUGH_INV1_READ_ONLY_VERIFIED_EXECUTION_BLOCKED"
+    assert "submit_job_remains_default_denied" in plan["hard_invariants"]
+    steps = {step["id"]: step for step in plan["steps"]}
+    assert list(steps) == ["CR-1", "TRUST-1", "LOCAL-1", "INV-1", "POST-1"]
+    assert steps["LOCAL-1"]["prerequisites"] == ["CR-1", "TRUST-1"]
+    assert "explicit_live_query_authorization" in steps["INV-1"]["prerequisites"]
+    assert "job_submission" in steps["INV-1"]["prohibited_actions"]
+    assert steps["INV-1"]["status"] == "PASS_READ_ONLY"
+    assert evidence["governance"]["submit_job"] == "default_denied"
+    admission = evidence["execution_admission_plan"]
+    assert admission["state"] == "BLOCKED"
+    assert admission["current_transition"] == "retain_query_status_and_pull_logs_only"

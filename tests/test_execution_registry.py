@@ -9,13 +9,14 @@ import json
 
 import pytest
 
-from research_agent_teams.operate import cli
+from research_agent_teams.operate import cli, spine
 from research_agent_teams.tools import execution_registry as exreg
 from research_agent_teams.tools.runstore import (
     STAGES,
     checkpoint_stage,
     create_run,
     find_run_dir,
+    mark_gate_pending,
     record_gate,
 )
 
@@ -70,11 +71,36 @@ def test_stage_readiness_after_commit(design_run):
     assert an["status"] == "needs_prior" and an["missing"] == ["EXECUTE"]
 
 
+def test_stage_readiness_uses_frozen_sparse_mode_path(tmp_path):
+    runs = str(tmp_path / "runs")
+    plan = spine.begin(runs, "sparse-ready", "rank directions", "new_direction", TS, project="p1")
+    rd = plan["run_dir"]
+    checkpoint_stage(rd, "DISCOVER", [], "k-discover", TS,
+                     stage_path=["DISCOVER", "IDEATE", "REPORT"])
+
+    report = exreg.stage_readiness(rd, "REPORT")
+
+    assert report["ready"] is False
+    assert report["status"] == "needs_prior"
+    assert report["missing"] == ["IDEATE"]
+
+
 def test_stage_readiness_rejected_is_terminal(design_run):
     _, rd = design_run
     record_gate(rd, "DESIGN", "reject", TS, reason="veto")
     r = exreg.stage_readiness(rd, "DESIGN")
     assert r["ready"] is False and r["status"] == "rejected"
+
+
+def test_stage_readiness_refuses_next_stage_while_director_gate_is_pending(design_run):
+    _, rd = design_run
+    checkpoint_stage(rd, "DESIGN", [], "k-design", TS)
+    mark_gate_pending(rd, "DESIGN", TS, "EXECUTE")
+
+    r = exreg.stage_readiness(rd, "EXECUTE")
+
+    assert r["ready"] is False
+    assert r["status"] == "awaiting_director"
 
 
 def test_stage_readiness_unknown_stage_raises(design_run):
@@ -137,6 +163,27 @@ def test_cli_run_stage_repair_menu_exit3(tmp_path, capsys):
     code = _run_cli(["run-stage", "--runs-dir", runs, "--project", "p1", "--stage", "EXECUTE"])
     out = json.loads(capsys.readouterr().out)
     assert code == 3 and out["ready"] is False and out["missing"] == ["DESIGN"] and out["repair_actions"]
+
+
+def test_cli_approve_releases_only_a_persisted_idea_gate(tmp_path, capsys):
+    runs = str(tmp_path / "runs")
+    plan = spine.begin(runs, "idea-gate", "rank directions", "new_direction", TS, project="p1")
+    rd = plan["run_dir"]
+    checkpoint_stage(rd, "DISCOVER", [], "k-discover", TS,
+                     stage_path=["DISCOVER", "IDEATE", "REPORT"])
+    checkpoint_stage(rd, "IDEATE", [], "k-ideate", TS,
+                     stage_path=["DISCOVER", "IDEATE", "REPORT"])
+    mark_gate_pending(rd, "IDEATE", TS, "REPORT")
+
+    code = _run_cli([
+        "approve", "--runs-dir", runs, "--run-id", "idea-gate", "--stage", "IDEATE",
+        "--reason", "director selected IDEA-2 after reading the menu",
+    ])
+    out = json.loads(capsys.readouterr().out)
+
+    assert code == 0
+    assert out["status"] == "running"
+    assert out["next_stage"] == "REPORT"
 
 
 def test_cli_run_bridge_repair_then_ready(tmp_path, capsys):

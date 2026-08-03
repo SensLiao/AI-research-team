@@ -24,12 +24,23 @@
             "description": "The papers the verdict rests on (may be []). 'existence' carries the citation_existence state for the ref (the fact-check the cut depends on).",
             "items": {
               "type": "object",
-              "required": ["ref", "existence", "experimentally_validated"],
+              "required": ["ref", "existence", "experimentally_validated", "full_text_reviewed", "fulltext_snapshot_ref", "fulltext_snapshot_verified", "relationship", "same_central_claim", "same_input_output_contract", "same_causal_evaluation"],
               "additionalProperties": false,
               "properties": {
                 "ref": {"type": "string", "description": "The citation the worker named (existence-checked by the gate). May be empty only if the worker omitted it."},
                 "existence": {"type": "string", "enum": ["verified", "not_found", "lookup_error", "skipped", "EXISTS", "NONEXISTENT", "UNKNOWN"], "description": "The citation_existence state for this ref. Real states are 'verified' / 'not_found' / 'lookup_error' / 'skipped'; the design aliases EXISTS / NONEXISTENT / UNKNOWN are also accepted. A DEAD cut requires 'verified' (or 'EXISTS')."},
-                "experimentally_validated": {"type": "boolean", "description": "Whether the colliding paper actually ran / implemented the method (carried through from the worker finding / ledger row)."}
+                "experimentally_validated": {"type": "boolean", "description": "Whether the colliding paper actually ran / implemented the method (carried through from the worker finding / ledger row)."},
+                "full_text_reviewed": {"type": "boolean"},
+                "fulltext_snapshot_ref": {"type": "string"},
+                "fulltext_snapshot_verified": {"type": "boolean"},
+                "relationship": {"type": "string", "enum": ["exact_collision", "partial_component_prior", "enabling_base", "gap_source", "orthogonal", "uncertain"]},
+                "same_central_claim": {"type": "boolean"},
+                "same_input_output_contract": {"type": "boolean"},
+                "same_causal_evaluation": {"type": "boolean"},
+                "method_evidence_loci": {"type": "array", "items": {"type": "string"}},
+                "result_evidence_loci": {"type": "array", "items": {"type": "string"}},
+                "material_surviving_delta": {"type": ["boolean", "null"]},
+                "surviving_gap": {"type": "string"}
               }
             }
           },

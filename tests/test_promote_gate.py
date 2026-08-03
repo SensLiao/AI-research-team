@@ -118,9 +118,10 @@ def test_referenced_audit_outside_run_dir_is_refused(tmp_path):
     assert signals["leakage_pass"] is False        # the unverifiable audit fails closed
 
 
-def test_freeze_requires_out_of_band_authorization(monkeypatch):
+def test_freeze_accepts_explicit_director_command_or_legacy_exact_authorization(monkeypatch):
     monkeypatch.delenv("RAT_PROMOTE_AUTHORIZED", raising=False)
     assert freeze_is_authorized("rid") is False
+    assert freeze_is_authorized("rid", explicit_director_command=True) is True
     monkeypatch.setenv("RAT_PROMOTE_AUTHORIZED", "rid")
     assert freeze_is_authorized("rid") is True
     assert freeze_is_authorized("OTHER") is False   # scoped to the exact run id

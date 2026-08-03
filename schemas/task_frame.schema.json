@@ -45,6 +45,13 @@
       "items": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]},
       "description": "Optional explicit forward-only subset of stages this mode drives, starting at entry_stage and ending at REPORT. When absent, the engine drives every stage from entry_stage to REPORT (default full tail). Lets a mode express its true shape, e.g. evidence_review = [DISCOVER, REPORT] (forward-skip of experiment stages). Gated stages are never silently dropped — a director_signoff task must keep its entry stage's hard gates (router enforces)."
     },
+    "director_gate_stages": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 1,
+      "items": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]},
+      "description": "Optional immutable human decision checkpoints for a director_signoff task. When omitted, legacy frames retain the conservative every-stage sign-off policy."
+    },
     "agent_subset": {
       "type": "array",
       "items": {"type": "string", "minLength": 1},
@@ -72,7 +79,160 @@
         "product_version": {"type": "string", "minLength": 1},
         "primary_markdown": {"type": "string", "minLength": 1},
         "reusable_artifacts": {"type": "array", "items": {"type": "string", "minLength": 1}},
-        "accepts": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        "accepts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "accepts_delivery_statuses": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "Delivery states this downstream product contract explicitly accepts from an upstream run."
+        }
+      }
+    },
+    "capability_overlay_plan": {
+      "type": "object",
+      "description": "Optional immutable, metadata-only quality overlays selected by the single research-orchestrator entry. Advisory only: they cannot alter mode, workers, stages, gates, budget, network access, external execution, or vault permissions. Legacy task frames may omit this field.",
+      "additionalProperties": false,
+      "required": ["contract_version", "mode_source", "mode_status", "one_button_operable", "external_skill_execution", "network_access", "vault_write", "forbidden_actions", "overlays"],
+      "properties": {
+        "contract_version": {"const": "research-capability-route/v1"},
+        "mode_source": {"type": "string", "enum": ["manual_override", "automatic_suggestion"]},
+        "mode_status": {"type": "string", "enum": ["operated", "spec_only"]},
+        "one_button_operable": {"type": "boolean"},
+        "external_skill_execution": {"const": false},
+        "network_access": {"const": false},
+        "vault_write": {"const": false},
+        "forbidden_actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "enum": ["installer", "hook", "mcp", "auto_update", "whole_repo_execution"]}
+        },
+        "overlays": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["overlay_id", "title", "guidance", "target_stages", "selection_reasons", "allowed_use", "non_goals", "provenance"],
+            "properties": {
+              "overlay_id": {"type": "string", "minLength": 1},
+              "title": {"type": "string", "minLength": 1},
+              "guidance": {"type": "string", "minLength": 1},
+              "target_stages": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]}
+              },
+              "selection_reasons": {"type": "array", "items": {"type": "string", "minLength": 1}},
+              "allowed_use": {"type": "string", "minLength": 1},
+              "non_goals": {"type": "array", "items": {"type": "string", "minLength": 1}},
+              "provenance": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["source_id", "repository", "commit", "license_status", "admission"],
+                  "properties": {
+                    "source_id": {"type": "string", "minLength": 1},
+                    "repository": {"type": "string", "pattern": "^https://github\\.com/"},
+                    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                    "snapshot_dir": {"type": "string", "minLength": 1},
+                    "skill_count": {"type": "integer", "minimum": 1},
+                    "license_status": {"type": "string", "minLength": 1},
+                    "license_spdx": {"type": "string", "minLength": 1},
+                    "license_file": {"type": ["string", "null"]},
+                    "copy_policy": {"type": "string", "minLength": 1},
+                    "commercial_use_policy": {"type": "string", "minLength": 1},
+                    "attribution_required": {"type": "boolean"},
+                    "admission": {"type": "string", "minLength": 1},
+                    "selectable": {"const": true},
+                    "implementation_status": {
+                      "type": "string",
+                      "enum": ["guidance_only", "planned_adapter", "rejected"]
+                    },
+                    "source_artifacts": {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["path", "sha256", "role"],
+                        "properties": {
+                          "path": {"type": "string", "minLength": 1},
+                          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                          "role": {"type": "string", "minLength": 1}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mechanism_council_plan": {
+      "type": "object",
+      "description": "Optional immutable advisory council selection from the single capability route. It records a host-native dispatch plan only; it is not evidence that any role ran and it cannot modify the operated mode or experiment matrix.",
+      "additionalProperties": false,
+      "required": ["contract_version", "enabled", "selection_source", "signal_hits", "selected_roles", "auto_added_dependencies", "waves", "truth_boundary"],
+      "properties": {
+        "contract_version": {"const": "mechanism-council/v1"},
+        "enabled": {"type": "boolean"},
+        "selection_source": {"enum": ["automatic_signal_groups", "manual_override", "manual_force_on", "manual_force_off"]},
+        "signal_hits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          }
+        },
+        "selected_roles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["mathematical_formalizer", "domain_reality_auditor", "cognitive_intent_modeler", "curriculum_design_specialist", "research_engineering_planner", "causal_mechanism_critic", "hypothesis_compiler"]}
+        },
+        "auto_added_dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["mathematical_formalizer", "domain_reality_auditor", "cognitive_intent_modeler", "curriculum_design_specialist", "research_engineering_planner", "causal_mechanism_critic", "hypothesis_compiler"]}
+        },
+        "waves": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"enum": ["mathematical_formalizer", "domain_reality_auditor", "cognitive_intent_modeler", "curriculum_design_specialist", "research_engineering_planner", "causal_mechanism_critic", "hypothesis_compiler"]}
+          }
+        },
+        "truth_boundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["advisory_only", "may_create_results", "may_claim_novelty", "unverified_external_fact_status", "required_final_chain"],
+          "properties": {
+            "advisory_only": {"const": true},
+            "may_create_results": {"const": false},
+            "may_claim_novelty": {"const": false},
+            "unverified_external_fact_status": {"const": "UNVERIFIED"},
+            "required_final_chain": {
+              "type": "array",
+              "prefixItems": [
+                {"const": "hypothesis"},
+                {"const": "mechanism"},
+                {"const": "falsifiable_experiment"}
+              ],
+              "items": false,
+              "minItems": 3,
+              "maxItems": 3
+            }
+          }
+        }
       }
     },
     "domain_profile_ref": {

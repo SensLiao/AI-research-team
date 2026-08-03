@@ -50,7 +50,35 @@ def test_dry_run_walks_full_spine_to_done(tmp_path):
     run_dir = runs / "r1"
     assert verify_chain(read_events(run_dir / "ledger.jsonl")) == []   # tamper-proof history intact
     assert classify_status(run_dir) == "done"
-    assert len(read_logs(run_dir / "obs.jsonl")) == 2                  # every driven stage observed
+    logs = read_logs(run_dir / "obs.jsonl")
+    assert len(logs) == 2                                              # every driven stage observed
+    assert all(row["runtime_observation_status"] == "unobserved" for row in logs)
+    assert all(row["runtime_binding_source"] in {"none", "deployment_environment"} for row in logs)
+    assert all("cost_tokens" not in row for row in logs)              # no provider usage reached engine
+
+
+def test_engine_checkpoints_sparse_mode_path_without_inventing_design(tmp_path):
+    runs = tmp_path / "runs"
+    run_task(runs, "sparse-path", "find a falsifiable direction", "new_direction", TS,
+             _note_agent, _approve, budget_override={"max_agent_hops": 10})
+
+    events = read_events(runs / "sparse-path" / "ledger.jsonl")
+    boundaries = [event["payload"] for event in events if event["event_type"] == "boundary"]
+
+    assert boundaries == [
+        {"completed_stage": "DISCOVER", "next": "IDEATE"},
+        {"completed_stage": "IDEATE", "next": "REPORT"},
+        {"completed_stage": "REPORT", "next": None},
+    ]
+
+
+def test_engine_refuses_to_default_approve_a_missing_director_decision(tmp_path):
+    runs = tmp_path / "runs"
+
+    with pytest.raises(RuntimeError, match="director decision required"):
+        run_task(runs, "missing-gate-decision", "find a falsifiable direction", "new_direction", TS,
+                 _note_agent, lambda stage, task_frame: None,
+                 budget_override={"max_agent_hops": 10})
 
 
 def test_resume_after_crash_completes(tmp_path):

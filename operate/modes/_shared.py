@@ -22,6 +22,8 @@ test-injection point for the network-facing gate (run_dets signatures stay CLI-f
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -30,14 +32,16 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 import yaml
 
 from ..artifacts import GateBlock, write_artifact
+from ..output_versions import resolve_effective_output
 from ...tools.citation_existence import ExistenceCache, build_existence_verdict
 from ...tools.drift_gate import build_verdict as _build_drift_verdict
 from ...tools.idea_dedup import lexical_similarity
 from ...tools.novelty_collision import SOURCE_WORKER, VERDICT_DEAD, build_collision_verdict
 from ...tools import project_memory as _pm
-from ...tools.paper_search import no_semantic_neighbor_found, search, write_search_bundle
+from ...tools.paper_search import no_semantic_neighbor_found, search_many, write_search_bundle
+from ...tools.schema_normalizer import normalize_payload, write_report
 from ...tools.scope_guard import discover_vault_root
-from ...tools.validate_artifact import PROFILE_DIR
+from ...tools.validate_artifact import PROFILE_DIR, validate_payload
 
 # Test-injection point for the live existence checker. Production leaves it None (real network;
 # a dead network degrades to lookup_error WARNINGS — never a false BLOCK, never silently verified).
@@ -68,6 +72,273 @@ _SLUG_REF_RE = re.compile(r"^\[\[([a-z0-9]+(?:-[a-z0-9]+)*)\]\]$")
 _INTERNAL_ID_RE = re.compile(r"^(GAP|IH|IDEA|EV|FW|conf|c)[-_]?\d+$")
 
 NEGATIVE_RESULT_SIM_THRESHOLD = 0.45
+
+_WORKER_BUNDLE_WRAPPERS = ("payload", "result", "data")
+_WORKER_FAILURE_STATES = {
+    "error", "failed", "failure", "blocked", "cancelled", "canceled",
+    "timeout", "timed_out",
+}
+
+
+def _present_error(value) -> bool:
+    return value not in (None, False, "", [], {})
+
+
+def _worker_failure(mapping: dict, location: str) -> Optional[str]:
+    """Return a readable failure receipt for an execution envelope, if any.
+
+    A scientific payload may legitimately contain a status-like field, so a
+    failed ``status`` is considered an execution failure only when it is paired
+    with error-envelope detail.  Explicit ``error`` and ``ok/success=false``
+    receipts are unambiguous on their own.
+    """
+    explicit_error = next(
+        (
+            mapping.get(field)
+            for field in ("error", "errors", "exception")
+            if _present_error(mapping.get(field))
+        ),
+        None,
+    )
+    if explicit_error is not None:
+        detail = explicit_error
+    elif mapping.get("ok") is False or mapping.get("success") is False:
+        detail = (
+            mapping.get("message") or mapping.get("reason")
+            or mapping.get("detail") or "worker returned success=false"
+        )
+    else:
+        status = str(mapping.get("status") or "").strip().casefold()
+        detail = (
+            mapping.get("message") or mapping.get("reason")
+            or mapping.get("detail")
+        )
+        if status not in _WORKER_FAILURE_STATES:
+            return None
+        if not _present_error(detail):
+            detail = f"worker status={status}"
+    if isinstance(detail, str):
+        rendered = detail.strip()
+    else:
+        rendered = json.dumps(detail, ensure_ascii=False, sort_keys=True)
+    return f"{location}: {rendered[:4000] or 'worker reported failure'}"
+
+
+def extract_worker_bundle_value(
+    bundle,
+    canonical_key: str,
+    *,
+    stage: str,
+    mode: str,
+    agent: Optional[str] = None,
+    required: bool = True,
+    default=None,
+):
+    """Extract one worker value without guessing through representation shells.
+
+    Accepted representations are either ``{canonical_key: value}`` or exactly
+    one single-level ``payload``/``result``/``data`` object containing that
+    canonical key.  A direct canonical value anchors duplicate wrapper copies:
+    byte-equivalent JSON values are accepted, while any conflict is blocked.
+    When no direct value exists, multiple wrapper candidates are ambiguous even
+    if they happen to compare equal, so the function refuses to choose.
+
+    The returned value is a deep copy.  Deterministic compatibility transforms
+    downstream can therefore never mutate the immutable worker bundle loaded
+    from disk.
+    """
+    who = f"{mode}[{agent}]" if agent else mode
+    context = f"{who} {stage}"
+    if not isinstance(bundle, dict):
+        raise GateBlock(f"{context} worker bundle is not a JSON object")
+
+    failure = _worker_failure(bundle, "<root>")
+    if failure:
+        raise GateBlock(f"{context} worker failure envelope: {failure}")
+
+    wrapper_candidates = []
+    malformed_wrappers = []
+    for wrapper in _WORKER_BUNDLE_WRAPPERS:
+        if wrapper not in bundle:
+            continue
+        wrapped = bundle[wrapper]
+        if not isinstance(wrapped, dict):
+            malformed_wrappers.append(wrapper)
+            continue
+        failure = _worker_failure(wrapped, wrapper)
+        if failure:
+            raise GateBlock(f"{context} worker failure envelope: {failure}")
+        if canonical_key in wrapped:
+            wrapper_candidates.append((wrapper, wrapped[canonical_key]))
+
+    if canonical_key in bundle:
+        direct = bundle[canonical_key]
+        conflicts = [
+            wrapper for wrapper, candidate in wrapper_candidates
+            if candidate != direct
+        ]
+        if conflicts:
+            raise GateBlock(
+                f"{context} worker bundle has conflicting {canonical_key!r} values "
+                f"at <root> and wrapper(s) {conflicts}; refusing to guess"
+            )
+        return copy.deepcopy(direct)
+
+    if len(wrapper_candidates) == 1:
+        return copy.deepcopy(wrapper_candidates[0][1])
+    if len(wrapper_candidates) > 1:
+        locations = [wrapper for wrapper, _value in wrapper_candidates]
+        raise GateBlock(
+            f"{context} worker bundle has multiple wrapped candidates for "
+            f"{canonical_key!r} at {locations}; refusing to guess"
+        )
+    if not required:
+        return copy.deepcopy(default)
+    malformed = (
+        f"; malformed non-object wrapper(s): {malformed_wrappers}"
+        if malformed_wrappers else ""
+    )
+    raise GateBlock(
+        f"{context} worker bundle is missing required key {canonical_key!r}"
+        f" at <root> or one single-level payload/result/data wrapper{malformed}"
+    )
+
+
+def worker_bundle_has_key(bundle, canonical_key: str) -> bool:
+    """Read-only key presence check across the same accepted one-level shapes."""
+    if not isinstance(bundle, dict):
+        return False
+    if canonical_key in bundle:
+        return True
+    return any(
+        isinstance(bundle.get(wrapper), dict)
+        and canonical_key in bundle[wrapper]
+        for wrapper in _WORKER_BUNDLE_WRAPPERS
+    )
+
+_TRUST_CONTROL_EXTRA_FIELDS = {
+    "accept", "accepted", "bet", "can_cite_thesis", "chosen", "decision",
+    "executed", "execution_status", "fabricated", "human_freeze", "leakage",
+    "meets_bar", "metrics", "promote", "promotion_status", "ran", "reject",
+    "rejected", "result", "results", "selected", "status", "supports_claim",
+    "unsupported", "verdict", "winner",
+}
+_TRUST_CONTROL_EXTRA_PREFIXES = (
+    "director_", "promotion_", "vault_", "execution_", "secret_",
+    "credential_", "token_",
+)
+_TRUST_CONTROL_EXTRA_MARKERS = (
+    "accept", "blind_contamination", "can_cite", "credential", "decision",
+    "contradict", "execut", "fabricat", "ground_truth", "hash", "human_freeze",
+    "leakage", "meets_bar", "oracle", "permission", "promot", "receipt",
+    "reject", "secret", "selected", "signature", "split", "support", "tamper",
+    "token", "truth_access", "unsupported", "vault", "verdict",
+)
+
+
+def _control_field_name(name: str) -> bool:
+    """Recognise trust-bearing extras across snake/camel/kebab spelling.
+
+    This is intentionally about *field names*, not values.  It prevents an
+    otherwise useful lossless projection from hiding a worker disclosure such
+    as ``groundTruthAccess`` or ``supportsClaim`` in the normalization sidecar.
+    The field remains preserved, but the owning worker must resolve the
+    scientific/control conflict before downstream consumers are released.
+    """
+    folded = str(name or "").casefold()
+    compact = re.sub(r"[^a-z0-9]+", "", folded)
+    compact_markers = {
+        re.sub(r"[^a-z0-9]+", "", marker)
+        for marker in _TRUST_CONTROL_EXTRA_MARKERS
+    }
+    return (
+        folded in _TRUST_CONTROL_EXTRA_FIELDS
+        or folded.startswith(_TRUST_CONTROL_EXTRA_PREFIXES)
+        or any(marker in folded for marker in _TRUST_CONTROL_EXTRA_MARKERS)
+        or any(marker and marker in compact for marker in compact_markers)
+    )
+
+
+def normalize_worker_payload(
+    run_dir,
+    stage: str,
+    agent: str,
+    artifact_type: str,
+    payload,
+    *,
+    label: Optional[str] = None,
+):
+    """Project a worker-authored payload into its canonical delivery schema.
+
+    Ordinary research workers are allowed to return richer JSON than the stable
+    machine contract.  Representation-only differences (extra fields, canonical
+    enum spelling, schema defaults, or a structured value in a text field) are
+    normalized before scientific gates consume the payload.  The original
+    worker bundle remains immutable and every removed value is retained in a
+    hash-bound sidecar under ``inbox/normalization``.
+
+    This helper is deliberately *not* used by promotion, permission, receipt,
+    secret, or path-trust boundaries.  It never coerces scientific booleans or
+    numbers, invents required facts, or changes citation/execution verdicts.
+    Remaining validation errors therefore mean a real local supplement is
+    needed, not that formatting should be silently guessed.
+    """
+    normalized, report = normalize_payload(artifact_type, payload)
+    errors = validate_payload(artifact_type, normalized)
+    report = dict(report)
+    conflicts = list(report.get("representation_conflicts") or [])
+    conflict_advisories = []
+    blocking_conflicts = []
+    for row in conflicts:
+        # When a valid canonical field already exists, it wins deterministically;
+        # the disagreeing alias is retained in the sidecar as an advisory.  A
+        # conflict without an authoritative canonical value still needs a
+        # targeted supplement rather than a silent guess.
+        if row.get("canonical_field") and row.get("canonical_value") is not None:
+            conflict_advisories.append(row)
+        else:
+            blocking_conflicts.append(row)
+            errors.append(
+                f"representation conflict at {row.get('pointer') or '<root>'}: "
+                f"{row.get('rule')}"
+            )
+    heuristic_changes = list(report.get("heuristic_scientific_changes") or [])
+    errors.extend(
+        f"scientific value requires worker confirmation at "
+        f"{row.get('pointer') or '<root>'}: {row.get('rule')}"
+        for row in heuristic_changes
+    )
+    report["representation_advisories"] = conflict_advisories
+    report["blocking_representation_conflicts"] = blocking_conflicts
+    unsafe_extras = []
+    for row in report.get("preserved_extras") or []:
+        pointer = str(row.get("pointer") or "")
+        leaf = pointer.rsplit("/", 1)[-1].replace("~1", "/").replace("~0", "~").casefold()
+        if _control_field_name(leaf):
+            unsafe_extras.append(row)
+            errors.append(
+                f"trust/scientific control field {leaf!r} at {pointer or '<root>'} "
+                "cannot be removed as formatting"
+            )
+    report["unsafe_preserved_extras"] = unsafe_extras
+    report.update({
+        "stage": str(stage),
+        "agent": str(agent),
+        "label": str(label or artifact_type),
+        "post_normalization_errors": list(errors),
+    })
+    if report.get("changes") or report.get("preserved_extras") or errors:
+        safe_agent = re.sub(r"[^A-Za-z0-9._-]+", "-", str(agent)).strip("-.") or "worker"
+        safe_label = re.sub(
+            r"[^A-Za-z0-9._-]+", "-", str(label or artifact_type)
+        ).strip("-.") or "payload"
+        report_path = (
+            Path(run_dir) / "inbox" / "normalization" /
+            f"{stage}.{safe_agent}.{safe_label}.json"
+        )
+        report["report_path"] = str(report_path)
+        write_report(report_path, report)
+    return normalized, errors, report
 
 
 # --------------------------------------------------------------------------- task_frame / north star
@@ -227,13 +498,16 @@ def check_referential_integrity(refs: Iterable[str], known_ids: Set[str],
 # --------------------------------------------------------------------------- pre-search (H5/M1)
 
 def pre_search(run_dir, request: str, ts: str, transport=None,
-               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8) -> str:
+               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
+               queries=None) -> str:
     """Deterministic live-retrieval pre-step: drop inbox/search-results.json for the worker AND
     the novelty grounding signal. A dead network degrades to an empty-records bundle with
     source_errors recorded — the run proceeds vault-only and the report says so; nothing is
     fabricated. (Generalized from deep_research; every DISCOVER-entry recipe shares it.)"""
     try:
-        res = search(request, sources=sources, limit_per_source=limit_per_source, transport=transport)
+        res = search_many(queries or [request], sources=sources,
+                          limit_per_source=limit_per_source, transport=transport)
+        res["task_request"] = request
     except Exception as e:  # total failure (e.g. bad query) -> recorded, never invented
         res = {"query": request, "records": [], "source_errors": {"all": str(e)}}
     return write_search_bundle(run_dir, request, res, ts)
@@ -315,7 +589,11 @@ def collision_findings_bundle(run_dir) -> Optional[dict]:
     Missing/corrupt -> None: the gate then treats the run as not-retrieval-grounded (every idea
     UNVERIFIED, nothing cut) and the recipe report says novelty was NOT verified — never a false cut,
     never a silently-clean menu (mandatory-check honesty, design §4)."""
-    p = Path(run_dir) / "inbox" / "COLLISION.bundle.json"
+    logical = Path(run_dir) / "inbox" / "COLLISION.bundle.json"
+    try:
+        p = resolve_effective_output(Path(run_dir), "IDEATE", logical)
+    except ValueError as exc:
+        raise GateBlock(f"supplement lineage BLOCK: {exc}") from exc
     if not p.exists():
         return None
     try:
@@ -324,20 +602,75 @@ def collision_findings_bundle(run_dir) -> Optional[dict]:
         return None
 
 
+def _verify_collision_fulltext_snapshot(run_dir, paper: dict) -> bool:
+    """Verify the worker's exact-collision full-text receipt inside this run.
+
+    The checker remains free to obtain/read a paper however it chooses, but a
+    destructive cut must bind that reading to an inspectable immutable input.
+    Missing, external, or hash-mismatched snapshots simply make the collision
+    UNVERIFIED; they never stop delivery and never remove an idea.
+    """
+    ref = str((paper or {}).get("fulltext_snapshot_ref") or "").strip()
+    claimed = str((paper or {}).get("fulltext_snapshot_sha256") or "").strip().lower()
+    if not ref or not re.fullmatch(r"[0-9a-f]{64}", claimed):
+        return False
+    root = Path(run_dir).resolve()
+    candidate = Path(ref)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root)
+    except (OSError, ValueError):
+        return False
+    if not resolved.is_file():
+        return False
+    return hashlib.sha256(resolved.read_bytes()).hexdigest() == claimed
+
+
 def run_collision_gate(run_dir, stage: str, ts: str, menu_ideas: List[dict], *,
                        hard_block: bool = True,
                        cut_requires_experiments: bool = True) -> Tuple[List[dict], dict, str]:
     """Mandatory pre-/idea-bet prior-art COLLISION gate (novelty-collision-upgrade 2026-06-18).
 
-    An EVIDENCED collision — a real, existence-verified paper that already did this method×problem AND
-    ran it — is CUT before the menu and recorded to the project's known-prior-art ledger so the machine
-    never re-outputs it. A novelty SCORE still never cuts; only an evidenced collision does (design §1).
+    An EVIDENCED collision — a real, existence-verified, full-text-reviewed paper that tested the same
+    central claim, input/output contract, and causal assay with required experiments — may be cut.
+    Component overlap and lexical ledger matches are retrieval leads only. A novelty score never cuts.
     Offline (no collision bundle / no retrieval) -> nothing is cut, every idea is UNVERIFIED. Returns
     (survivors, verdict_payload, artifact_path). Never raises on a collision (a cut is not a run halt —
     the run continues with the survivors; an empty survivor set is the honest 'all already done')."""
     bundle = collision_findings_bundle(run_dir)
-    findings = [f for f in (bundle or {}).get("findings", []) if isinstance(f, dict)]
-    retrieval_grounded = bundle is not None and bool(findings)
+    if bundle is not None:
+        # Formatting defects are repaired locally where possible.  A bundle
+        # that remains schema-invalid does not stop the run, but it is never
+        # allowed to remove an idea: degrade the novelty decision to
+        # UNVERIFIED and preserve the normalization report for repair.
+        normalized, bundle_errors, _report = normalize_worker_payload(
+            run_dir,
+            stage,
+            "novelty-collision-checker",
+            "collision_findings",
+            bundle,
+            label="collision-findings-gate",
+        )
+        bundle = normalized if not bundle_errors else None
+    findings = copy.deepcopy([
+        f for f in (bundle or {}).get("findings", []) if isinstance(f, dict)
+    ])
+    for finding in findings:
+        for paper in finding.get("colliding_papers") or []:
+            if isinstance(paper, dict):
+                paper["_fulltext_snapshot_verified"] = (
+                    _verify_collision_fulltext_snapshot(run_dir, paper)
+                )
+    # A non-empty JSON file is not a retrieval receipt. Current workers report
+    # complete/partial/unavailable per idea; missing or unavailable status is
+    # conservatively ungrounded (legacy bundles can be replayed but cannot cut).
+    retrieval_grounded = (
+        bundle is not None and bool(findings)
+        and all(str(f.get("retrieval_status") or "") in {"complete", "partial"}
+                for f in findings)
+    )
 
     # Existence-verify every claimed colliding ref (reuse the live, offline-safe checker). A cut can
     # only stand on a paper that PASSES citation_existence — never a fabricated/unconfirmable one.
@@ -357,8 +690,8 @@ def run_collision_gate(run_dir, stage: str, ts: str, menu_ideas: List[dict], *,
             cache.close()
         existence_by_ref = {c["ref"]: c["state"] for c in ver.get("checked", [])}
 
-    # Cross-run known-prior-art ledger: an idea already established DEAD in a prior run stays cut
-    # (the machine must not re-output a known-dead idea), even with no fresh worker finding.
+    # Cross-run prior-art memory supplies search leads. It has no inherited veto:
+    # every current idea still needs a fresh full-paper claim-equivalence finding.
     prior_art_hits: Dict[str, dict] = {}
     ws = _pm.workspace_for_run(run_dir)
     if ws is not None:
@@ -373,7 +706,8 @@ def run_collision_gate(run_dir, stage: str, ts: str, menu_ideas: List[dict], *,
     path = write_artifact(run_dir, stage, "novelty-collision-verdict.artifact.json",
                           "novelty_collision_report", "novelty-collision-checker", verdict, ts, status)
 
-    # Record fresh worker-confirmed DEAD cuts to the ledger (future runs pre-match + never re-output).
+    # Record fresh worker-confirmed DEAD cuts as future retrieval leads. A later
+    # idea may improve on them, so the ledger never auto-cuts by lexical match.
     if ws is not None and verdict["cut_ids"]:
         run_id = task_frame(run_dir)["payload"]["task_id"]
         ideas_by_id = {str(i.get("idea_id")): i for i in menu_ideas}

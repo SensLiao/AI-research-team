@@ -18,10 +18,13 @@ is reported in ``source_errors`` — partial availability must never fabricate r
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from research_agent_teams.tools.scholar_clients import (
     ScholarLookupError,
@@ -60,10 +63,79 @@ def _sanitize_source_errors(source_errors) -> Dict[str, str]:
     }
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
+_CJK_RE = re.compile(r"[\u3400-\u9fff]")
+_GENERIC_SEARCH_TERMS = {
+    "about", "architecture", "based", "baseline", "budget", "build", "building",
+    "current", "design", "evidence", "experiment", "fairness", "framework", "initial",
+    "known", "matched", "method", "model", "paper", "research", "result", "results",
+    "same", "source", "study", "system", "task", "using",
+}
+_GENERIC_CJK_BIGRAMS = {
+    "当前", "方法", "模型", "研究", "实验", "结果", "系统", "任务", "设计",
+    "问题", "构建", "验证", "融合", "相关", "论文", "证据", "来源", "已有",
+}
 
 
 def _norm_title(title: str) -> str:
     return " ".join(_WORD_RE.findall((title or "").lower()))
+
+
+def _salient_terms(text: str) -> set[str]:
+    """Multilingual lexical anchors for a conservative query/title relevance gate.
+
+    Latin terms are tokenised normally. CJK text has no whitespace guarantee, so adjacent
+    character bigrams are used after removing generic research/management phrases. The gate is
+    intentionally lexical: it removes obvious off-topic API noise; scientific relevance is still
+    judged by the lit-scout over the primary source.
+    """
+    value = text or ""
+    latin = {
+        token for token in _WORD_RE.findall(value.lower())
+        if len(token) >= 3 and token not in _GENERIC_SEARCH_TERMS
+    }
+    cjk = _CJK_RE.findall(value)
+    bigrams = {
+        "".join(cjk[i:i + 2]) for i in range(max(0, len(cjk) - 1))
+        if "".join(cjk[i:i + 2]) not in _GENERIC_CJK_BIGRAMS
+    }
+    return latin | bigrams
+
+
+def query_title_relevance(query: str, title: str) -> float:
+    """Return a deterministic lexical relevance score in ``[0, 1]``.
+
+    This is a retrieval hygiene check, not a semantic or evidence-strength judgment. A zero score
+    means the title shares no non-generic multilingual anchor with the query and is unsafe to place
+    in a scientific evidence bundle without a worker explicitly retrieving it through another
+    channel.
+    """
+    query_terms = _salient_terms(query)
+    title_terms = _salient_terms(title)
+    if not query_terms or not title_terms:
+        return 0.0
+    shared = query_terms & title_terms
+    if not shared:
+        return 0.0
+    return round(min(1.0, len(shared) / max(1, min(4, len(query_terms)))), 4)
+
+
+def _is_component_record(record: dict) -> bool:
+    """Reject figures, tables, media supplements, and other non-paper DOI components.
+
+    Crossref occasionally returns a component DOI whose title inherits enough words from the
+    parent paper to pass a lexical gate. Those objects are useful only after the parent paper has
+    been admitted; they must not occupy an evidence-table source slot on their own.
+    """
+    title = str(record.get("title") or "").strip().lower()
+    doi = str(record.get("doi") or "").strip().lower()
+    if title.startswith(("figure ", "table ", "supplementary figure ",
+                         "supplementary table ", "supplementary material ")):
+        return True
+    if re.search(r"(?:^|[_\s-])supp(?:lement(?:ary)?)?\d*(?:\.|$|[_\s-])", title):
+        return True
+    if re.search(r"/(?:mm|suppl?|fig|table)\d+$", doi):
+        return True
+    return False
 
 
 def _dedup_key(rec: dict) -> str:
@@ -90,11 +162,23 @@ def search(query: str, sources=DEFAULT_SOURCES, limit_per_source: int = 10,
 
     merged: Dict[str, dict] = {}
     errors: Dict[str, str] = {}
-    for src in sources:
+
+    def run_source(src: str):
         try:
-            recs = _SEARCHERS[src](query, limit=limit_per_source, transport=transport)
+            return src, _SEARCHERS[src](query, limit=limit_per_source, transport=transport), None
         except ScholarLookupError as e:
-            errors[src] = sanitize_scholar_error(e)
+            return src, [], sanitize_scholar_error(e)
+
+    # Providers are independent public metadata channels. Query them concurrently so one 20-second
+    # outage does not multiply across arXiv/OpenAlex/Crossref/S2. Results are merged below in the
+    # caller-declared source order, keeping the output deterministic despite concurrent I/O.
+    with ThreadPoolExecutor(max_workers=min(4, len(sources))) as pool:
+        outcomes = {src: (recs, error) for src, recs, error in pool.map(run_source, sources)}
+
+    for src in sources:
+        recs, error = outcomes[src]
+        if error is not None:
+            errors[src] = sanitize_scholar_error(error)
             continue
         for r in recs:
             key = _dedup_key(r)
@@ -111,6 +195,93 @@ def search(query: str, sources=DEFAULT_SOURCES, limit_per_source: int = 10,
     records = sorted(merged.values(),
                      key=lambda r: (-(r.get("cited_by_count") or 0), _norm_title(r.get("title", ""))))
     return {"query": query, "records": records, "source_errors": errors}
+
+
+def search_many(queries: Sequence[str], sources=DEFAULT_SOURCES, limit_per_source: int = 10,
+                transport: Optional[Transport] = None, min_relevance: float = 0.5) -> dict:
+    """Run a decomposed query plan and keep only title-relevant metadata candidates.
+
+    Each provider is still queried independently by :func:`search`. Results are merged across
+    subqueries, while ``matched_queries`` and the maximum lexical ``relevance_score`` preserve why
+    a record entered the bundle. Provider failures remain visible with a query-qualified key.
+    Local full text and agent Web Search are separate retrieval channels; their sources join later
+    through the lit-scout and the common citation/existence gates.
+    """
+    clean_queries: List[str] = []
+    for raw in queries or []:
+        query = str(raw or "").strip()
+        if query and query not in clean_queries:
+            clean_queries.append(query)
+    if not clean_queries:
+        raise ValueError("search_many requires at least one non-empty query")
+    if not 0.0 <= min_relevance <= 1.0:
+        raise ValueError("min_relevance must be in [0, 1]")
+
+    merged: Dict[str, dict] = {}
+    errors: Dict[str, str] = {}
+    n_candidates = 0
+    n_rejected = 0
+    n_merged_duplicates = 0
+    for query_index, query in enumerate(clean_queries, start=1):
+        result = search(query, sources=sources, limit_per_source=limit_per_source,
+                        transport=transport)
+        for source, detail in result.get("source_errors", {}).items():
+            errors[f"q{query_index}:{source}"] = sanitize_scholar_error(detail)
+        for record in result.get("records", []):
+            n_candidates += 1
+            title = str(record.get("title") or "").strip()
+            # Metadata APIs can return component DOIs for figures/tables/media supplements. Those
+            # are not standalone scholarly works and must never become evidence-table candidates.
+            if _is_component_record(record):
+                n_rejected += 1
+                continue
+            score = query_title_relevance(query, title)
+            if score < min_relevance:
+                n_rejected += 1
+                continue
+            key = _dedup_key(record)
+            if key not in merged:
+                merged[key] = dict(record, matched_queries=[query], relevance_score=score)
+                continue
+            n_merged_duplicates += 1
+            existing = merged[key]
+            for source in record.get("found_in") or []:
+                if source not in existing["found_in"]:
+                    existing["found_in"].append(source)
+            if query not in existing["matched_queries"]:
+                existing["matched_queries"].append(query)
+            existing["relevance_score"] = max(existing["relevance_score"], score)
+            for field in ("doi", "arxiv_id", "year", "cited_by_count"):
+                if existing.get(field) is None and record.get(field) is not None:
+                    existing[field] = record[field]
+
+    records = sorted(
+        merged.values(),
+        key=lambda record: (
+            -float(record.get("relevance_score") or 0.0),
+            -(record.get("cited_by_count") or 0),
+            _norm_title(record.get("title", "")),
+        ),
+    )
+    return {
+        "query": " || ".join(clean_queries),
+        "queries": clean_queries,
+        "records": records,
+        "source_errors": errors,
+        "relevance_filter": {
+            "kind": "multilingual_query_title_lexical/v1",
+            "min_score": min_relevance,
+            "n_candidates": n_candidates,
+            "n_accepted": len(records),
+            "n_rejected": n_rejected,
+            "n_merged_duplicates": n_merged_duplicates,
+        },
+        "retrieval_channels": {
+            "metadata_apis": list(sources),
+            "local_fulltext": "fulltext-pre",
+            "agent_web_search": "worker fallback over primary sources only",
+        },
+    }
 
 
 # --------------------------------------------------------------------------- evidence rows
@@ -136,8 +307,11 @@ def to_evidence_sources(records: List[dict], start_index: int = 1) -> List[dict]
         ref = _best_ref(rec)
         if not ref:
             continue
+        notes = f"live-retrieval via {'+'.join(rec.get('found_in') or [rec.get('source', '?')])}"
+        if rec.get("matched_queries"):
+            notes += "; matched query plan: " + " | ".join(rec["matched_queries"])
         row = {"id": f"s{i}", "kind": "paper", "ref": ref, "claim_support": "none",
-               "notes": f"live-retrieval via {'+'.join(rec.get('found_in') or [rec.get('source', '?')])}"}
+               "notes": notes}
         if rec.get("title"):
             row["title"] = rec["title"]
         if rec.get("year") is not None:
@@ -180,10 +354,19 @@ def write_search_bundle(run_dir, query: str, result: dict, ts: str) -> str:
     p = Path(run_dir) / "inbox" / "search-results.json"
     _reject_vault_path(p)
     p.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"query": query, "retrieved_at": ts,
+    payload = {"query": result.get("query") or query,
+               "queries": result.get("queries") or [result.get("query") or query],
+               "task_request": result.get("task_request") or query,
+               "retrieved_at": ts,
                "records": result.get("records", []),
                "source_errors": _sanitize_source_errors(result.get("source_errors", {})),
-               "evidence_rows": to_evidence_sources(result.get("records", []))}
+               "evidence_rows": to_evidence_sources(result.get("records", [])),
+               "relevance_filter": result.get("relevance_filter") or {},
+               "retrieval_channels": result.get("retrieval_channels") or {
+                   "metadata_apis": list(DEFAULT_SOURCES),
+                   "local_fulltext": "fulltext-pre",
+                   "agent_web_search": "worker fallback over primary sources only",
+               }}
     p.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     return str(p)
 
@@ -193,6 +376,13 @@ def write_search_bundle(run_dir, query: str, result: dict, ts: str) -> str:
 def main(argv: Optional[List[str]] = None) -> int:
     """`python -m research_agent_teams.tools.paper_search "<query>" [--sources a,b] [--limit N] [--json out]`"""
     import argparse
+
+    os.environ["PYTHONUTF8"] = "1"
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="strict")
 
     ap = argparse.ArgumentParser(description="Sanctioned scholarly search channel (free-first, no Sci-Hub)")
     ap.add_argument("query")

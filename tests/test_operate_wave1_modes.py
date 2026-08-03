@@ -12,11 +12,19 @@ from pathlib import Path
 
 import pytest
 
-from research_agent_teams.operate.artifacts import GateBlock
+from research_agent_teams.operate.artifacts import GateBlock, TargetedGateBlock
+from research_agent_teams.operate.bounded_repair import load_state
+from research_agent_teams.operate import spine
 from research_agent_teams.operate.modes import REGISTRY, deep_research, evidence_deep, evidence_review
+from research_agent_teams.operate.output_versions import (
+    finalize_output,
+    physical_output,
+    prepare_plan,
+)
 from research_agent_teams.orchestrator.router import resolve_task, validate_routing
 from research_agent_teams.tools import fulltext_qa
 from research_agent_teams.tools.budget_tracker import BudgetExceeded
+from research_agent_teams.tools.runstore import read_manifest
 from research_agent_teams.tools.validate_artifact import validate_artifact
 
 TS = "2026-06-10T12:00:00Z"
@@ -342,10 +350,19 @@ def test_router_admits_deep_research():
 
 def test_evidence_review_happy_path(tmp_path):
     run_dir = _mk_run(tmp_path)
-    _write_evidence_review_panel(run_dir, _good_evidence())
+    payload = _good_evidence()
+    payload["evidence_table"]["sources"][0]["type"] = "paper"
+    payload["evidence_table"]["sources"][0]["note"] = "richer worker note"
+    payload["evidence_table"]["sources"][0]["notes"] = "richer worker note"
+    _write_evidence_review_panel(run_dir, payload)
     paths, report = evidence_review.run_dets(run_dir, "DISCOVER", TS)
     assert report["evidence_gate"] == "PASS" and report["citation_gate"] == "PASS"
+    assert report["representation_normalization"]["preserved_extra_fields"] == 2
     assert any("evidence-table" in p for p in paths)
+    assert (
+        run_dir / "inbox" / "normalization" /
+        "DISCOVER.lit-scout.evidence_table.json"
+    ).is_file()
     md = Path(report["director_markdown_brief"]).read_text(encoding="utf-8")
     assert "## Bottom Line" in md and "## Belief Update" in md
     assert "## Next Most Valuable Evidence" in md and "### `c1`" in md
@@ -354,6 +371,20 @@ def test_evidence_review_happy_path(tmp_path):
     _validate_written(rpaths)
     report_note = json.loads(Path(rpaths[0]).read_text(encoding="utf-8"))["payload"]
     assert "director-review/evidence/evidence-review-brief.md" in report_note["summary"]
+
+
+def test_evidence_review_accepts_one_unambiguous_bundle_wrapper(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_evidence_review_panel(run_dir, _good_evidence())
+    for path in (run_dir / "inbox").glob("DISCOVER.*.bundle.json"):
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        path.write_text(json.dumps({"data": raw}), encoding="utf-8")
+
+    paths, report = evidence_review.run_dets(run_dir, "DISCOVER", TS)
+
+    assert report["evidence_gate"] == "PASS"
+    assert report["citation_gate"] == "PASS"
+    _validate_written(paths)
 
 
 def test_evidence_review_legacy_bundle_requires_explicit_marker_and_never_passes_attribution(tmp_path):
@@ -472,6 +503,19 @@ def test_evidence_deep_writes_panel_artifacts_and_markdown(tmp_path):
     assert inv["status"] == "draft"
 
 
+def test_evidence_deep_accepts_one_unambiguous_bundle_wrapper(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_evidence_deep_bundles(run_dir, _good_evidence_deep_bundle())
+    for path in (run_dir / "inbox").glob("DISCOVER.*.bundle.json"):
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        path.write_text(json.dumps({"payload": raw}), encoding="utf-8")
+
+    paths, report = evidence_deep.run_dets(run_dir, "DISCOVER", TS)
+
+    assert report["citation_attribution_gate"] == "PASS"
+    assert any("landscape-map" in path for path in paths)
+
+
 def test_evidence_deep_strict_span_contract_runs_independent_attribution(tmp_path):
     run_dir = _mk_run(tmp_path)
     b = _good_evidence_deep_bundle()
@@ -506,12 +550,124 @@ def test_evidence_deep_missing_worker_bundle_blocks(tmp_path):
     assert "staleness-auditor" in str(ei.value) and "missing worker bundle" in str(ei.value)
 
 
+def test_evidence_deep_staleness_extra_is_zero_worker_normalization(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    b = _good_evidence_deep_bundle()
+    b["staleness_reports"][0]["source_id"] = "redundant-but-forbidden"
+    _write_evidence_deep_bundles(run_dir, b)
+
+    paths, report = evidence_deep.run_dets(run_dir, "DISCOVER", TS)
+
+    assert report["representation_normalization"]["preserved_extra_fields"] >= 1
+    sidecar = (
+        run_dir / "inbox" / "normalization" /
+        "DISCOVER.staleness-auditor.staleness-report-1.json"
+    )
+    assert sidecar.is_file()
+    assert json.loads(sidecar.read_text(encoding="utf-8"))["preserved_extras"][0][
+        "value"
+    ] == "redundant-but-forbidden"
+    assert b["staleness_reports"][0]["source_id"] == "redundant-but-forbidden"
+    stale_path = next(Path(path) for path in paths if "staleness-1" in path)
+    assert "source_id" not in json.loads(stale_path.read_text(encoding="utf-8"))["payload"]
+    assert not (run_dir / "inbox" / "repair-state.json").exists()
+
+
+def test_evidence_deep_source_quality_contract_targets_ranker(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    b = _good_evidence_deep_bundle()
+    b["source_quality_report"].pop("quality_contract_version")
+    b["source_quality_report"].pop("review_status")
+    _write_evidence_deep_bundles(run_dir, b)
+
+    with pytest.raises(TargetedGateBlock) as ei:
+        evidence_deep.run_dets(run_dir, "DISCOVER", TS)
+
+    assert ei.value.defects[0]["target_agents"] == ["source-quality-ranker"]
+    assert "source-methodology/v1" in str(ei.value)
+
+
+def test_evidence_deep_uses_hash_linked_supplement_bundle(tmp_path):
+    """A bounded repair must be consumed by the deterministic evidence gate."""
+    run_dir = _mk_run(tmp_path)
+    _write_evidence_deep_bundles(run_dir, _good_evidence_deep_bundle())
+    logical = run_dir / "inbox" / "DISCOVER.landscape-mapper.bundle.json"
+    original = json.loads(logical.read_text(encoding="utf-8"))
+    original["landscape_map"]["summary"] = "original landscape finding"
+    logical.write_text(json.dumps(original), encoding="utf-8")
+    node = {
+        "id": "landscape-mapper",
+        "label": "landscape-mapper",
+        "output_path": logical,
+        "output_rel": "inbox/DISCOVER.landscape-mapper.bundle.json",
+    }
+    plan = prepare_plan(
+        run_dir, "DISCOVER", 1, [node], {"landscape-mapper"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    corrected_path = physical_output(run_dir, plan, "landscape-mapper")
+    corrected = json.loads(logical.read_text(encoding="utf-8"))
+    corrected["landscape_map"]["summary"] = "corrected landscape finding"
+    corrected_path.parent.mkdir(parents=True, exist_ok=True)
+    corrected_path.write_text(json.dumps(corrected), encoding="utf-8")
+    finalize_output(run_dir, "DISCOVER", 1, "landscape-mapper", TS)
+
+    bundles = evidence_deep._load_worker_bundles(run_dir)
+    assert bundles["landscape_map"]["summary"] == "corrected landscape finding"
+    assert json.loads(logical.read_text(encoding="utf-8"))["landscape_map"]["summary"] == (
+        "original landscape finding"
+    )
+
+
 def test_evidence_deep_current_panel_cannot_omit_citation_auditor(tmp_path):
     run_dir = _mk_run(tmp_path)
     _write_evidence_deep_bundles(
         run_dir, _good_evidence_deep_bundle(), skip_agents={"citation-coverage-auditor"})
     with pytest.raises(GateBlock, match="citation-coverage-auditor"):
         evidence_deep.run_dets(run_dir, "DISCOVER", TS)
+
+
+def test_evidence_deep_evidence_shortfall_still_delivers_caveated_brief(tmp_path):
+    """A non-pass evidence grade must not hide a readable attributed briefing."""
+    run_dir = _mk_run(tmp_path)
+    b = _good_evidence_deep_bundle()
+    for row in b["source_quality_report"]["ranked_sources"]:
+        row["applicability"] = "partial"
+    _write_evidence_deep_bundles(run_dir, b)
+
+    with pytest.raises(GateBlock, match="too few strong-support sources"):
+        evidence_deep.run_dets(run_dir, "DISCOVER", TS)
+
+    brief = run_dir / "director-review" / "evidence" / "evidence-deep-brief.md"
+    assert brief.is_file()
+    text = brief.read_text(encoding="utf-8")
+    assert "evidence=`BLOCK`" in text
+    assert "## Claim-Evidence Ledger" in text
+
+
+def test_evidence_deep_citation_block_still_renders_brief_without_checkpoint(tmp_path):
+    """Usability-first delivery must not turn a citation BLOCK into a committed stage."""
+    runs = tmp_path / "runs"
+    plan = spine.begin(
+        str(runs), "citation-block", "review evidence for q", "evidence_deep", TS,
+        north_star={"statement": "q", "in_scope": ["q"], "out_of_scope": []},
+    )
+    run_dir = Path(plan["run_dir"])
+    b = _good_evidence_deep_bundle()
+    b["claim_evidence_map"]["mappings"][0]["loci"][0]["supports_claim"] = False
+    _write_evidence_deep_bundles(run_dir, b)
+    spine.open_stage(run_dir, "DISCOVER", TS)
+
+    with pytest.raises(GateBlock, match="citation gate BLOCK"):
+        evidence_deep.run_dets(run_dir, "DISCOVER", TS)
+
+    brief = run_dir / "director-review" / "evidence" / "evidence-deep-brief.md"
+    assert brief.is_file()
+    text = brief.read_text(encoding="utf-8")
+    assert "citation=`BLOCK`" in text
+    assert "## Claim-Evidence Ledger" in text
+    assert read_manifest(run_dir)["completed_work"] == []
+    assert spine.next_stage(run_dir) == "DISCOVER"
 
 
 def test_evidence_deep_current_panel_cannot_drop_claim_span_version(tmp_path):
@@ -536,6 +692,8 @@ def test_evidence_deep_llm_step_is_panel(tmp_path):
     assert "citation-coverage-auditor" in spec["panel_note"]
     by_label = {worker["label"]: worker["prompt"] for worker in spec["workers"]}
     assert "rigor_score" in by_label["source-quality-ranker"]
+    assert "full research question" in by_label["source-quality-ranker"]
+    assert "never upgrade applicability" in by_label["source-quality-ranker"]
     assert "Never emit or self-set saturation" in by_label["evidence-search-moderator"]
     assert "independently audit claim support" in by_label["citation-coverage-auditor"]
     assert "citation-attribution/v1" in by_label["citation-coverage-auditor"]
@@ -697,6 +855,175 @@ def test_deep_research_happy_path_emits_brief(tmp_path):
     _validate_written(paths)
 
 
+def test_deep_research_accepts_one_unambiguous_bundle_wrapper(tmp_path):
+    run_dir = _mk_run(tmp_path, budget={
+        "max_agent_hops": 10,
+        "max_iterations_without_new_evidence": 3,
+        "max_fulltext_reads": 20,
+        "max_debug_retries_per_run": 3,
+    })
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    for agent in deep_research.PANEL_AGENTS:
+        path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+        if not path.is_file():
+            continue
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        path.write_text(json.dumps({"payload": raw}), encoding="utf-8")
+
+    paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
+
+    assert report["citation_attribution_gate"] == "PASS"
+    assert any("research-brief" in path for path in paths)
+
+
+def test_deep_research_blank_worker_markdown_is_delivery_metadata_not_science_gate(tmp_path):
+    run_dir = _mk_run(tmp_path, budget={
+        "max_agent_hops": 10,
+        "max_iterations_without_new_evidence": 3,
+        "max_fulltext_reads": 20,
+        "max_debug_retries_per_run": 3,
+    })
+    payload = _good_deep_research_panel()
+    payload["research_markdown_brief"]["markdown"] = ""
+    payload["research_markdown_brief"]["perspective_ids"] = []
+    _write_deep_research_bundles(run_dir, payload)
+
+    paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
+
+    assert Path(report["director_markdown_brief"]).is_file()
+    assert all(Path(path).is_file() for path in paths)
+
+
+def test_deep_research_missing_worker_markdown_uses_rendered_brief_for_typed_artifact(tmp_path):
+    run_dir = _mk_run(tmp_path, budget={
+        "max_agent_hops": 10,
+        "max_iterations_without_new_evidence": 3,
+        "max_fulltext_reads": 20,
+        "max_debug_retries_per_run": 3,
+    })
+    payload = _good_deep_research_panel()
+    expected_refs = {
+        str(source["ref"])
+        for source in payload["evidence_table"]["sources"]
+        if source.get("ref")
+    }
+    expected_perspectives = {
+        str(note["perspective_id"]) for note in payload["perspective_notes"]
+    }
+    _write_deep_research_bundles(run_dir, payload)
+    mapper_path = run_dir / "inbox" / "DISCOVER.landscape-mapper.bundle.json"
+    mapper_bundle = json.loads(mapper_path.read_text(encoding="utf-8"))
+    mapper_bundle.pop("research_markdown_brief")
+    mapper_path.write_text(json.dumps(mapper_bundle, ensure_ascii=False), encoding="utf-8")
+
+    paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
+
+    rendered = Path(report["director_markdown_brief"]).read_text(encoding="utf-8")
+    artifact_path = next(
+        Path(path) for path in paths
+        if path.endswith("research-markdown-brief.artifact.json")
+    )
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["payload"]["markdown"] == rendered
+    assert set(artifact["payload"]["evidence_refs"]) == expected_refs
+    assert set(artifact["payload"]["perspective_ids"]) == expected_perspectives
+    assert artifact["created_by"] == "deterministic-research-brief-renderer"
+
+
+def test_deep_research_normalizes_foundation_model_source_to_repo():
+    """A worker's subject label must not terminally fail an otherwise valid evidence panel."""
+    bundle = {"evidence_table": {"sources": [{"id": "s1", "kind": "model"}]}}
+
+    deep_research._normalize_compat_enums(bundle)
+
+    assert bundle["evidence_table"]["sources"][0]["kind"] == "repo"
+
+
+def test_deep_research_normalizes_sourcebound_rich_json_before_truth_gates(tmp_path):
+    """Reproduce the PET/CT run shape: formatting is projected, truth gates still run."""
+    run_dir = _mk_run(tmp_path, budget={
+        "max_agent_hops": 12,
+        "max_iterations_without_new_evidence": 3,
+        "max_fulltext_reads": 20,
+        "max_debug_retries_per_run": 3,
+    })
+    payload = _good_deep_research_panel()
+    for index, source in enumerate(payload["evidence_table"]["sources"]):
+        source["type"] = "preprint" if index == 1 else source["kind"]
+        source["note"] = source.get("notes") or f"rich source note {index}"
+        source["notes"] = source["note"]
+    payload["claim_list"]["source_scope"] = ["PET/CT", "intent correction"]
+    rich_kinds = ["novelty_boundary", "mechanism_boundary"]
+    for index, claim in enumerate(payload["claim_list"]["claims"]):
+        claim["kind"] = rich_kinds[index % len(rich_kinds)]
+        claim["confidence"] = 0.90 - index * 0.05
+    first_locus = payload["claim_evidence_map"]["mappings"][0]["loci"][0]
+    first_locus["kind"] = "figure"
+    first_locus["figure_region_ref"] = "Figure 2, labels and caption"
+    _write_deep_research_bundles(run_dir, payload)
+    raw_scout = run_dir / "inbox" / "DISCOVER.lit-scout.bundle.json"
+    raw_hash = hashlib.sha256(raw_scout.read_bytes()).hexdigest()
+
+    paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
+
+    assert report["citation_attribution_gate"] == "PASS"
+    assert report["representation_normalization"]["normalized_payloads"] >= 3
+    assert report["representation_normalization"]["preserved_extra_fields"] == (
+        2 * len(payload["evidence_table"]["sources"])
+    )
+    assert hashlib.sha256(raw_scout.read_bytes()).hexdigest() == raw_hash
+    table_path = next(Path(path) for path in paths if "evidence-table" in path)
+    rows = json.loads(table_path.read_text(encoding="utf-8"))["payload"]["sources"]
+    assert all("type" not in row and "note" not in row for row in rows)
+    assert (
+        run_dir / "inbox" / "normalization" /
+        "DISCOVER.lit-scout.evidence_table.json"
+    ).is_file()
+    claim_sidecar = json.loads((
+        run_dir / "inbox" / "normalization" /
+        "DISCOVER.claim-evidence-linker.claim_evidence_map.json"
+    ).read_text(encoding="utf-8"))
+    assert "figure-caption-char-span-to-text-locus" in {
+        row["rule"] for row in claim_sidecar["changes"]
+    }
+    assert not (run_dir / "inbox" / "repair-state.json").exists()
+
+
+def test_deep_research_never_normalizes_away_control_or_truth_fields(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    payload = _good_deep_research_panel()
+    payload["evidence_table"]["selected"] = True
+    _write_deep_research_bundles(run_dir, payload)
+
+    outcome = deep_research.run_dets_with_repair(run_dir, "DISCOVER", TS)
+
+    assert outcome[0] == "retry"
+    attempt = load_state(run_dir)["attempts"][-1]
+    assert attempt["target_agents"] == ["lit-scout"]
+    assert "cannot be removed as formatting" in attempt["reason"]
+
+
+def test_deep_research_resolves_local_source_ids_to_citable_refs():
+    """Local evidence ids are join keys; citation outputs must carry the frozen source ref."""
+    bundle = {
+        "evidence_table": {"sources": [
+            {"id": "s1", "ref": "https://example.org/paper", "kind": "paper"}
+        ]},
+        "claim_list": {"claims": [
+            {"claim_id": "c1", "source_ref": "s1", "kind": "method"}
+        ]},
+        "claim_evidence_map": {"mappings": [{
+            "claim_id": "c1", "loci": [{"source_ref": "s1"}]
+        }]},
+    }
+
+    deep_research._normalize_compat_enums(bundle)
+
+    assert bundle["claim_list"]["claims"][0]["source_ref"] == "https://example.org/paper"
+    assert bundle["claim_evidence_map"]["mappings"][0]["loci"][0]["source_ref"] == \
+        "https://example.org/paper"
+
+
 def test_deep_research_strict_attribution_and_blind_perspectives(tmp_path):
     run_dir = _mk_run(tmp_path, budget={"max_agent_hops": 12,
                                         "max_iterations_without_new_evidence": 3,
@@ -708,6 +1035,90 @@ def test_deep_research_strict_attribution_and_blind_perspectives(tmp_path):
     assert report["citation_attribution_gate"] == "PASS"
     assert report["claim_completeness"] == 0.5
     assert any("citation-attribution-report" in path for path in paths)
+
+
+def test_deep_research_strength_shortfall_delivers_caveated_landscape(tmp_path):
+    """A landscape can be readable without pretending that its narrow hypothesis is proven."""
+    run_dir = _mk_run(tmp_path)
+    payload = _good_deep_research_panel()
+    for row in payload["source_quality_report"]["ranked_sources"]:
+        row["applicability"] = "partial"
+    _write_deep_research_bundles(run_dir, payload)
+
+    paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
+
+    assert report["evidence_gate"] == "BLOCK"
+    assert report["markdown_delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert any("too few strong-support sources" in reason
+               for reason in report["evidence_gate_reasons"])
+    assert Path(report["director_markdown_brief"]).is_file()
+    verdict_path = next(Path(path) for path in paths if "evidence-verdict" in path)
+    verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+    assert verdict["payload"]["verdict"] == "BLOCK"
+    assert verdict["status"] == "draft"
+    assert all(json.loads(Path(path).read_text(encoding="utf-8"))["status"] != "blocked"
+               for path in paths)
+
+
+def test_caveated_deep_research_can_complete_and_record_its_caveat(tmp_path):
+    """A strength-only gap is ledgered as a caveat, not an uncommittable retry loop."""
+    plan = spine.begin(str(tmp_path / "runs"), "caveated-research", "scan a research field",
+                       "deep_research", TS)
+    run_dir = Path(plan["run_dir"])
+    payload = _good_deep_research_panel()
+    for row in payload["source_quality_report"]["ranked_sources"]:
+        row["applicability"] = "partial"
+    _write_deep_research_bundles(run_dir, payload)
+
+    spine.open_stage(run_dir, "DISCOVER", TS)
+    paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
+    assert report["markdown_delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert spine.commit_stage(run_dir, "DISCOVER", paths, TS)["next_stage"] == "REPORT"
+    spine.open_stage(run_dir, "REPORT", TS)
+    report_paths, _ = deep_research.run_dets(run_dir, "REPORT", TS)
+    assert spine.commit_stage(run_dir, "REPORT", report_paths, TS)["done"] is True
+
+    note = json.loads((run_dir / "evidence" / "REPORT" / "report-note.artifact.json")
+                      .read_text(encoding="utf-8"))["payload"]
+    assert note["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert note["delivery_caveats"]
+    assert spine.status(run_dir)["run_status"] == "done"
+
+
+def test_deep_research_repairs_non_strength_evidence_defects_at_input_owners(tmp_path):
+    """Source/search defects must never be misrouted to the final landscape writer."""
+    run_dir = _mk_run(tmp_path)
+    payload = _good_deep_research_panel()
+    payload["source_quality_report"]["ranked_sources"][0]["review_status"] = "UNVERIFIED"
+    _write_deep_research_bundles(run_dir, payload)
+
+    outcome = deep_research.run_dets_with_repair(run_dir, "DISCOVER", TS)
+
+    assert outcome[0] == "retry"
+    attempt = load_state(run_dir)["attempts"][-1]
+    assert set(attempt["target_agents"]) == {
+        "lit-scout", "source-quality-ranker", "evidence-search-moderator",
+    }
+    assert "landscape-mapper" in attempt["refresh_agents"]
+
+
+def test_deep_research_repairs_unfrozen_search_hit_at_input_owners(tmp_path):
+    """A hit absent from the frozen evidence table is a retrieval defect, never discarded."""
+    run_dir = _mk_run(tmp_path)
+    payload = _good_deep_research_panel()
+    payload["evidence_search_trace"]["rounds"][0]["source_hits"].append({
+        "source_ref": "doi:10.9999/unfrozen-counterevidence",
+    })
+    _write_deep_research_bundles(run_dir, payload)
+
+    outcome = deep_research.run_dets_with_repair(run_dir, "DISCOVER", TS)
+
+    assert outcome[0] == "retry"
+    attempt = load_state(run_dir)["attempts"][-1]
+    assert set(attempt["target_agents"]) == {
+        "lit-scout", "source-quality-ranker", "evidence-search-moderator",
+    }
+    assert "landscape-mapper" in attempt["refresh_agents"]
 
 
 def test_deep_research_budget_counters_are_live(tmp_path):
@@ -753,6 +1164,35 @@ def test_deep_research_missing_perspective_worker_blocks(tmp_path):
     with pytest.raises(GateBlock) as ei:
         deep_research.run_dets(run_dir, "DISCOVER", TS)
     assert "future-work-miner" in str(ei.value) and "missing worker bundle" in str(ei.value)
+
+
+def test_deep_research_uses_hash_linked_supplement_bundle(tmp_path):
+    """The deep-research deterministic gate must consume a completed repair."""
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    logical = run_dir / "inbox" / "DISCOVER.landscape-mapper.bundle.json"
+    original = json.loads(logical.read_text(encoding="utf-8"))
+    original["research_brief"]["bottom_line"] = "original research brief"
+    logical.write_text(json.dumps(original), encoding="utf-8")
+    node = {
+        "id": "landscape-mapper",
+        "label": "landscape-mapper",
+        "output_path": logical,
+        "output_rel": "inbox/DISCOVER.landscape-mapper.bundle.json",
+    }
+    plan = prepare_plan(
+        run_dir, "DISCOVER", 1, [node], {"landscape-mapper"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    corrected_path = physical_output(run_dir, plan, "landscape-mapper")
+    corrected = json.loads(logical.read_text(encoding="utf-8"))
+    corrected["research_brief"]["bottom_line"] = "corrected research brief"
+    corrected_path.parent.mkdir(parents=True, exist_ok=True)
+    corrected_path.write_text(json.dumps(corrected), encoding="utf-8")
+    finalize_output(run_dir, "DISCOVER", 1, "landscape-mapper", TS)
+
+    bundles = deep_research._load_worker_bundles(run_dir)
+    assert bundles["research_brief"]["bottom_line"] == "corrected research brief"
 
 
 def test_deep_research_current_panel_cannot_omit_citation_auditor(tmp_path):

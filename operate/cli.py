@@ -11,7 +11,8 @@ The skill's loop for `new_direction` (run from the project root):
     worker  --run-id <id> --stage IDEATE --request .. -> the IDEATE worker spec to spawn
     run-dets / commit --stage IDEATE                  -> at the director gate, "paused_for_director": true
     menu    --run-id <id>                             -> the ranked menu to show the director
-    [director decides; only then] run-dets / commit --stage REPORT -> done
+    [director decides] approve --stage IDEATE --reason "<choice>" -> releases REPORT
+    run-dets / commit --stage REPORT -> done
 
 Every call prints one JSON object so the skill can parse it. The mode is fixed at `begin` and read back
 from the run's task_frame by later commands (no --mode needed after begin).
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -29,12 +31,17 @@ from typing import Optional
 from . import spine
 from .artifacts import GateBlock, TargetedGateBlock
 from .modes import REGISTRY
+from .. import reporting
 from .panel_scheduler import PanelContractError, schedule_next_wave
 from ..orchestrator.model_policy import decorate_worker_runtime
 from ..tools import execution_registry as exreg
 from ..tools import lifecycle as lifecycle_tool
 from ..tools import projects as projects_tool
 from ..tools import research_plan
+from ..tools.research_capability_router import (
+    ResearchCapabilityRouterError,
+    route_research_capabilities,
+)
 from ..tools import resources as rp
 from ..tools import runstore
 from ..tools import workspace as ws_tool
@@ -64,6 +71,21 @@ def _run_dir(runs_dir: str, run_id: str) -> str:
 
 def _emit(obj) -> None:
     print(json.dumps(obj, ensure_ascii=False, indent=2))
+
+
+def _configure_utf8_stdio() -> None:
+    """Keep CLI JSON lossless on Windows consoles whose legacy default is not UTF-8."""
+    # These variables govern child Python commands launched after the operate CLI starts. The
+    # current process is reconfigured explicitly below because PYTHONUTF8 is startup-only.
+    # Force the child-process contract even when the parent shell inherited a legacy Windows
+    # code page. ``setdefault`` is insufficient here because a pre-existing cp936/cp1252 value
+    # would silently reintroduce mojibake in worker commands.
+    os.environ["PYTHONUTF8"] = "1"
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="strict")
 
 
 def _mode_module(mode: str):
@@ -130,14 +152,55 @@ def _schedule_or_exit(run_dir: str, stage: str, request: str, mod, *, vault,
         _emit({"stage": stage, "halted": True, "budget_stop": True, "reason": str(exc),
                "note": "Actual worker dispatch reached max_agent_hops; no partial wave was authorized."})
         sys.exit(4)
-    except (PanelContractError, ValueError) as exc:
+    except PanelContractError as exc:
+        # A scheduler contract refusal is deterministic: no downstream worker
+        # can legally repair an invalid/missing predecessor shape.  Do not
+        # leave the manifest running after reporting a mere scheduler_block.
+        manifest, packet = _record_hard_gate_failure(run_dir, stage, str(exc), ts)
+        _emit({"run_id": manifest.get("run_id"), "stage": stage, "halted": True,
+               "gate": "BLOCK", "scheduler_block": True, "reason": str(exc),
+               "run_status": "failed", "delivery_status": "BLOCK",
+               "director_review_packet": str(packet),
+               "note": "Panel scheduling refused an unrecoverable output/order contract. "
+                       "The run is terminal; correct the worker output and start a new run."})
+        sys.exit(3)
+    except ValueError as exc:
         _emit({"stage": stage, "halted": True, "scheduler_block": True, "reason": str(exc),
                "note": "Panel scheduling refused an invalid order, label, predecessor, or read scope."})
         sys.exit(2)
 
 
+def _record_hard_gate_failure(run_dir: str, stage: str, reason: str, ts: str) -> tuple:
+    """Persist one hard deterministic stop before rendering its readable packet."""
+    manifest = runstore.fail_run(run_dir, stage, reason, ts)
+    packet = write_packet(run_dir, generated_at=ts)
+    return manifest, packet
+
+
+def _resolve_begin_mode(request: str, requested_mode: str) -> tuple[str, Optional[dict]]:
+    """Resolve ``auto`` through the operated-only plan-catalog entry.
+
+    Explicit modes are returned untouched and remain subject to ``_mode_module``
+    below, which fail-closes for every spec-only or unknown mode.
+    """
+    if requested_mode != "auto":
+        return requested_mode, None
+    route = route_research_capabilities(request)
+    mode = str(route["routing"]["mode"])
+    honesty = route["routing"].get("honesty") or {}
+    if honesty.get("one_button_operable") is not True or mode not in REGISTRY:
+        raise ResearchCapabilityRouterError(
+            f"automatic routing refused non-operated mode {mode!r}"
+        )
+    return mode, route
+
+
 def cmd_begin(a) -> None:
-    mode = a.mode
+    try:
+        mode, capability_route = _resolve_begin_mode(a.request, a.mode)
+    except ResearchCapabilityRouterError as exc:
+        _emit({"error": str(exc), "note": "automatic begin only admits operated modes"})
+        sys.exit(2)
     run_id = a.run_id or f"{mode}-{_ts().replace(':', '').replace('-', '')}"
     ts = a.ts or _ts()
     mod = _mode_module(mode)
@@ -157,7 +220,7 @@ def cmd_begin(a) -> None:
     projects_tool.ensure_workspace(a.projects_dir, a.project)   # the project's durable resource room
     plan = spine.begin(a.runs_dir, run_id, a.request, mode, ts,
                        domain_profile_ref=a.profile, model_policy=a.model_policy, project=a.project,
-                       north_star=_north_star_from_args(a))
+                       north_star=_north_star_from_args(a), capability_route=capability_route)
     first = plan["stages"][0]
     vault = a.vault or getattr(mod, "DEFAULT_VAULT", None)
     # Combination layer (2026-06-19): when this run is a LINK in a director-approved chain, thread the
@@ -169,10 +232,21 @@ def cmd_begin(a) -> None:
             plan["run_dir"], upstream, downstream_mode=mode
         )
         runstore.pin_upstream_grounding(plan["run_dir"], grounding_path, ts)
-    worker, schedule = _schedule_or_exit(
-        plan["run_dir"], first, a.request, mod, vault=vault,
-        model_policy=a.model_policy, ts=ts,
+    # Source-bound evidence review must freeze its load-bearing primary
+    # sources before even the first panel seat is released.
+    preflight_required = bool(
+        first == "DISCOVER" and getattr(mod, "SOURCE_PREFLIGHT_REQUIRED", False)
     )
+    if preflight_required:
+        worker, schedule = None, {
+            "status": "awaiting_source_preflight",
+            "required": ["pre-search", "fulltext-pre --doc ... --source-ref ...", "worker"],
+        }
+    else:
+        worker, schedule = _schedule_or_exit(
+            plan["run_dir"], first, a.request, mod, vault=vault,
+            model_policy=a.model_policy, ts=ts,
+        )
     out = {"run_id": run_id, "run_dir": plan["run_dir"], "mode": mode, "project": a.project,
            "project_check": check, "stages": plan["stages"], "north_star": plan.get("north_star"),
            "gate_level": plan["gate_level"], "first_stage": first, "next_worker": worker,
@@ -186,6 +260,13 @@ def cmd_begin(a) -> None:
         out["pre_search_note"] = ("RECOMMENDED next: `pre-search --run-id " + run_id + "` — grounds "
                                   "novelty/evidence in live literature BEFORE spawning the worker "
                                   "(skipping it degrades honestly to vault-only)")
+    if preflight_required:
+        out["source_preflight"] = {
+            "required": True,
+            "note": ("evidence_deep has not dispatched any worker. First freeze every load-bearing "
+                     "primary source with `fulltext-pre --doc <file> --source-ref <citation-ref>` "
+                     "(repeat both flags once per source), then call `worker`.")
+        }
     _emit(out)
 
 
@@ -210,6 +291,16 @@ def cmd_worker(a) -> None:
     vault = a.vault or getattr(mod, "DEFAULT_VAULT", None)
     request = _pinned_request(a.runs_dir, a.run_id, a.request)
     rd = _run_dir(a.runs_dir, a.run_id)
+    if a.stage == "DISCOVER" and getattr(mod, "SOURCE_PREFLIGHT_REQUIRED", False):
+        try:
+            mod.source_preflight(rd)
+        except GateBlock as gb:
+            _manifest, packet = _record_hard_gate_failure(rd, a.stage, str(gb), a.ts or _ts())
+            _emit({"run_id": a.run_id, "stage": a.stage, "halted": True, "gate": "BLOCK",
+                   "reason": str(gb), "run_status": "failed", "delivery_status": "BLOCK",
+                   "director_review_packet": str(packet),
+                   "note": "No panel worker was dispatched. Freeze the missing critical source(s), then start a new run."})
+            sys.exit(3)
     worker, schedule = _schedule_or_exit(
         rd, a.stage, request, mod, vault=vault,
         model_policy=_policy_from_run(a.runs_dir, a.run_id), ts=a.ts or _ts(),
@@ -243,10 +334,13 @@ def cmd_pre_search(a) -> None:
     if fn is None:
         _emit({"run_id": a.run_id, "error": f"mode {_mode_from_run(a.runs_dir, a.run_id)!r} has no pre_search step"})
         sys.exit(2)
-    bundle_path = fn(rd, request, ts)
+    bundle_path = fn(rd, request, ts, queries=a.query)
     bundle = json.loads(Path(bundle_path).read_text(encoding="utf-8"))
     _emit({"run_id": a.run_id, "bundle": bundle_path,
            "n_records": len(bundle.get("records") or []),
+           "queries": bundle.get("queries") or [],
+           "relevance_filter": bundle.get("relevance_filter") or {},
+           "retrieval_channels": bundle.get("retrieval_channels") or {},
            "source_errors": bundle.get("source_errors") or {},
            "note": "live-retrieval bundle written; the DISCOVER worker reads it by reference. "
                    "Zero records + source_errors = offline degrade (honest, vault-only run)."})
@@ -281,14 +375,28 @@ def cmd_fulltext_pre(a) -> None:
         sys.exit(2)
     question = (a.question or _pinned_request(a.runs_dir, a.run_id, a.request)).strip()
     docs = _copy_docs_to_run_scratch(rd, a.doc)
+    source_refs = list(getattr(a, "source_ref", None) or [])
+    if getattr(mod, "SOURCE_PREFLIGHT_REQUIRED", False) and len(source_refs) != len(docs):
+        _emit({"run_id": a.run_id,
+               "error": "evidence_deep fulltext-pre requires exactly one --source-ref for each --doc"})
+        sys.exit(2)
     report_path = fn(rd, question, docs, ts)
     if report_path is None:
         _emit({"run_id": a.run_id, "error": "fulltext_pre wrote nothing; no documents supplied"})
         sys.exit(2)
     report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    source_preflight = None
+    if getattr(mod, "SOURCE_PREFLIGHT_REQUIRED", False):
+        try:
+            source_preflight = mod.register_source_preflight(rd, source_refs, docs, ts)
+        except ValueError as exc:
+            _emit({"run_id": a.run_id, "error": str(exc),
+                   "note": "No evidence panel has been dispatched; supply complete readable primary sources before worker."})
+            sys.exit(2)
     _emit({"run_id": a.run_id, "bundle": report_path, "copied_docs": docs,
            "available": report.get("available"), "n_contexts": len(report.get("contexts") or []),
            "reason": report.get("reason") or "",
+           "source_preflight": source_preflight,
            "note": "page-anchored full-text bundle written; the DISCOVER worker reads it by reference."})
 
 
@@ -325,11 +433,15 @@ def cmd_run_dets(a) -> None:
         else:
             paths, report = mod.run_dets(rd, a.stage, ts)
     except GateBlock as gb:
-        packet = write_packet(rd, generated_at=ts)
-        hard = isinstance(gb, TargetedGateBlock) and gb.verdict == "BLOCK"
+        hard = not isinstance(gb, TargetedGateBlock) or gb.verdict == "BLOCK"
+        if hard:
+            _manifest, packet = _record_hard_gate_failure(rd, a.stage, str(gb), ts)
+        else:
+            packet = write_packet(rd, generated_at=ts)
         _emit({"run_id": a.run_id, "stage": a.stage, "halted": hard,
                "gate": "BLOCK" if hard else "NEEDS_SUPPLEMENT", "reason": str(gb),
                "delivery_status": "BLOCK" if hard else "USABLE_WITH_CAVEATS",
+               "run_status": "failed" if hard else "running",
                "director_review_packet": str(packet),
                "note": "The current readable result remains available. Only truth, safety, execution, or "
                        "permission failures are hard blocks; other gaps remain explicit supplements."})
@@ -361,16 +473,19 @@ def cmd_commit(a) -> None:
         except (OSError, ValueError):
             continue
     if blocked:
+        reason = f"stage has blocked hard-gate verdict artifact(s): {blocked}"
+        _manifest, packet = _record_hard_gate_failure(rd, a.stage, reason, ts)
         _emit({"run_id": a.run_id, "stage": a.stage, "halted": True, "gate": "BLOCK",
-               "reason": f"stage has blocked hard-gate verdict artifact(s): {blocked}",
+               "reason": reason, "run_status": "failed",
+               "director_review_packet": str(packet),
                "note": "a stage with a blocked verdict cannot be committed — run-dets refused it. "
                        "Do NOT commit; report the BLOCK to the director or re-run via the repair loop."})
         sys.exit(3)
     res = spine.commit_stage(rd, a.stage, paths, ts)
     res["paused_for_director"] = res["gate"] == "director_signoff"
     if res["paused_for_director"]:
-        res["pause_note"] = ("DIRECTOR GATE — do NOT proceed without the director. At the IDEATE boundary this "
-                             "IS the /idea-bet review: show `menu` and let the director bet or pivot.")
+        res["pause_note"] = ("DIRECTOR GATE — do NOT proceed without the director. Review the product at this "
+                             "configured decision boundary and let the director approve, reject, or pivot.")
     _emit(res)
 
 
@@ -382,6 +497,23 @@ def cmd_reject(a) -> None:
            "note": ("DIRECTOR VETO recorded as a tamper-evident gate_resolved event; the run is now TERMINAL "
                     "(status=rejected) and cannot be resumed. A plain 'continue' can no longer walk past it — "
                     "start a new run to pivot.")})
+
+
+def cmd_approve(a) -> None:
+    """Record a director approval, releasing the next stage or completing a final gate."""
+    rd = _run_dir(a.runs_dir, a.run_id)
+    ts = a.ts or _ts()
+    try:
+        result = spine.resolve_director_gate(rd, a.stage, "approved", ts, reason=a.reason)
+    except ValueError as exc:
+        _emit({"run_id": a.run_id, "stage": a.stage, "approved": False, "error": str(exc)})
+        sys.exit(2)
+    note = (
+        "Director approval is hash-chained; final run completion is now explicitly recorded."
+        if result.get("terminal")
+        else "Director approval is hash-chained; the exact next stage is now the only releasable work."
+    )
+    _emit({"run_id": a.run_id, "approved": True, **result, "note": note})
 
 
 def cmd_status(a) -> None:
@@ -473,6 +605,29 @@ def cmd_menu(a) -> None:
 
 def cmd_plan_propose(a) -> None:
     _emit(research_plan.propose_for_request(a.request, intent=a.intent))
+
+
+# --------------------------------------------------------------------------- director reporting layer
+# Director lock 2026-08-01: every task is bracketed by two plain-Chinese products — a plan card BEFORE
+# the work (scan the knowledge base, propose the route, name the human gates) and a progress report
+# AFTER it. Both are deterministic and read-only: `brief` starts no run, `report` changes no run.
+
+def cmd_brief(a) -> None:
+    data, markdown = reporting.brief(
+        a.request, project=a.project, intent=a.intent,
+        vault_root=a.vault, projects_root=a.projects_dir, runs_dir=a.runs_dir)
+    if a.json:
+        _emit(data)
+    else:
+        print(markdown)
+
+
+def cmd_report(a) -> None:
+    data, markdown = reporting.report(_run_dir(a.runs_dir, a.run_id))
+    if a.json:
+        _emit(data)
+    else:
+        print(markdown)
 
 
 # --------------------------------------------------------------------------- execution granularity (W4)
@@ -727,7 +882,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     b = sub.add_parser("begin", parents=[common], help="PARSE + create a run; print the first worker to spawn")
-    b.add_argument("--mode", default="new_direction")
+    b.add_argument("--mode", default="new_direction",
+                   help="existing mode name, or 'auto' to use the plan-catalog operated-mode resolver; explicit names always win and spec-only names fail closed")
     b.add_argument("--request", required=True)
     b.add_argument("--project", required=True,
                    help="the registered research project this run belongs to (lowercase-kebab slug from "
@@ -769,6 +925,9 @@ def build_parser() -> argparse.ArgumentParser:
                              "grounds novelty/evidence in real literature — recommended after begin)")
     ps.add_argument("--run-id", required=True)
     ps.add_argument("--request", default=None, help="optional; must match the pinned task_frame request")
+    ps.add_argument("--query", action="append", default=None,
+                    help="explicit scholarly retrieval query (repeatable); keeps the pinned request "
+                         "unchanged while decomposing broad or multilingual tasks")
     ps.set_defaults(func=cmd_pre_search)
 
     fp = sub.add_parser("fulltext-pre", parents=[common],
@@ -776,6 +935,8 @@ def build_parser() -> argparse.ArgumentParser:
     fp.add_argument("--run-id", required=True)
     fp.add_argument("--doc", action="append", required=True,
                     help="local PDF/doc path to copy into run scratch before extraction (repeatable)")
+    fp.add_argument("--source-ref", action="append", default=None,
+                    help="evidence_deep only: citation ref for matching --doc; repeat once per critical source")
     fp.add_argument("--question", default=None,
                     help="optional extraction question; defaults to the pinned task_frame request")
     fp.add_argument("--request", default=None, help="optional; must match the pinned task_frame request")
@@ -800,6 +961,14 @@ def build_parser() -> argparse.ArgumentParser:
     rj.add_argument("--reason", default=None)
     rj.set_defaults(func=cmd_reject)
 
+    ap = sub.add_parser("approve", parents=[common],
+                        help="record director approval at a human gate; releases work or completes a final gate")
+    ap.add_argument("--run-id", required=True)
+    ap.add_argument("--stage", required=True)
+    ap.add_argument("--reason", required=True,
+                    help="director decision record, e.g. the chosen idea-bet option")
+    ap.set_defaults(func=cmd_approve)
+
     s = sub.add_parser("status", parents=[common], help="run progress snapshot")
     s.add_argument("--run-id", required=True)
     s.set_defaults(func=cmd_status)
@@ -821,6 +990,22 @@ def build_parser() -> argparse.ArgumentParser:
     plp.add_argument("--intent", default=None,
                      help="force an intent id (else the request is matched; no match -> all intents)")
     plp.set_defaults(func=cmd_plan_propose)
+
+    br = sub.add_parser("brief", parents=[common],
+                        help="开工前计划卡：扫知识库/项目/资源，用大白话给出打算怎么做 + 会在哪停下来问你（只读，不启动任何运行）")
+    br.add_argument("--request", required=True)
+    br.add_argument("--project", default=None, help="the registered project this work belongs to")
+    br.add_argument("--intent", default=None, help="force an intent id (else the request is matched)")
+    br.add_argument("--vault", default=None, help="vault root (default: discovered)")
+    br.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    br.add_argument("--json", action="store_true", help="emit the structured facts instead of the card")
+    br.set_defaults(func=cmd_brief)
+
+    rp_ = sub.add_parser("report", parents=[common],
+                         help="收工后进度汇报：这次做出了什么、走到哪一步、能打开看什么、哪些还不能说、要你做什么决定（只读）")
+    rp_.add_argument("--run-id", required=True)
+    rp_.add_argument("--json", action="store_true", help="emit the structured facts instead of the report")
+    rp_.set_defaults(func=cmd_report)
 
     pi = sub.add_parser("project-init", parents=[common],
                         help="validate a registered project + create its projects/<slug>/ workspace")
@@ -978,6 +1163,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> None:
+    _configure_utf8_stdio()
     args = build_parser().parse_args(argv)
     args.func(args)
 

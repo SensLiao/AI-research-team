@@ -91,15 +91,53 @@ def executable_sha256(path: str | os.PathLike[str], *, platform_name: str) -> st
     ).hexdigest()
 
 
+def _assert_plain_parent_chain(parent: Path) -> None:
+    """Reject an existing link/reparse component without creating below it."""
+
+    for directory in (parent, *parent.parents):
+        if not os.path.lexists(directory):
+            continue
+        metadata = directory.lstat()
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or stat.S_ISLNK(metadata.st_mode)
+            or _reparse(metadata)
+        ):
+            raise LatexSandboxViolation(
+                "UNSAFE_OUTPUT_PARENT",
+                "atomic output parent must be a plain directory",
+            )
+
+
 def atomic_write_bytes(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    """Publish bytes without a predictable temporary name or link traversal.
+
+    Callers still own authorization of ``path``.  This primitive additionally
+    refuses a linked/reparse parent, so a pre-created ``*.tmp`` link cannot
+    redirect a receipt, log, or director-facing projection outside its run.
+    """
+
+    target = path.absolute()
+    _assert_plain_parent_chain(target.parent)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _assert_plain_parent_chain(target.parent)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        os.replace(temporary, target)
+        published = target.lstat()
+        if (
+            not stat.S_ISREG(published.st_mode)
+            or stat.S_ISLNK(published.st_mode)
+            or _reparse(published)
+        ):
+            raise LatexSandboxViolation(
+                "UNSAFE_OUTPUT_IDENTITY",
+                "atomic output was not published as a plain regular file",
+            )
     except BaseException:
         try:
             os.unlink(temporary)

@@ -252,6 +252,11 @@ def _primary_human_action(mode: str, artifacts: Iterable[dict]) -> str:
 def _mode_findings(mode: str, rows: list[tuple[Path, dict]], run_dir: Path) -> list[str]:
     findings: list[str] = []
     by_name = {p.name: art for p, art in rows}
+    completed_stages = {
+        str(row.get("stage") or "")
+        for row in read_manifest(run_dir).get("completed_work", [])
+    }
+
     if mode == "manuscript_authoring":
         overview = _safe_director_report(run_dir, MANUSCRIPT_OVERVIEW_REL)
         if overview is not None:
@@ -284,7 +289,6 @@ def _mode_findings(mode: str, rows: list[tuple[Path, dict]], run_dir: Path) -> l
             findings.append(
                 "No verified independent manuscript-review verdict is available; the readable report, if any, is not presented as independent evidence."
             )
-
 
     if "idea-backlog.artifact.json" in by_name:
         ideas = _payload(by_name["idea-backlog.artifact.json"]).get("ranked_ideas") or []
@@ -352,19 +356,22 @@ def _mode_findings(mode: str, rows: list[tuple[Path, dict]], run_dir: Path) -> l
         anchoring = payload.get("anchoring")
         markdown_ready = payload.get("markdown_ready")
         promotion_ready = payload.get("promotion_ready")
-        if verdict:
+        if verdict and mode != "read_paper_deep":
             findings.append(
                 f"Paper reading quality audit: `{verdict}` "
                 f"(coverage={coverage}, anchoring={anchoring}, markdown_ready={markdown_ready}, "
                 f"promotion_ready={promotion_ready})."
             )
         attacks = payload.get("reviewer_attack_points") or []
-        if attacks:
+        if attacks and mode != "read_paper_deep":
             findings.append("Reviewer attack points: " + "; ".join(str(x) for x in attacks[:3]))
 
     if "paper-markdown-card.artifact.json" in by_name:
-        cards = sorted((run_dir / "director-review" / "papers").glob("*.md"))
-        if cards:
+        cards = sorted(
+            p for p in (run_dir / "director-review" / "papers").glob("*.md")
+            if not p.name.startswith("REPAIR-")
+        )
+        if cards and "REPORT" in completed_stages:
             rels = [p.relative_to(run_dir).as_posix() for p in cards[:3]]
             findings.append("Director-facing paper card: " + ", ".join(f"`{r}`" for r in rels))
         else:
@@ -462,7 +469,12 @@ def _mode_findings(mode: str, rows: list[tuple[Path, dict]], run_dir: Path) -> l
     if not findings:
         report = by_name.get("report-note.artifact.json")
         summary = _payload(report or {}).get("summary") if report else None
-        findings.append(summary or f"{mode} completed REPORT evidence; inspect Evidence Index.")
+        if summary:
+            findings.append(summary)
+        elif "REPORT" in {str(row.get("stage") or "") for row in read_manifest(run_dir).get("completed_work", [])}:
+            findings.append(f"{mode} completed REPORT evidence; inspect Evidence Index.")
+        else:
+            findings.append(f"{mode} has not completed REPORT; inspect Evidence Index and Gate Trace before acting.")
 
     return findings[:8]
 
@@ -485,6 +497,63 @@ def build_packet(run_dir, generated_at: Optional[str] = None) -> str:
     findings = _mode_findings(mode, rows, run_path)
     status = classify_status(run_path)
     packet_status = "done" if status == "done" else manifest.get("status", status)
+
+    # A paper card is intentionally written early so a blocked read can still
+    # leave a readable working draft.  It becomes the compact human entry only
+    # after the run itself has crossed the REPORT boundary; otherwise preserve
+    # the ordinary packet's status and gate trace.
+    if mode == "read_paper_deep" and status == "done":
+        cards = sorted(
+            p for p in (run_path / "director-review" / "papers").glob("*.md")
+            if not p.name.startswith("REPAIR-")
+        )
+        if cards:
+            card = cards[0]
+            rel = card.relative_to(run_path).as_posix()
+            title = next(
+                (line[2:].strip() for line in card.read_text(encoding="utf-8").splitlines()
+                 if line.startswith("# ")),
+                "论文深读卡",
+            )
+            return "\n".join([
+                "---",
+                f"project: {project}",
+                f"generated_at: {generated_at or ''}",
+                "human_entry: true",
+                "---",
+                "",
+                f"# {title}",
+                "",
+                "## What Happened",
+                "",
+                "这篇论文已经完成深读与人类可读性重写。后台保留逐主张、图表、方法、数字和复现证据；本页不展示机器审计过程。",
+                "",
+                "## What The Director Can Decide Now",
+                "",
+                f"请直接阅读完整论文卡：[{card.name}](./papers/{card.name})。卡片末尾给出可采用内容、不能外推的结论和下一步动作。",
+                "",
+                "## Trust Boundary",
+                "",
+                "这是一份单篇论文阅读产物，不代表已经穷尽相关文献，也不代表实验已经复现或结果已经进入研究数据库。",
+                "",
+                "## Key Findings",
+                "",
+                "核心背景、贡献、数据、方法、关键结论、数值边界、局限、复现条件和项目关系均已编辑进主卡。",
+                "",
+                "## Gate Trace",
+                "",
+                "机器审计记录保留在 `../evidence/`，不进入人类主阅读流。",
+                "",
+                "## Evidence Index",
+                "",
+                f"- 人类主卡：`{rel}`",
+                "- 机器证据：`../evidence/`",
+                "",
+                "## Open Questions And Next Run",
+                "",
+                "请以主卡最后的“下一步研究动作”为准；任何入库、复现或实验执行仍需各自的独立人类决策。",
+                "",
+            ])
 
     lines: list[str] = [
         "---",

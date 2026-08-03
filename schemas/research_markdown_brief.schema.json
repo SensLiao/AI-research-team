@@ -8,9 +8,17 @@
   "additionalProperties": false,
   "properties": {
     "topic": {"type": "string", "minLength": 1},
-    "markdown": {"type": "string", "minLength": 700},
+    "markdown": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The actual director-facing Markdown emitted by the deterministic renderer from validated structured evidence. Length, headings, and presentation coverage remain delivery advisories."
+    },
     "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-    "perspective_ids": {"type": "array", "minItems": 3, "items": {"type": "string", "minLength": 1}},
+    "perspective_ids": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "Worker-declared navigation metadata. Actual perspective coverage is checked against the typed perspective notes and rendered with an advisory when incomplete."
+    },
     "quality_caveats": {"type": "array", "items": {"type": "string"}, "default": []}
   }
 }

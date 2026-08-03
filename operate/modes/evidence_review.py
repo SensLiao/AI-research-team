@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import _shared
-from ..artifacts import GateBlock, write_artifact
+from ..artifacts import GateBlock, TargetedGateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
 from ...tools.citation_attribution import (
     build_run_attribution_report,
@@ -39,7 +39,6 @@ from ...tools.research_brief_markdown import (
     write_research_brief_markdown,
 )
 from ...tools.source_methodology_audit import audit_source_quality_report
-from ...tools.validate_artifact import validate_payload
 
 STAGES = ["DISCOVER", "REPORT"]
 DEFAULT_VAULT = "AI agent database/PhD-Research-OS"
@@ -57,6 +56,9 @@ fully; reference pages ONLY by their real `[[slug]]`.
   2. IF `{run_dir}/inbox/search-results.json` exists: the live-retrieval bundle from the \
 sanctioned connector. Its `evidence_rows` are schema-ready source rows (claim_support arrives \
 "none" — grading is YOUR job; upgrade only what the row's title/venue genuinely supports).
+  3. If that bundle is empty/off-topic or misses a named method, use agent Web Search as a fallback. \
+Accept only the paper itself, official publisher/project pages, or authors' official repositories; \
+snippets and aggregators are discovery leads, never evidence. Deduplicate all channels by stable ref.
 
 HONESTY (hard): never invent a slug, DOI, or paper; grade `claim_support` honestly (strong = \
 directly + centrally supports); set `supports_claim` per locus from the ACTUAL reported result; \
@@ -93,6 +95,7 @@ REQUEST: {request}
 {north_star}
 
 Read the real vault at `{vault}/02-wiki/` and `{run_dir}/inbox/search-results.json` when present.
+Use agent Web Search only as the primary-source fallback described above; all refs face the same gates.
 Freeze a compact, decision-relevant source set. Never invent a source or inflate support.
 Write ONLY JSON to `{out}`:
 {{"evidence_table":{{"evidence_contract_version":"evidence-table/v2",
@@ -120,9 +123,12 @@ Write ONLY JSON to `{out}`:
 "comparator_fairness":"...","uncertainty_reporting":"..."}},
 "applicability":"direct|partial|indirect|unclear","evidence_refs":[{{"evidence_ref":"<ref>",
 "locator":"<section/table/page>","exact_quote":"<short quote>"}}],"limitations":["<material limit>"]}}],
-"ranking_rationale":"<decision-relevant quality synthesis>","n_sources_ranked":1}}}}
-Review every evidence-table source. `rigor_score` is an ordering hint only; never use it as proof of
-strength. Methodology, evaluation, applicability, and inspectable locators are mandatory."""
+ "ranking_rationale":"<decision-relevant quality synthesis>","n_sources_ranked":1}}}}
+ Review every evidence-table source. `rigor_score` is an ordering hint only; never use it as proof of
+strength. Judge applicability against the full research question in the task frame, not one convenient
+subclaim. Use `direct` only when a source directly addresses the whole atomic question; keep a source
+that covers one component of a bundled question `partial` or `indirect`, and never upgrade it merely
+to clear a gate. Methodology, evaluation, applicability, and inspectable locators are mandatory."""
 
 SEARCH_MODERATOR_PROMPT = """You are the evidence-search moderator. You do not set saturation.
 
@@ -205,10 +211,11 @@ def _worker_model(model_policy: str) -> str:
 
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
-               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8) -> str:
+               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
+               queries=None) -> str:
     """Live-retrieval pre-step (audit M1 — now exposed on every evidence mode)."""
     return _shared.pre_search(run_dir, request, ts, transport=transport,
-                              sources=sources, limit_per_source=limit_per_source)
+                              sources=sources, limit_per_source=limit_per_source, queries=queries)
 
 
 def fulltext_pre(run_dir: str, question: str, doc_paths, ts: str) -> Optional[str]:
@@ -288,12 +295,20 @@ def _load_bundle(run_dir, stage) -> dict:
             search = json.loads(moderator.read_text(encoding="utf-8"))
             links = json.loads(linker.read_text(encoding="utf-8"))
             audit = json.loads(auditor.read_text(encoding="utf-8"))
-            return {"evidence_table": source.get("evidence_table"),
-                    "source_quality_report": source_quality.get("source_quality_report"),
-                    "claim_list": claims.get("claim_list"),
-                    "evidence_search_trace": search.get("evidence_search_trace"),
-                    "claim_evidence_map": links.get("claim_evidence_map"),
-                    "citation_audit": audit.get("citation_audit"),
+            def take(value, key, agent):
+                return _shared.extract_worker_bundle_value(
+                    value, key, stage="DISCOVER", mode="evidence_review", agent=agent,
+                )
+            return {"evidence_table": take(source, "evidence_table", "lit-scout"),
+                    "source_quality_report": take(
+                        source_quality, "source_quality_report", "source-quality-ranker"),
+                    "claim_list": take(claims, "claim_list", "claim-extractor"),
+                    "evidence_search_trace": take(
+                        search, "evidence_search_trace", "evidence-search-moderator"),
+                    "claim_evidence_map": take(
+                        links, "claim_evidence_map", "claim-evidence-linker"),
+                    "citation_audit": take(
+                        audit, "citation_audit", "citation-coverage-auditor"),
                     "legacy_replay": False}
     else:
         replay = None
@@ -322,17 +337,62 @@ def _discover_dets(run_dir, ts, b) -> tuple:
     required = ["evidence_table", "claim_list", "claim_evidence_map"]
     if not legacy:
         required.extend(["source_quality_report", "evidence_search_trace", "citation_audit"])
-    _shared.require_bundle_keys(b, tuple(required),
-                                stage="DISCOVER", mode="evidence_review")
+    for key in required:
+        b[key] = _shared.extract_worker_bundle_value(
+            b, key, stage="DISCOVER", mode="evidence_review",
+            agent="legacy-panel" if legacy else "panel-aggregate",
+        )
     paths = []
-    if not legacy:
-        errors = []
-        for atype, key in (("evidence_table", "evidence_table"),
-                           ("source_quality_report", "source_quality_report"),
-                           ("evidence_search_trace", "evidence_search_trace")):
-            errors.extend(f"{key}: {e}" for e in validate_payload(atype, b[key]))
-        if errors:
-            raise GateBlock(f"evidence_review current contract BLOCK: {errors}")
+    normalization_reports = []
+    schema_errors = []
+    schema_defects = []
+    normalization_plan = (
+        ("evidence_table", "evidence_table", "lit-scout",
+         ["source-quality-ranker", "claim-extractor", "evidence-search-moderator",
+          "claim-evidence-linker", "citation-coverage-auditor"]),
+        ("source_quality_report", "source_quality_report", "source-quality-ranker",
+         ["evidence-search-moderator", "claim-evidence-linker", "citation-coverage-auditor"]),
+        ("evidence_search_trace", "evidence_search_trace", "evidence-search-moderator",
+         ["claim-evidence-linker", "citation-coverage-auditor"]),
+        ("claim_list", "claim_list", "claim-extractor",
+         ["claim-evidence-linker", "citation-coverage-auditor"]),
+        ("claim_evidence_map", "claim_evidence_map", "claim-evidence-linker",
+         ["citation-coverage-auditor"]),
+    )
+    for atype, key, agent, refresh in normalization_plan:
+        if b.get(key) is None:
+            continue
+        normalized, item_errors, norm_report = _shared.normalize_worker_payload(
+            run_dir, "DISCOVER", agent, atype, b[key], label=key,
+        )
+        b[key] = normalized
+        normalization_reports.append(norm_report)
+        schema_errors.extend(f"{key}: {error}" for error in item_errors)
+        if item_errors:
+            schema_defects.append({
+                "defect_id": f"evidence-review-schema-{key.replace('_', '-')}",
+                "category": "schema-semantic-gap",
+                "location": f"DISCOVER/{key}",
+                "summary": "; ".join(item_errors)[:4000],
+                "target_agents": [agent],
+                "refresh_agents": refresh,
+            })
+    if schema_errors:
+        raise TargetedGateBlock(
+            f"evidence_review payload needs a local supplement after automatic normalization: "
+            f"{schema_errors}",
+            schema_defects,
+        )
+    normalization = {
+        "normalized_payloads": sum(
+            1 for row in normalization_reports
+            if row.get("changes") or row.get("preserved_extras")
+        ),
+        "format_changes": sum(len(row.get("changes") or []) for row in normalization_reports),
+        "preserved_extra_fields": sum(
+            len(row.get("preserved_extras") or []) for row in normalization_reports
+        ),
+    }
     et = build_evidence_table(b["evidence_table"]["query"], b["evidence_table"]["sources"],
                               b["evidence_table"].get("saturation_reached", False))
     source_quality = None if legacy else b["source_quality_report"]
@@ -377,7 +437,20 @@ def _discover_dets(run_dir, ts, b) -> tuple:
                                 "draft" if legacy else
                                 "blocked" if ev["verdict"] == "BLOCK" else "approved"))
     if ev["verdict"] == "BLOCK" and not legacy:
-        raise GateBlock(f"evidence gate BLOCK: {ev['reasons']}")
+        # This gate names the exact source/search producers and downstream
+        # consumers that must refresh. Keep opaque failures as terminal
+        # GateBlocks rather than retrying them speculatively.
+        raise TargetedGateBlock(
+            f"evidence gate BLOCK: {ev['reasons']}",
+            [{
+                "defect_id": "evidence-review-evidence-input",
+                "location": "DISCOVER/evidence-table + source-quality + search-trace",
+                "summary": "Refresh the frozen source set, methodology assessment, and semantic "
+                           "evidence search trace; then refresh each dependent claim and citation bundle.",
+                "target_agents": ["lit-scout", "source-quality-ranker", "evidence-search-moderator"],
+                "refresh_agents": ["claim-extractor", "claim-evidence-linker", "citation-coverage-auditor"],
+            }],
+        )
     cv = build_report(b["claim_list"], b["claim_evidence_map"],              # HARD GATE 2 (W2 fix:
                       resolvable_refs=_shared.resolvable_refs(et))           #  loci must cite table sources)
     paths.append(write_artifact(run_dir, "DISCOVER", "citation-verdict.artifact.json",
@@ -425,7 +498,8 @@ def _discover_dets(run_dir, ts, b) -> tuple:
               "existence_gate": ex["verdict"], "existence_warnings": len(ex["warnings"]),
               "n_sources": et["n_sources"], "n_strong_sources": ev.get("n_strong"),
               "n_claims": len(b["claim_list"].get("claims") or []),
-              "n_mappings": len(b["claim_evidence_map"].get("mappings") or [])}
+              "n_mappings": len(b["claim_evidence_map"].get("mappings") or []),
+              "representation_normalization": normalization}
     try:
         report["director_markdown_brief"] = write_research_brief_markdown(
             run_dir,

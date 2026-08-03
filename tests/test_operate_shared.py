@@ -7,10 +7,33 @@ from pathlib import Path
 import pytest
 
 from research_agent_teams.operate import spine
+from research_agent_teams.operate import cli as operate_cli
 from research_agent_teams.operate.artifacts import GateBlock
 from research_agent_teams.operate.modes import _shared
 
 TS = "2026-06-13T00:00:00Z"
+
+
+def test_operate_cli_forces_utf8_for_current_and_child_commands(monkeypatch):
+    calls = []
+
+    class Stream:
+        def reconfigure(self, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setenv("PYTHONUTF8", "0")
+    monkeypatch.setenv("PYTHONIOENCODING", "cp1252")
+    monkeypatch.setattr(operate_cli.sys, "stdout", Stream())
+    monkeypatch.setattr(operate_cli.sys, "stderr", Stream())
+
+    operate_cli._configure_utf8_stdio()
+
+    assert operate_cli.os.environ["PYTHONUTF8"] == "1"
+    assert operate_cli.os.environ["PYTHONIOENCODING"] == "utf-8"
+    assert calls == [
+        {"encoding": "utf-8", "errors": "strict"},
+        {"encoding": "utf-8", "errors": "strict"},
+    ]
 
 
 def _run(tmp_path, request="study canal segmentation prompts", **kw):
@@ -88,6 +111,29 @@ def test_pre_search_degrades_honestly_and_records_are_readable(tmp_path):
     data = json.loads(Path(bundle).read_text(encoding="utf-8"))
     assert data["records"] == [] and data["source_errors"]          # degrade, never fabricate
     assert _shared.search_records(rd) == []
+
+
+def test_pre_search_keeps_pinned_request_but_runs_explicit_utf8_query_plan(tmp_path):
+    rd = _run(tmp_path)
+    body = json.dumps({"message": {"items": [{
+        "title": ["医学图像涂鸦交互分割"], "DOI": "10.1000/utf8",
+        "issued": {"date-parts": [[2025]]}, "container-title": ["Medical Imaging"],
+    }]}}, ensure_ascii=False).encode("utf-8")
+
+    bundle = _shared.pre_search(
+        rd,
+        "建立一份来源可核验的补充证据包",
+        TS,
+        transport=lambda url, headers: body,
+        sources=("crossref",),
+        queries=["医学图像 涂鸦 交互分割"],
+    )
+    data = json.loads(Path(bundle).read_text(encoding="utf-8"))
+    assert data["task_request"] == "建立一份来源可核验的补充证据包"
+    assert data["queries"] == ["医学图像 涂鸦 交互分割"]
+    assert data["records"][0]["title"] == "医学图像涂鸦交互分割"
+    assert data["relevance_filter"]["n_rejected"] == 0
+    assert data["retrieval_channels"]["local_fulltext"] == "fulltext-pre"
 
 
 def test_novelty_signals_only_when_no_near_neighbor():

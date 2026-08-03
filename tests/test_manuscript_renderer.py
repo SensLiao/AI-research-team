@@ -480,6 +480,45 @@ def test_secret_material_is_redacted_from_director_facing_markdown(tmp_path: Pat
     assert "[REDACTED]" in rendered
 
 
+def test_binary_source_asset_with_secret_is_not_projected(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    secret = "binary-asset-secret-001"
+    asset = fixture["run_root"] / "source" / "figures" / "plot.bin"
+    asset.parent.mkdir()
+    asset.write_bytes(b"\x89BIN\x00" + secret.encode("utf-8"))
+    inventory = sorted(
+        [
+            *fixture["integration"]["canonical_file_inventory"],
+            {"path": "figures/plot.bin", "sha256": _file_hash(asset), "kind": "FIGURE"},
+        ],
+        key=lambda row: row["path"],
+    )
+    source_sha = _hash(inventory)
+    fixture["integration"] = _seal(
+        {
+            **fixture["integration"],
+            "canonical_file_inventory": inventory,
+            "source_tree_sha256": source_sha,
+        },
+        "integration_hash",
+    )
+    fixture["build"] = _seal(
+        {**fixture["build"], "source_tree_sha256": source_sha},
+        "build_receipt_sha256",
+    )
+    receipt_path = fixture["run_root"] / "build" / "build-receipt.json"
+    receipt_path.write_bytes(_canonical_bytes(fixture["build"]))
+    quality = copy.deepcopy(fixture["quality"])
+    quality["build"]["source_sha256"] = source_sha
+    quality["build"]["receipt_sha256"] = fixture["build"]["build_receipt_sha256"]
+    fixture["quality"] = _seal(quality, "quality_report_sha256")
+
+    with pytest.raises(ManuscriptRenderError, match="SECRET_LEAKAGE"):
+        _render(fixture, secret_sentinels={"binary_asset": secret})
+
+    assert not (fixture["run_root"] / "director-review" / "manuscript").exists()
+
+
 def test_mutated_canonical_source_fails_hash_verified_projection(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     (fixture["run_root"] / "source" / "main.tex").write_text("mutated", encoding="utf-8")

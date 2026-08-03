@@ -29,12 +29,15 @@ PAYLOAD_SCHEMAS = {
     # --- Phase 01 operated manuscript authoring contracts ---
     "manuscript_contract": "manuscript_contract.schema.json",
     "local_literature_coverage": "local_literature_coverage.schema.json",
+    "manuscript_venue_profile_slice": "manuscript_venue_profile_slice.schema.json",
+    "manuscript_evidence_slice": "manuscript_evidence_slice.schema.json",
     "manuscript_section_bundle": "manuscript_section_bundle.schema.json",
     "manuscript_integration": "manuscript_integration.schema.json",
     "manuscript_build_receipt": "manuscript_build_receipt.schema.json",
     "manuscript_asset_manifest": "manuscript_asset_manifest.schema.json",
     "manuscript_quality_report": "manuscript_quality_report.schema.json",
     "manuscript_review_verdict": "manuscript_review_verdict.schema.json",
+    "submission_checklist": "submission_checklist.schema.json",
     # --- Phase 1 (V1 agents) artifact types ---
     "evidence_table": "evidence_table.schema.json",            # lit-scout / DISCOVER exit
     "evidence_verdict": "evidence_verdict.schema.json",        # evidence-verifier (hard gate)
@@ -134,6 +137,8 @@ PAYLOAD_SCHEMAS = {
     "recall_note": "recall_note.schema.json",                  # recall.py / RECALL exit (by-reference, never inlines D)
     "promotion_candidate": "promotion_candidate.schema.json",  # UNTRUSTED gate input (trust boundary; no path chars)
     "promotion_record": "promotion_record.schema.json",        # promote.py / promote-to-vault gate (re-derived, never self-claim)
+    "document_promotion_candidate": "document_promotion_candidate.schema.json",  # director-reviewed Markdown admission input
+    "document_promotion_record": "document_promotion_record.schema.json",        # non-result document-admission audit record
     # --- Absorption wave 1 (2026-06-10; see _design/research-agent-teams-absorption-wave1-build-contract.md) ---
     "citation_existence_verdict": "citation_existence_verdict.schema.json",  # citation_existence.py (ARS three-state; live-existence gate helper)
     "fulltext_qa_report": "fulltext_qa_report.schema.json",    # fulltext_qa.py (PaperQA2 wrapper; page-anchored, available:false-honest)
@@ -183,6 +188,9 @@ PAYLOAD_SCHEMAS = {
     # --- AERS-informed governance layer (2026-07-05+) ---
     "numeric_benchmark_report": "numeric_benchmark_report.schema.json",  # numeric_benchmark_adapter.py (recompute metrics from result rows + journal/hash evidence)
     "aers_skill_integration_plan": "aers_skill_integration_plan.schema.json",  # aers_skill_integration_planner.py (metadata-only AERS -> RAT stage/SOP map)
+    # --- T4 optional cross-disciplinary mechanism council ---
+    "mechanism_council_contribution": "mechanism_council_contribution.schema.json",
+    "mechanism_council_bundle": "mechanism_council_bundle.schema.json",
 }
 
 _ENVELOPE_SCHEMA = "artifact_envelope.schema.json"

@@ -22,6 +22,14 @@ credentials*
 secrets*
 *.secret
 
+# Workbench projection (v4) — a rebuildable cache over the machine + the vault.
+# It holds no source of truth: delete it and `research reindex` restores it exactly.
+.workbench/
+
+# Local runtime telemetry / mutable registries — state, not code.
+.harness/
+workspace/*.jsonl
+
 # Python
 __pycache__/
 *.py[cod]

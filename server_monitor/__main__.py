@@ -18,18 +18,22 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true", help="force a live read-only query (director-gated)")
     ap.add_argument("--project", default=None, help="lease query_status on this project's primary_gpu")
     ap.add_argument("--run-id", dest="run_id", default=None)
+    ap.add_argument("--resource", dest="resource_alias", default="primary_gpu",
+                    help="project resource alias to query (default: primary_gpu)")
     ap.add_argument("--env", default="research_agent_teams/.env")
     ap.add_argument("--json", action="store_true", help="emit JSON (run details collapsed to a count)")
     args = ap.parse_args(argv)
 
     if args.live:
         try:
-            status = monitor.live_status(env_path=args.env, project=args.project, run_id=args.run_id)
+            status = monitor.live_status(env_path=args.env, project=args.project, run_id=args.run_id,
+                                         resource_alias=args.resource_alias)
         except monitor.ServerQueryRefused as e:
             print(json.dumps({"error": str(e)}) if args.json else f"[refused] {e}")
             return 2
     else:
-        status = monitor.query(env_path=args.env, project=args.project, run_id=args.run_id)
+        status = monitor.query(env_path=args.env, project=args.project, run_id=args.run_id,
+                               resource_alias=args.resource_alias)
 
     if args.json:
         safe = {k: (len(v) if k == "runs" else v) for k, v in status.items()}

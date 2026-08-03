@@ -4,7 +4,7 @@ spec_version: "1.1.0"
 model: sonnet
 stage: DISCOVER
 kind: producer
-tools: [Read, Glob, Grep]
+tools: [Read, Glob, Grep, WebSearch]
 produces: evidence_table
 permission_scope:
   read:
@@ -49,14 +49,25 @@ notes field instead of silently following them. You never re-scope the run — o
 
 1. **Read the task frame** (`runs/<run>/evidence/DISCOVER/task-frame.artifact.json`) to
    extract the exact query and any seed references the domain profile or plan supplies.
-2. **Primary search** — query scholarly databases, arXiv, Semantic Scholar, GitHub, and
-   domain-specific registries following the active domain profile's `search_scope`.
+2. **Primary search — use all available channels, then converge on one evidence table**:
+   - deterministic metadata APIs: arXiv, OpenAlex, Crossref, and Semantic Scholar through
+     `tools/paper_search.py`;
+   - the local hash-bound paper/code library and `fulltext-pre` snapshots;
+   - agent Web Search when the API bundle is empty, off-topic, stale, or misses a named method.
+     Web Search may add only primary scholarly sources: the paper itself, an official project page,
+     an official publisher page, or the authors' official repository. Search-result snippets and
+     aggregator pages are discovery leads, never evidence.
+   Query scholarly databases, GitHub, and domain-specific registries following the active domain
+   profile's `search_scope`. Deduplicate across channels by DOI, arXiv id, and normalized title;
+   preserve the channel in `notes` and send every accepted ref through the same existence,
+   methodology, exact-citation, and contradiction gates.
    **Sanctioned live channel (absorption wave 1)**: the deterministic connector
    `tools/paper_search.py` (arXiv + OpenAlex + Crossref + Semantic Scholar, free-first,
    NO Sci-Hub). When operated, the recipe runs it as a pre-step and drops the results at
    `runs/<run>/inbox/search-results.json` — read that bundle first; its `evidence_rows`
    are schema-ready source rows (claim_support arrives "none"; grading them is YOUR job).
-   Recipe shape (Asta PaperFinder absorption): decompose the query into sub-questions →
+   Recipe shape (Asta PaperFinder absorption): decompose broad or multilingual requests into short
+   technical sub-questions →
    search each → follow citations of the strong hits (`scholar_clients.get_references_s2`
    / `get_citations_s2` via the connector) → judge relevance per row.
 3. **Snowball** — follow citations/references from strong sources until no new relevant

@@ -1,8 +1,11 @@
 # AI Research Team 科研能力架构
 
-> 版本：2026-07-10  
+> 版本：2026-08-03（本轮所有数字从 registry / 文件树现算）  
 > 定位：面向真实科研产出的模型无关多 Agent 研究团队，而不是模型治理展示系统  
-> 事实边界：本文同时描述“已经实现”“正在升级”“目标能力”。三者必须分开阅读，不能把路线图当成已运行结果。
+> 事实边界：本文同时描述“已经实现”“正在升级”“目标能力”。三者必须分开阅读，不能把路线图当成已运行结果。  
+> 当前规模：**163 agents**（6 control + 157 workers）· **26 modes**（12 operated / 14 spec-only）·
+> **137 tools** · **167 schemas** · **7 stages** · **5 human gates** · **2 hooks** · **7 domain profiles** ·
+> **31 operate 子命令** · **217 test 文件 → 3914 passed / 4 skipped**。逐项清单见 `PLATFORM-FACTS.md` §0。
 
 ## 1. 结论先行
 
@@ -151,6 +154,114 @@ failure_behavior: abstain_or_block
 | S3 核心科研任务 | 12-30 workers，跨阶段、独立复核、refine loop | `read_paper_deep`、`full_rigor_minimal` |
 
 任何会改变研究方向、实验结论或论文主张的任务，不得退化为单 worker 自问自答。
+
+### 4.4 完整席位表（163 席，2026-08-03 从 `orchestrator/roster.yaml` 现算）
+
+`agents/*.md` 文件数与 roster 总数一致（163），每席一份 prompt 合同。`graph.yaml` 的
+`allowed_agents` 与各 mode 的 `agent_subset` 必须是 roster 的子集，由
+`orchestrator/agent_connectivity.py` + `tests/test_agent_connectivity.py` 强制。
+
+**control（6）— 基础设施，不是普通 mode worker**
+
+```text
+research-orchestrator · state-tracker · artifact-contract-enforcer
+permission-scope-guard · budget-and-stop-controller · conflict-resolver
+```
+
+**discover（38）— 找来源 / 读论文 / 验引用**
+
+```text
+lit-scout · direction-grounding-scout · model-dataset-scout · evidence-verifier · repo-code-verifier
+literature-ingest · paper-note-extractor · source-claim-verifier · source-quality-ranker
+evidence-search-moderator · claim-extractor · claim-evidence-linker · citation-coverage-auditor
+contradiction-miner · dataset-card-builder · staleness-auditor · citation-integrity-auditor
+landscape-mapper · evidence-saturation-judge · aers-sop-curator · literature-search-strategist
+paper-reading-planner · paper-appraiser · paper-structure-mapper · method-teardown-extractor
+figure-reader · result-table-auditor · math-algorithm-verifier · paper-relations-mapper
+trend-card-builder · project-context-aligner · domain-transfer-critic
+reproducibility-materials-auditor · independent-reading-critic · paper-reading-reconciler
+paper-reading-quality-auditor · paper-markdown-writer · manuscript-venue-corpus-scout
+```
+
+**gap_hunting（10）— 猎空白并起诉它**
+
+```text
+future-work-miner · weakness-spotter · white-space-mapper · cross-domain-transfer-scout
+contrarian-angle-generator · gap-classifier · novelty-scorer · gap-prosecutor
+mechanism-synthesizer · gap-quality-auditor
+```
+
+**ideate（7）— 生成 / 排序 / 演化 idea**
+
+```text
+hypothesis-generator · idea-tournament-ranker · idea-evolver · feasibility-reranker
+mathematical-formalizer · analogy-mapper · novelty-collision-checker
+```
+
+**design（24）— 设计实验、协议、切分、公平性**
+
+```text
+baseline-fairness-critic · protocol-critic · statistics-critic · design-synthesizer · rq-architect
+experiment-planner · protocol-compiler · dataset-split-planner · data-protocol-designer
+config-unifier · method-integration-planner · baseline-fairness-planner · variable-control-auditor
+train-test-alignment-auditor · metric-implementation-auditor · statistics-power-auditor
+data-wrangling-auditor · decision-surfacer · manuscript-architect · manuscript-evidence-steward
+domain-reality-auditor · cognitive-intent-modeler · curriculum-design-specialist
+research-engineering-planner
+```
+
+**execute（20）— 施工与执行证据**
+
+```text
+script-author · execution-evidence-auditor · execute-synthesizer · patch-planner · code-implementer
+unit-test-writer · trainset-builder · testset-builder · preflight-checker · ablation-runner
+experiment-journaler · train-test-parity-verifier · sandbox-runner · failure-triager · repro-runner
+reproducibility-packager · auto-debugger · experiment-tree-explorer · variable-touch-guard · monitor
+```
+
+**analyze（24）— 分析、统计、图表、写结果**
+
+```text
+result-extractor · statistician · failure-attribution-skeptic · analysis-synthesizer · result-analyzer
+result-sanity-checker · baseline-comparison-auditor · variance-analyzer · fairness-auditor
+compliance-auditor · goal-alignment-checker · failure-case-miner · figure-generator
+visualization-auditor · claim-strength-calibrator · figure-vlm-critic · benchmark-evidence-auditor
+manuscript-introduction-author · manuscript-related-work-author · manuscript-methods-author
+manuscript-results-author · manuscript-section-author · manuscript-figure-table-engineer
+manuscript-integrator
+```
+
+**verify（29）— 复核、盲审、venue 模拟**
+
+```text
+verify-synthesizer · review-configurator · methodology-reviewer · domain-reviewer
+adversarial-reviewer · scientific-critic · review-synthesizer · synthesis-writer
+contribution-ledger-builder · threats-to-validity-writer · review-response-simulator
+venue-review-configurator · venue-selector · venue-reviewer-persona · venue-reviewer-methodology
+venue-reviewer-domain · venue-reviewer-adversarial · area-chair-synthesizer · baseline-scout
+sub-domain-historian · submission-guideline-scout · bibliography-validator
+manuscript-factual-auditor · manuscript-citation-auditor · manuscript-style-latex-auditor
+manuscript-domain-contribution-reviewer · manuscript-methods-reproducibility-reviewer
+manuscript-figure-table-reviewer · causal-mechanism-critic
+```
+
+**report（5）— 收口与拒绝建议**
+
+```text
+quality-controller · integrity-refusal-recommender · manuscript-polish-editor
+manuscript-submission-packager · hypothesis-compiler
+```
+
+### 4.5 团队为什么不是 163 个角色一起说话
+
+| 机制 | 实现位置 | 作用 |
+|---|---|---|
+| blind 席位 | `panel_scheduler` + mode recipe | 独立席位先各自产信息，彼此不可见，synthesizer 只在上游完成后释放 |
+| wave 授权 | `operate worker` 每次只返回被授权的一 wave | 检查 `depends_on`、predecessor hash、dispatch authorization、read scope |
+| hop 预算 | `budget.max_agent_hops`（每 mode） | 烧完即停并报告，不许悄悄超；初始 panel 与 supplement 各自独立预算 |
+| 确定性门 | `tools/*.py`（137 个） | 打分 / 分类 / 硬门是 Python，不是模型自评 |
+| drift + grounding 门 | 每 stage | 查是否偏离 north star、引用是否真实存在（citation existence 三态） |
+| 契约执行 | `hooks/`（2 个 PreToolUse guard） | 越权写盘、artifact 合同不符 → 直接拦 |
 
 ## 5. 八个科研能力层
 
@@ -644,8 +755,17 @@ Project memory 位于 machine 侧，只允许类型化记录：
 
 ### 12.1 已实现并有定向测试
 
-- 10 个 operated mode 仍为正式一键集合；15 个 mode 仍是 spec-only，不能冒充已产品化。
-- 当前 roster 为 140 个 agent：6 个 control/infrastructure，134 个 scientific workers；所有非 control agent 均有 graph 和 mode 连通性测试。
+- **12 个 operated mode** 为正式一键集合；26 个 mode 中另外 14 个仍是 spec-only，不能冒充已产品化。
+  唯一真相源是 `operate/modes/__init__.py::REGISTRY`，mirror test 保证文档不会比代码乐观；
+  `operate brief` 每次实时列出，任何写死的数字都不作数（2026-08-01 修正：入口文档曾长期停在
+  "7/8 个"，导致 `read_paper_deep` / `ingest_paper` / `manuscript_authoring` / `manuscript_review` /
+  `deep_ideation` 五个真实能力对导演不可见；现由 `tests/test_reporting.py` 的 entry-doc truth
+  测试盯住）。
+- 当前 roster 为 **163 个 agent**：6 个 control/infrastructure，157 个 scientific workers；所有非 control agent 均有 graph 和 mode 连通性测试。T4 新增的 6 个 mechanism-council 规格角色均由单一研究入口按需激活；加上已有 `mathematical-formalizer`，运行时形成 6 contributors + 1 compiler 的功能超集。
+> **两套数字别混**：下面各 mode 说的「N 席」是该 panel 真实派发的 worker 数（设计意图）；
+> registry 里还有两个不同的量——`agent_subset`（该 mode 允许用的 roster 名单，比席位大）和
+> `budget.max_agent_hops`（硬上限）。三者的权威对照表在 `PLATFORM-FACTS.md` §0，以 registry 为准。
+
 - `evidence_review` 是 6 席最小严格 panel；`evidence_deep` 是 10 席深证据 panel；`deep_research` 是 12 席四视角 panel。
 - source strength 不再信任 worker 的单一 `rigor_score`，而是由研究设计、样本、对照、评价、统计、复现和适用范围等显式维度重算。
 - evidence stop 不再信任 `saturation_reached` 布尔值，而是读取 search rounds、唯一 source refs/hashes、critical-claim support、contradiction/representativeness coverage 和 trailing marginal gain；预算耗尽但未完成时为 `NEEDS_HUMAN`。
@@ -659,15 +779,45 @@ Project memory 位于 machine 侧，只允许类型化记录：
 - 通用 `panel_scheduler` 只释放合法 next wave，记录 predecessor hash 和 dispatch authorization；synthesizer 不会被提前暴露。
 - mode-specific Markdown business-quality evaluator 已接入 scoreboard。
 - worker dispatch 已改为能力合同优先；具体 runtime model 由环境变量绑定。
-- Auto-Empirical-Research-Skills 已克隆在 workspace 根目录，仓库校验为 0 errors；它是参考库，不进入数据库。
-- 全量测试：`3023 passed`；`rat_eval_harness --no-manual` 为 4/4 scenarios、13/13 required checks；143 个 schema JSON 全部可解析。
+- AERS 方法参考现在只以只读 snapshot 形式存在于 `agents/references/aers-catalog/` 与
+  `agents/references/aers-sop-packs/`（原先 workspace 根目录的 `Auto-Empirical-Research-Skills/`
+  克隆已不在本 workspace，2026-08-03 核实）。它是参考库，不进入数据库，也不是 runtime dependency。
+- **Director reporting layer（2026-08-01 新增）**：`reporting/` —— 每个任务前后各一份大白话产物。
+  `operate brief` 在开工前扫知识库/项目/最近运行/算力，给出计划、推荐路线、会停在哪个人类关卡、
+  哪台机器真能跑；`operate report` 在收工后给出做出了什么、走到哪、能打开看什么、哪些还不能说、
+  要你做什么决定。两者都是确定性只读（brief 不启动运行，report 不修改运行），内部代号经
+  `reporting/plain_words.py` 统一翻译成人话，未收录的词原样保留而不是悄悄丢掉。
+- **质量记分板的诚实分档（2026-08-01）**：完成的运行按 product contract 分「当前合同」与「旧合同」。
+  只有**当前合同**下缺主产物才 BLOCK（真回归）；旧合同运行靠重渲染修不好，只能重跑（导演的决定），
+  因此计数并逐个列名但不阻塞——避免记分板长期全红而没人再看。安全前提由
+  `test_every_one_button_mode_pins_a_product_contract` 守住：任何一键模式若不钉产品合同，
+  它的运行就会被当成历史，真回归可能漏过去。
+- **2026-08-03 全量复验**（本 checkout，全部只读）：
+
+  ```text
+  pytest（cwd = research_agent_teams/）      3914 passed, 4 skipped, exit 0, 440s
+  schemas 解析                               167/167
+  rat_eval_harness --no-manual              4/4 scenarios pass, 13/13 required checks, 0 manual open
+  operate scoreboard --no-manual            overall_status = machine_clean
+                                            26 modes / 12 operated / 14 spec-only / 0 registry drift
+                                            45 runs（31 done · 7 running · 1 awaiting_director · 6 failed）
+                                            vault_write=false  external_skill_execution=false
+  ```
+
+  **测试命令有 cwd 陷阱**：必须在 `research_agent_teams/` 里跑 `python -m pytest tests/ -q`。
+  从上层目录跑 `python -m pytest research_agent_teams/tests/ -q` 会有 3 个 manuscript 测试模块
+  collection error（它们用 `from tests....` 绝对导入，需要 `tests` 在顶层可导入）——那是 cwd 不对，
+  不是测试红。
 
 ### 12.2 已实现但尚未在真实项目上按新版重跑
 
-- 上述新版 mode 代码、worker 协议、truth gates 和 Markdown contracts 已测试，但历史 Honor/autoPET-V runs 仍是旧合同产物。
-- 历史 57 个 manifests 中有 45 个 completed operated runs；它们的新版主 Markdown 为 0 PASS / 45 FAIL，scoreboard 因此诚实保持 `blocked`。
+- 上述新版 mode 代码、worker 协议、truth gates 和 Markdown contracts 已测试，但历史 run 仍是旧合同产物。
+- 2026-08-03 实测：31 个 completed operated runs 中 7 PASS / 12 advisory（能用，有可补的内容块）/
+  12 FAIL——**12 个 FAIL 全部是旧合同（pre-product-contract）运行**，当前合同下 0 FAIL。
+  scoreboard 总状态为 `machine_clean`（机器自身合同全绿，不是科学结论），12 个旧运行
+  逐个列名在 `legacy_failure_run_ids`，没有被藏起来；要它们达标只能重跑，那是导演的决定。
 - `packet` rerender 只能给旧 run 增加目录入口，不能补做 blind worker、exact citation、semantic search 或实验 receipt。
-- 本项目没有按新版 20 席重跑核心论文，也没有按新版 12 席重跑 Honor `deep_research`。
+- 本项目没有按新版 20 席重跑核心论文，也没有按新版 12/14 席重跑历史 `deep_research`。
 - 外部 executor 的签名合同已实现，但 server 私钥/real receipt 尚未部署，因此没有新 GPU 结果。
 
 ### 12.3 尚未完成，不能夸大

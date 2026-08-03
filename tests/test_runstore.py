@@ -4,10 +4,14 @@ from __future__ import annotations
 import pytest
 import yaml
 
+from research_agent_teams.tools._latex_sandbox import LatexSandboxViolation
 from research_agent_teams.tools.runstore import (
+    atomic_write_text,
     checkpoint_stage,
     classify_status,
     create_run,
+    fail_run,
+    mark_gate_pending,
     prepare_resume,
     read_manifest,
     start_stage,
@@ -52,6 +56,43 @@ def test_atomic_write_leaves_no_tmp(tmp_path):
     assert list(run_dir.glob("*.tmp")) == []
 
 
+def test_atomic_write_does_not_follow_a_predictable_tmp_symlink(tmp_path):
+    """A stale ``<target>.tmp`` link must not redirect a manifest-like write."""
+
+    target = tmp_path / "evidence" / "receipt.json"
+    target.parent.mkdir()
+    outside = tmp_path / "director-owned.txt"
+    outside.write_text("unchanged", encoding="utf-8")
+    predictable_tmp = target.with_name(target.name + ".tmp")
+    try:
+        predictable_tmp.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symbolic links unavailable on this filesystem: {exc}")
+
+    atomic_write_text(target, '{"state":"safe"}\n')
+
+    assert outside.read_text(encoding="utf-8") == "unchanged"
+    assert target.read_text(encoding="utf-8") == '{"state":"safe"}\n'
+    assert not target.is_symlink()
+
+
+def test_atomic_write_rejects_a_linked_parent_before_creating_any_output(tmp_path):
+    run_root = tmp_path / "run"
+    outside = tmp_path / "outside"
+    run_root.mkdir()
+    outside.mkdir()
+    linked = run_root / "linked"
+    try:
+        linked.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symbolic links unavailable on this filesystem: {exc}")
+
+    with pytest.raises(LatexSandboxViolation, match="UNSAFE_OUTPUT_PARENT"):
+        atomic_write_text(linked / "new" / "receipt.json", "safe\n")
+
+    assert not (outside / "new" / "receipt.json").exists()
+
+
 def test_full_run_reaches_done(tmp_path):
     create_run(tmp_path, "run1", "m", "ANALYZE", TS)
     run_dir = tmp_path / "run1"
@@ -70,6 +111,32 @@ def test_crashed_mid_stage_detected(tmp_path):
     checkpoint_stage(run_dir, "DISCOVER", [_artifact(tmp_path)], "k", TS)
     start_stage(run_dir, "IDEATE", TS)  # started but never checkpointed = crash
     assert classify_status(run_dir) == "crashed_mid_stage"
+
+
+def test_hard_gate_failure_is_terminal_and_not_a_crash(tmp_path):
+    create_run(tmp_path, "run1", "m", "DISCOVER", TS)
+    run_dir = tmp_path / "run1"
+
+    manifest = fail_run(run_dir, "DISCOVER", "citation gate BLOCK: missing primary source", TS)
+
+    assert manifest["status"] == "failed"
+    assert manifest["next_step"] is None
+    assert manifest["failure"]["stage"] == "DISCOVER"
+    assert classify_status(run_dir) == "failed"
+    with pytest.raises(RuntimeError, match="hard gate"):
+        prepare_resume(run_dir, TS)
+    with pytest.raises(RuntimeError, match="failed hard gate"):
+        start_stage(run_dir, "DISCOVER", TS)
+
+
+def test_start_stage_refuses_to_bypass_a_pending_director_gate(tmp_path):
+    create_run(tmp_path, "run1", "m", "DISCOVER", TS)
+    run_dir = tmp_path / "run1"
+    checkpoint_stage(run_dir, "DISCOVER", [_artifact(tmp_path)], "k", TS)
+    mark_gate_pending(run_dir, "DISCOVER", TS, "IDEATE")
+
+    with pytest.raises(RuntimeError, match="awaiting director"):
+        start_stage(run_dir, "IDEATE", TS)
 
 
 def test_resume_from_crash_reruns_same_stage(tmp_path):

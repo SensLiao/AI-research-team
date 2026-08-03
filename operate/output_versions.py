@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import shutil
 from pathlib import Path
+
+from ..tools._latex_sandbox import LatexSandboxViolation, atomic_write_bytes
+from ..tools.manuscript_security import ManuscriptPathViolation, validate_run_owned_path
 
 
 CONTRACT_VERSION = "supplement-lineage/v1"
@@ -32,11 +34,30 @@ def plan_path(run_dir: Path, stage: str, cycle: int) -> Path:
     return _root(run_dir, stage, cycle) / "repair-plan.json"
 
 
-def _write(path: Path, value: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+def _validate_supplement_path(run_dir: Path, path: Path) -> Path:
+    root = Path(run_dir).absolute()
+    target = Path(path).absolute()
+    try:
+        validate_run_owned_path(
+            target,
+            run_root=root,
+            purpose="write",
+            owned_output_roots=(root / "inbox" / "supplements",),
+        )
+    except ManuscriptPathViolation as exc:
+        raise ValueError(f"unsafe supplement plan path: {exc}") from exc
+    return target
+
+
+def _write(run_dir: Path, path: Path, value: dict) -> None:
+    target = _validate_supplement_path(run_dir, path)
+    try:
+        atomic_write_bytes(
+            target,
+            (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+        )
+    except LatexSandboxViolation as exc:
+        raise ValueError(f"unsafe supplement plan path: {exc}") from exc
 
 
 def _read(path: Path) -> dict:
@@ -48,6 +69,25 @@ def _read(path: Path) -> dict:
 
 def _relative(run_dir: Path, path: Path) -> str:
     return path.resolve(strict=False).relative_to(run_dir.resolve()).as_posix()
+
+
+def _version_stem(node: dict, duplicate_labels: set[str]) -> str:
+    """Return the stable filename stem for one repair output.
+
+    Historical plans used the canonical agent label as the filename.  Keep
+    that spelling when the label is unique.  A panel may, however, schedule
+    the same canonical role more than once with different logical outputs. In
+    that case the label alone aliases both supplements, so bind the path to a
+    stable worker/output discriminator as well.
+    """
+    label = str(node["label"])
+    stem = _safe(label)
+    if label not in duplicate_labels:
+        return stem
+    discriminator = hashlib.sha256(
+        (str(node["id"]) + "\0" + str(node["output_rel"])).encode("utf-8")
+    ).hexdigest()
+    return f"{stem}--{discriminator}"
 
 
 def resolve_effective_output(run_dir: Path, stage: str, logical_path: Path) -> Path:
@@ -85,24 +125,32 @@ def prepare_plan(
 ) -> dict:
     """Create an idempotent repair plan without modifying any prior bundle."""
     path = plan_path(run_dir, stage, cycle)
+    _validate_supplement_path(run_dir, path)
     if path.is_file():
         return _read(path)
     outputs = []
     base_dir = path.parent / "originals"
+    label_counts: dict[str, int] = {}
+    for node in nodes:
+        label = str(node["label"])
+        label_counts[label] = label_counts.get(label, 0) + 1
+    duplicate_labels = {label for label, count in label_counts.items() if count > 1}
     for node in nodes:
         if node["label"] not in targets:
             continue
+        version_stem = _version_stem(node, duplicate_labels)
         logical = node["output_path"]
         effective = resolve_effective_output(run_dir, stage, logical)
         effective_hash = sha256(effective) if effective.is_file() else None
         if effective.is_file():
-            snapshot = base_dir / f"{_safe(node['label'])}.bundle.json"
+            snapshot = base_dir / f"{version_stem}.bundle.json"
+            _validate_supplement_path(run_dir, snapshot)
             snapshot.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(effective, snapshot)
             snapshot_ref = _relative(run_dir, snapshot)
         else:
             snapshot_ref = None
-        physical = path.parent / "corrected" / f"{_safe(node['label'])}.bundle.json"
+        physical = path.parent / "corrected" / f"{version_stem}.bundle.json"
         outputs.append({
             "worker_id": node["id"],
             "agent": node["label"],
@@ -125,7 +173,7 @@ def prepare_plan(
         "targets": sorted(targets),
         "outputs": outputs,
     }
-    _write(path, plan)
+    _write(run_dir, path, plan)
     return plan
 
 
@@ -157,6 +205,7 @@ def _json_changes(before, after, prefix="$") -> list[str]:
 def finalize_output(run_dir: Path, stage: str, cycle: int, worker_id: str, ts: str) -> None:
     """Bind a completed supplement to its base hash and record a compact diff."""
     path = plan_path(run_dir, stage, cycle)
+    _validate_supplement_path(run_dir, path)
     plan = _read(path)
     changed = False
     for row in plan.get("outputs") or []:
@@ -178,4 +227,4 @@ def finalize_output(run_dir: Path, stage: str, cycle: int, worker_id: str, ts: s
         row["completed_at"] = ts
         changed = True
     if changed:
-        _write(path, plan)
+        _write(run_dir, path, plan)

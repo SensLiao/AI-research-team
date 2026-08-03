@@ -118,6 +118,64 @@ def test_report_commit_generates_director_packet(tmp_path):
     assert status["director_review_packet"].replace("\\", "/").endswith("director-review/00-REVIEW-PACKET.md")
 
 
+def test_pending_packet_does_not_claim_completed_report(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "pkt-pending", "research a field", "deep_research", TS)
+    rd = Path(plan["run_dir"])
+
+    text = write_packet(rd, generated_at=TS).read_text(encoding="utf-8")
+
+    assert "has not completed REPORT" in text
+    assert "completed REPORT evidence" not in text
+
+
+def test_pending_paper_card_does_not_use_completed_paper_packet(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "pkt-paper-pending", "read a paper", "read_paper_deep", TS)
+    rd = Path(plan["run_dir"])
+    card = rd / "director-review" / "papers" / "pending-paper.md"
+    card.parent.mkdir(parents=True)
+    card.write_text("# Pending Paper\n\nThis card is not yet committed.", encoding="utf-8")
+
+    text = write_packet(rd, generated_at=TS).read_text(encoding="utf-8")
+
+    assert "# Director Review Packet" in text
+    assert "# Pending Paper" not in text
+
+
+def test_pending_paper_card_artifact_keeps_packet_truthful(tmp_path):
+    """A pre-REPORT card artifact must not make the director packet look complete."""
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "pkt-paper-artifact-pending", "read a paper", "read_paper_deep", TS)
+    rd = Path(plan["run_dir"])
+    card = rd / "director-review" / "papers" / "pending-paper.md"
+    card.parent.mkdir(parents=True)
+    card.write_text("# Pending Paper\n\nThis card is not yet committed.", encoding="utf-8")
+    write_artifact(
+        rd,
+        "DISCOVER",
+        "paper-markdown-card.artifact.json",
+        "paper_markdown_card",
+        "paper-markdown-writer",
+        {
+            "source_ref": "doi:10.0000/pending",
+            "title": "Pending Paper",
+            "markdown": "Draft evidence. " * 50,
+            "evidence_refs": [],
+            "covered_claim_ids": [],
+            "covered_figure_refs": [],
+            "covered_sections": ["next-actions"],
+            "quality_verdict": None,
+        },
+        TS,
+    )
+
+    text = write_packet(rd, generated_at=TS).read_text(encoding="utf-8")
+
+    assert "Paper Markdown card artifact exists" in text
+    assert "Director-facing paper card:" not in text
+
+
 def test_director_packet_surfaces_evidence_deep_markdown_brief(tmp_path):
     runs = tmp_path / "runs"
     plan = spine.begin(str(runs), "pkt3", "review evidence deeply", "evidence_deep", TS)

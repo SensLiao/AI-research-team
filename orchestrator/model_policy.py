@@ -49,6 +49,15 @@ RUNTIME_MODEL_ENV = "RAT_RUNTIME_MODEL"
 RUNTIME_REASONING_ENV = "RAT_RUNTIME_REASONING_EFFORT"
 RUNTIME_SERVICE_ENV = "RAT_RUNTIME_SERVICE_TIER"
 
+RUNTIME_OBSERVED_FIELDS = (
+    "resolved_model",
+    "service_tier",
+    "reasoning_effort",
+    "input_tokens",
+    "output_tokens",
+    "elapsed_ms",
+)
+
 _CAPABILITY_BY_TIER = {
     "sonnet": {
         "reasoning_quality": "strong",
@@ -138,6 +147,52 @@ def codex_runtime_fields(
     }
 
 
+def runtime_observability_fields(
+    resolved_model: Optional[str],
+    *,
+    environ: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Describe what the operate process actually observes about a worker call.
+
+    The operate CLI emits a worker specification and exits; the Codex host runs
+    that worker outside this Python process.  Consequently deployment env values
+    are request-time bindings, never provider-response evidence.  This function
+    deliberately has no path that returns ``provider_attested``: adding such a
+    state requires a host callback carrying a cryptographically verifiable
+    provider receipt.
+    """
+    if resolved_model is None or resolved_model == NO_MODEL:
+        return {
+            "runtime_observation_status": "not_applicable",
+            "runtime_binding_source": "none",
+            "runtime_observation_reason": "deterministic_or_unresolved_no_model_seat",
+        }
+    bindings = codex_runtime_fields(resolved_model, environ=environ)
+    return {
+        "runtime_observation_status": "unobserved",
+        "runtime_binding_source": "deployment_environment" if bindings else "none",
+        "runtime_observation_reason": "operate_process_has_no_provider_response_metadata",
+    }
+
+
+def runtime_observability_contract(resolved_model: Optional[str]) -> Dict[str, object]:
+    """Fail-closed runner contract attached to every reasoning worker spec."""
+    if resolved_model is None or resolved_model == NO_MODEL:
+        return {
+            "status": "not_applicable",
+            "provider_receipt_available": False,
+            "estimated_usage_allowed": False,
+            "required_observed_fields": [],
+        }
+    return {
+        "status": "unobserved",
+        "provider_receipt_available": False,
+        "estimated_usage_allowed": False,
+        "required_observed_fields": list(RUNTIME_OBSERVED_FIELDS),
+        "adapter_requirement": "signed_host_provider_usage_callback",
+    }
+
+
 def decorate_worker_runtime(worker: Optional[dict]) -> Optional[dict]:
     """Add concrete Codex runtime fields to an operate worker spec.
 
@@ -159,6 +214,7 @@ def decorate_worker_runtime(worker: Optional[dict]) -> Optional[dict]:
     worker.setdefault("model_tier", tier)
     worker.setdefault("capability_requirements", capability_requirements(tier))
     worker.update(codex_runtime_fields(tier))
+    worker.setdefault("runtime_observability", runtime_observability_contract(tier))
     return worker
 
 

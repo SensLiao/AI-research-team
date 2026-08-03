@@ -33,6 +33,22 @@ def test_single_token_out_of_scope_matches_tokens_not_substrings():
     assert hit["out_of_scope_hits"] == ["net"]
 
 
+def test_mixed_cjk_exclusion_does_not_collapse_to_latin_acronym():
+    ns = {
+        "statement": "提出通用3D医学影像交互式残差校正框架",
+        "in_scope": ["PET/CT主数据集"],
+        "out_of_scope": ["GT泄漏"],
+    }
+    safe = check_drift(
+        ns,
+        ["PET/CT residual correction quarantines GT-derived simulator inputs to prevent 泄漏风险"],
+    )
+    assert safe["out_of_scope_hits"] == []
+
+    unsafe = check_drift(ns, ["该 PET/CT 实验存在 GT泄漏，结论不可用"])
+    assert unsafe["out_of_scope_hits"] == ["GT泄漏"]
+
+
 def test_zero_anchor_coverage_is_a_hard_violation():
     r = check_drift(NS, ["a survey about restaurant recommendation engines"])
     assert any("zero north-star anchor coverage" in v for v in r["violations"])

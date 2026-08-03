@@ -9,7 +9,8 @@
 Returns REFERENCES + a redacted summary, NEVER a secret value. For the SSH server it attaches the
 execute layer's already-redacted connection summary (host / user / auth-MODE only); the password/key
 are read from os.environ ONLY at connect time inside execute/runner.py — never here. This module never
-sets ``RAT_EXECUTE_AUTHORIZED`` (the director's out-of-band live-op gate) and never opens a connection.
+sets ``RAT_EXECUTE_AUTHORIZED`` (the legacy exact-run CLI capability), cannot assert the primary
+assistant's library-only explicit-director-command confirmation, and never opens a connection.
 """
 from __future__ import annotations
 
@@ -58,6 +59,49 @@ class ResourceResolver:
         self._registry = rp.load_registry(resources_root)
         self._policy = rp.load_policy(resources_root)
 
+    def candidates(self, *, project: str, resource_type: Optional[str] = None,
+                   capability: Optional[str] = None,
+                   require_execution_ready: bool = False) -> list[dict]:
+        """Return redacted, non-leasing candidates bound to ``project``.
+
+        This is discovery only: it never resolves environment values, opens a connection, acquires a
+        lease, or grants ``submit_job``.  When ``capability`` is supplied, both the project binding and
+        the default-deny policy must allow it. ``require_execution_ready`` filters on independently
+        recorded hardware/runtime readiness, while the later ``resolve`` + human gate still controls
+        the actual operation. This keeps "the GPU exists" separate from "a job may be submitted".
+        """
+        bindings = rp.load_bindings(self._projects_root, project)
+        out: list[dict] = []
+        for binding in bindings.get("bindings", []) or []:
+            resource_ref = binding.get("resource_ref")
+            resource = self._registry.get(resource_ref)
+            if resource is None:
+                continue
+            if resource_type and resource.get("type") != resource_type:
+                continue
+            if require_execution_ready and not bool(resource.get("execution_ready")):
+                continue
+            if capability:
+                binding_ok, _ = rp.binding_allows(binding, capability)
+                policy_ok, _, _ = rp.policy_allows(
+                    self._policy, resource_ref, capability, project)
+                if not (binding_ok and policy_ok):
+                    continue
+            submit_binding_ok, _ = rp.binding_allows(binding, "submit_job")
+            submit_policy_ok, _, _ = rp.policy_allows(
+                self._policy, resource_ref, "submit_job", project)
+            out.append({
+                "alias": binding.get("alias"),
+                "resource_id": resource_ref,
+                "type": resource.get("type"),
+                "status": resource.get("status"),
+                "execution_ready": bool(resource.get("execution_ready")),
+                "execution_status": resource.get("execution_status", "unspecified"),
+                "query_capabilities": list(binding.get("allowed_capabilities") or []),
+                "submit_job_allowed": bool(submit_binding_ok and submit_policy_ok),
+            })
+        return sorted(out, key=lambda item: (str(item["alias"]), str(item["resource_id"])))
+
     def resolve(self, *, project: str, run_id: str, alias_or_resource: str, capability: str,
                 stage: Optional[str] = None, skill: Optional[str] = None,
                 ttl_seconds: Optional[int] = None) -> ResolvedResource:
@@ -96,9 +140,7 @@ class ResourceResolver:
             alias=binding.get("alias"), ttl_seconds=ttl, injection_mode=injection_mode,
             requires_human_approval=requires_approval)
 
-        env_refs = dict(resource.get("secret_refs") or {})
-        if resource.get("endpoint_ref"):
-            env_refs.setdefault("endpoint", resource["endpoint_ref"])
+        env_refs = rp.connection_env_refs(resource)
 
         return ResolvedResource(
             resource_id=resource_ref,
@@ -132,7 +174,8 @@ class ResourceResolver:
         if resource.get("type") == "hardware.ssh_server":
             try:
                 from research_agent_teams.execute import config as ec
-                summ["connection"] = ec.redacted_summary(ec.load_config())
+                summ["connection"] = ec.redacted_summary(
+                    ec.load_config(env_refs=rp.connection_env_refs(resource)))
             except Exception as e:                       # .env not wired / no host -> stay informative
                 summ["connection"] = {"status": f"offline-plan ({type(e).__name__})"}
         return summ

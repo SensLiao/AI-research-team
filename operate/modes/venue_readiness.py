@@ -89,8 +89,9 @@ Read ONLY `{profile_candidate}` plus rubric files named inside it. Do not read t
 results, code, reviewer outputs, or review prose. Freeze three distinct anchors before review:
 methodology owns D1/D5, domain owns D2/D6/D7 when applicable, adversarial owns D3/D4.
 
-`inputs_to_review` is the exact allowlist of manuscript, result, code, and data-pipeline refs that
-reviewers may inspect. Never include candidate bundles, reviewer outputs, receipts, or meta output.
+`inputs_to_review` is the exact allowlist of manuscript, result, code, data-pipeline, and any
+pre-frozen closest-prior fulltext/dossier refs that reviewers may inspect. Never include candidate
+bundles, reviewer outputs, receipts, or meta output.
 
 Write ONLY this JSON to `{out}`:
 {{
@@ -106,7 +107,7 @@ Write ONLY this JSON to `{out}`:
     ],
     "synthesis_mandate": "Surface all disagreements and strongest rejection; classify fatal vs
       repairable; order repairs; never claim acceptance; defer /venue-pick and /venue-decide.",
-    "inputs_to_review": ["<manuscript/result/code/data refs only>"]
+    "inputs_to_review": ["<manuscript/result/code/data/frozen-prior-art refs only>"]
   }}
 }}
 The deterministic precommit step validates and hashes this config before any reviewer starts."""
@@ -130,8 +131,10 @@ and the three frozen refs above. Never read profile/config candidates, another r
 review artifacts, the panel receipt, or meta output. If another review became visible, disclose it.
 
 Deeply audit your owned dimensions. Every score needs a real manuscript/result/table/metric/code
-locus; missing evidence means score 1. Fire only frozen-profile triggers and give a precise locus
-and fix. Apply anti-bias suppressors and default low under uncertainty. The adversarial seat must
+locus. Missing evidence inside the submitted work may justify score 1. Missing external closest-prior
+material means novelty is UNVERIFIED and confidence is lower; it does not by itself justify score 1
+or rejection. Fire only frozen-profile triggers and give a precise locus and fix. Apply anti-bias
+suppressors. The adversarial seat must
 inspect evaluation code read-only for leakage, unfair baselines, test tuning, and aggregation bugs.
 
 `overall` is reviewer advice on the venue scale, not an acceptance fact. Never emit verdict,

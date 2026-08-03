@@ -1,15 +1,16 @@
 """Promotion gate core — the M⇒D seam, write side (the ONLY path knowledge enters System D).
 
-`/promote-to-vault` is a human gate (disable-model-invocation). This module is its deterministic
-core: given a promotion_candidate that REFERENCES the real audit artifacts (it never carries a
-self-claimed status), re-derive frozen / can-cite-thesis from the ACTUAL referenced verdicts plus the
-human freeze flag, and ONLY then write a re-derived page into the vault.
+`/promote-to-vault` is a director-command gate. The primary handler reaches this deterministic core
+only after a top-level user explicitly invokes the source command; workers and modes never invoke it.
+Given a promotion_candidate that REFERENCES the real audit artifacts (it never carries a self-claimed
+status), re-derive frozen / can-cite-thesis from the ACTUAL referenced verdicts plus the director
+freeze flag, and ONLY then write a re-derived page into the vault.
 
 Crown-jewel rules honoured (read, never modified — schema-contract §9.9):
   - can-cite-thesis is DERIVED: (result-status=='frozen') AND leakage==pass AND fairness==pass
     (05-registry/status-registry.md). Manual override forbidden; a self-claim is ignored.
   - provisional / UNVERIFIED are structurally non-promotable (blueprint §4). The machine's
-    result_summary ceiling is const 'provisional' — only a HUMAN freeze re-derives 'frozen'.
+    result_summary ceiling is const 'provisional' — only a director-command freeze re-derives 'frozen'.
   - the promoter "re-derives status and never trusts a sidecar's self-claim" (blueprint §0).
 
 Pure where it can be (extract_signals / rederive / make_slug / render_vault_page); I/O isolated in

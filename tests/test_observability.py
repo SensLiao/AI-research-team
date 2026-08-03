@@ -38,6 +38,36 @@ def test_confidence_out_of_range_rejected(tmp_path):
         append_log(log, _log(confidence=1.5))
 
 
+def test_unobserved_runtime_requires_complete_non_attested_marker(tmp_path):
+    log = tmp_path / "obs.jsonl"
+    entry = _log(
+        model="opus",
+        runtime_model="configured/model",
+        runtime_observation_status="unobserved",
+        runtime_binding_source="deployment_environment",
+        runtime_observation_reason="operate_process_has_no_provider_response_metadata",
+    )
+    append_log(log, entry)
+    assert read_logs(log)[0]["runtime_observation_status"] == "unobserved"
+
+    incomplete = _log(runtime_observation_status="unobserved")
+    with pytest.raises(ValueError, match="invalid agent_run_log"):
+        append_log(log, incomplete)
+
+
+def test_obslog_schema_rejects_unverified_provider_attested_claim(tmp_path):
+    log = tmp_path / "obs.jsonl"
+    with pytest.raises(ValueError, match="invalid agent_run_log"):
+        append_log(
+            log,
+            _log(
+                runtime_observation_status="provider_attested",
+                runtime_binding_source="deployment_environment",
+                runtime_observation_reason="caller asserted it",
+            ),
+        )
+
+
 # ---------- ADR ----------
 
 def _adr(**over):

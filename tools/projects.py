@@ -43,7 +43,7 @@ _WORKSPACE_README = """# Project workspace: {slug}
 
 Machine-side durable resources for the `{slug}` research project — pulled experiment results,
 scripts, figures and notes that are NOT (yet) vault-grade. Validated knowledge enters the vault
-only via the human `/promote-to-vault` gate; everything here is deletable scratch.
+only via the explicit-user director-command `/promote-to-vault` gate; everything here is deletable scratch.
 
 - `results/`  pulled experiment outputs (execute layer `pull` lands per-run results here or in runs/)
 - `scripts/`  project-owned runnable scripts (training / eval / analysis)

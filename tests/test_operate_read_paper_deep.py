@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from research_agent_teams.operate.artifacts import GateBlock
+from research_agent_teams.operate.artifacts import GateBlock, TargetedGateBlock
 from research_agent_teams.operate.modes import ingest_paper, read_paper_deep
 from research_agent_teams.operate.panel_scheduler import schedule_next_wave
 from research_agent_teams.tools import fulltext_qa
@@ -784,6 +784,65 @@ def test_read_paper_deep_writes_all_nineteen_artifacts_and_gates_approve(tmp_pat
     _validate_written(rpaths)
 
 
+def test_read_paper_deep_blank_worker_markdown_renders_structured_fallback_and_reports_caveat(
+    tmp_path,
+):
+    run_dir = _mk_run(tmp_path)
+    _write_fulltext_context(run_dir)
+    payload = _with_page_anchors(_good_bundle())
+    payload["paper_markdown_card"]["markdown"] = "  \n\t"
+    _write_deep_worker_bundles(run_dir, payload)
+
+    _paths, report = read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
+
+    rendered = Path(report["director_markdown_card"]).read_text(encoding="utf-8")
+    assert rendered.strip()
+    assert payload["paper_note"]["title"] in rendered
+    assert payload["claim_list"]["claims"][0]["text"] in rendered
+    assert "Table 2" in rendered
+    assert report["quality_verdict"] == "PASS_WITH_CAVEATS"
+
+    rpaths, _ = read_paper_deep.run_dets(run_dir, "REPORT", TS)
+    note = _load(rpaths, "report-note")["payload"]
+    assert note["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert any("blank" in caveat.casefold() for caveat in note["delivery_caveats"])
+
+
+def test_read_paper_deep_short_worker_markdown_is_caveated_not_blocked(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_fulltext_context(run_dir)
+    payload = _with_page_anchors(_good_bundle())
+    payload["paper_markdown_card"]["markdown"] = "# Short\n\nReadable but incomplete."
+    _write_deep_worker_bundles(run_dir, payload)
+
+    _paths, report = read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
+
+    assert Path(report["director_markdown_card"]).is_file()
+    assert report["quality_verdict"] == "PASS_WITH_CAVEATS"
+    rpaths, _ = read_paper_deep.run_dets(run_dir, "REPORT", TS)
+    note = _load(rpaths, "report-note")["payload"]
+    assert note["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert note["delivery_caveats"]
+
+
+def test_read_paper_deep_accepts_one_unambiguous_bundle_wrapper(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_fulltext_context(run_dir)
+    _write_deep_worker_bundles(run_dir, _with_page_anchors(_good_bundle()))
+    for path in (run_dir / "inbox").glob("DISCOVER.*.bundle.json"):
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        path.write_text(json.dumps({"result": raw}), encoding="utf-8")
+
+    paths, report = read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
+
+    assert report["citation_gate"] == "PASS"
+    # The fixture's reconciliation hashes were created before this test wraps
+    # the bytes, so provenance correctly becomes a visible caveat; the wrapper
+    # itself must still reach all scientific gates and produce every artifact.
+    assert report["quality_verdict"] in {"PASS", "PASS_WITH_CAVEATS"}
+    _validate_written(paths)
+
+
 def test_read_paper_deep_medical_profile_requires_business_rigor(tmp_path):
     run_dir = _mk_run(tmp_path, domain_profile_ref="cv-medical-segmentation")
     _write_fulltext_context(run_dir)
@@ -923,7 +982,7 @@ def test_read_paper_deep_recomputes_snapshot_hash_and_blocks_tampering(tmp_path)
     assert "SHA-256 mismatch" in str(exc.value)
 
 
-def test_read_paper_deep_quote_locator_mismatch_is_visible_caveat(tmp_path):
+def test_read_paper_deep_quote_locator_mismatch_blocks_truth_claim(tmp_path):
     run_dir = _mk_run(tmp_path)
     _write_fulltext_context(run_dir)
     _write_deep_worker_bundles(run_dir, _with_page_anchors(_good_bundle()))
@@ -931,10 +990,21 @@ def test_read_paper_deep_quote_locator_mismatch_is_visible_caveat(tmp_path):
     payload = json.loads(linker.read_text(encoding="utf-8"))
     payload["claim_evidence_map"]["mappings"][0]["loci"][0]["exact_quote"] = "fabricated quote"
     linker.write_text(json.dumps(payload), encoding="utf-8")
-    _paths, report = read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
-    advisory = json.loads((run_dir / "inbox" / "usable-first-advisory.json").read_text())
-    assert report["quality_verdict"] == "PASS_WITH_CAVEATS"
-    assert any("exact_quote mismatch" in row for row in advisory["warnings"])
+    with pytest.raises(GateBlock) as exc:
+        read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
+    assert "exact_quote mismatch" in str(exc.value)
+
+
+def test_read_paper_deep_missing_claim_span_contract_blocks_truth_claim(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_fulltext_context(run_dir)
+    _write_deep_worker_bundles(run_dir, _with_page_anchors(_good_bundle()))
+    linker = run_dir / "inbox" / "DISCOVER.claim-evidence-linker.bundle.json"
+    payload = json.loads(linker.read_text(encoding="utf-8"))
+    payload["claim_evidence_map"].pop("attribution_contract_version", None)
+    linker.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(GateBlock):
+        read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
 
 
 def test_source_document_identity_accepts_relative_or_mojibaked_parent_path():
@@ -963,6 +1033,24 @@ def test_single_local_pdf_can_bind_to_canonical_external_source(tmp_path):
     assert not read_paper_deep._same_source_document(
         "arXiv:2102.06583", "inbox/fulltext-docs/01-paper.pdf", tmp_path,
     )
+
+
+def test_source_document_identity_ignores_semicolon_metadata_after_filename(tmp_path):
+    docs = tmp_path / "inbox" / "fulltext-docs"
+    docs.mkdir(parents=True)
+    (docs / "01-paper.pdf").write_bytes(b"paper")
+    canonical = "inbox/fulltext-docs/01-paper.pdf"
+    annotated = "inbox/fulltext-docs/01-paper.pdf; sha256:abc123"
+    assert read_paper_deep._same_source_document(canonical, annotated, tmp_path)
+
+
+def test_source_document_identity_ignores_fragment_metadata_after_filename(tmp_path):
+    docs = tmp_path / "inbox" / "fulltext-docs"
+    docs.mkdir(parents=True)
+    (docs / "01-paper.pdf").write_bytes(b"paper")
+    canonical = "inbox/fulltext-docs/01-paper.pdf"
+    annotated = "inbox/fulltext-docs/01-paper.pdf#sha256:abc123; snapshot=xyz"
+    assert read_paper_deep._same_source_document(canonical, annotated, tmp_path)
 
 
 def test_inside_run_accepts_cwd_relative_path_that_already_contains_run_root(tmp_path, monkeypatch):
@@ -1006,7 +1094,7 @@ def test_read_paper_deep_empty_source_ref_blocks_on_schema(tmp_path):
     _write_deep_worker_bundles(run_dir, _good_bundle(source_ref=""))
     with pytest.raises(GateBlock) as ei:
         read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
-    assert "source_ref BLOCK" in str(ei.value)
+    assert "core source missing" in str(ei.value)
 
 
 def test_read_paper_deep_unresolvable_locus_blocks_citation(tmp_path):
@@ -1018,6 +1106,15 @@ def test_read_paper_deep_unresolvable_locus_blocks_citation(tmp_path):
     with pytest.raises(GateBlock) as ei:
         read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
     assert "citation gate BLOCK" in str(ei.value)
+
+
+@pytest.mark.parametrize("reason", [
+    "claim 'c1' has no entry in claim_evidence_map (unanchored)",
+    "claim 'c1': locus 'L1' is missing supports_claim — cannot verify",
+    "claim 'c1' is contradicted by locus 'L1' (supports_claim=false)",
+])
+def test_read_paper_deep_citation_truth_failures_are_never_delivery_advisories(reason):
+    assert read_paper_deep._citation_gap_is_hard([reason]) is True
 
 
 def test_read_paper_deep_quality_auditor_delivers_reread_as_caveat(tmp_path):
@@ -1130,6 +1227,22 @@ def test_read_paper_deep_blind_provenance_defect_targets_blind_reader(tmp_path):
     ]
 
 
+def test_read_paper_deep_blind_path_receipts_normalize_to_closed_classes():
+    assert read_paper_deep._blind_input_class_from_ref("task_frame.artifact.json") == "task_frame"
+    assert read_paper_deep._blind_input_class_from_ref("inbox/fulltext-docs/paper.pdf") == "source_document"
+    assert read_paper_deep._blind_input_class_from_ref("inbox/fulltext-qa.json") == "fulltext_snapshot"
+    assert read_paper_deep._blind_input_class_from_ref(
+        "inbox/citation-snapshots/fulltext-contexts.txt"
+    ) == "fulltext_snapshot"
+    assert read_paper_deep._blind_input_class_from_ref(
+        "inbox/paper-visuals/doc-01/page-0001.png"
+    ) == "visual_snapshot"
+    assert read_paper_deep._blind_input_class_from_ref("inbox/DISCOVER.claim-extractor.bundle.json") == ""
+    assert read_paper_deep._blind_input_receipt("inbox/fulltext-qa.json") == (
+        "fulltext_snapshot", "inbox/fulltext-qa.json"
+    )
+
+
 def test_read_paper_deep_blind_receipt_instruction_is_not_false_integrity_block(tmp_path):
     problems = [
         "局部补充 blind second reader：保持 primary_analysis_seen=false，登记 source_document；"
@@ -1207,14 +1320,16 @@ def test_read_paper_deep_missing_visual_manifest_is_delivery_caveat(tmp_path):
     assert any("visual manifest" in row.casefold() for row in advisory["warnings"])
 
 
-def test_read_paper_deep_tampered_visual_asset_hash_blocks(tmp_path):
+def test_read_paper_deep_tampered_visual_asset_hash_is_content_delivery_caveat(tmp_path):
     run_dir = _mk_run(tmp_path)
     _write_fulltext_context(run_dir)
     (run_dir / VISUAL_REF).write_bytes(b"tampered-after-manifest")
     _write_deep_worker_bundles(run_dir, _with_page_anchors(_good_bundle()))
-    with pytest.raises(GateBlock) as ei:
-        read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
-    assert "visual asset hash mismatch" in str(ei.value)
+    _paths, report = read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
+    advisory = json.loads((run_dir / "inbox" / "usable-first-advisory.json").read_text())
+    assert report["quality_verdict"] == "PASS_WITH_CAVEATS"
+    assert any("asset" in row.casefold() and "mismatch" in row.casefold()
+               for row in advisory["warnings"])
 
 
 def test_read_paper_deep_tampered_source_snapshot_blocks_visual_provenance(tmp_path):
@@ -1328,6 +1443,12 @@ def test_read_paper_deep_llm_step_shape_carries_north_star(tmp_path):
     assert spec["workers"][0]["model"] == "opus"
     assert next(w for w in spec["workers"] if w["label"] == "literature-ingest")["model"] == "sonnet"
     assert spec["workers"][-1]["model"] == "opus"
+    writer_prompt = spec["workers"][-1]["prompt"]
+    assert "visible Markdown must start with the paper title" in writer_prompt
+    assert "do not embed images" in writer_prompt
+    assert "Do not expose any raw upstream instruction" in writer_prompt
+    assert "never show the citation-relation vocabulary" in writer_prompt
+    assert "name the claim id" not in writer_prompt.casefold()
     blind = next(w for w in spec["workers"] if w["label"] == "independent-reading-critic")
     assert blind["input_contract"]["blind"] is True
     assert blind["input_contract"]["allowed_bundle_agents"] == []
@@ -1482,24 +1603,45 @@ def test_ingest_paper_happy_path_writes_draft_note(tmp_path):
     run_dir = _mk_run(tmp_path, mode="ingest_paper")
     pn = _good_bundle()["paper_note"]
     pn["reading_status"] = "skimmed"
+    pn["worker_context"] = {"useful": "preserve outside canonical payload"}
     _write_ingest_bundle(run_dir, {"paper_note": pn})
     paths, report = ingest_paper.run_dets(run_dir, "DISCOVER", TS)
     assert report["n_claims"] == 2 and report["reading_status"] == "skimmed"
+    assert report["representation_normalization"]["preserved_extra_fields"] == 1
     note = _load(paths, "paper-note")
     assert note["status"] == "draft" and note["artifact_type"] == "paper_note"
+    assert "worker_context" not in note["payload"]
+    norm = json.loads((
+        run_dir / "inbox" / "normalization" /
+        "DISCOVER.paper-note-extractor.paper-note.json"
+    ).read_text(encoding="utf-8"))
+    assert norm["preserved_extras"][0]["value"] == pn["worker_context"]
     _validate_written(paths)
     rpaths, _ = ingest_paper.run_dets(run_dir, "REPORT", TS)
     _validate_written(rpaths)
 
 
+def test_ingest_paper_legacy_bundle_accepts_one_unambiguous_wrapper(tmp_path):
+    run_dir = _mk_run(tmp_path, mode="ingest_paper")
+    paper_note = _good_bundle()["paper_note"]
+    paper_note["reading_status"] = "skimmed"
+    _write_ingest_bundle(run_dir, {"result": {"paper_note": paper_note}})
+
+    paths, report = ingest_paper.run_dets(run_dir, "DISCOVER", TS)
+
+    assert report["n_claims"] == 2
+    assert _load(paths, "paper-note")["payload"]["title"] == paper_note["title"]
+
+
 def test_ingest_paper_malformed_note_blocks(tmp_path):
     run_dir = _mk_run(tmp_path, mode="ingest_paper")
     pn = _good_bundle()["paper_note"]
-    pn["reading_status"] = "not-a-real-status"
+    pn["paper_type"] = "not-a-real-paper-type"
     _write_ingest_bundle(run_dir, {"paper_note": pn})
-    with pytest.raises(GateBlock) as ei:
+    with pytest.raises(TargetedGateBlock) as ei:
         ingest_paper.run_dets(run_dir, "DISCOVER", TS)
-    assert "schema BLOCK" in str(ei.value)
+    assert "local supplement" in str(ei.value)
+    assert ei.value.defects[0]["target_agents"] == ["paper-note-extractor"]
 
 
 def test_ingest_paper_missing_key_blocks(tmp_path):

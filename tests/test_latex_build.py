@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -556,6 +557,69 @@ def test_secret_generated_artifacts_are_removed_not_only_log_redacted(tmp_path):
                    for path in run_root.rglob("*") if path.is_file())
 
 
+def test_secret_bearing_pdf_is_rejected_before_durable_publication(tmp_path):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    tools = _fake_tools(tmp_path, "latexmk", "perl")
+    secret = "pdf-binary-secret-001"
+
+    class PdfSecretRunner(FakeRunner):
+        def __call__(self, argv, **kwargs):
+            result = super().__call__(argv, **kwargs)
+            if not any(arg in {"-v", "--version"} for arg in argv[1:]):
+                output = self._output_dir(argv)
+                (output / "main.pdf").write_bytes(b"%PDF-1.4\x00" + secret.encode("utf-8"))
+            return result
+
+    receipt = _build(
+        run_root,
+        tools,
+        PdfSecretRunner(run_root),
+        runtime_candidates=str(Path(tools["perl"]).parent),
+        secret_sentinels={"pdf": secret},
+    )
+
+    assert receipt["build_state"] == "COMPILE_FAILED"
+    assert receipt["failure"]["code"] == "SECRET_LEAKAGE"
+    assert not (run_root / "build" / "main.pdf").exists()
+    assert secret not in json.dumps(receipt)
+
+
+def test_miktex_compiler_commands_disable_implicit_package_installation(tmp_path):
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    miktex = tmp_path / "MiKTeX" / "miktex" / "bin" / "x64"
+    miktex.mkdir(parents=True)
+    # This is a hermetic Windows/MiKTeX simulation and must remain portable
+    # when the suite runs inside the required Linux container.
+    platform_name = "nt"
+    suffix = ".exe" if platform_name == "nt" else ""
+    tools = {
+        "latexmk": str((miktex / f"latexmk{suffix}").resolve()),
+        "perl": str((tmp_path / f"perl{suffix}").resolve()),
+    }
+    for path in tools.values():
+        Path(path).write_bytes(b"fixture executable")
+        Path(path).chmod(0o755)
+    runner = FakeRunner(run_root)
+
+    receipt = _build(
+        run_root,
+        tools,
+        runner,
+        runtime_candidates=str(Path(tools["perl"]).parent),
+        platform_name=platform_name,
+    )
+
+    assert receipt["build_state"] == "COMPILED"
+    compile_call = next(
+        call for call in runner.calls
+        if not any(arg in {"-v", "--version"} for arg in call["argv"][1:])
+    )
+    assert "--disable-installer" in compile_call["argv"]
+    assert "--disable-installer" in receipt["process_receipt"]["argv"]
+
+
 def test_direct_pipeline_uses_one_decreasing_build_deadline(tmp_path):
     run_root = tmp_path / "run"
     run_root.mkdir()
@@ -599,7 +663,7 @@ def test_real_latex_build_emits_sanitized_receipt(tmp_path):
 
     _assert_valid(receipt)
     assert receipt["build_state"] == "COMPILED"
-    assert receipt["process_receipt"]["executable"] in {
+    assert receipt["process_receipt"]["executable"].casefold() in {
         "latexmk.exe",
         "latexmk",
         "direct-pipeline",
@@ -608,6 +672,22 @@ def test_real_latex_build_emits_sanitized_receipt(tmp_path):
     assert (run_root / receipt["pdf"]["path"]).is_file()
     evidence_dir = Path(os.environ["RAT_MANUSCRIPT_EVIDENCE_DIR"])
     evidence_dir.mkdir(parents=True, exist_ok=True)
+    # Preserve an immutable, portable witness bundle alongside the receipt.  The
+    # release verifier recomputes every receipt-bound digest from this bundle;
+    # it never treats the JSON receipt alone as proof of a successful PDF build.
+    bundle_name = f"real-build-{receipt['build_receipt_sha256'][:16]}"
+    bundle_root = evidence_dir / bundle_name
+    bundle_root.mkdir()
+    shutil.copytree(run_root / "source", bundle_root / "source")
+    shutil.copytree(run_root / "build", bundle_root / "build")
+    bundle = {
+        "schema_version": "1.0.0",
+        "build_receipt_sha256": receipt["build_receipt_sha256"],
+        "bundle_root": bundle_name,
+    }
+    (evidence_dir / "real-build-bundle.json").write_text(
+        json.dumps(bundle, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     evidence = evidence_dir / "real-build-receipt.json"
     evidence.write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import json
+import socket
+import urllib.parse
 
 import pytest
 
 from research_agent_teams.tools.scholar_clients import (
     ScholarLookupError,
     _HTTPStatusError,
+    default_transport,
     get_references_s2,
     lookup_arxiv,
     lookup_doi_crossref,
@@ -85,6 +88,26 @@ def fixed(body, capture=None):
     return transport
 
 
+def test_default_transport_normalizes_read_time_socket_timeout(monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            raise socket.timeout("simulated TLS read timeout")
+
+    monkeypatch.setattr(
+        "research_agent_teams.tools.scholar_clients.urllib.request.urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+
+    with pytest.raises(ScholarLookupError, match="simulated TLS read timeout"):
+        default_transport("https://export.arxiv.org/api/query", {})
+
+
 def test_arxiv_search_parses_normalized_record():
     recs = search_arxiv("skeleton recall", transport=fixed(ARXIV_ATOM))
     assert len(recs) == 1
@@ -108,6 +131,13 @@ def test_crossref_search_and_s2_search():
     assert r["doi"] == "10.5555/xyz" and r["year"] == 2023 and r["authors"] == ["D Author"]
     s = search_s2("semantic", transport=fixed(S2_SEARCH))[0]
     assert s["arxiv_id"] == "2501.00001" and s["doi"] == "10.9999/s2paper" and s["cited_by_count"] == 3
+
+
+def test_crossref_query_uses_strict_utf8_url_encoding():
+    seen = []
+    search_crossref("医学图像 涂鸦分割", transport=fixed(CROSSREF_LIST, capture=seen))
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(seen[0][0]).query)["query"][0]
+    assert query == "医学图像 涂鸦分割"
 
 
 def test_lookup_doi_404_means_none_other_errors_raise():
@@ -138,6 +168,7 @@ def test_invalid_ids_short_circuit_without_network():
 def test_polite_headers_and_s2_key(monkeypatch):
     monkeypatch.setenv("RAT_CONTACT_MAIL", "director@example.org")
     monkeypatch.setenv("RAT_S2_API_KEY", "k-123")
+    monkeypatch.setenv("RAT_OPENALEX_API_KEY", "openalex-test-key")
     seen = []
     search_s2("q", transport=fixed(S2_SEARCH, capture=seen))
     url, headers = seen[0]
@@ -147,6 +178,10 @@ def test_polite_headers_and_s2_key(monkeypatch):
     monkeypatch.delenv("RAT_S2_API_KEY")
     search_s2("q", transport=fixed(S2_SEARCH, capture=seen))
     assert "x-api-key" not in seen[0][1]
+    seen.clear()
+    with pytest.raises(ScholarLookupError, match="blocked before transport"):
+        search_openalex("q", transport=fixed(OPENALEX_BODY, capture=seen))
+    assert seen == []
 
 
 def test_get_references_s2_unwraps_cited_papers():

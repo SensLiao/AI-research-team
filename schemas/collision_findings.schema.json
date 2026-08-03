@@ -7,12 +7,17 @@
   "required": ["findings", "evidence_ref"],
   "additionalProperties": false,
   "properties": {
+    "memo_contract_version": {
+      "type": "string",
+      "const": "idea-investment-memo/v2",
+      "description": "Current split-panel investment-memo contract. Optional solely for hash-bound legacy replay compatibility; current panel loaders require it."
+    },
     "findings": {
       "type": "array",
-      "description": "One entry per idea the worker examined. Ideas with no entry are treated by the gate as CLEAR under grounded retrieval (no collision found, not proven novel).",
+      "description": "One entry per candidate. A missing idea finding is UNVERIFIED, never implicit clearance.",
       "items": {
         "type": "object",
-        "required": ["idea_id", "method_combination", "application", "domain", "queries", "verdict", "colliding_papers", "confidence"],
+        "required": ["idea_id", "method_combination", "application", "domain", "queries", "verdict", "colliding_papers", "confidence", "retrieval_status"],
         "additionalProperties": false,
         "properties": {
           "idea_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
@@ -20,7 +25,7 @@
           "application": {"type": "string", "minLength": 1, "description": "The application / problem the idea targets (the 'on what' — e.g. 'inferior-alveolar-canal segmentation')."},
           "domain": {"type": "string", "minLength": 1, "description": "The research domain / field the idea sits in (e.g. 'dental CBCT', 'NLP')."},
           "queries": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "The targeted retrieval queries the worker issued to hunt for prior art."},
-          "verdict": {"type": "string", "enum": ["collision", "adjacent", "clear"], "description": "collision = a paper did this method×problem (gate fact-checks existence before any cut); adjacent = exists on a different application/problem or proposed-only (white space); clear = no collision found within coverage."},
+          "verdict": {"type": "string", "enum": ["collision", "adjacent", "clear", "unverified"], "description": "collision = a full-paper exact claim collision; adjacent = reviewed partial/base/gap work; clear = adequate targeted retrieval found no collision within coverage; unverified = retrieval or full-text evidence is insufficient for clearance or collision."},
           "colliding_papers": {
             "type": "array",
             "description": "The specific colliding papers (MUST be [] when verdict is 'clear'). Each must name a resolvable ref so the gate can existence-verify it; an unverifiable ref can never justify a cut.",
@@ -33,12 +38,66 @@
                 "title": {"type": "string", "minLength": 1},
                 "does_same_method_on_same_problem": {"type": "boolean", "description": "True only if this paper applies the SAME method combination to the SAME problem (not merely related). A DEAD cut requires True."},
                 "experimentally_validated": {"type": "boolean", "description": "True if the paper actually RAN / implemented it (not merely proposed). When the gate's cut_requires_experiments is on, a DEAD cut requires True."},
+                "full_text_reviewed": {"type": "boolean", "description": "True only after the full method and decision-relevant experiments were inspected. Title, abstract, or snippet review is false and can never justify a cut."},
+                "fulltext_snapshot_ref": {"type": "string", "minLength": 1, "description": "Run-local full-text snapshot actually read. Required for exact_collision so a destructive cut is inspectable."},
+                "fulltext_snapshot_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$", "description": "SHA-256 of the run-local full-text snapshot. The deterministic gate recomputes it before any cut."},
+                "relationship": {"type": "string", "enum": ["exact_collision", "partial_component_prior", "enabling_base", "gap_source", "orthogonal", "uncertain"], "description": "Claim-level relationship after reading the paper. Only exact_collision can justify a cut."},
+                "same_central_claim": {"type": "boolean", "description": "Whether the paper tests the same central scientific claim rather than merely sharing a keyword or component."},
+                "same_input_output_contract": {"type": "boolean", "description": "Whether the relevant input state, interaction, output/edit semantics, and target contract are materially equivalent."},
+                "same_causal_evaluation": {"type": "boolean", "description": "Whether the paper runs a materially equivalent causal assay capable of establishing the same claimed mechanism."},
+                "evidence_loci": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "All page, section, table, or figure locators actually inspected."},
+                "method_evidence_loci": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "At least one full-text locator establishing the implemented method and input/output contract."},
+                "result_evidence_loci": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "At least one experiment, result, table, figure, or ablation locator establishing what was actually evaluated."},
+                "material_surviving_delta": {"type": "boolean", "description": "True when a meaningful and falsifiable method, mechanism, data, control, or evaluation delta remains. Any true value forbids an exact-collision cut."},
+                "surviving_gap": {"type": "string", "description": "What the paper does not establish and what a gap-based extension could still test."},
                 "justification": {"type": "string", "minLength": 1, "description": "Why this paper collides — the worker's reasoning."},
                 "quote": {"type": "string", "description": "An optional verbatim snippet from the paper supporting the collision claim."}
+              },
+              "allOf": [{
+                "if": {"properties": {"relationship": {"const": "exact_collision"}}, "required": ["relationship"]},
+                "then": {"required": ["full_text_reviewed", "fulltext_snapshot_ref", "fulltext_snapshot_sha256", "same_central_claim", "same_input_output_contract", "same_causal_evaluation", "evidence_loci", "method_evidence_loci", "result_evidence_loci", "material_surviving_delta", "surviving_gap"]}
+              }]
+            }
+          },
+          "closest_prior_art": {
+            "type": "array",
+            "description": "Verified closest work even when it is only adjacent. This separates a scoped remaining delta from an unsupported novelty claim.",
+            "items": {
+              "type": "object",
+              "required": ["ref", "title", "relationship", "difference"],
+              "additionalProperties": false,
+              "properties": {
+                "ref": {"type": "string", "minLength": 1, "pattern": "\\S"},
+                "title": {"type": "string", "minLength": 1},
+                "relationship": {"type": "string", "enum": ["exact_collision", "partial_component_prior", "enabling_base", "gap_source", "orthogonal", "uncertain"]},
+                "difference": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "difference_from_prior_art": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The precise method, mechanism, evaluation, data, or control-regime delta that remains after scoped retrieval."
+          },
+          "visual_evidence": {
+            "type": "array",
+            "description": "Figure/table evidence only when actually inspected; an empty list is the honest default.",
+            "items": {
+              "type": "object",
+              "required": ["source_ref", "asset_ref", "content", "key_observation", "supports", "does_not_support"],
+              "additionalProperties": false,
+              "properties": {
+                "source_ref": {"type": "string", "minLength": 1},
+                "asset_ref": {"type": ["string", "null"]},
+                "content": {"type": "string", "minLength": 1},
+                "key_observation": {"type": "string", "minLength": 1},
+                "supports": {"type": "string", "minLength": 1},
+                "does_not_support": {"type": "string", "minLength": 1}
               }
             }
           },
           "confidence": {"type": "string", "enum": ["high", "medium", "low"], "description": "The worker's confidence in this finding (advisory; does not by itself decide the cut)."},
+          "retrieval_status": {"type": "string", "enum": ["complete", "partial", "unavailable"], "description": "Whether targeted retrieval produced enough inspectable material. partial still requires verdict=unverified when decisive full text is missing; unavailable can never be clearance."},
           "retrieval_note": {"type": "string", "description": "Coverage / retrieval caveats (e.g. 'one source was unreachable; coverage partial')."}
         }
       }

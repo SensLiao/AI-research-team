@@ -38,7 +38,7 @@ from ...tools.paper_visual_assets import (
     write_visual_manifest,
 )
 from ...tools.validate_artifact import validate_payload
-from ...tools.schema_normalizer import normalize_payload, write_report
+from ...tools.schema_normalizer import write_report
 
 STAGES = ["DISCOVER", "REPORT"]
 DEFAULT_VAULT = "AI agent database/PhD-Research-OS"
@@ -173,6 +173,40 @@ WORKER_DEPENDENCIES = {
 _BLIND_ALLOWED_INPUT_CLASSES = {
     "task_frame", "source_document", "fulltext_snapshot", "visual_snapshot",
 }
+
+
+def _blind_input_class_from_ref(ref: str) -> str:
+    """Map the scheduler's path-style blind receipts to the canonical class contract.
+
+    Current worker prompts expose allowed paths, while older bundles emitted explicit
+    ``input_class`` objects.  Accept both representations without broadening the blind
+    reader's read boundary; unknown paths deliberately map to the empty class and fail
+    the existing allow-list checks.
+    """
+    value = str(ref or "").replace("\\", "/").strip()
+    lowered = value.lower()
+    if value in _BLIND_ALLOWED_INPUT_CLASSES:
+        return value
+    if lowered == "task_frame.artifact.json":
+        return "task_frame"
+    if lowered.startswith("inbox/fulltext-docs/"):
+        return "source_document"
+    if lowered == "inbox/fulltext-qa.json" or lowered.startswith("inbox/citation-snapshots/"):
+        return "fulltext_snapshot"
+    if lowered == str(MANIFEST_REL).lower() or lowered.startswith("inbox/paper-visuals/"):
+        return "visual_snapshot"
+    return ""
+
+
+def _blind_input_receipt(item) -> tuple[str, str]:
+    if isinstance(item, dict):
+        ref = str(item.get("ref") or "").replace("\\", "/")
+        input_class = str(item.get("input_class") or "")
+        return input_class or _blind_input_class_from_ref(ref), ref
+    if isinstance(item, str):
+        ref = item.replace("\\", "/")
+        return _blind_input_class_from_ref(ref), ref
+    return "", ""
 
 
 def _worker_model(model_policy: str, agent: str) -> str:
@@ -382,11 +416,17 @@ direction, statistical uncertainty, clinical claim boundary, preprocessing leaka
 Use the local item bank at `research_agent_teams/agents/references/reporting-guidelines/medical-imaging-ai-item-bank.json`;
 each medical checklist item must include `standard_ref`, `item_id`, `category`, `status`,
 `evidence_ref`, `risk`, and any `required_fix`.
+For originality, separate the focal paper's own positioning from global novelty. Without full text
+for the closest target papers, do not infer a collision or non-originality from titles, abstracts,
+keywords, or the focal authors' related-work prose; mark that comparison unverified.
 """,
         "paper-relations-mapper": """
 Task: situate the focal paper among prior work.
 Output shape: {"paper_relations": {source_ref, edges:[{target_ref,relation,note}]}}.
 Include direct baselines, datasets, methods used, and papers this work claims to extend or replace.
+This records author-claimed/citation-neighborhood lineage, not independently verified novelty.
+Do not claim a target paper covers the focal contribution unless that target's full method and
+decision-relevant results were separately available and read.
 """,
         "trend-card-builder": """
 Task: synthesize the sub-area trend only from grounded source refs.
@@ -456,20 +496,27 @@ reproducibility, not just a loose list of complaints.
 Task: write the final human-readable Markdown paper card from prior evidence only.
 Output shape: {"paper_markdown_card": {source_ref,title,markdown,evidence_refs,covered_claim_ids,
 covered_figure_refs,covered_sections,quality_verdict}}.
-Follow the human-first paper-reading/v3 order: one-screen decision summary; paper problem and
-contributions; data/research design; method/theory reconstruction; 3-7 natural-language
+This is a HUMAN EDITING pass, not an audit dump. The visible Markdown must start with the paper title,
+then paper identity, one-screen summary, background/problem, authors' hypothesis and 2-4 complete
+contribution statements; data/research design; one coherent method flow; 3-7 natural-language
 conclusion-evidence packages when scientifically applicable; numeric/fairness, visual, robustness,
 failure, validity, and reproducibility audits; literature position; blind-primary reconciliation;
 then domain/project transfer and next actions. Put stable claim ids in HTML comments, never in visible
-headings or first-column reading entries. Include medical-imaging checklist/transfer matrix when
-present and a repair plan when the read is not PASS. Mention that multi-source evidence saturation was
-not assessed. For each load-bearing visual, use a relative image only when a stable asset exists;
-otherwise write a labelled text equivalent with source/page/ref, axes/table structure, key numbers,
-what it supports, and what it cannot support. Missing image storage is not a delivery block; claiming
-to have inspected an unread visual is. Minimum 500 characters. `covered_*` fields are advisory only;
+headings or first-column reading entries. Do not expose any raw upstream instruction, quality token,
+defect/repair id, worker/bundle name, claim count, entailment/partial count, hash, schema/contract,
+promotion/vault state, run id, or V-number. Translate every accepted audit finding into the relevant
+scientific paragraph; do not create a visible reconciliation or governance chapter.
+Mention in natural language that the card is a single-paper read and does not establish exhaustive
+literature coverage. Every load-bearing visual must be actually inspected, but per director preference
+do not embed images: provide a concise Chinese text account of its content, axes/table structure,
+important numbers, support, and non-support. `covered_*` fields are advisory only;
 a deterministic checker audits the actual Markdown body.
-For every partial, insufficient, or complete-document absence claim, name the claim id and explain
-exactly what the paper does not establish. Never turn those caveats into direct source evidence.
+In the literature passage, distinguish: what the authors claim; what this focal-paper read verifies;
+and what global novelty remains unverified without full-text closest-prior comparisons.
+For every partial, insufficient, or complete-document absence claim, explain the scientific boundary
+in natural language at the point where it matters. Keep claim ids only in terse hidden HTML comments;
+never show the citation-relation vocabulary to the reader. End with a short decision-oriented next-step
+section. The filename/title must be timeless and contain no product version.
 """,
     }
     return common + bodies[agent]
@@ -532,7 +579,10 @@ def _load_bundle_payload(run_dir: str, agent: str, key: str) -> dict | None:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    payload = value.get(key)
+    payload = _shared.extract_worker_bundle_value(
+        value, key, stage="DISCOVER", mode="read_paper_deep", agent=agent,
+        required=False, default=None,
+    )
     return payload if isinstance(payload, dict) else None
 
 
@@ -725,12 +775,17 @@ def _load_worker_bundles(run_dir) -> dict:
             missing.append(agent)
             continue
         raw = json.loads(p.read_text(encoding="utf-8"))
-        _shared.require_bundle_keys(raw, (key,), stage="DISCOVER", mode=f"read_paper_deep[{agent}]")
-        payload, report = normalize_payload(atype, raw[key])
-        if report["changes"]:
-            write_report(
-                Path(run_dir) / "inbox" / "normalization" / f"{agent}.json",
-                report,
+        worker_payload = _shared.extract_worker_bundle_value(
+            raw, key, stage="DISCOVER", mode="read_paper_deep", agent=agent,
+        )
+        payload, _schema_errors, report = _shared.normalize_worker_payload(
+            run_dir, "DISCOVER", agent, atype, worker_payload, label=key,
+        )
+        if report.get("representation_conflicts") or report.get("unsafe_preserved_extras"):
+            raise GateBlock(
+                f"read_paper_deep truth/control representation BLOCK in {agent}: "
+                f"conflicts={report.get('representation_conflicts') or []}; "
+                f"unsafe_extras={report.get('unsafe_preserved_extras') or []}"
             )
         out[key] = payload
     auditor_path = resolve_effective_output(
@@ -738,11 +793,10 @@ def _load_worker_bundles(run_dir) -> dict:
     )
     if auditor_path.exists():
         raw = json.loads(auditor_path.read_text(encoding="utf-8"))
-        _shared.require_bundle_keys(
-            raw, ("citation_audit",), stage="DISCOVER",
-            mode=f"read_paper_deep[{CITATION_AUDITOR_AGENT}]",
+        out["citation_audit"] = _shared.extract_worker_bundle_value(
+            raw, "citation_audit", stage="DISCOVER", mode="read_paper_deep",
+            agent=CITATION_AUDITOR_AGENT,
         )
-        out["citation_audit"] = raw["citation_audit"]
     elif replay is None:
         missing.append(CITATION_AUDITOR_AGENT)
     if missing:
@@ -787,7 +841,13 @@ def _supplement_defect(
     }
 
 
-def _validate_all_payloads(b: dict) -> None:
+def _validate_all_payloads(b: dict) -> list[str]:
+    """Return schema advisories without blocking the readable paper card.
+
+    The director-facing product is Markdown.  Structured sidecars are useful for
+    search and provenance, but a missing optional field must not invalidate an
+    otherwise complete reading or trigger another research-worker cycle.
+    """
     defects = []
     for key, atype, agent, _fname, _status in ARTIFACT_PLAN:
         payload = b.get(key) if isinstance(b.get(key), dict) else {}
@@ -801,12 +861,10 @@ def _validate_all_payloads(b: dict) -> None:
                 [agent],
                 _data_descendants(agent),
             ))
-    if defects:
-        raise TargetedGateBlock(
-            "read_paper_deep artifact schema BLOCK; targeted supplement required: "
-            + "; ".join(f"{row['location']}: {row['summary']}" for row in defects),
-            defects,
-        )
+    return [
+        f"schema advisory at {row['location']}: {row['summary']}"
+        for row in defects
+    ]
 
 
 def _source_ref(b: dict) -> str:
@@ -1017,7 +1075,11 @@ def _inside_run(run_dir, ref: str) -> Optional[Path]:
 def _blind_provenance_checks(run_dir, b: dict, quality: dict) -> list[str]:
     blind = b.get("independent_reading_critique") or {}
     errors = []
-    declared = {str(x) for x in blind.get("allowed_input_classes") or []}
+    declared = {
+        _blind_input_class_from_ref(str(x))
+        for x in blind.get("allowed_input_classes") or []
+    }
+    declared.discard("")
     if declared != _BLIND_ALLOWED_INPUT_CLASSES:
         errors.append(
             "blind second reader allowed_input_classes must equal the source-only contract; "
@@ -1046,8 +1108,7 @@ def _blind_provenance_checks(run_dir, b: dict, quality: dict) -> list[str]:
 
     seen_classes = set()
     for item in blind.get("consumed_inputs") or []:
-        input_class = str(item.get("input_class") or "")
-        ref = str(item.get("ref") or "").replace("\\", "/")
+        input_class, ref = _blind_input_receipt(item)
         seen_classes.add(input_class)
         if input_class not in _BLIND_ALLOWED_INPUT_CLASSES:
             errors.append(f"blind second reader consumed forbidden input class: {input_class}")
@@ -1236,7 +1297,7 @@ def _repair_packet_path(run_dir, b: dict) -> Path:
     title = str((b.get("paper_markdown_card") or {}).get("title")
                 or (b.get("paper_note") or {}).get("title") or "paper-read")
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:72] or "paper-read"
-    return Path(run_dir) / "director-review" / "papers" / f"REPAIR-{slug}.md"
+    return Path(run_dir) / "director-review" / "technical" / f"REPAIR-{slug}.md"
 
 
 def _write_repair_packet(run_dir, b: dict, problems: list[str]) -> str:
@@ -1649,7 +1710,7 @@ def _markdown_coverage_checks(run_dir, b: dict, quality: dict) -> list[str]:
     }
     path = Path(run_dir) / "inbox" / "markdown-quality-advisory.json"
     path.write_text(json.dumps(advisory, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return []
+    return errors
 
 
 def _extra_existence_refs(b: dict) -> list[str]:
@@ -1721,14 +1782,36 @@ def _classify_quality_defects(problems: list[str]) -> list[dict]:
 
 def _citation_gap_is_hard(reasons) -> bool:
     summary = "; ".join(str(row) for row in (reasons or []))
-    return any(token in summary.casefold() for token in (
-        "hash mismatch", "sha-256 mismatch", "cross-claim", "unresolvable reference",
+    lowered = summary.casefold()
+    # Page-render / figure-asset bookkeeping is presentation evidence.  It is
+    # useful as a warning but must not hide an otherwise readable card or
+    # trigger another full panel.  Core source/text tampering and cross-claim
+    # attribution remain truth failures.
+    if (
+        "figure asset sha-256 mismatch" in lowered
+        or "visual asset hash mismatch" in lowered
+    ) and not any(token in lowered for token in (
+        "source-document hash mismatch", "fulltext", "exact quote", "numeric",
+    )):
+        return False
+    return any(token in lowered for token in (
+        "source-document hash mismatch",
+        "fulltext snapshot hash mismatch",
+        "snapshot sha-256 mismatch",
+        "exact quote mismatch",
+        "numeric conflict",
+        "cross-claim",
+        "unresolvable reference",
+        "unanchored",
+        "missing supports_claim",
+        "supports_claim=false",
+        "is contradicted by locus",
     ))
 
 
-def _raise_citation_gap(message: str, reasons) -> None:
+def _raise_citation_gap(message: str, reasons, *, force_hard: bool = False) -> None:
     summary = "; ".join(str(row) for row in (reasons or [message]))
-    hard = _citation_gap_is_hard(reasons)
+    hard = force_hard or _citation_gap_is_hard(reasons)
     raise TargetedGateBlock(
         f"{message}: {summary}",
         [_supplement_defect(
@@ -1765,6 +1848,32 @@ def _same_source_document(left: str, right: str, run_dir=None) -> bool:
     right_tail = _source_document_tail(right)
     if left_tail and left_tail == right_tail:
         return True
+    # Workers sometimes append provenance or page notes after the run-local
+    # filename (for example ``...paper.pdf; sha256:...``).  Treat those as
+    # metadata on the same document, not as part of the filename identity.
+    if run_dir and left_tail and right_tail:
+        docs_root = Path(run_dir) / "inbox" / "fulltext-docs"
+        if docs_root.is_dir():
+            for document in docs_root.iterdir():
+                if not document.is_file():
+                    continue
+                name = document.name.casefold()
+                # Workers use both ``; sha256:...`` and URI-fragment style
+                # ``#sha256:...`` annotations for the same run-local PDF.
+                # These suffixes describe provenance; they are not part of the
+                # document identity used by the cross-role consistency gate.
+                left_matches = (
+                    left_tail == name
+                    or left_tail.startswith(name + ";")
+                    or left_tail.startswith(name + "#")
+                )
+                right_matches = (
+                    right_tail == name
+                    or right_tail.startswith(name + ";")
+                    or right_tail.startswith(name + "#")
+                )
+                if left_matches and right_matches:
+                    return True
     # A single-paper run may use a canonical DOI/arXiv ref in the primary note
     # while the blind reader records the only local PDF it was allowed to see.
     # Bind that spelling only when the run has exactly one fulltext document.
@@ -1776,10 +1885,28 @@ def _same_source_document(left: str, right: str, run_dir=None) -> bool:
     return False
 
 
-def _consistency_checks(run_dir, b: dict) -> None:
+def _consistency_checks(run_dir, b: dict) -> list[str]:
+    """Normalize cross-role metadata and return non-blocking content advisories.
+
+    Only later truth checks may block on a missing/corrupt core source, an
+    unsupported core claim or numeric/quote conflict.  Path spelling, role
+    metadata, coverage, presentation, and worker self-verdicts never make a
+    finished Markdown card disappear or cause an automatic expensive rerun.
+    """
+    warnings = []
     src = _source_ref(b)
     if not src:
-        raise GateBlock("read_paper_deep source_ref BLOCK: paper_note.source_ref is empty")
+        docs_root = Path(run_dir) / "inbox" / "fulltext-docs"
+        documents = [path for path in docs_root.iterdir() if path.is_file()] if docs_root.is_dir() else []
+        if len(documents) == 1:
+            src = f"inbox/fulltext-docs/{documents[0].name}"
+            (b.get("paper_note") or {})["source_ref"] = src
+            warnings.append("paper_note.source_ref was empty and was normalized to the only local source")
+        else:
+            raise GateBlock(
+                "read_paper_deep core source missing: paper_note.source_ref is empty and no single "
+                "local fulltext document can be bound"
+            )
     same_source_keys = [
         "paper_structure", "project_context_alignment", "method_teardown", "figure_reading",
         "result_table_audit", "math_algorithm_audit", "paper_appraisal", "paper_relations",
@@ -1810,13 +1937,9 @@ def _consistency_checks(run_dir, b: dict) -> None:
             if got != src and _same_source_document(got, src, run_dir):
                 locus["source_ref"] = src
     if mismatches:
-        raise TargetedGateBlock(
-            f"read_paper_deep source consistency BLOCK: {mismatches}",
-            [_supplement_defect(
-                "SOURCE-001", "source-conflict", "source_ref", str(mismatches), [], [],
-                severity="critical",
-            )],
-            verdict="BLOCK",
+        warnings.append(
+            "cross-role source_ref spelling differs; content retained and the canonical paper_note "
+            f"reference is used for delivery: {mismatches}"
         )
 
     structure = b.get("paper_structure") or {}
@@ -1865,14 +1988,9 @@ def _consistency_checks(run_dir, b: dict) -> None:
     quality_errors += _page_anchor_checks(run_dir, b, quality)
     quality_errors += _medical_imaging_quality_checks(run_dir, b, quality)
     if verdict == "BLOCK":
-        raise TargetedGateBlock(
-            "paper_reading_quality reported a non-repairable scientific BLOCK",
-            [_supplement_defect(
-                "QUALITY-BLOCK-001", "scientific-integrity", "paper_reading_quality",
-                "; ".join(quality.get("required_repairs") or quality_errors or ["BLOCK"]),
-                [], [], severity="critical",
-            )],
-            verdict="BLOCK",
+        warnings.append(
+            "worker quality verdict was BLOCK; Markdown is still delivered and the stated reasons "
+            "remain visible as caveats"
         )
 
     problems = list(quality_errors)
@@ -1904,14 +2022,168 @@ def _consistency_checks(run_dir, b: dict) -> None:
         problems.append(f"unknown paper_reading_quality verdict: {verdict!r}")
     if problems:
         _write_repair_packet(run_dir, b, problems)
-        defects = _classify_quality_defects(problems)
-        hard = [row for row in defects if row["severity"] == "critical"]
-        raise TargetedGateBlock(
-            ("read_paper_deep needs targeted supplements: " if not hard
-             else "read_paper_deep scientific integrity BLOCK: ") + "; ".join(problems),
-            defects,
-            verdict="BLOCK" if hard else "NEEDS_SUPPLEMENT",
+        hard_source_problems = [
+            str(row) for row in problems
+            if "visual manifest source-document hash mismatch" in str(row).casefold()
+            or "core source missing" in str(row).casefold()
+            or "core source corrupt" in str(row).casefold()
+        ]
+        if hard_source_problems:
+            raise TargetedGateBlock(
+                "read_paper_deep core source integrity BLOCK: " + "; ".join(hard_source_problems),
+                [_supplement_defect(
+                    "SOURCE-INTEGRITY-001", "scientific-integrity", "source",
+                    "; ".join(hard_source_problems), [], [], severity="critical",
+                )],
+                verdict="BLOCK",
+            )
+        warnings.extend(str(row) for row in problems)
+    return list(dict.fromkeys(warnings))
+
+
+def _fallback_markdown_from_structured_artifacts(b: dict) -> str:
+    """Build a readable, non-authoritative card when the writer returns no body."""
+    note = b.get("paper_note") or {}
+    plan = b.get("paper_reading_plan") or {}
+    alignment = b.get("project_context_alignment") or {}
+    claim_list = b.get("claim_list") or {}
+    claim_map = b.get("claim_evidence_map") or {}
+    method = b.get("method_teardown") or {}
+    results = b.get("result_table_audit") or {}
+    figures = b.get("figure_reading") or {}
+    appraisal = b.get("paper_appraisal") or {}
+    reproducibility = b.get("reproducibility_materials_audit") or {}
+    transfer = b.get("domain_transfer_note") or {}
+    critique = b.get("independent_reading_critique") or {}
+    reconciliation = b.get("paper_reading_reconciliation") or {}
+    quality = b.get("paper_reading_quality") or {}
+
+    title = str(note.get("title") or (b.get("paper_markdown_card") or {}).get("title") or "Paper")
+    source_ref = str(note.get("source_ref") or "source reference unavailable")
+    lines = [
+        f"# {title}",
+        "",
+        "> **Delivery caveat:** The paper Markdown worker returned a blank body. This minimal "
+        "card was rendered deterministically from validated structured reading artifacts; it is "
+        "usable for review but not promotion-ready.",
+        "",
+        f"**Source:** {source_ref}",
+        "",
+        "## Decision Need",
+        str(plan.get("decision_need") or plan.get("reading_objective") or "Not recorded."),
+        "",
+        "## Project Alignment",
+        str(alignment.get("thesis_fit") or note.get("summary") or "Not recorded."),
+        "",
+        "## Claims and Evidence",
+    ]
+
+    mappings = {
+        str(row.get("claim_id") or ""): row
+        for row in claim_map.get("mappings") or []
+        if isinstance(row, dict)
+    }
+    claims = claim_list.get("claims") or []
+    if not claims:
+        lines.append("- No structured claims were available.")
+    for claim in claims:
+        claim_id = str(claim.get("claim_id") or "claim")
+        lines.append(f"- **{claim_id}:** {str(claim.get('text') or 'Claim text unavailable.')}")
+        loci = (mappings.get(claim_id) or {}).get("loci") or []
+        evidence_bits = []
+        for locus in loci:
+            location = str(locus.get("location") or locus.get("locus_id") or "location unavailable")
+            result = str(locus.get("reported_result") or "").strip()
+            evidence_bits.append(f"{location}{': ' + result if result else ''}")
+        lines.append(
+            "  - Evidence: " + ("; ".join(evidence_bits) if evidence_bits else "No mapped locus recorded.")
         )
+
+    lines += [
+        "",
+        "## Method or Theory",
+        str(method.get("representation") or method.get("problem_definition") or "Not recorded."),
+    ]
+    loss_terms = method.get("loss_terms") or []
+    if loss_terms:
+        lines.append("- Components: " + "; ".join(
+            f"{str(row.get('term') or 'component')} ({str(row.get('role') or 'role not recorded')})"
+            for row in loss_terms
+        ))
+
+    lines += ["", "## Numeric Results"]
+    audited_items = results.get("audited_items") or []
+    if not audited_items:
+        lines.append("No audited numeric result was recorded.")
+    for row in audited_items:
+        lines.append(
+            f"- {str(row.get('item_ref') or 'Result')}: "
+            f"{str(row.get('reported_comparison') or row.get('audit') or 'comparison not recorded')}"
+        )
+
+    lines += ["", "## Figures and Tables"]
+    figure_rows = figures.get("figures") or []
+    if not figure_rows:
+        lines.append("No structured figure or table reading was recorded.")
+    for row in figure_rows:
+        lines.append(
+            f"- {str(row.get('figure_ref') or 'Visual')}: "
+            f"{str(row.get('take_home') or 'take-home not recorded')}"
+        )
+
+    limitations = [
+        str(row) for row in (
+            appraisal.get("limitations_acknowledged") or []
+        ) + (
+            appraisal.get("limitations_unacknowledged") or []
+        ) if str(row).strip()
+    ]
+    lines += [
+        "",
+        "## Critical Appraisal",
+        str(appraisal.get("overall") or "Not recorded."),
+    ]
+    if limitations:
+        lines.append("- Limitations: " + "; ".join(limitations))
+
+    lines += [
+        "",
+        "## Reproducibility",
+        f"Risk: {str(reproducibility.get('reproducibility_risk') or 'not recorded')}.",
+    ]
+    missing_materials = [str(row) for row in reproducibility.get("missing_materials") or []]
+    if missing_materials:
+        lines.append("- Missing materials: " + "; ".join(missing_materials))
+
+    lines += [
+        "",
+        "## Domain Transfer",
+        f"Transfer level: {str(transfer.get('transfer_level') or 'not recorded')}.",
+    ]
+    not_usable = [str(row) for row in transfer.get("not_usable_for") or []]
+    if not_usable:
+        lines.append("- Not usable for: " + "; ".join(not_usable))
+
+    warning = str(
+        reconciliation.get("director_warning")
+        or critique.get("director_warning")
+        or "Independent-reader warning was not recorded."
+    )
+    lines += [
+        "",
+        "## Independent Critique",
+        warning,
+        "Multi-source evidence saturation was not assessed in this single-paper read.",
+        "",
+        "## Next Actions",
+    ]
+    next_actions = [str(row) for row in transfer.get("required_local_validation") or []]
+    next_actions += [str(row) for row in quality.get("required_repairs") or []]
+    if next_actions:
+        lines += [f"- {row}" for row in dict.fromkeys(next_actions) if row.strip()]
+    else:
+        lines.append("- Review this deterministic fallback against the source before promotion.")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _write_markdown_card(
@@ -1927,13 +2199,9 @@ def _write_markdown_card(
     out = Path(run_dir) / "director-review" / "papers" / f"{slug}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     body = str(payload.get("markdown") or "").rstrip() + "\n"
-    if delivery_status:
-        notes = "\n".join(f"> - {row}" for row in (caveats or []) if str(row).strip())
-        body = (
-            f"> **Delivery status: {delivery_status}.** This is the current readable research product; "
-            "machine-level supplements may continue without withdrawing it.\n"
-            + (notes + "\n" if notes else "") + "\n" + body
-        )
+    # Delivery state and machine caveats belong in the technical advisory JSON.
+    # The director-facing paper card is the finished reading product, so it must
+    # start with the paper title and integrate scientific limits in context.
     if legacy_replay:
         body = (
             "> **LEGACY_UNVERIFIED:** this historical replay has no mechanically verified "
@@ -1984,19 +2252,15 @@ def _discover_dets(run_dir, ts) -> tuple:
             caveats=list(quality.get("required_repairs") or []),
         )
     delivery_warnings = []
-    for check in (_validate_all_payloads, lambda payload: _consistency_checks(run_dir, payload)):
-        try:
-            check(b)
-        except TargetedGateBlock as exc:
-            summaries = [str(row.get("summary") or "") for row in exc.defects]
-            if exc.verdict == "BLOCK":
-                if str((b.get("paper_markdown_card") or {}).get("markdown") or "").strip():
-                    _write_markdown_card(
-                        run_dir, b["paper_markdown_card"], delivery_status="BLOCK",
-                        caveats=summaries,
-                    )
-                raise
-            delivery_warnings.extend(summaries or [str(exc)])
+    delivery_warnings.extend(_validate_all_payloads(b))
+    markdown = b.get("paper_markdown_card") or {}
+    if not str(markdown.get("markdown") or "").strip():
+        markdown["markdown"] = _fallback_markdown_from_structured_artifacts(b)
+        delivery_warnings.append(
+            "paper Markdown worker returned a blank body; a deterministic fallback card was "
+            "rendered from validated structured paper artifacts"
+        )
+    delivery_warnings.extend(_consistency_checks(run_dir, b))
     _apply_usable_first_policy(run_dir, b, delivery_warnings)
     paths = []
     pn = b["paper_note"] or {}
@@ -2034,15 +2298,20 @@ def _discover_dets(run_dir, ts) -> tuple:
         resolvable_refs=_shared.resolvable_refs(et),
         coverage_based_absence_claim_ids=coverage_absence_ids,
     )
-    cv_hard = cv["verdict"] == "BLOCK" and _citation_gap_is_hard(cv["violations"])
+    # This verdict is computed from claim/evidence truth, not presentation
+    # quality.  Any current-run BLOCK remains fail-closed; readable Markdown
+    # may bypass formatting defects, never unsupported or contradictory claims.
+    cv_hard = cv["verdict"] == "BLOCK"
     paths.append(write_artifact(run_dir, "DISCOVER", "citation-verdict.artifact.json",
                                 "citation_integrity_verdict", "citation-integrity-auditor", cv, ts,
                                 "blocked" if cv_hard else "draft" if cv["verdict"] == "BLOCK"
                                 else "approved"))
     if cv["verdict"] == "BLOCK":
-        if _citation_gap_is_hard(cv["violations"]):
-            _raise_citation_gap("citation gate BLOCK; targeted supplement required", cv["violations"])
-        delivery_warnings.extend(str(row) for row in cv["violations"])
+        _raise_citation_gap(
+            "citation gate BLOCK; targeted supplement required",
+            cv["violations"],
+            force_hard=True,
+        )
 
     try:
         attribution = build_run_attribution_report(
@@ -2051,7 +2320,9 @@ def _discover_dets(run_dir, ts) -> tuple:
             coverage_based_absence_claim_ids=coverage_absence_ids,
         )
     except ValueError as exc:
-        _raise_citation_gap("citation attribution input is invalid", [str(exc)])
+        _raise_citation_gap(
+            "citation attribution input is invalid", [str(exc)], force_hard=True,
+        )
     if attribution["verdict"] == "PASS_WITH_CAVEATS":
         if b["paper_reading_quality"].get("verdict") == "PASS":
             b["paper_reading_quality"]["verdict"] = "PASS_WITH_CAVEATS"
@@ -2081,9 +2352,9 @@ def _discover_dets(run_dir, ts) -> tuple:
     ))
     if attribution["verdict"] not in {"PASS", "PASS_WITH_CAVEATS"} and not attribution["legacy_replay"]:
         reasons = attribution["violations"] + attribution["unverified_reasons"]
-        if _citation_gap_is_hard(reasons):
-            _raise_citation_gap(f"citation attribution {attribution['verdict']}", reasons)
-        delivery_warnings.extend(str(row) for row in reasons)
+        _raise_citation_gap(
+            f"citation attribution {attribution['verdict']}", reasons, force_hard=True,
+        )
 
     _apply_usable_first_policy(run_dir, b, delivery_warnings)
 
@@ -2097,7 +2368,21 @@ def _discover_dets(run_dir, ts) -> tuple:
     for key, atype, agent, fname, status in ARTIFACT_PLAN:
         if attribution["legacy_replay"]:
             status = "draft"
+        remaining_schema_errors = validate_payload(atype, b[key])
+        if remaining_schema_errors:
+            # The immutable worker bundle and normalization/advisory reports
+            # remain available.  A non-canonical sidecar must not erase the
+            # completed readable paper card after source/claim/citation truth
+            # gates above have already run.  Promotion remains strict and can
+            # require a targeted supplement before admitting this sidecar.
+            delivery_warnings.append(
+                f"typed sidecar omitted at {key}: "
+                + "; ".join(remaining_schema_errors)[:4000]
+            )
+            continue
         paths.append(write_artifact(run_dir, "DISCOVER", fname, atype, agent, b[key], ts, status))
+
+    _apply_usable_first_policy(run_dir, b, delivery_warnings)
 
     md_path = _write_markdown_card(
         run_dir,
@@ -2156,7 +2441,62 @@ def _discover_dets(run_dir, ts) -> tuple:
     }
 
 
+def _delivery_advisory_summary(run_dir) -> tuple[str, list[str]]:
+    """Aggregate durable usability advisories for the REPORT artifact."""
+    caveats = []
+    status = "USABLE"
+    for relative in (
+        "inbox/markdown-quality-advisory.json",
+        "inbox/usable-first-advisory.json",
+    ):
+        path = Path(run_dir) / relative
+        if not path.is_file():
+            continue
+        try:
+            advisory = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            status = "USABLE_WITH_CAVEATS"
+            caveats.append(f"could not read delivery advisory: {relative}")
+            continue
+        warnings = [str(row) for row in advisory.get("warnings") or [] if str(row).strip()]
+        if warnings or advisory.get("verdict") == "USABLE_WITH_CAVEATS":
+            status = "USABLE_WITH_CAVEATS"
+        caveats.extend(warnings)
+
+    quality_path = (
+        Path(run_dir) / "evidence" / "DISCOVER" / "paper-reading-quality.artifact.json"
+    )
+    if quality_path.is_file():
+        try:
+            quality = json.loads(quality_path.read_text(encoding="utf-8")).get("payload") or {}
+        except (OSError, json.JSONDecodeError):
+            quality = {}
+        verdict = str(quality.get("verdict") or "")
+        if verdict and verdict != "PASS":
+            status = "USABLE_WITH_CAVEATS"
+            caveats.extend(
+                str(row) for row in quality.get("required_repairs") or [] if str(row).strip()
+            )
+            if not quality.get("required_repairs"):
+                caveats.append(f"paper reading quality verdict: {verdict}")
+
+    attribution_path = (
+        Path(run_dir) / "evidence" / "DISCOVER" / "citation-attribution-report.artifact.json"
+    )
+    if attribution_path.is_file():
+        try:
+            attribution = json.loads(attribution_path.read_text(encoding="utf-8")).get("payload") or {}
+        except (OSError, json.JSONDecodeError):
+            attribution = {}
+        if attribution.get("legacy_replay"):
+            status = "USABLE_WITH_CAVEATS"
+            caveats.append("legacy replay: citation attribution remains unverified")
+
+    return status, list(dict.fromkeys(caveats))
+
+
 def _report(run_dir, ts) -> tuple:
+    delivery_status, delivery_caveats = _delivery_advisory_summary(run_dir)
     note = {
         "summary": "read_paper_deep: staged primary plus blind paper read completed with explicit "
                    "reconciliation, hash-verified visual coverage, a body-audited Markdown card, and "
@@ -2170,6 +2510,8 @@ def _report(run_dir, ts) -> tuple:
         ],
         "produced_artifacts": [],
         "open_questions": [],
+        "delivery_status": delivery_status,
+        "delivery_caveats": delivery_caveats,
     }
     return ([write_artifact(run_dir, "REPORT", "report-note.artifact.json",
                             "report_note", "research-orchestrator", note, ts)], {})

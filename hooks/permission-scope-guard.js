@@ -47,9 +47,17 @@ function isGovernancePath(target) {
   return GOVERNANCE_INFRA.has(base);
 }
 
+// research_agent_teams/hooks -> the machine's project root. Derived from __dirname so it is
+// independent of the hook process cwd (Claude Code launches hooks with the Bash tool's PERSISTENT
+// shell cwd, which drifts as commands cd around).
+const MACHINE_ROOT = path.resolve(__dirname, "..", "..");
+
 function within(child, root) {
-  let c = path.resolve(child);
-  let r = path.resolve(root);
+  // Anchor a relative path to the project root, NOT to process.cwd(). decide()'s default verdict is
+  // ALLOW ("non-governed path"), so a cwd-relative mis-resolution would read as "outside every
+  // governed tree" and silently open a path into the vault / another run's stage.
+  let c = path.isAbsolute(child) ? path.resolve(child) : path.resolve(MACHINE_ROOT, child);
+  let r = path.isAbsolute(root) ? path.resolve(root) : path.resolve(MACHINE_ROOT, root);
   if (process.platform === "win32") { c = c.toLowerCase(); r = r.toLowerCase(); }
   return c === r || c.startsWith(r + path.sep);
 }

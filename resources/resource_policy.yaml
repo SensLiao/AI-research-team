@@ -16,6 +16,17 @@ rules:
     max_lease_duration_seconds: 7200
     requires_human_approval: true                      # any LIVE SSH to the director's server
     log_level: full_redacted
+  - resource_ref: server.usyd.bdav_z390_3090
+    project: "*"
+    allowed_capabilities: [query_status, pull_logs]
+    allowed_skills: [server-query]
+    max_lease_duration_seconds: 7200
+    requires_human_approval: true
+    log_level: full_redacted
+    note: >-
+      Authenticated strict-pinned read-only access and hardware inventory are verified. submit_job remains
+      default-denied because /mnt/HDD4 reported 100% capacity, no project Conda environment is configured,
+      Slurm lacks its cluster configuration, and no separately authorized write/run preflight has passed.
   - resource_ref: api.semantic_scholar
     project: "*"
     allowed_capabilities: [paper_search, citation_existence]

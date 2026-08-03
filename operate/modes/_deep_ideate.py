@@ -36,6 +36,7 @@ from typing import List, Optional, Tuple
 
 from . import _shared
 from ..artifacts import GateBlock, TargetedGateBlock, write_artifact
+from ..output_versions import resolve_effective_output
 from ...tools.analogy_graph_match import match_mechanisms
 from ...tools.formal_problem_schema import build_problem_abstraction
 from ...tools.integrity_scan import build_recommendation
@@ -275,7 +276,12 @@ def experiment_worker(run_dir: str, request: str, model_policy: str) -> dict:
 # --------------------------------------------------------------------------- helpers
 
 def _inbox(run_dir, stem: str, *, required: bool) -> Optional[dict]:
-    p = Path(run_dir) / "inbox" / f"{stem}.bundle.json"
+    stage = "IDEATE" if stem in {"IDEATE", "RANKING", "COLLISION", "EXPERIMENT"} else "DISCOVER"
+    logical = Path(run_dir) / "inbox" / f"{stem}.bundle.json"
+    try:
+        p = resolve_effective_output(Path(run_dir), stage, logical)
+    except ValueError as exc:
+        raise GateBlock(f"supplement lineage BLOCK: {exc}") from exc
     if not p.exists():
         if required:
             raise FileNotFoundError(

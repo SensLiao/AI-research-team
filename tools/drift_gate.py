@@ -26,7 +26,13 @@ from __future__ import annotations
 import re
 from typing import Dict, Iterable, List, Tuple
 
-_WORD_RE = re.compile(r"[a-z0-9]+")
+# Keep Latin/number tokens and contiguous CJK text.  The previous ASCII-only
+# tokenizer silently reduced a mixed phrase such as ``GT泄漏`` to the single
+# token ``gt``.  That made any scientifically necessary mention of
+# ``GT-derived`` evidence look like the explicitly excluded topic ``GT泄漏``.
+# Preserving the CJK part lets mixed-language phrases remain phrases, so the
+# hard gate fires only when the complete excluded concept is present.
+_WORD_RE = re.compile(r"[a-z0-9]+|[\u3400-\u4dbf\u4e00-\u9fff]+")
 
 # Minimal English stopword set — only words so common they carry no direction signal. Deliberately
 # small: over-aggressive stopwording would delete real anchor terms from short statements.

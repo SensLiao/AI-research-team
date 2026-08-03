@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-agent-teams.local/schemas/native_review_precommit.schema.json",
+  "title": "Native blind-review precommitment",
+  "description": "A reviewer-specific evaluation commitment recorded before either anonymous candidate is exposed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evaluation_id",
+    "judge_id",
+    "judge_role",
+    "agent_id",
+    "canonical_agent_task_name",
+    "precommit_brief_sha256",
+    "blindness_attestation",
+    "priority_failure_modes",
+    "rejection_conditions",
+    "score_policy",
+    "declared_at",
+    "runtime_usage"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "replicationKey": {
+      "enum": [
+        "primary_endpoint_not_frozen",
+        "no_m0_neutralization_not_frozen",
+        "ambiguity_strata_not_frozen",
+        "curriculum_schedule_not_frozen",
+        "cross_attention_scope_drift",
+        "six_joint_ontology_violation",
+        "patient_level_estimand_missing",
+        "data_leakage_or_oracle_access",
+        "comparator_fairness_gap",
+        "execution_truth_overclaim",
+        "reproducibility_receipt_gap",
+        "domain_reality_mismatch",
+        "other_substantive"
+      ]
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "native-review-precommit/v1"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "judge_id": {"type": "string", "minLength": 1},
+    "judge_role": {
+      "enum": ["domain_mechanism", "methods_statistics", "evidence_integrity"]
+    },
+    "agent_id": {"type": "string", "minLength": 1},
+    "canonical_agent_task_name": {
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9._/-]+$"
+    },
+    "precommit_brief_sha256": {"$ref": "#/$defs/sha256"},
+    "blindness_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidates_not_seen",
+        "condition_mapping_not_seen",
+        "runtime_data_not_seen",
+        "sibling_review_data_not_seen"
+      ],
+      "properties": {
+        "candidates_not_seen": {"const": true},
+        "condition_mapping_not_seen": {"const": true},
+        "runtime_data_not_seen": {"const": true},
+        "sibling_review_data_not_seen": {"const": true}
+      }
+    },
+    "priority_failure_modes": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["replication_key", "rationale"],
+        "properties": {
+          "replication_key": {"$ref": "#/$defs/replicationKey"},
+          "rationale": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "rejection_conditions": {
+      "type": "array",
+      "minItems": 3,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "score_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "core_dimensions",
+        "minimum_core_score_each",
+        "fatal_defects_allowed",
+        "winner_rule"
+      ],
+      "properties": {
+        "core_dimensions": {"const": ["Q1", "Q3", "Q4", "Q6"]},
+        "minimum_core_score_each": {"const": 3},
+        "fatal_defects_allowed": {"const": 0},
+        "winner_rule": {"type": "string", "minLength": 1}
+      }
+    },
+    "declared_at": {"type": "string", "format": "date-time"},
+    "runtime_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {"status": {"const": "UNOBSERVED"}}
+    }
+  }
+}

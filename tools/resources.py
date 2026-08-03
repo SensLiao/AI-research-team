@@ -67,7 +67,11 @@ def load_registry(resources_root_path: Optional[str] = None) -> Dict[str, dict]:
             raise ValueError(f"resource {rid!r} declares no capabilities")
         for role, ref in (r.get("secret_refs") or {}).items():
             _assert_env_name(ref, f"resource {rid!r} secret_refs.{role}")
-        for key in ("endpoint_ref", "port_ref", "remote_workdir_ref"):
+        for key in (
+            "endpoint_ref", "port_ref", "remote_workdir_ref", "python_ref", "conda_env_ref",
+            "conda_sh_ref", "scheduler_ref", "results_pull_dir_ref", "known_hosts_ref",
+            "connect_host_ref", "ssh_key_ref",
+        ):
             if r.get(key) is not None:
                 _assert_env_name(r[key], f"resource {rid!r} {key}")
         r.setdefault("scope", "shared")
@@ -75,6 +79,34 @@ def load_registry(resources_root_path: Optional[str] = None) -> Dict[str, dict]:
     if not out:
         raise ValueError(f"{root / 'resource_registry.yaml'} declares no resources")
     return out
+
+
+def connection_env_refs(resource: dict) -> Dict[str, str]:
+    """Build semantic connection role -> env-var NAME for one resource.
+
+    Values are never resolved here. Keeping this translation in the resource plane lets every SSH
+    consumer select a server without hardcoding a second RAT_SERVER_* implementation.
+    """
+    refs = dict(resource.get("secret_refs") or {})
+    field_roles = {
+        "endpoint_ref": "endpoint",
+        "port_ref": "port",
+        "remote_workdir_ref": "remote_workdir",
+        "python_ref": "python",
+        "conda_env_ref": "conda_env",
+        "conda_sh_ref": "conda_sh",
+        "scheduler_ref": "scheduler",
+        "results_pull_dir_ref": "results_pull_dir",
+        "known_hosts_ref": "known_hosts",
+        "connect_host_ref": "connect_host",
+        "ssh_key_ref": "ssh_key",
+    }
+    for field, role in field_roles.items():
+        if resource.get(field):
+            refs.setdefault(role, resource[field])
+    if "host" not in refs and "endpoint" in refs:
+        refs["host"] = refs["endpoint"]
+    return refs
 
 
 def load_policy(resources_root_path: Optional[str] = None) -> dict:

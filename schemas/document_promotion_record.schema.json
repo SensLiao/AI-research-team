@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/document_promotion_record.schema.json",
+  "title": "Director-Reviewed Document Admission Record",
+  "description": "Audit record for a final-Markdown admission through /promote-to-vault. This is deliberately separate from promotion_record: it must never imply result-status, can-cite-thesis or a frozen experiment.",
+  "type": "object",
+  "required": [
+    "admission_id",
+    "candidate_ref",
+    "source_ref",
+    "document_type",
+    "admissible",
+    "reasons",
+    "decided_by",
+    "decided_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "admission_id": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
+    "candidate_ref": {"$ref": "#/$defs/ref"},
+    "source_ref": {"$ref": "#/$defs/ref"},
+    "document_type": {
+      "type": "string",
+      "enum": ["paper", "synthesis", "idea", "source", "method", "model", "dataset", "protocol", "experiment"]
+    },
+    "admissible": {"type": "boolean"},
+    "reasons": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "\\S"}},
+    "vault_path": {"type": ["string", "null"]},
+    "vault_slug": {"type": ["string", "null"], "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
+    "canonical_redirects": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}
+    },
+    "superseded_pages": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z]+/[a-z0-9]+(-[a-z0-9]+)*$"}
+    },
+    "authorization_basis": {
+      "type": "string",
+      "enum": ["explicit-director-command", "out-of-band-env"]
+    },
+    "decided_by": {"type": "string", "pattern": "\\S"},
+    "decided_at": {"type": "string", "pattern": "\\S"}
+  },
+  "$defs": {
+    "ref": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "pattern": "\\S"},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"admissible": {"const": true}}, "required": ["admissible"]},
+      "then": {
+        "required": ["vault_path", "vault_slug"],
+        "properties": {
+          "vault_path": {"type": "string", "pattern": "\\S"},
+          "vault_slug": {"type": "string", "pattern": "\\S"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"admissible": {"const": false}}, "required": ["admissible"]},
+      "then": {
+        "properties": {
+          "vault_path": {"type": "null"},
+          "vault_slug": {"type": "null"}
+        }
+      }
+    }
+  ]
+}

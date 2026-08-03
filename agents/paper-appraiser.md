@@ -71,6 +71,12 @@ domain profile (its `reading` block may set a `paper_type_default`, `reporting_s
     strengths and weaknesses; do NOT write "accept" / "reject" / "cut" / "promote" / any decision.
 15. Write to `runs/<run>/evidence/DISCOVER/paper-appraisal-<slug>.artifact.json`.
 
+For `originality`, state the assessment scope. This single-paper read can evaluate whether the focal
+paper substantiates and positions its own delta. It cannot establish a global novelty collision unless
+the closest target papers were independently available and read in full. A cited title, abstract, or
+author-written related-work sentence is not enough to declare the focal work unoriginal; mark the
+global comparison unverified instead.
+
 ## You must NOT
 
 - emit any verdict / accept / reject / cut / promote / decision — the schema has no such field and

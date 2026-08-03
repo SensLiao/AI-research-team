@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-agent-teams.local/schemas/overlay_ab_condition_manifest.schema.json",
+  "title": "Research capability overlay A/B condition manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evaluation_state",
+    "dispatch_plan",
+    "request_manifest",
+    "overlay_catalog",
+    "author_runtime_policy",
+    "author_runtime_policy_sha256",
+    "global_observed_runtime",
+    "global_runtime_parity",
+    "preregistration",
+    "blind_packet",
+    "pairs",
+    "judge_contract",
+    "safety"
+  ],
+  "properties": {
+    "schema_version": {"const": "research-capability-overlay-condition-manifest/v2"},
+    "evaluation_state": {"const": "SEALED_AWAITING_JUDGES"},
+    "dispatch_plan": {"$ref": "#/$defs/file_binding"},
+    "request_manifest": {"$ref": "#/$defs/file_binding"},
+    "overlay_catalog": {"$ref": "#/$defs/file_binding"},
+    "author_runtime_policy": {"$ref": "#/$defs/author_runtime_policy"},
+    "author_runtime_policy_sha256": {"$ref": "#/$defs/sha256"},
+    "global_observed_runtime": {"$ref": "#/$defs/observed_runtime"},
+    "global_runtime_parity": {"const": "PASS"},
+    "preregistration": {"$ref": "#/$defs/preregistration"},
+    "blind_packet": {"$ref": "#/$defs/file_binding"},
+    "pairs": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "items": {"$ref": "#/$defs/pair"}
+    },
+    "judge_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_roles", "judge_count", "judge_schema_sha256", "mutual_blindness_required"],
+      "properties": {
+        "required_roles": {
+          "const": ["domain_mechanism", "methods_statistics", "evidence_integrity"]
+        },
+        "judge_count": {"const": 3},
+        "judge_schema_sha256": {"$ref": "#/$defs/sha256"},
+        "mutual_blindness_required": {"const": true}
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["condition_manifest_excluded_from_judge_inputs", "network", "third_party_execution"],
+      "properties": {
+        "condition_manifest_excluded_from_judge_inputs": {"const": true},
+        "network": {"const": "DENY"},
+        "third_party_execution": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "file_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "author_runtime_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "runtime_policy_id",
+        "model_policy",
+        "model",
+        "service_tier",
+        "reasoning_effort",
+        "agent_type",
+        "context_budget_tokens",
+        "max_output_tokens"
+      ],
+      "properties": {
+        "schema_version": {"const": "research-capability-overlay-author-runtime-policy/v1"},
+        "runtime_policy_id": {"type": "string", "minLength": 1},
+        "model_policy": {"enum": ["default", "max_quality"]},
+        "model": {"type": "string", "minLength": 1},
+        "service_tier": {"type": "string", "minLength": 1},
+        "reasoning_effort": {"type": "string", "minLength": 1},
+        "agent_type": {"type": "string", "minLength": 1},
+        "context_budget_tokens": {"type": "integer", "minimum": 1},
+        "max_output_tokens": {"type": "integer", "minimum": 1}
+      }
+    },
+    "observed_runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolved_model", "service_tier", "reasoning_effort"],
+      "properties": {
+        "resolved_model": {"type": "string", "minLength": 1},
+        "service_tier": {"type": "string", "minLength": 1},
+        "reasoning_effort": {"type": "string", "minLength": 1}
+      }
+    },
+    "preregistration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_pairs",
+        "judge_count",
+        "judge_aggregation",
+        "primary_score",
+        "minimum_mean_difference_points",
+        "missing_score_policy",
+        "tie_rule",
+        "core_dimensions",
+        "core_non_degradation_floor",
+        "confidence_level",
+        "bootstrap_method",
+        "bootstrap_resamples",
+        "bootstrap_seed",
+        "permutation_method",
+        "agreement_metric",
+        "failure_disclosure"
+      ],
+      "properties": {
+        "minimum_pairs": {"const": 20},
+        "judge_count": {"const": 3},
+        "judge_aggregation": {"const": "mean_per_request_per_candidate"},
+        "primary_score": {"const": "sum_Q1_to_Q8_then_mean_three_judges"},
+        "minimum_mean_difference_points": {"const": 1.0},
+        "missing_score_policy": {"const": "FAIL"},
+        "tie_rule": {"const": "equal_after_three_judge_mean"},
+        "core_dimensions": {"const": ["Q1", "Q3", "Q4", "Q6"]},
+        "core_non_degradation_floor": {"const": 0.0},
+        "confidence_level": {"const": 0.95},
+        "bootstrap_method": {"const": "paired_case_percentile"},
+        "bootstrap_resamples": {"const": 10000},
+        "bootstrap_seed": {"const": 20260731},
+        "permutation_method": {"const": "exact_sign_flip_for_20_pairs"},
+        "agreement_metric": {"const": "raw_exact_winner_agreement_fraction"},
+        "failure_disclosure": {"const": "ALL_CASES"}
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["X", "Y"],
+      "properties": {
+        "X": {"enum": ["baseline", "enhanced"]},
+        "Y": {"enum": ["baseline", "enhanced"]}
+      },
+      "oneOf": [
+        {"properties": {"X": {"const": "baseline"}, "Y": {"const": "enhanced"}}},
+        {"properties": {"X": {"const": "enhanced"}, "Y": {"const": "baseline"}}}
+      ]
+    },
+    "observable_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "input_tokens", "output_tokens", "total_tokens", "elapsed_ms"],
+      "properties": {
+        "status": {
+          "const": "PROVIDER_ATTESTED",
+          "description": "Accepted only after provider_call_receipt_import verifies the host Ed25519 signature, frozen challenge, artifact binding, observation sources, and replay guard."
+        },
+        "input_tokens": {"type": "integer", "minimum": 0},
+        "output_tokens": {"type": "integer", "minimum": 0},
+        "total_tokens": {"type": "integer", "minimum": 0},
+        "elapsed_ms": {"type": "integer", "minimum": 0}
+      }
+    },
+    "runtime_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "receipt_id",
+        "provider_receipt_version",
+        "producer_kind",
+        "runtime_policy_id",
+        "requested_model",
+        "requested_service_tier",
+        "requested_reasoning_effort",
+        "resolved_model",
+        "service_tier",
+        "reasoning_effort",
+        "agent_type",
+        "context_budget_tokens",
+        "max_output_tokens",
+        "provider_request_id",
+        "dispatch_spec_sha256",
+        "attestation_key_id",
+        "observable_usage"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "receipt_id": {"type": "string", "minLength": 1},
+        "provider_receipt_version": {"const": "provider-call-receipt/v1"},
+        "producer_kind": {"const": "provider-host-adapter"},
+        "runtime_policy_id": {"type": "string", "minLength": 1},
+        "requested_model": {"type": "string", "minLength": 1},
+        "requested_service_tier": {"type": "string", "minLength": 1},
+        "requested_reasoning_effort": {"type": "string", "minLength": 1},
+        "resolved_model": {"type": "string", "minLength": 1, "description": "Provider-response-observed resolved model, not the requested model."},
+        "service_tier": {"type": "string", "minLength": 1, "description": "Provider-response-observed service tier."},
+        "reasoning_effort": {"type": "string", "minLength": 1, "description": "Provider-response-observed reasoning effort."},
+        "agent_type": {"type": "string", "minLength": 1},
+        "context_budget_tokens": {"type": "integer", "minimum": 1},
+        "max_output_tokens": {"type": "integer", "minimum": 1},
+        "provider_request_id": {"type": "string", "minLength": 1},
+        "dispatch_spec_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "attestation_key_id": {"type": "string", "minLength": 1},
+        "observable_usage": {"$ref": "#/$defs/observable_usage"}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blind_label", "treatment", "prompt_sha256", "overlay_ids", "author_artifact", "runtime_receipt"],
+      "properties": {
+        "blind_label": {"enum": ["X", "Y"]},
+        "treatment": {"enum": ["baseline", "enhanced"]},
+        "prompt_sha256": {"$ref": "#/$defs/sha256"},
+        "overlay_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "author_artifact": {"$ref": "#/$defs/file_binding"},
+        "runtime_receipt": {"$ref": "#/$defs/runtime_receipt"}
+      }
+    },
+    "pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "domain",
+        "task_type",
+        "expected_mode",
+        "mode_status",
+        "base_prompt_sha256",
+        "source_packet_sha256",
+        "mapping",
+        "candidates",
+        "runtime_parity"
+      ],
+      "properties": {
+        "request_id": {"type": "string", "pattern": "^HB-[0-9]{2}$"},
+        "domain": {"type": "string", "minLength": 1},
+        "task_type": {"type": "string", "minLength": 1},
+        "expected_mode": {"type": "string", "minLength": 1},
+        "mode_status": {"enum": ["operated", "spec_only"]},
+        "base_prompt_sha256": {"$ref": "#/$defs/sha256"},
+        "source_packet_sha256": {"$ref": "#/$defs/sha256"},
+        "mapping": {"$ref": "#/$defs/mapping"},
+        "candidates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["X", "Y"],
+          "properties": {
+            "X": {"$ref": "#/$defs/candidate"},
+            "Y": {"$ref": "#/$defs/candidate"}
+          }
+        },
+        "runtime_parity": {"const": "PASS"}
+      }
+    }
+  }
+}
