@@ -193,7 +193,7 @@ Three defects found and fixed while building it (two in pre-existing code, one m
    default tokenizer cannot segment CJK; the answer reports which engine ran.
 | P2.1 | Six Outcome Recipes as the user-facing layer | **DONE** | `6d1b470` |
 
-### P2.1 as shipped (commits `6d1b470` + `a5f8e2c`, suite `4022 passed, 5 skipped, exit 0` in 179 s)
+### P2.1 as shipped (commits `6d1b470` + `e6f9509`, suite `4022 passed, 5 skipped, exit 0` in 179 s)
 
 > Verification note, kept deliberately: the first full-suite run reported **4020**, because it was
 > launched *before* the last card-wording fix and its test. The arithmetic did not reconcile
