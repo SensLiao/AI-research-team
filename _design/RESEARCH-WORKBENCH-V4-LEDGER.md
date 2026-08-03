@@ -97,6 +97,24 @@ session, not pre-existing:
 `tests/test_server_monitor.py` also mentions the old slug (lines 284/288) but passes — it is a
 CLI pass-through string, not a filesystem lookup. Left alone deliberately (minimal diff).
 
+### 4.2 The project root has no working git repo — found 2026-08-04, NOT fixed (director's call)
+
+Measured, not assumed: the root holds a `.git` **empty directory** (created 2026-07-11, no `HEAD`, no
+objects, no config), so `git rev-parse --show-toplevel` there returns *fatal: not a git repository*.
+Two real repos exist below it — `research_agent_teams/` (machine) and `AI agent database/PhD-Research-OS/`
+(vault). Everything at root level is therefore **unversioned: no history, no diff, no rollback**:
+
+- `.claude/CLAUDE.md` — the operating manual, edited twice today;
+- `.claude/skills/research-orchestrator/SKILL.md` — the entry skill;
+- `.claude/commands/*.md` — 19 slash commands;
+- `docs/` — the 5-file doc centre; `AGENTS.md`.
+
+Deliberately **not** fixed here. `git init` at root would make a third repo that *contains* the other
+two as nested repos, which is exactly the hazard hard rule §5.1 warns about, and the alternative (a
+fourth repo holding only `.claude/` + `docs/`) is a layout decision. Options for the director:
+① a root repo with the two subrepos gitignored, ② a separate small repo for `.claude/` + `docs/` only,
+③ leave it unversioned and rely on the existing `~/.claude/backups/` + the GitHub config mirror.
+
 ---
 
 ## 5. Before mounting the upstream repos (D5) — the decisions being reversed
@@ -173,9 +191,9 @@ Three defects found and fixed while building it (two in pre-existing code, one m
 3. Search handed raw input to FTS5, so `state-relative intent` failed with `no such column:
    relative`. Terms are now quoted; a CJK query is routed to substring search because FTS5's
    default tokenizer cannot segment CJK; the answer reports which engine ran.
-| P2.1 | Six Outcome Recipes as the user-facing layer | **DONE** | see below |
+| P2.1 | Six Outcome Recipes as the user-facing layer | **DONE** | `6d1b470` |
 
-### P2.1 as shipped
+### P2.1 as shipped (commit `6d1b470`, suite `4020 passed, 5 skipped, exit 0` in 183 s)
 
 Files: `orchestrator/outcome_recipes.yaml` (data SSOT — edit it and the menu changes with zero code
 change) · `tools/outcome_recipes.py` (load / validate / derive / compile) · `reporting/outcomes.py`
@@ -233,10 +251,11 @@ Three defects found and fixed while building it:
 | P6.x | Re-run the example project end-to-end | REBUILD | dry-run only; never dress a dry-run as a GPU result |
 | P7.x | Governance slimming | TODO | last, and telemetry-driven |
 
-**Current pointer:** P1 is shipped. Next is **P2.1** — the six Outcome Recipes as the
-user-facing layer, built on top of the plain-language routing table the 2026-08-01 round
-already added (do not replace that table; the recipes sit above it). After that P3 needs the
-§5 restatement to the director before any mount happens.
+**Current pointer:** P1 and P2.1 are shipped. Next is **P3** — really mounting the nine upstream
+sources per D5. **Precondition, not optional:** the five reversed safety decisions in §5 must be
+restated to the director item by item and answered BEFORE any mount happens. Nothing about P3 may
+start on the strength of D5 alone; D5 itself says so. After P3: P4/P5/P6 are REBUILD-over-existing
+(label them as such in the report) and P7 comes last, telemetry-driven.
 
 **Unverified premise still open:** the memo's "157 workers, 120 used by operated modes, 37
 spec-only". The 157 figure is corroborated by the 08-01 round; the **120 / 37 split is not
@@ -250,3 +269,5 @@ verified** and no policy should rest on it until a real cross-reference of
 | Date | What happened |
 |---|---|
 | 2026-08-03 | Ledger opened. Delta audit (§3) + baseline measurement (§4) done. Documented `3914 green` claim disproved: 3 regressions found and fixed, entry-doc guard hardened and negative-controlled. Director reaffirmed D1 (all 7 phases) and D5 (really mount) after one objection each. |
+| 2026-08-03 | **P1 shipped** (`c2b876c`): the rebuildable projection — dual-state model, `.workbench/` FTS5 store, read-only indexer, generated home pages, 7 verbs. Found 3 defects: the vault count was blind to 47 pages (~10%), `pending_director_decisions` never reached a report, and search broke on a hyphenated phrase. |
+| 2026-08-04 | **P2.1 shipped** (`6d1b470`): the six outcome recipes + 2 workbench verbs + the brief cross-reference, 35 tests each negative-controlled. Director added **D7** (every role in `agents/` is a sub-agent — verified already true in-tree, now pinned). Found 3 more defects: the size column read "大工程" six times, the menu took 11.6 s (yaml re-parsed hundreds of times → cached, whole suite 456 s → 183 s), and **P1's workbench was in no entry document at all** — now in `docs/03` §0.5, `docs/README`, `PLATFORM-FACTS` §0, the CLAUDE.md access map and the SKILL. Also found, not fixed: §4.2, the project root's `.git` is empty so the operating manual and doc centre are unversioned. |
