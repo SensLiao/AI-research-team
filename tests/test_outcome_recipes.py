@@ -188,7 +188,7 @@ def test_the_roster_is_never_presented_as_a_dispatch_promise(render):
     real dispatch count sits between them. Reading either as "this many will run" is an overclaim."""
     card = render()
     assert "席可上场" in card
-    assert "不是一定全派" in card
+    assert "真正派出去的在两者之间" in card
     assert "席 sub-agent" not in card
 
 
