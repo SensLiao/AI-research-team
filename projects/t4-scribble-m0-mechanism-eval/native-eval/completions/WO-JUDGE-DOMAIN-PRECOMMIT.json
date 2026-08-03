@@ -1,0 +1,34 @@
+{
+  "schema_version": "native-dispatch-completion/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-JUDGE-DOMAIN-PRECOMMIT",
+  "work_order_sha256": "a9239dbf1980a563502291be8c949ecdfe4e9169b451ba8f0c029ae7d7aed720",
+  "stage": "BLIND_REVIEW_PRECOMMIT",
+  "role": "judge_domain_mechanism_precommit",
+  "applicability": "APPLICABLE",
+  "completion_state": "COMPLETED",
+  "agent_id": "/root/t4_judge_domain",
+  "canonical_agent_task_name": "/root/t4_judge_domain",
+  "input_packet_sha256": "9efeab826376f16970fcddd48fed476aa2bb8cb71e907efaff9ff6516b2b57db",
+  "authorization_sha256": "7fac5451384d68991db3748ac2c1c6c24f6f7d4dff0917b3ed8a9678011926ff",
+  "nonce_echo": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dependencies": [],
+  "started_at": "2026-08-01T12:06:51.630265Z",
+  "completed_at": "2026-08-01T12:07:21.630266Z",
+  "recorded_at": "2026-08-01T12:09:15.881646Z",
+  "output": {
+    "path": "native-eval/reviews/commitments/domain_mechanism.json",
+    "sha256": "4d20815de66564486ada827aa4c19597bc60c114697e569b7cb26955b1ded8e2",
+    "size_bytes": 4652,
+    "mtime_ns": 1785586041630265200
+  },
+  "preexisting_output_guard": {
+    "absent_at_authorization": true,
+    "mtime_not_before_authorization": true,
+    "mtime_not_after_completion": true
+  },
+  "n_a_reason": null,
+  "runtime_usage": {
+    "status": "UNOBSERVED"
+  }
+}

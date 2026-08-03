@@ -1,0 +1,77 @@
+{
+  "schema_version": "native-targeted-re-review-packet/v1",
+  "evaluation_id": "T4-SM0-BLIND-01",
+  "run_id": "t4-sm0-native-20260801",
+  "review_iteration": "R2_AFTER_TARGETED_REPAIR_R3",
+  "source_candidate": {
+    "path": "native-eval/candidates/council-repaired-r2.md",
+    "sha256": "9640891da8f842ed64a57e02f4131f56e1a8e4824c27edc36cfcf136f15c627b"
+  },
+  "repaired_candidate": {
+    "path": "native-eval/candidates/council-repaired-r3.md",
+    "sha256": "3a8711b1d3a726e9920f6edaac48ace49af63e3a5649729bfa6ede61bca41f9e"
+  },
+  "repair_packet": {
+    "path": "native-eval/sealed/repair-packet-r3.json",
+    "sha256": "880c82d750204be3eae580f041dcb9cca5deecf6c987b9311ef203396fd0ad72"
+  },
+  "reconciliation": {
+    "path": "native-eval/reviews/reconciliation.json",
+    "sha256": "baa08421d411559d92e2c86870385979673b5102450d85ac93bc1e5d5e1aafc2"
+  },
+  "first_targeted_re_review": {
+    "path": "native-eval/reviews/targeted-re-review.json",
+    "sha256": "7e53df79301173ecf2dbe5d00025df961910324e708e8f817aed2fd572cd3a14",
+    "verdict": "FAIL",
+    "must_remain_immutable": true
+  },
+  "repair_completion": {
+    "path": "native-eval/completions/WO-TARGETED-REPAIR-R3.json",
+    "work_order_id": "WO-TARGETED-REPAIR-R3"
+  },
+  "required_replication_keys": [
+    "primary_endpoint_not_frozen",
+    "no_m0_neutralization_not_frozen",
+    "ambiguity_strata_not_frozen",
+    "curriculum_schedule_not_frozen"
+  ],
+  "focus": {
+    "must_close_now": [
+      "ambiguity_strata_not_frozen",
+      "curriculum_schedule_not_frozen"
+    ],
+    "must_remain_closed": [
+      "primary_endpoint_not_frozen",
+      "no_m0_neutralization_not_frozen"
+    ]
+  },
+  "regression_checks": [
+    "six_joint_ontology_unchanged",
+    "simple_first_primary_unchanged",
+    "cross_attention_still_deferred",
+    "oof_not_regenerated",
+    "existing_experiments_unchanged",
+    "truth_boundary_preserved"
+  ],
+  "freshness_rule": "Reviewer must be distinct from all council/challenger authors, three blind judges, R2/R3 repair authors and the first targeted reviewer; no reviewer may edit a candidate.",
+  "forbidden_agent_ids": [
+    "/root/t4_role_math",
+    "/root/t4_role_domain",
+    "/root/t4_role_cognitive",
+    "/root/t4_role_curriculum",
+    "/root/t4_role_engineering",
+    "/root/t4_role_causal_recovery",
+    "/root/t4_role_compiler",
+    "/root/t4_independent_challenger",
+    "/root/t4_judge_domain",
+    "/root/t4_judge_methods",
+    "/root/t4_judge_evidence",
+    "/root/t4_repair_author_r2",
+    "/root/t4_repair_author",
+    "/root/t4_targeted_reviewer"
+  ],
+  "output_schema": "research_agent_teams/schemas/native_targeted_re_review.schema.json",
+  "output_path": "native-eval/reviews/targeted-re-review-r2.json",
+  "review_rule": "PASS only if all four replicated defects are CLOSED, all six regression checks are true, no fatal defect remains, all hashes match, and reviewer freshness holds. Otherwise emit FAIL with exact remaining defects; never repair the candidate.",
+  "created_at": "2026-08-01T13:13:01.4311298Z"
+}

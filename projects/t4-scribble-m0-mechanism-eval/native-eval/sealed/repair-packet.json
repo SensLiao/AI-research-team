@@ -1,0 +1,73 @@
+{
+  "schema_version": "native-targeted-repair-packet/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "evaluation_id": "T4-SM0-BLIND-01",
+  "project_id": "t4-scribble-m0-mechanism-eval",
+  "source_candidate": {
+    "condition": "council",
+    "blind_label": "Y",
+    "path": "native-eval/candidates/council.md",
+    "sha256": "bf7ee8240ec0c0e0e561c8b52358038d80d69b65b381408bb03738fa61ae22ee"
+  },
+  "frozen_input": {
+    "path": "inputs/frozen-brief.md",
+    "sha256": "2b8e88194456c8277df08bdf3e021854c031ee7f61d67c43961f37c05db56470"
+  },
+  "review_evidence": {
+    "path": "native-eval/reviews/reconciliation.json",
+    "sha256": "a2dc4f782c35508af9d3e5cc1a23cdaaf0d2c5563106cbcdb50d80fb2e11b6bc",
+    "mapping_reveal_path": "native-eval/sealed/mapping-reveal.json",
+    "mapping_reveal_sha256": "f564e7ed8ef53c56e5c56c011b4fb920284bbb3a9b543a507c2d09db6c68e36a",
+    "review_state": "DESCRIPTIVE_REVIEW_PASS",
+    "winner_votes": {
+      "X": 3,
+      "Y": 0,
+      "TIE": 0
+    }
+  },
+  "required_repairs": [
+    {
+      "replication_key": "primary_endpoint_not_frozen",
+      "consensus": "3/3",
+      "requirement": "Freeze one exact patient-level primary proper six-joint loss, direction, aggregation, uncertainty procedure, decision margin/rule, missingness and multiplicity before held-out access."
+    },
+    {
+      "replication_key": "no_m0_neutralization_not_frozen",
+      "consensus": "3/3",
+      "requirement": "Freeze an exhaustive direct-and-derived M0 path allowlist, exact normalized-space neutralization for every path, shape/capacity parity, byte-level tensor diff and M0-perturbation invariance checks."
+    },
+    {
+      "replication_key": "ambiguity_strata_not_frozen",
+      "consensus": "3/3",
+      "requirement": "Freeze development-only cue-visible covariates, deterministic strata/matching, patient support, missing/sparse handling, sampling-versus-analysis role and estimands."
+    },
+    {
+      "replication_key": "curriculum_schedule_not_frozen",
+      "consensus": "3/3",
+      "requirement": "Choose and freeze one shared full/no_M0 training schedule, sampler, minibatch/seed mapping, update budget, optimizer, stopping and checkpoint selection; schedule comparison remains separate and non-rescuing."
+    }
+  ],
+  "forbidden_changes": [
+    "Do not alter operation={ADD,REMOVE}, target={SAME,NEW}, scope={LOCAL,COMPLETE} or the six legal joints.",
+    "Do not regenerate or redefine the existing patient-excluded OOF M0 artifact.",
+    "Do not change dataset splits, first-paper scope, simple-first primary P2T route or existing experiment IDs.",
+    "Do not promote cross-attention into the primary; it remains future work.",
+    "Do not claim execution, effectiveness, novelty, publication readiness or any scientific result."
+  ],
+  "output_contract": {
+    "path": "native-eval/candidates/council-repaired.md",
+    "required_sections": [
+      "Truth boundary",
+      "Frozen hypothesis and mechanism",
+      "Repair R1 exact primary endpoint and decision rule",
+      "Repair R2 exhaustive no_M0 intervention",
+      "Repair R3 ambiguity strata contract",
+      "Repair R4 shared training schedule",
+      "Unchanged experiment and scope",
+      "Falsifiers and stops",
+      "Change ledger"
+    ],
+    "status": "DESIGN_ONLY / NON_CITABLE / NO RESULTS"
+  },
+  "created_at": "2026-08-01T12:19:48.709Z"
+}

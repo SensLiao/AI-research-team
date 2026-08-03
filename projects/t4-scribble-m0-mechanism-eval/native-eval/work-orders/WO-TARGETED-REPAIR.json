@@ -1,0 +1,26 @@
+{
+  "schema_version": "native-dispatch-work-order/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-TARGETED-REPAIR",
+  "stage": "TARGETED_REPAIR",
+  "role": "targeted_design_repair",
+  "applicability": "APPLICABLE",
+  "agent_id": "/root/t4_repair_author",
+  "canonical_agent_task_name": "/root/t4_repair_author",
+  "input_packet_path": "native-eval/sealed/repair-packet.json",
+  "input_packet_sha256": "27b04ce5b697ba53d5081a5fe514cba1d0516d0b032dc2c7e0b73b64cfe7a961",
+  "authorization_path": "native-eval/sealed/repair-authorization.json",
+  "authorization_sha256": "627a976901681aa63c272b798a435f80548b15cff1e79cac2f5592b7d9291e37",
+  "nonce": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu",
+  "dependencies": [],
+  "expected_output_path": "native-eval/candidates/council-repaired.md",
+  "authorized_at": "2026-08-01T12:20:06.486631Z",
+  "recorded_at": "2026-08-01T12:20:06.486631Z",
+  "output_precondition": {
+    "exists_at_authorization": false,
+    "checked_at": "2026-08-01T12:20:06.486631Z"
+  },
+  "runtime_usage": {
+    "status": "UNOBSERVED"
+  }
+}

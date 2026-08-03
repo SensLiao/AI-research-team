@@ -1,0 +1,54 @@
+{
+  "schema_version": "mechanism-council-compiler-input/v1",
+  "work_order": {
+    "request_id": "T4-SM0-001",
+    "north_star": "Compile the six independent perspectives into one simple-first, state-relative intent hypothesis -> implementable mechanism -> falsifiable patient-level experiment without changing the frozen first-paper matrix.",
+    "input_sha256": "sha256:2b8e88194456c8277df08bdf3e021854c031ee7f61d67c43961f37c05db56470"
+  },
+  "contributions": [
+    {
+      "role": "mathematical_formalizer",
+      "path": "native-eval/contributions/mathematical_formalizer.json",
+      "file_sha256": "9c5e4997e8c08451d798e3aae60d50dadb282fcf57c06981be3533ce34d39b96",
+      "canonical_value_sha256": "sha256:6730ed91d276031d087a8e7becee8652ff47acdc2f501d5a95826e8bf61911cb"
+    },
+    {
+      "role": "domain_reality_auditor",
+      "path": "native-eval/contributions/domain_reality_auditor.json",
+      "file_sha256": "b4f617edd3ed60c8d7e643a97b035c8a6f0b6f18d00967ff85c12fef2c02fe92",
+      "canonical_value_sha256": "sha256:e7a34ddbf31a18017402a625e76ecbca0b13d5aa4a259b2f0204325238eec870"
+    },
+    {
+      "role": "cognitive_intent_modeler",
+      "path": "native-eval/contributions/cognitive_intent_modeler.json",
+      "file_sha256": "1f46a1c2809021a96dc0d85cb14a53a316d2e69876b0cf664cbafb14a9724778",
+      "canonical_value_sha256": "sha256:65f0e3505be59c88fbb19e8d3f985cca27e4c5e20ce3ffb6187cd0a2be13ed9e"
+    },
+    {
+      "role": "curriculum_design_specialist",
+      "path": "native-eval/contributions/curriculum_design_specialist.json",
+      "file_sha256": "22627f97e4fe758998ec45295a40d200814498976ba6481109138a38f19c2dbd",
+      "canonical_value_sha256": "sha256:62ff67014c4c8274f29edbd4d7b836a0af6a17170288dbc7ac34776bc8016ba3"
+    },
+    {
+      "role": "research_engineering_planner",
+      "path": "native-eval/contributions/research_engineering_planner.json",
+      "file_sha256": "2a1e9b6b6578ea4dd5ea8644dfc0a010b1e03f0a0ffe6f6c50df52c4559bd233",
+      "canonical_value_sha256": "sha256:6f7139ff2b7e21ebf609b249f3428053324f50c08a999b92de51e9a930db64d1"
+    },
+    {
+      "role": "causal_mechanism_critic",
+      "path": "native-eval/contributions/causal_mechanism_critic.json",
+      "file_sha256": "6f5852456611a6adc06d5d50e618b9b51629b6984d560f2324f6698581e8ccf0",
+      "canonical_value_sha256": "sha256:8c38f14836238ddd53486c5540a363ecfc521aedf37c0823d9797dfb022f0baa"
+    }
+  ],
+  "constraints": [
+    "DESIGN_ONLY; no result, novelty, effectiveness, publication-readiness, token or cost claim",
+    "Preserve operation x target x scope six legal joints; NEW_LOCAL is illegal",
+    "Simple-first full versus no_M0 remains the first-paper primary comparison",
+    "Cross-attention is deferred future work and cannot rescue or replace the frozen primary",
+    "Committed OOF M0 is immutable; first operational blocker is downstream bundle/F0 closure",
+    "Preserve unresolved disagreements as OPEN conflicts"
+  ]
+}

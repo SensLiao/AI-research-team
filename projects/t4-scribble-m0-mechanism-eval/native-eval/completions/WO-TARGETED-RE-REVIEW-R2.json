@@ -1,0 +1,40 @@
+{
+  "schema_version": "native-dispatch-completion/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-TARGETED-RE-REVIEW-R2",
+  "work_order_sha256": "d5f471af55b782070358e2c4eb84d1cca589a34ff3e22ce3b7c8dd999dd9db73",
+  "stage": "TARGETED_RE_REVIEW_R2",
+  "role": "fresh_targeted_reviewer_r2",
+  "applicability": "APPLICABLE",
+  "completion_state": "COMPLETED",
+  "agent_id": "/root/t4_completion_auditor",
+  "canonical_agent_task_name": "/root/t4_completion_auditor",
+  "input_packet_sha256": "9c6ef79c17f483b61202cbcd6953edf50a66d95770072d7d51860e2d3708e882",
+  "authorization_sha256": "022394df591d6f317f9beaefd78b40039f7de3445813610c1bd24174e53af2d8",
+  "nonce_echo": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+  "dependencies": [
+    {
+      "work_order_id": "WO-TARGETED-REPAIR-R3",
+      "role": "targeted_design_repair_r3",
+      "output_sha256": "3a8711b1d3a726e9920f6edaac48ace49af63e3a5649729bfa6ede61bca41f9e"
+    }
+  ],
+  "started_at": "2026-08-01T13:13:31.000000Z",
+  "completed_at": "2026-08-01T13:19:33.000000Z",
+  "recorded_at": "2026-08-01T13:20:20.4181244Z",
+  "output": {
+    "path": "native-eval/reviews/targeted-re-review-r2.json",
+    "sha256": "1c73ca8a54298b7e740acfa90eaa8f2c64eb98d1ea5bfe5a5c502e6e6dbf8b69",
+    "size_bytes": 4995,
+    "mtime_ns": 1785590372398303900
+  },
+  "preexisting_output_guard": {
+    "absent_at_authorization": true,
+    "mtime_not_before_authorization": true,
+    "mtime_not_after_completion": true
+  },
+  "n_a_reason": null,
+  "runtime_usage": {
+    "status": "UNOBSERVED"
+  }
+}

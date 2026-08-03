@@ -1,0 +1,60 @@
+{
+  "schema_version": "native-review-precommit/v1",
+  "evaluation_id": "T4-SM0-BLIND-01",
+  "judge_id": "judge-domain",
+  "judge_role": "domain_mechanism",
+  "agent_id": "/root/t4_judge_domain",
+  "canonical_agent_task_name": "/root/t4_judge_domain",
+  "precommit_brief_sha256": "9efeab826376f16970fcddd48fed476aa2bb8cb71e907efaff9ff6516b2b57db",
+  "blindness_attestation": {
+    "candidates_not_seen": true,
+    "condition_mapping_not_seen": true,
+    "runtime_data_not_seen": true,
+    "sibling_review_data_not_seen": true
+  },
+  "priority_failure_modes": [
+    {
+      "replication_key": "domain_reality_mismatch",
+      "rationale": "Reject domain reasoning that treats PET and CT as interchangeable image channels, ignores their distinct resolution, uptake, registration and anatomical-boundary behavior, or uses scribbles that a clinician could not plausibly supply. Synthetic interaction must preserve realistic lesion/anatomy context and cannot silently encode ground-truth boundary detail unavailable at use time."
+    },
+    {
+      "replication_key": "data_leakage_or_oracle_access",
+      "rationale": "The claimed state-relative mechanism is invalid if M0, scribble placement, target selection, correction state or any model input can access held-out-patient labels, oracle error maps, future interactions or non-OOF predictions. Patient exclusion must hold for every learned and generated component, not only the final split."
+    },
+    {
+      "replication_key": "no_m0_neutralization_not_frozen",
+      "rationale": "A state-relative intent claim requires a frozen intervention or control that neutralizes, swaps or otherwise removes informative M0 state while preserving the scribble and relevant anatomy. Without it, performance can be explained by scribble geometry, location priors or image appearance rather than interpretation relative to M0."
+    },
+    {
+      "replication_key": "cross_attention_scope_drift",
+      "rationale": "A mechanism that lets local interactions attend unrestricted global masks, labels or target-specific features can solve the task through geometry or oracle context and blur LOCAL versus COMPLETE semantics. Attention inputs, spatial support and masking must remain explicit and consistent with the declared joint."
+    },
+    {
+      "replication_key": "six_joint_ontology_violation",
+      "rationale": "The design must implement exactly the frozen legal combinations of operation, target and scope. Collapsing distinct joints, inventing extra states, or relabeling ambiguous cases after observing outcomes changes the scientific question and prevents interpretable domain-level comparison."
+    }
+  ],
+  "rejection_conditions": [
+    "Reject any candidate whose M0, scribble generation, interaction target, training features or evaluation path uses held-out-patient information, ground-truth error maps, future interactions or any other oracle signal.",
+    "Reject any candidate that changes, merges or expands the frozen six-joint ontology, or cannot demonstrate that ADD/REMOVE, SAME/NEW and LOCAL/COMPLETE semantics are preserved through inputs, mechanism and endpoint.",
+    "Reject any candidate that cannot specify implementable image, M0 and scribble inputs plus tensor-level outputs and spatial support well enough to determine whether its mechanism respects PET/CT and anatomical reality.",
+    "Reject any candidate that lacks a frozen M0-neutralization or equivalent causal discrimination capable of separating state-relative interpretation from scribble-geometry, location and image-only shortcuts.",
+    "Reject any candidate with a fatal defect, or with a score below 3 on any one of Q1, Q3, Q4 or Q6; strength on non-core dimensions cannot compensate for a failed core threshold.",
+    "Reject any candidate that presents design-only reasoning as executed evidence, statistical superiority, clinical readiness or verified performance."
+  ],
+  "score_policy": {
+    "core_dimensions": [
+      "Q1",
+      "Q3",
+      "Q4",
+      "Q6"
+    ],
+    "minimum_core_score_each": 3,
+    "fatal_defects_allowed": 0,
+    "winner_rule": "Score Q1 through Q8 independently on the frozen 0-4 scale using only blind design evidence. Apply the four core thresholds as non-compensatory eligibility gates and reject any design with a fatal defect. Among eligible designs, prefer the higher Q1-Q8 total only as a descriptive tie aid, with domain/mechanism coherence across Q2, Q3, Q4 and Q5 breaking close cases; do not infer statistical significance, runtime performance or results."
+  },
+  "declared_at": "2026-08-01T22:05:49.8514048+10:00",
+  "runtime_usage": {
+    "status": "UNOBSERVED"
+  }
+}

@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..reporting.outcomes import render_menu, render_recipe
-from ..tools import outcome_recipes, worker_census
+from ..tools import governance_census, outcome_recipes, worker_census
 from .indexer import build_projection
 from .model import EVIDENCE_STATE_WORDS, WORK_STATE_WORDS, coerce_evidence_state, coerce_work_state
 from .projectors import render_research_home, write_home_pages
@@ -256,6 +256,16 @@ def cmd_team(args: argparse.Namespace) -> None:
         sys.exit(2)
 
 
+def cmd_governance(args: argparse.Namespace) -> None:
+    """What the governance costs vs what real runs have used. Reports only — removes nothing."""
+    runs_root = Path(args.runs_dir) if args.runs_dir else governance_census.RUNS_ROOT
+    report = governance_census.census(runs_root)
+    if args.json:
+        _emit(report)
+        return
+    print(governance_census.render_census(report))
+
+
 def cmd_destroy(args: argparse.Namespace) -> None:
     """Prove the rebuildable claim: this is safe, because the store holds no source of truth."""
     _emit({**destroy(args.workbench_root),
@@ -321,6 +331,10 @@ def build_parser() -> argparse.ArgumentParser:
     tm = sub.add_parser("team", parents=[common],
                         help="席位盘点：谁在册、谁真被派、哪个模式能缩规模")
     tm.set_defaults(func=cmd_team)
+
+    gv = sub.add_parser("governance", parents=[common],
+                        help="治理用量盘点：造了多少关卡 vs 真实运行用过多少（只报数，不动任何关卡）")
+    gv.set_defaults(func=cmd_governance)
 
     de = sub.add_parser("destroy", parents=[common], help="删掉投影（安全 —— reindex 可完整恢复）")
     de.set_defaults(func=cmd_destroy)

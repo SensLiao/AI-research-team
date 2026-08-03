@@ -1,0 +1,22 @@
+{
+  "schema_version": "native-dispatch-failure/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-TARGETED-REPAIR",
+  "stage": "TARGETED_REPAIR",
+  "role": "targeted_design_repair",
+  "agent_id": "/root/t4_repair_author",
+  "state": "ABORTED_BEFORE_OUTPUT",
+  "reason_code": "SOURCE_HASH_MISMATCH_AFTER_DISPATCH",
+  "expected": {
+    "path": "native-eval/reviews/reconciliation.json",
+    "sha256": "a2dc4f782c35508af9d3e5cc1a23cdaaf0d2c5563106cbcdb50d80fb2e11b6bc"
+  },
+  "observed": {
+    "path": "native-eval/reviews/reconciliation.json",
+    "sha256": "baa08421d411559d92e2c86870385979673b5102450d85ac93bc1e5d5e1aafc2"
+  },
+  "expected_output_path": "native-eval/candidates/council-repaired.md",
+  "output_absent_at_abort": true,
+  "recovery": "Issue a new immutable packet and WO-TARGETED-REPAIR-R2; never mark the original work order complete.",
+  "recorded_at": "2026-08-01T12:29:25.720Z"
+}
