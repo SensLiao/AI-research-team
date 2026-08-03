@@ -52,10 +52,10 @@
             "description": "Which of the 7 rubric dimensions this score applies to."
           },
           "score": {
-            "type": "integer",
+            "type": ["integer", "null"],
             "minimum": 1,
             "maximum": 4,
-            "description": "1=poor, 2=fair, 3=good, 4=excellent (NeurIPS 1-4 anchor scale)."
+            "description": "1=poor, 2=fair, 3=good, 4=excellent (NeurIPS 1-4 anchor scale); null only when a dimension is scientifically not applicable and the note explains why."
           },
           "evidence_ref": {
             "type": ["string", "null"],

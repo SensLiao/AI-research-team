@@ -24,18 +24,27 @@ from pathlib import Path
 from typing import List, Optional
 
 from ..orchestrator.engine import _resolve_path, _validate_artifact_file
-from ..orchestrator.model_policy import codex_runtime_fields, load_agent_models, safe_resolve_model
+from ..orchestrator.gate_policy import director_gate_required
+from ..orchestrator.model_policy import (
+    codex_runtime_fields,
+    load_agent_models,
+    runtime_observability_fields,
+    safe_resolve_model,
+)
 from ..orchestrator.router import resolve_task, validate_routing
 from ..tools.budget_tracker import assert_within
 from ..tools.obslog import append_log
-from ..tools.ledger import read_events
+from ..tools.ledger import read_events, verify_chain
 from ..tools.director_packet import packet_path, write_packet
 from ..tools.runstore import (
     checkpoint_stage,
     classify_status,
     create_run,
+    hash_file,
+    mark_gate_pending,
     pin_task_frame,
     read_manifest,
+    reconcile_approved_terminal_gate,
     record_gate,
     run_dir_for,
     start_stage,
@@ -49,14 +58,16 @@ def _task_frame(run_dir) -> dict:
 
 def begin(runs_dir, run_id, request, mode, ts, domain_profile_ref: Optional[str] = None,
           model_policy: str = "default", project: Optional[str] = None,
-          north_star: Optional[dict] = None) -> dict:
+          north_star: Optional[dict] = None,
+          capability_route: Optional[dict] = None) -> dict:
     """PARSE + create the run. Writes the only orchestrator-owned file (task_frame). Returns the run plan.
     With a `project`, the run lives in runs/<project>/<run_id>/ (the per-project grouping).
     `north_star` ({statement, in_scope, out_of_scope}) pins the run's immutable direction contract;
     absent, the verbatim request becomes the statement. The frame's sha256 is anchored into the
     hash-chained ledger (task_frame_pinned) so the direction cannot be silently rewritten."""
     tf = resolve_task(request, mode, run_id, ts, domain_profile_ref=domain_profile_ref,
-                      model_policy=model_policy, project=project, north_star=north_star)
+                      model_policy=model_policy, project=project, north_star=north_star,
+                      capability_route=capability_route)
     rerrs = validate_routing(tf)
     if rerrs:
         raise ValueError(f"routing rejected: {rerrs}")
@@ -92,6 +103,18 @@ def open_stage(run_dir, stage, ts) -> bool:
     """
     tf = _task_frame(run_dir)
     p = tf["payload"]
+    manifest = read_manifest(run_dir)
+    if manifest.get("status") == "failed":
+        failure = manifest.get("failure") or {}
+        raise ValueError(
+            f"cannot open stage {stage!r}; run failed hard gate at {failure.get('stage', '?')}: "
+            f"{failure.get('reason', 'unspecified reason')}"
+        )
+    if manifest.get("status") == "rejected":
+        raise ValueError(f"cannot open stage {stage!r}; run was rejected by the director")
+    pending = manifest.get("pending_gates") or []
+    if manifest.get("status") == "awaiting_director" or pending:
+        raise ValueError(f"cannot open stage {stage!r}; awaiting director decision for gate(s) {pending}")
     expected = next_stage(run_dir)
     if stage != expected:
         raise ValueError(f"cannot open stage {stage!r}; next legal stage is {expected!r}")
@@ -118,8 +141,8 @@ def open_stage(run_dir, stage, ts) -> bool:
 def commit_stage(run_dir, stage, artifact_paths: List[str], ts) -> dict:
     """Scope-fence + contract-validate EVERY artifact, then checkpoint the stage (RECORD boundary).
 
-    Returns the gate level for this stage (the caller PAUSES for the director when director_signoff)
-    and the next stage (or done). Mirrors the engine's per-stage decide -> validate -> checkpoint, but
+    Returns the configured gate for this stage (the caller PAUSES only at a declared director decision
+    boundary) and the next stage (or done). Mirrors the engine's per-stage decide -> validate -> checkpoint, but
     validates ALL of the stage's artifacts (the engine validates only the primary returned one).
     """
     if not artifact_paths:
@@ -140,18 +163,112 @@ def commit_stage(run_dir, stage, artifact_paths: List[str], ts) -> dict:
     obs_event = {"agent_name": lead or "operate", "task_id": p["task_id"], "stage": stage,
                  "started_at": ts, "tool_calls": 1, "model": model_label}
     obs_event.update(codex_runtime_fields(model_label))
+    obs_event.update(runtime_observability_fields(model_label))
     append_log(Path(run_dir) / "obs.jsonl", obs_event)
-    checkpoint_stage(run_dir, stage, list(artifact_paths), f"idem-{stage}", ts)
+    checkpoint_stage(run_dir, stage, list(artifact_paths), f"idem-{stage}", ts,
+                     stage_path=_resolve_path(tf))
     director_review_packet = None
     if stage == "REPORT":
         director_review_packet = str(write_packet(run_dir, generated_at=ts))
     nxt = next_stage(run_dir)
+    if director_gate_required(p, stage):
+        mark_gate_pending(run_dir, stage, ts, nxt, reason="configured_director_gate")
     out = {"stage": stage, "committed": True,
-           "gate": "director_signoff" if p["gate_level"] == "director_signoff" else "auto",
+           "gate": "director_signoff" if director_gate_required(p, stage) else "auto",
            "next_stage": nxt, "done": nxt is None}
     if director_review_packet:
         out["director_review_packet"] = director_review_packet
     return out
+
+
+def resolve_director_gate(run_dir, stage, decision: str, ts, reason: Optional[str] = None) -> dict:
+    """Record the director's decision and release exactly the already-pinned next stage.
+
+    This is intentionally narrower than ``record_gate``: it only resolves a
+    persisted configured gate, so a normal CLI/API caller cannot manufacture an
+    approval for an arbitrary stage.
+    """
+    tf = _task_frame(run_dir)
+    payload = tf["payload"]
+    if not director_gate_required(payload, stage):
+        raise ValueError(f"stage {stage!r} is not a configured director gate")
+    manifest = read_manifest(run_dir)
+    normalized = (decision or "").strip().lower()
+    if normalized not in {"approved", "reject"}:
+        raise ValueError("director decision must be 'approved' or 'reject'")
+    path = _resolve_path(tf)
+    if stage in (manifest.get("pending_gates") or []):
+        updated = record_gate(run_dir, stage, normalized, ts, reason=reason)
+        reconciled = False
+        idempotent = False
+    elif normalized == "approved" and path and stage == path[-1]:
+        # Narrow, append-only repair for the historical state where a final
+        # approval had already been ledgered but record_gate left the manifest
+        # running because the final checkpoint had no successor.
+        already_terminal = manifest.get("status") == "done"
+        updated = reconcile_approved_terminal_gate(
+            run_dir,
+            stage,
+            ts,
+            expected_completed_stages=path,
+        )
+        reconciled = not already_terminal
+        idempotent = already_terminal
+    else:
+        raise ValueError(f"stage {stage!r} has no pending director decision")
+    return {"stage": stage, "decision": normalized, "status": updated["status"],
+            "next_stage": next_stage(run_dir), "pending_gates": updated.get("pending_gates") or [],
+            "terminal": updated["status"] == "done", "reconciled": reconciled,
+            "idempotent": idempotent}
+
+
+def reconcile_director_gate(run_dir, stage, ts) -> dict:
+    """Append a pending-gate state for a legacy checkpoint without rewriting history.
+
+    Older sparse-path runs could have a correct task frame and menu but an
+    incorrect global-FSM successor in their boundary. This migration accepts
+    only a pristine latest boundary for the configured gate, derives the true
+    successor from the frozen task frame, and appends the correction.
+    """
+    events = read_events(Path(run_dir) / "ledger.jsonl")
+    if verify_chain(events):
+        raise ValueError("cannot reconcile a tampered ledger")
+    task_frame_path = Path(run_dir) / "task_frame.artifact.json"
+    task_frame_pins = [event for event in events if event.get("event_type") == "task_frame_pinned"]
+    pinned_hash = ((task_frame_pins[-1].get("payload") or {}).get("task_frame_sha256")
+                   if task_frame_pins else None)
+    if not pinned_hash or pinned_hash != hash_file(task_frame_path):
+        raise ValueError("cannot reconcile: task-frame hash no longer matches its pinned ledger record")
+    tf = _task_frame(run_dir)
+    payload = tf["payload"]
+    if not director_gate_required(payload, stage):
+        raise ValueError(f"stage {stage!r} is not a configured director gate")
+    manifest = read_manifest(run_dir)
+    if manifest.get("pending_gates"):
+        raise ValueError(f"run already has pending director gate(s) {manifest['pending_gates']}")
+    completed = manifest.get("completed_work") or []
+    if not completed or completed[-1].get("stage") != stage:
+        raise ValueError(f"gate reconciliation requires {stage!r} to be the latest completed stage")
+    for record in completed:
+        for artifact in record.get("artifacts") or []:
+            path = Path(artifact.get("path") or "")
+            if not path.is_file() or hash_file(path) != artifact.get("sha256"):
+                raise ValueError(f"cannot reconcile: committed artifact hash mismatch at {path}")
+    if not events or events[-1].get("event_type") != "boundary":
+        raise ValueError("gate reconciliation requires a clean latest boundary")
+    boundary_payload = events[-1].get("payload") or {}
+    if boundary_payload.get("completed_stage") != stage:
+        raise ValueError(f"latest boundary does not belong to gate stage {stage!r}")
+    path = _resolve_path(tf)
+    index = path.index(stage)
+    successor = path[index + 1] if index + 1 < len(path) else None
+    mark_gate_pending(
+        run_dir, stage, ts, successor,
+        reason="retroactive_path_and_gate_reconciliation",
+        previous_boundary_next=boundary_payload.get("next"),
+    )
+    return {"stage": stage, "next_stage": successor, "status": "awaiting_director",
+            "previous_boundary_next": boundary_payload.get("next")}
 
 
 def reject_stage(run_dir, stage, ts, reason: Optional[str] = None) -> dict:

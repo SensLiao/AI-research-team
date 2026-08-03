@@ -238,7 +238,21 @@ def test_new_direction_runs_end_to_end_to_idea_backlog(tmp_path):
     assert len(_read_payload(run_dir, "IDEATE", "idea-backlog.artifact.json")["ranked_ideas"]) == 3
     # tamper-proof history intact + observable
     assert verify_chain(read_events(run_dir / "ledger.jsonl")) == []
-    assert classify_status(run_dir) == "done"
+
+
+def test_new_direction_invokes_the_director_gate_only_after_the_idea_menu_exists(tmp_path):
+    """DISCOVER and REPORT are not substitute human bets; IDEATE is the only /idea-bet boundary."""
+    calls = []
+
+    def record_approval(stage, tf):
+        calls.append(stage)
+        return "approved"
+
+    runs = tmp_path / "runs"
+    run_task(runs, "nd-gate-timing", "produce a properly gated direction", "new_direction", TS,
+             make_new_direction_agent(), record_approval)
+    assert calls == ["IDEATE"]
+    assert classify_status(runs / "nd-gate-timing") == "done"
 
 
 # --------------------------------------------------------------------------- 2. DISCOVER gates are LIVE

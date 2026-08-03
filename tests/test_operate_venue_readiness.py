@@ -23,6 +23,7 @@ import pytest
 from research_agent_teams.operate import spine
 from research_agent_teams.operate.artifacts import GateBlock
 from research_agent_teams.operate.modes import venue_readiness as vr
+from research_agent_teams.tools import venue_readiness_markdown as venue_md
 from research_agent_teams.tools.ledger import read_events, verify_chain
 from research_agent_teams.tools.validate_artifact import validate_artifact
 from research_agent_teams.tools.venue_readiness_markdown import venue_readiness_path
@@ -317,6 +318,89 @@ def test_venue_readiness_happy_path_meets_bar(tmp_path):
     assert verify_chain(read_events(Path(rd) / "ledger.jsonl")) == []
 
 
+def test_venue_heading_alias_is_advisory_not_verify_stage_block(tmp_path, monkeypatch):
+    rd = _begin(tmp_path / "runs", "vr-markdown-alias")["run_dir"]
+    _stage_bundles(rd, _profile(), _accept_reviews())
+    original_builder = venue_md.build_venue_readiness_markdown
+
+    def _aliased_builder(*args, **kwargs):
+        return original_builder(*args, **kwargs).replace(
+            "## Repair Order", "## Repair Sequence"
+        )
+
+    monkeypatch.setattr(
+        venue_md,
+        "build_venue_readiness_markdown",
+        _aliased_builder,
+    )
+    spine.open_stage(rd, "VERIFY", TS)
+    _paths, report = vr.run_dets(rd, "VERIFY", TS)
+
+    assert report["verdict"] == "MEETS-BAR"
+    assert "## Repair Sequence" in Path(report["director_venue_readiness"]).read_text(
+        encoding="utf-8"
+    )
+    advisory = json.loads(
+        (Path(rd) / "inbox" / "venue-readiness-markdown-quality-advisory.json")
+        .read_text(encoding="utf-8")
+    )
+    assert advisory["delivery_blocking"] is False
+    assert advisory["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert advisory["gate_ready"] is True
+    assert "missing heading: ## Repair Order" in advisory["warnings"]
+
+
+def test_venue_hidden_human_boundary_still_blocks_gate(tmp_path, monkeypatch):
+    rd = _begin(tmp_path / "runs", "vr-hidden-human-boundary")["run_dir"]
+    _stage_bundles(rd, _profile(), _accept_reviews())
+    original_builder = venue_md.build_venue_readiness_markdown
+
+    def _hidden_boundary_builder(*args, **kwargs):
+        return original_builder(*args, **kwargs).replace(
+            "records_submission_decision: false",
+            "records_submission_decision: hidden",
+        )
+
+    monkeypatch.setattr(
+        venue_md,
+        "build_venue_readiness_markdown",
+        _hidden_boundary_builder,
+    )
+    spine.open_stage(rd, "VERIFY", TS)
+
+    with pytest.raises(ValueError, match="records_submission_decision: false"):
+        vr.run_dets(rd, "VERIFY", TS)
+
+    advisory = json.loads(
+        (Path(rd) / "inbox" / "venue-readiness-markdown-quality-advisory.json")
+        .read_text(encoding="utf-8")
+    )
+    assert advisory["gate_ready"] is False
+    assert advisory["gate_blockers"] == [
+        "Markdown venue packet must state records_submission_decision: false"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("missing_relative", "message"),
+    [
+        ("evidence/VERIFY/venue-readiness-verdict.artifact.json", "verdict artifact missing"),
+        ("inbox/VERIFY.precommit.receipt.json", "precommit/panel receipt missing"),
+    ],
+)
+def test_venue_missing_verdict_or_precommit_remains_hard_block(
+    tmp_path, missing_relative, message
+):
+    rd = _begin(tmp_path / "runs", f"vr-missing-{Path(missing_relative).stem}")["run_dir"]
+    _stage_bundles(rd, _profile(), _accept_reviews())
+    spine.open_stage(rd, "VERIFY", TS)
+    vr.run_dets(rd, "VERIFY", TS)
+    (Path(rd) / missing_relative).unlink()
+
+    with pytest.raises(ValueError, match=message):
+        venue_md.write_venue_readiness_markdown(rd, generated_at=TS)
+
+
 # --------------------------------------------------------------------------- 2. echo chamber -> DEGRADED-REVIEW
 
 def test_venue_readiness_echo_chamber_is_degraded_not_blocked(tmp_path):
@@ -394,7 +478,15 @@ def test_venue_readiness_report_stage_emits_note(tmp_path):
     _stage_bundles(rd, _profile(), _accept_reviews())
     spine.open_stage(rd, "VERIFY", TS)
     paths, _ = vr.run_dets(rd, "VERIFY", TS)
-    spine.commit_stage(rd, "VERIFY", paths, TS)
+    verify_result = spine.commit_stage(rd, "VERIFY", paths, TS)
+    assert verify_result["gate"] == "director_signoff"
+    spine.resolve_director_gate(
+        rd,
+        "VERIFY",
+        "approved",
+        TS,
+        reason="test fixture simulates director approval",
+    )
 
     spine.open_stage(rd, "REPORT", TS)
     rpaths, rrep = vr.run_dets(rd, "REPORT", TS)

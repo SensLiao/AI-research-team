@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-agent-teams.local/schemas/overlay_ab_author_runtime_policy.schema.json",
+  "title": "Stage-B global author runtime policy",
+  "description": "One requested-runtime contract frozen before all 40 paired author calls. It is dispatch configuration, not provider-observed execution evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "runtime_policy_id",
+    "model_policy",
+    "model",
+    "service_tier",
+    "reasoning_effort",
+    "agent_type",
+    "context_budget_tokens",
+    "max_output_tokens"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "research-capability-overlay-author-runtime-policy/v1"
+    },
+    "runtime_policy_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "model_policy": {"enum": ["default", "max_quality"]},
+    "model": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "service_tier": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "reasoning_effort": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "agent_type": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "context_budget_tokens": {"type": "integer", "minimum": 1},
+    "max_output_tokens": {"type": "integer", "minimum": 1}
+  }
+}

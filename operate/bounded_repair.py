@@ -1,10 +1,10 @@
 """Bounded in-stage repair — the BFTS / Co-STEER absorption seam (operate layer, wave 1).
 
-Before this module, a deterministic hard-gate BLOCK (GateBlock) halted a run with ZERO
-revise-and-resubmit attempts: the director was escalated to on the first failure. The landscape's
-core primitive (AI-Scientist-v2 BFTS debug-depth bound, RD-Agent Co-STEER repair, AIDE
-draft/debug/improve) is a BOUNDED in-stage loop: feed the gate's feedback back to the worker a
-few times, THEN escalate. This module is that loop's deterministic controller:
+Only an explicit ``TargetedGateBlock(verdict="NEEDS_SUPPLEMENT")`` may enter the
+revise-and-resubmit loop. A generic ``GateBlock`` has no machine-verifiable repair
+scope, and ``TargetedGateBlock(verdict="BLOCK")`` is an explicit terminal refusal;
+both are escalated immediately. This module is the bounded controller for the
+remaining, local-repair case:
 
   - the cap comes from the task_frame budget's ``max_debug_retries_per_run`` — the previously
     dead counter in tools/budget_tracker.LIMIT_TO_USAGE — enforced through budget_tracker
@@ -123,16 +123,19 @@ def _attempt_record(stage: str, ts: str, exc: GateBlock) -> dict:
 
 def attempt_with_repair(run_dir, stage: str, budget: dict, ts: str,
                         dets_fn: Callable[[], object]) -> Tuple[str, object]:
-    """Run a stage's deterministic producers once, absorbing ONE GateBlock into the repair loop.
+    """Run deterministic producers, repairing only an explicit local supplement request.
 
-    Returns ("ok", result) when dets_fn succeeds, or ("retry", feedback_text) when it was
-    blocked and the budget allows another in-stage attempt. Re-raises the GateBlock unchanged
+    Returns ("ok", result) when dets_fn succeeds, or ("retry", feedback_text) only when
+    ``TargetedGateBlock(..., verdict="NEEDS_SUPPLEMENT")`` has a remaining in-stage retry.
+    Generic or terminal targeted blocks are re-raised unchanged; the repair cap also re-raises
     when the cap is reached — the director sees the ORIGINAL gate reason, not a wrapper.
     """
     try:
         return ("ok", dets_fn())
     except GateBlock as e:
-        if isinstance(e, TargetedGateBlock) and e.verdict == "BLOCK":
+        # Only an explicit local supplement may use the retry loop.  Generic
+        # GateBlocks and explicit targeted BLOCK verdicts are terminal.
+        if not isinstance(e, TargetedGateBlock) or e.verdict == "BLOCK":
             raise
         state = load_state(run_dir)
         state["attempts"].append(_attempt_record(stage, ts, e))

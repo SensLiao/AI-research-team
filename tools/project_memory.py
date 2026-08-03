@@ -124,7 +124,7 @@ def load_prior_art(workspace) -> List[dict]:
 
 
 def append_prior_art(workspace, run_id: str, ts: str, dead_rows: List[dict]) -> int:
-    """Append this run's DEAD ideas to the known-prior-art ledger so future runs never re-output them.
+    """Append this run's DEAD ideas as future full-paper retrieval leads.
 
     Idempotent per (run_id, fingerprint). Returns lines added. Each dead_row supplies a fingerprint
     (normalized "method | application | domain"); when absent it falls back to the row's summary, and a
@@ -158,9 +158,9 @@ def prior_art_matches(ideas: List[dict], inventory: List[dict], *,
                       threshold: float = PRIOR_ART_MATCH_THRESHOLD) -> Dict[str, dict]:
     """Match new ideas against the project's known-prior-art ledger.
 
-    Returns {idea_id: matched_ledger_row} for every new idea whose summary (and its fingerprint, if
-    present) lexically matches a ledger row's fingerprint+summary at/above threshold — 'this one is
-    already done in the literature'. Picks the best-scoring ledger row per idea."""
+    Returns lexical leads for the collision checker. A match is not a novelty
+    verdict and never proves that an improved current claim is already done.
+    Picks the best-scoring ledger row per idea."""
     out: Dict[str, dict] = {}
     rows = [r for r in inventory if r.get("fingerprint") or r.get("summary")]
     for idea in ideas:

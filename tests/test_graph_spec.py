@@ -70,3 +70,15 @@ def test_mode_registry_stage_path_must_start_forward_and_end_at_report():
     assert any("stage_path must start" in e for e in errs)
     assert any("stage_path must end at REPORT" in e for e in errs)
     assert any("stage_path must be forward-only" in e for e in errs)
+
+
+def test_mode_registry_director_gate_stages_must_be_unique_signoff_driven_stages():
+    reg = copy.deepcopy(load_mode_registry())
+    reg["modes"]["deep_ideation"]["director_gate_stages"] = ["IDEATE", "IDEATE", "VERIFY"]
+    errs = validate_mode_registry(reg)
+    assert any("must not contain duplicates" in e for e in errs)
+    assert any("VERIFY is not driven" in e for e in errs)
+
+    reg["modes"]["deep_ideation"]["gate_level"] = "record_only"
+    errs = validate_mode_registry(reg)
+    assert any("requires gate_level director_signoff" in e for e in errs)

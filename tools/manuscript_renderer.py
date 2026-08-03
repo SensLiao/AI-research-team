@@ -16,6 +16,11 @@ from typing import Any, Mapping, Pattern, Sequence
 from urllib.parse import quote
 
 from research_agent_teams.tools.manuscript_contract import canonical_contract_hash
+from research_agent_teams.tools._latex_sandbox import (
+    LatexSandboxViolation,
+    atomic_write_bytes as _sandbox_atomic_write_bytes,
+)
+from research_agent_teams.tools._manuscript_integrator_security import scan_candidate_text
 from research_agent_teams.tools.manuscript_security import (
     ManuscriptPathViolation,
     ManuscriptSecretViolation,
@@ -170,13 +175,7 @@ def _validate_output_path(root: Path, relative: Path) -> Path:
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    with temporary.open("wb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, path)
+    _sandbox_atomic_write_bytes(path, data)
 
 
 def _write_projection_file(root: Path, relative: Path, data: bytes) -> Path:
@@ -185,7 +184,10 @@ def _write_projection_file(root: Path, relative: Path, data: bytes) -> Path:
         if not target.is_file() or target.read_bytes() != data:
             _fail("PROJECTION_CONFLICT", "existing LaTeX projection differs from canonical source")
         return target
-    _atomic_write_bytes(target, data)
+    try:
+        _atomic_write_bytes(target, data)
+    except LatexSandboxViolation:
+        _fail("UNSAFE_OUTPUT_PATH", "director presentation path failed atomic publication checks")
     if target.read_bytes() != data:
         _fail("PROJECTION_WRITE_MISMATCH", "LaTeX projection bytes changed during write")
     return target
@@ -751,17 +753,18 @@ def write_manuscript_report_set(
         for name, relative, text in documents
     ]
 
-    # Validate all source bytes and report text before publishing any derived file.
-    for _relative, data, _sha in copies:
-        try:
-            decoded = data.decode("utf-8")
-        except UnicodeDecodeError:
-            decoded = ""
-        if decoded:
-            try:
-                scan_persisted_text("latex-projection", decoded, sentinels=secret_sentinels, patterns=secret_patterns)
-            except ManuscriptSecretViolation:
-                _fail("SECRET_LEAKAGE", "canonical source cannot be projected with secret material")
+    # Validate every canonical byte, including figures and other binary assets,
+    # before publishing any derived file.  Text-only scanning would let a
+    # caller-supplied sentinel survive in a projected binary artifact.
+    def projection_scan_fail(code: str, _message: str, *_details: object) -> None:
+        _fail(code, "canonical source cannot be projected with unsafe material")
+
+    scan_candidate_text(
+        {f"latex-projection/{relative}": data for relative, data, _sha in copies},
+        fail=projection_scan_fail,
+        sentinels=secret_sentinels,
+        patterns=secret_patterns,
+    )
     manifest_text = _redact_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         sentinels=secret_sentinels,

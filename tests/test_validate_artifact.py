@@ -26,12 +26,15 @@ from research_agent_teams.tools.validate_artifact import (
 MANUSCRIPT_PAYLOAD_SCHEMAS = {
     "manuscript_contract": "manuscript_contract.schema.json",
     "local_literature_coverage": "local_literature_coverage.schema.json",
+    "manuscript_venue_profile_slice": "manuscript_venue_profile_slice.schema.json",
+    "manuscript_evidence_slice": "manuscript_evidence_slice.schema.json",
     "manuscript_section_bundle": "manuscript_section_bundle.schema.json",
     "manuscript_integration": "manuscript_integration.schema.json",
     "manuscript_build_receipt": "manuscript_build_receipt.schema.json",
     "manuscript_asset_manifest": "manuscript_asset_manifest.schema.json",
     "manuscript_quality_report": "manuscript_quality_report.schema.json",
     "manuscript_review_verdict": "manuscript_review_verdict.schema.json",
+    "submission_checklist": "submission_checklist.schema.json",
 }
 
 

@@ -55,10 +55,15 @@
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
       "description": "The lowercase-kebab slug written (admitted), else null. Pattern enforces a recall-able kebab slug (applies only when a string)."
     },
+    "authorization_basis": {
+      "type": "string",
+      "enum": ["explicit-director-command", "out-of-band-env"],
+      "description": "How the director authorized this gate. It records a top-level explicit user command or the legacy exact environment capability; it never comes from the worker-staged candidate."
+    },
     "decided_by": {
       "type": "string",
       "pattern": "\\S",
-      "description": "Who ran the gate (human-only). Typically 'director'."
+      "description": "Who ran the director-command gate. Typically 'director'; authorization must come from an explicit top-level user command or legacy exact environment capability, never from a worker-staged candidate."
     },
     "decided_at": {
       "type": "string",

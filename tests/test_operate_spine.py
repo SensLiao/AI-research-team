@@ -17,11 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from research_agent_teams.operate import spine
+from research_agent_teams.operate import cli, spine
 from research_agent_teams.operate.artifacts import GateBlock
 from research_agent_teams.operate.modes import new_direction
-from research_agent_teams.tools.ledger import read_events, verify_chain
-from research_agent_teams.tools.runstore import classify_status
+from research_agent_teams.tools import runstore
+from research_agent_teams.tools.ledger import append_event, read_events, verify_chain
+from research_agent_teams.tools.runstore import classify_status, read_manifest
+from research_agent_teams.tools.validate_artifact import validate_against
 
 TS = "2026-06-09T00:00:00Z"
 
@@ -103,6 +105,27 @@ def _drive_report(run_dir):
     return spine.commit_stage(run_dir, "REPORT", paths, TS)
 
 
+def _run_cli(argv) -> int:
+    try:
+        cli.main(argv)
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 1
+    return 0
+
+
+def _prepare_final_report_gate(tmp_path, run_id: str):
+    """Create the REPORT-gate shape without executing unrelated workers."""
+    plan = spine.begin(str(tmp_path / "runs"), run_id, "review source-bound evidence", "evidence_review", TS)
+    run_dir = Path(plan["run_dir"])
+    assert plan["stages"] == ["DISCOVER", "REPORT"]
+    from research_agent_teams.tools.runstore import checkpoint_stage, mark_gate_pending
+
+    checkpoint_stage(run_dir, "DISCOVER", [], "k-discover", TS, stage_path=plan["stages"])
+    checkpoint_stage(run_dir, "REPORT", [], "k-report", TS, stage_path=plan["stages"])
+    mark_gate_pending(run_dir, "REPORT", TS, None, reason="configured_director_gate")
+    return run_dir
+
+
 # --------------------------------------------------------------------------- 1. end-to-end happy path
 
 def test_operate_new_direction_runs_end_to_end(tmp_path):
@@ -115,6 +138,7 @@ def test_operate_new_direction_runs_end_to_end(tmp_path):
     _stage_bundle(rd, "DISCOVER", _discover_bundle("clean"))
     d_res, d_rep = _drive_discover(rd)
     assert d_rep["evidence_gate"] == "PASS" and d_rep["citation_gate"] == "PASS"
+    assert d_res["gate"] == "auto"  # evidence is verified before the menu, but no human bet yet
     assert d_res["next_stage"] == "IDEATE"
 
     i_res, i_rep = _drive_ideate(rd)
@@ -122,11 +146,76 @@ def test_operate_new_direction_runs_end_to_end(tmp_path):
     assert i_res["gate"] == "director_signoff"          # the /idea-bet boundary
     assert i_res["next_stage"] == "REPORT"
 
+    spine.resolve_director_gate(rd, "IDEATE", "approved", TS, reason="test director bet")
     r_res = _drive_report(rd)
     assert r_res["done"] is True
     st = spine.status(rd)
     assert st["run_status"] == "done"
     assert st["completed"] == ["DISCOVER", "IDEATE", "REPORT"]
+
+
+def test_final_report_approval_records_terminal_completion(tmp_path):
+    run_dir = _prepare_final_report_gate(tmp_path, "op-final-gate")
+
+    resolved = spine.resolve_director_gate(run_dir, "REPORT", "approved", TS, reason="director accepted brief")
+    manifest = read_manifest(run_dir)
+    events = read_events(run_dir / "ledger.jsonl")
+
+    assert resolved["status"] == "done"
+    assert resolved["terminal"] is True and resolved["reconciled"] is False and resolved["idempotent"] is False
+    assert manifest["status"] == "done" and manifest["next_step"] is None
+    assert events[-2]["event_type"] == "gate_resolved"
+    assert events[-1]["event_type"] == "run_completed"
+    assert events[-1]["payload"]["stage"] == "REPORT"
+    assert events[-1]["payload"]["approved_gate_event_hash"] == events[-2]["hash"]
+    assert events[-1]["payload"]["reconciled"] is False
+    assert validate_against("ledger_event.schema.json", events[-1]) == []
+    assert verify_chain(events) == [] and classify_status(run_dir) == "done"
+
+
+def test_cli_reconciles_exact_legacy_approved_final_gate_append_only(tmp_path, capsys):
+    run_dir = _prepare_final_report_gate(tmp_path, "op-final-gate-legacy")
+    # Simulate only the historical bug: approval is in the ledger, but the old
+    # record_gate implementation left the final manifest in running state.
+    append_event(
+        run_dir / "ledger.jsonl",
+        "gate_resolved",
+        {"stage": "REPORT", "decision": "approved", "reason": "director accepted brief"},
+        TS,
+    )
+    manifest = read_manifest(run_dir)
+    manifest["status"] = "running"
+    manifest["pending_gates"] = []
+    manifest["next_step"] = None
+    manifest["updated_at"] = TS
+    runstore._write_manifest(run_dir, manifest)
+    before = read_events(run_dir / "ledger.jsonl")
+
+    code = _run_cli([
+        "approve", "--runs-dir", str(tmp_path / "runs"), "--run-id", "op-final-gate-legacy",
+        "--stage", "REPORT", "--reason", "reconcile already-recorded final approval",
+    ])
+    out = json.loads(capsys.readouterr().out)
+    after = read_events(run_dir / "ledger.jsonl")
+    repaired = read_manifest(run_dir)
+
+    assert code == 0 and out["approved"] is True
+    assert (out["status"] == "done" and out["terminal"] is True and out["reconciled"] is True
+            and out["idempotent"] is False)
+    assert after[:-1] == before                     # no history rewrite or duplicate approval
+    assert after[-1]["event_type"] == "run_completed"
+    assert after[-1]["payload"]["reconciled"] is True
+    assert after[-1]["payload"]["approved_gate_event_hash"] == before[-1]["hash"]
+    assert repaired["status"] == "done" and repaired["next_step"] is None
+    assert verify_chain(after) == []
+
+    repeat_code = _run_cli([
+        "approve", "--runs-dir", str(tmp_path / "runs"), "--run-id", "op-final-gate-legacy",
+        "--stage", "REPORT", "--reason", "repeat terminal approval is a no-op",
+    ])
+    repeat = json.loads(capsys.readouterr().out)
+    assert repeat_code == 0 and repeat["status"] == "done" and repeat["idempotent"] is True
+    assert read_events(run_dir / "ledger.jsonl") == after
 
 
 # --------------------------------------------------------------------------- 2. DISCOVER gates are LIVE
@@ -166,6 +255,88 @@ def test_operate_menu_ranked_by_feasibility_and_no_self_bet(tmp_path):
         assert not (set(idea) & {"selected", "chosen", "bet", "winner"})
 
 
+def test_ideate_gate_is_persisted_and_blocks_report_until_director_resolves_it(tmp_path):
+    """The idea menu is a durable human boundary, not merely a CLI reminder."""
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "op-gate-persist", "rank promptable segmentation directions",
+                       "new_direction", TS)
+    rd = plan["run_dir"]
+    _stage_bundle(rd, "DISCOVER", _discover_bundle("clean"))
+    _drive_discover(rd)
+    ideate_result, _ = _drive_ideate(rd)
+
+    assert ideate_result["gate"] == "director_signoff"
+    manifest = read_manifest(rd)
+    assert manifest["status"] == "awaiting_director"
+    assert manifest["pending_gates"] == ["IDEATE"]
+    assert manifest["next_step"]["stage"] == "REPORT"
+    assert classify_status(rd) == "awaiting"
+    with pytest.raises(ValueError, match="director"):
+        spine.open_stage(rd, "REPORT", TS)
+
+
+def test_director_approval_releases_the_exact_mode_path_after_idea_bet(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "op-gate-approve", "rank promptable segmentation directions",
+                       "new_direction", TS)
+    rd = plan["run_dir"]
+    _stage_bundle(rd, "DISCOVER", _discover_bundle("clean"))
+    _drive_discover(rd)
+    _drive_ideate(rd)
+
+    resolved = spine.resolve_director_gate(rd, "IDEATE", "approved", TS)
+
+    assert resolved["status"] == "running"
+    manifest = read_manifest(rd)
+    assert manifest["pending_gates"] == []
+    assert manifest["next_step"]["stage"] == "REPORT"
+    assert spine.open_stage(rd, "REPORT", TS) is True
+
+
+def test_reconcile_legacy_idea_boundary_append_only_and_holds_report(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "op-gate-migrate", "rank promptable segmentation directions",
+                       "new_direction", TS)
+    rd = plan["run_dir"]
+    # Reproduce the historical fault: global-STAGES checkpointing wrote DESIGN
+    # after an otherwise valid IDEATE completion.
+    from research_agent_teams.tools.runstore import checkpoint_stage, read_manifest
+
+    checkpoint_stage(rd, "DISCOVER", [], "legacy-discover", TS)
+    checkpoint_stage(rd, "IDEATE", [], "legacy-ideate", TS)
+    before = read_events(Path(rd) / "ledger.jsonl")
+
+    repaired = spine.reconcile_director_gate(rd, "IDEATE", TS)
+
+    after = read_events(Path(rd) / "ledger.jsonl")
+    manifest = read_manifest(rd)
+    assert after[:-1] == before
+    assert after[-1]["event_type"] == "gate_pending"
+    assert after[-1]["payload"]["next_stage"] == "REPORT"
+    assert after[-1]["payload"]["reason"] == "retroactive_path_and_gate_reconciliation"
+    assert after[-1]["payload"]["previous_boundary_next"] == "DESIGN"
+    assert repaired["next_stage"] == "REPORT"
+    assert manifest["status"] == "awaiting_director"
+    assert manifest["pending_gates"] == ["IDEATE"]
+    assert manifest["next_step"]["stage"] == "REPORT"
+
+
+def test_reconcile_director_gate_refuses_a_changed_task_frame(tmp_path):
+    runs = tmp_path / "runs"
+    plan = spine.begin(str(runs), "op-gate-tamper", "rank promptable segmentation directions",
+                       "new_direction", TS)
+    rd = Path(plan["run_dir"])
+    from research_agent_teams.tools.runstore import checkpoint_stage
+
+    checkpoint_stage(rd, "DISCOVER", [], "legacy-discover", TS)
+    checkpoint_stage(rd, "IDEATE", [], "legacy-ideate", TS)
+    task_frame = rd / "task_frame.artifact.json"
+    task_frame.write_text(task_frame.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="task-frame"):
+        spine.reconcile_director_gate(rd, "IDEATE", TS)
+
+
 def test_operate_ideate_writes_director_idea_bet_markdown(tmp_path):
     runs = tmp_path / "runs"
     plan = spine.begin(str(runs), "op3b", "rank promptable segmentation directions", "new_direction", TS)
@@ -195,6 +366,7 @@ def test_operate_ledger_hash_chain_intact(tmp_path):
     _stage_bundle(rd, "DISCOVER", _discover_bundle("clean"))
     _drive_discover(rd)
     _drive_ideate(rd)
+    spine.resolve_director_gate(rd, "IDEATE", "approved", TS, reason="test director bet")
     _drive_report(rd)
     assert verify_chain(read_events(Path(rd) / "ledger.jsonl")) == []
     # the machine produced only the menu — no bet/adr written by the run

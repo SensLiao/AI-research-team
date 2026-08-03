@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from research_agent_teams.operate import spine
 from research_agent_teams.operate.artifacts import GateBlock
 from research_agent_teams.operate.modes import full_rigor_minimal as fr
+from research_agent_teams.tools import full_rigor_markdown as full_rigor_md
 from research_agent_teams.tools.full_rigor_markdown import (
     EXPERIMENT_PLAN_REL,
     RESULT_READINESS_REL,
@@ -657,6 +658,14 @@ def _drive(run_dir, stage, payload=None):
     spine.open_stage(run_dir, stage, TS)
     paths, report = fr.run_dets(run_dir, stage, TS)
     result = spine.commit_stage(run_dir, stage, paths, TS)
+    if result["gate"] == "director_signoff":
+        spine.resolve_director_gate(
+            run_dir,
+            stage,
+            "approved",
+            TS,
+            reason="test fixture simulates director approval",
+        )
     return result, report, paths
 
 
@@ -748,6 +757,80 @@ def test_full_rigor_runs_end_to_end_with_evidence_bound_results(tmp_path):
     assert report_result["gate"] == "director_signoff"
     assert result["status"] == "provisional"
     assert result["can_cite_thesis"] is False
+
+
+def test_experiment_plan_heading_alias_is_advisory_not_stage_block(
+    tmp_path, monkeypatch
+):
+    run_dir = _begin(tmp_path / "runs", "fr-markdown-alias")["run_dir"]
+    original_builder = full_rigor_md.build_experiment_plan_markdown
+
+    def _aliased_builder(*args, **kwargs):
+        return original_builder(*args, **kwargs).replace(
+            "## Baselines And Conditions", "## Baselines & Conditions"
+        )
+
+    monkeypatch.setattr(
+        full_rigor_md,
+        "build_experiment_plan_markdown",
+        _aliased_builder,
+    )
+
+    _result, report, _paths = _drive(run_dir, "DESIGN", _design_bundle())
+
+    assert report["vc_gate"] == "PASS"
+    assert "## Baselines & Conditions" in experiment_plan_path(run_dir).read_text(
+        encoding="utf-8"
+    )
+    advisory = json.loads(
+        (Path(run_dir) / "inbox" / "experiment-plan-markdown-quality-advisory.json")
+        .read_text(encoding="utf-8")
+    )
+    assert advisory["delivery_blocking"] is False
+    assert advisory["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert advisory["gate_ready"] is True
+    assert "missing heading: ## Baselines And Conditions" in advisory["warnings"]
+
+
+def test_experiment_plan_missing_scientific_inputs_remains_hard_block(tmp_path):
+    with pytest.raises(ValueError, match="experiment-matrix artifact missing"):
+        full_rigor_md.write_experiment_plan_markdown(tmp_path, generated_at=TS)
+
+    assert not experiment_plan_path(tmp_path).exists()
+
+
+def test_hidden_promotion_boundary_marks_result_gate_not_ready(
+    tmp_path, monkeypatch
+):
+    run_dir = _begin(tmp_path / "runs", "fr-hidden-promotion-boundary")["run_dir"]
+    _drive(run_dir, "DESIGN", _design_bundle())
+    _drive(run_dir, "EXECUTE", _execute_bundle(executed=True))
+    original_builder = full_rigor_md.build_result_readiness_markdown
+
+    def _hidden_boundary_builder(*args, **kwargs):
+        return original_builder(*args, **kwargs).replace(
+            "/promote-to-vault", "promotion command intentionally hidden"
+        )
+
+    monkeypatch.setattr(
+        full_rigor_md,
+        "build_result_readiness_markdown",
+        _hidden_boundary_builder,
+    )
+
+    _result, report, _paths = _drive(run_dir, "ANALYZE", _analyze_bundle())
+
+    assert report["evidence_bound"] is True
+    advisory = json.loads(
+        (Path(run_dir) / "inbox" / "result-readiness-markdown-quality-advisory.json")
+        .read_text(encoding="utf-8")
+    )
+    assert advisory["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert advisory["delivery_blocking"] is False
+    assert advisory["gate_ready"] is False
+    assert advisory["gate_blockers"] == [
+        "result/readiness brief must surface the promotion boundary"
+    ]
 
 
 def test_scripts_only_can_report_but_never_emits_result_readiness(tmp_path):

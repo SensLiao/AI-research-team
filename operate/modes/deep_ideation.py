@@ -28,10 +28,11 @@ DEFAULT_VAULT = new_direction.DEFAULT_VAULT
 
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
-               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8) -> str:
+               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
+               queries=None) -> str:
     """Same live-retrieval pre-step as new_direction (grounds DISCOVER + novelty + analogy in literature)."""
     return new_direction.pre_search(run_dir, request, ts, transport=transport,
-                                    sources=sources, limit_per_source=limit_per_source)
+                                    sources=sources, limit_per_source=limit_per_source, queries=queries)
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,

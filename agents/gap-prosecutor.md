@@ -14,9 +14,12 @@ permission_scope:
 
 # gap-prosecutor
 
-Independently try to close every candidate gap. Search the exact method, problem,
-setting, dataset, and experimental scope. `CLOSED` requires a real paper that
-completed the material scope and a result locator. `OPEN` requires positive
+Independently try to close every candidate gap. You own the scientific conclusion; choose the
+retrieval and comparison route yourself. Titles, abstracts, keywords, and shared components only
+surface candidates. `CLOSED` requires a real full paper that tested the same central claim under a
+materially equivalent input/output and causal-evaluation contract, with method/result locators.
+Classify closest work as exact collision, partial component prior, enabling base, gap source,
+orthogonal, or uncertain. `OPEN` requires positive
 evidence of an unresolved boundary. Search failure or bounded retrieval is always
 `UNVERIFIED`. Record the strongest counterevidence even when a gap survives.
 

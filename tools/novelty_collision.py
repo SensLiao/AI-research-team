@@ -6,8 +6,8 @@ The machine's standing rule is **"a novelty SCORE never cuts"** (``idea_groundin
 module does NOT repeal that. It adds a different, stronger mechanism keyed on EVIDENCE, not score:
 
   > A novelty SCORE never cuts (unchanged). An EVIDENCED prior-art COLLISION can cut (new):
-  > a *specific, existence-verified paper* that *demonstrably did the same method×problem* and
-  > *actually ran/implemented it*. A score is an opinion; a collision is a fact with a citation.
+  > a *specific, existence-verified, full-text-reviewed paper* that tested the same central claim,
+  > input/output contract, and causal assay and actually ran/implemented it.
 
 This is the deterministic core (pure given its inputs): the LLM ``novelty-collision-checker`` worker
 gathers the per-idea collision findings (semantic judgment), the caller
@@ -17,7 +17,8 @@ network, and NEVER reads the wall clock — same inputs always yield the same pa
 
 The four honest verdicts (this IS the director's methodology, encoded):
 
-  DEAD        a real paper (exists ✓) did THIS method × THIS problem AND ran/implemented it
+  DEAD        a real full paper (exists ✓) tested the same central claim, input/output contract,
+              and causal assay and ran/implemented it
               -> ``cut = hard_block`` + recorded to the known-prior-art ledger by the caller.
   WHITE_SPACE the combination exists but on a different application/problem, OR was proposed but
               never experimentally validated here -> KEEP + flag ◇ (the publishable sweet spot).
@@ -49,6 +50,7 @@ SOURCE_LEDGER = "ledger"
 WORKER_COLLISION = "collision"
 WORKER_ADJACENT = "adjacent"
 WORKER_CLEAR = "clear"
+WORKER_UNVERIFIED = "unverified"
 
 # Existence states that COUNT as a paper proven to exist. ``citation_existence`` is the single
 # source of truth; its real proven-exists string is ``"verified"`` (citation_existence.STATE_VERIFIED).
@@ -87,8 +89,46 @@ def _colliding_paper_view(paper: dict, existence_by_ref: Dict[str, str]) -> dict
     return {
         "ref": ref,
         "existence": existence_by_ref.get(ref, "UNKNOWN"),
-        "experimentally_validated": bool(paper.get("experimentally_validated")),
+        "experimentally_validated": paper.get("experimentally_validated") is True,
+        "full_text_reviewed": paper.get("full_text_reviewed") is True,
+        "fulltext_snapshot_ref": str(paper.get("fulltext_snapshot_ref") or ""),
+        "fulltext_snapshot_verified": paper.get("_fulltext_snapshot_verified") is True,
+        "relationship": str(paper.get("relationship") or "uncertain"),
+        "same_central_claim": paper.get("same_central_claim") is True,
+        "same_input_output_contract": paper.get("same_input_output_contract") is True,
+        "same_causal_evaluation": paper.get("same_causal_evaluation") is True,
+        "method_evidence_loci": [
+            str(row) for row in (paper.get("method_evidence_loci") or []) if str(row).strip()
+        ],
+        "result_evidence_loci": [
+            str(row) for row in (paper.get("result_evidence_loci") or []) if str(row).strip()
+        ],
+        "material_surviving_delta": (
+            paper.get("material_surviving_delta")
+            if isinstance(paper.get("material_surviving_delta"), bool)
+            else None
+        ),
+        "surviving_gap": str(paper.get("surviving_gap") or ""),
     }
+
+
+def _is_full_claim_collision(paper: dict) -> bool:
+    """True only for a full-paper, claim-equivalent prior result.
+
+    Keyword, component, title, abstract, and method-name overlap are retrieval
+    leads. They are not a scientific collision and cannot kill an idea.
+    """
+    return (
+        paper.get("full_text_reviewed") is True
+        and paper.get("_fulltext_snapshot_verified") is True
+        and str(paper.get("relationship") or "") == "exact_collision"
+        and paper.get("same_central_claim") is True
+        and paper.get("same_input_output_contract") is True
+        and paper.get("same_causal_evaluation") is True
+        and any(str(row).strip() for row in (paper.get("method_evidence_loci") or []))
+        and any(str(row).strip() for row in (paper.get("result_evidence_loci") or []))
+        and paper.get("material_surviving_delta") is False
+    )
 
 
 def _verdict_from_worker(finding: dict, existence_by_ref: Dict[str, str], *,
@@ -96,22 +136,25 @@ def _verdict_from_worker(finding: dict, existence_by_ref: Dict[str, str], *,
                          retrieval_grounded: bool) -> dict:
     """Derive a single idea's verdict from its worker collision finding (no ledger hit on this idea).
 
-    DEAD requires ALL of: worker says ``collision`` AND ≥1 colliding ref is existence-verified AND
-    that same paper does the same method on the same problem AND (if ``cut_requires_experiments``) it
-    was experimentally validated. Anything weaker degrades — never up — to WHITE_SPACE / UNVERIFIED."""
+    DEAD requires a worker collision, an existence-verified full paper, claim/input-output/causal
+    equivalence with concrete loci, and (if required) experimental validation. Anything weaker
+    degrades — never up — to WHITE_SPACE / UNVERIFIED."""
     idea_id = finding["idea_id"]
     worker = finding.get("verdict")
+    retrieval_status = str(finding.get("retrieval_status") or "")
     raw_papers = [p for p in (finding.get("colliding_papers") or []) if isinstance(p, dict)]
     papers_view = [_colliding_paper_view(p, existence_by_ref) for p in raw_papers]
 
     if worker == WORKER_COLLISION:
-        # A paper can justify a CUT only if it EXISTS (fact-checked) AND it did the same
-        # method×problem AND (when required) it actually ran/implemented it.
+        # A paper can justify a cut only if it exists, was read in full, and
+        # supports the same central claim under an equivalent causal contract.
         cut_papers = [
             p for p in raw_papers
             if _ref_exists(existence_by_ref, str(p.get("ref") or "").strip())
-            and bool(p.get("does_same_method_on_same_problem"))
-            and (bool(p.get("experimentally_validated")) if cut_requires_experiments else True)
+            and p.get("does_same_method_on_same_problem") is True
+            and _is_full_claim_collision(p)
+            and (p.get("experimentally_validated") is True if cut_requires_experiments else True)
+            and retrieval_status == "complete"
         ]
         if cut_papers:
             exp_note = " and ran experiments" if cut_requires_experiments else ""
@@ -121,8 +164,9 @@ def _verdict_from_worker(finding: dict, existence_by_ref: Dict[str, str], *,
                 "verdict": VERDICT_DEAD,
                 "cut": bool(hard_block),
                 "colliding_papers": papers_view,
-                "reason": (f"existence-verified prior art did the same method on the same "
-                           f"problem{exp_note}: {refs}"),
+                "reason": (f"existence-verified prior art established the same central claim, "
+                           f"input/output contract, and causal assay{exp_note}, with separate "
+                           f"method/result loci and no material surviving delta: {refs}"),
                 "source": SOURCE_WORKER,
             }
         # Worker flagged a collision but no colliding paper is existence-verified (or none meets the
@@ -136,8 +180,10 @@ def _verdict_from_worker(finding: dict, existence_by_ref: Dict[str, str], *,
             reason = ("worker reported a collision but no colliding paper passed citation_existence "
                       "(nonexistent / unconfirmable) — never cut on an unproven paper")
         else:
-            reason = ("worker reported a collision but no existence-verified paper does the same "
-                      "method on the same problem with experiments — downgraded, never cut")
+            reason = ("worker reported a collision but no existence-verified, hash-bound, "
+                      "full-text-reviewed paper established the same central claim, input/output "
+                      "contract, and causal evaluation with separate method/result loci and no "
+                      "material surviving delta; keyword or component overlap never cuts")
         return {
             "idea_id": idea_id,
             "verdict": VERDICT_UNVERIFIED,
@@ -148,18 +194,30 @@ def _verdict_from_worker(finding: dict, existence_by_ref: Dict[str, str], *,
         }
 
     if worker == WORKER_ADJACENT:
+        if retrieval_status != "complete":
+            return {
+                "idea_id": idea_id,
+                "verdict": VERDICT_UNVERIFIED,
+                "cut": False,
+                "colliding_papers": papers_view,
+                "reason": ("closest work appears adjacent, but retrieval/full-text coverage is "
+                           "incomplete; the surviving delta remains provisional and is not labelled "
+                           "publishable white space"),
+                "source": SOURCE_WORKER,
+            }
         return {
             "idea_id": idea_id,
             "verdict": VERDICT_WHITE_SPACE,
             "cut": False,
             "colliding_papers": papers_view,
-            "reason": ("combination exists on a different application/problem or was proposed but "
-                       "not experimentally validated here — keep + flag (publishable white space)"),
+            "reason": ("complete scoped retrieval found only a different application/problem, a "
+                       "partial component, an enabling base, or proposed-but-unvalidated work — "
+                       "keep as scoped candidate white space, not proven novelty"),
             "source": SOURCE_WORKER,
         }
 
     if worker == WORKER_CLEAR:
-        if retrieval_grounded:
+        if retrieval_grounded and retrieval_status == "complete":
             return {
                 "idea_id": idea_id,
                 "verdict": VERDICT_CLEAR,
@@ -179,6 +237,17 @@ def _verdict_from_worker(finding: dict, existence_by_ref: Dict[str, str], *,
             "source": SOURCE_WORKER,
         }
 
+    if worker == WORKER_UNVERIFIED:
+        return {
+            "idea_id": idea_id,
+            "verdict": VERDICT_UNVERIFIED,
+            "cut": False,
+            "colliding_papers": papers_view,
+            "reason": ("the checker could not obtain sufficient retrieval or full-text evidence "
+                       "for a claim-level decision; uncertainty never cuts or proves novelty"),
+            "source": SOURCE_WORKER,
+        }
+
     # Unknown / missing worker verdict: never cut on an unrecognized signal.
     return {
         "idea_id": idea_id,
@@ -192,22 +261,32 @@ def _verdict_from_worker(finding: dict, existence_by_ref: Dict[str, str], *,
 
 def _verdict_from_ledger(idea_id: str, row: dict, existence_by_ref: Dict[str, str], *,
                          hard_block: bool) -> dict:
-    """Pre-established DEAD from the known-prior-art ledger (a prior run already cut this) — the
-    machine never re-outputs a known-dead idea. Existence was proven when first recorded; the ledger
-    row's colliding refs are echoed, stamped with whatever existence state this run knows for them."""
+    """Expose a historical lexical match as a lead, never an automatic cut.
+
+    A current idea may improve on the recorded one; only a fresh full-paper
+    claim-equivalence comparison can establish a collision.
+    """
     refs = [str(r).strip() for r in (row.get("colliding_refs") or []) if str(r).strip()]
     papers_view = [{
         "ref": ref,
         "existence": existence_by_ref.get(ref, "UNKNOWN"),
         "experimentally_validated": bool(row.get("experimentally_validated")),
+        "full_text_reviewed": False,
+        "fulltext_snapshot_ref": "",
+        "_fulltext_snapshot_verified": False,
+        "relationship": "uncertain",
+        "same_central_claim": False,
+        "same_input_output_contract": False,
+        "same_causal_evaluation": False,
     } for ref in refs]
     refs_note = f": {', '.join(refs)}" if refs else ""
     return {
         "idea_id": idea_id,
-        "verdict": VERDICT_DEAD,
-        "cut": bool(hard_block),
+        "verdict": VERDICT_UNVERIFIED,
+        "cut": False,
         "colliding_papers": papers_view,
-        "reason": f"matched the known-prior-art ledger (already cut in a prior run){refs_note}",
+        "reason": ("lexically matched a historical prior-art lead but current-run full-text claim "
+                   f"equivalence has not been re-audited; never auto-cut from a ledger{refs_note}"),
         "source": SOURCE_LEDGER,
     }
 
@@ -285,8 +364,10 @@ def build_collision_verdict(
 
     out_ideas: List[dict] = []
     for idea_id in ids:
-        # Ledger hit wins: a known-dead idea is DEAD regardless of this run's worker output.
-        if idea_id in ledger_hits and isinstance(ledger_hits[idea_id], dict):
+        # A fresh full-paper finding takes precedence. Historical lexical
+        # matches are only search leads and never inherit veto power.
+        finding = finding_by_id.get(idea_id)
+        if finding is None and idea_id in ledger_hits and isinstance(ledger_hits[idea_id], dict):
             out_ideas.append(_verdict_from_ledger(
                 idea_id, ledger_hits[idea_id], existence_by_ref, hard_block=hard_block))
             continue
@@ -304,7 +385,6 @@ def build_collision_verdict(
             })
             continue
 
-        finding = finding_by_id.get(idea_id)
         if finding is None:
             # Fail closed: another idea's grounded finding proves neither coverage nor clearance for
             # this one. A missing row is an incomplete audit, never implicit evidence of novelty.
@@ -332,6 +412,6 @@ def build_collision_verdict(
                    "cut_requires_experiments": bool(cut_requires_experiments)},
         "cut_ids": cut_ids,
         "survivors": survivors,
-        "retrieval_grounded": bool(retrieval_grounded),
+        "retrieval_grounded": retrieval_grounded is True,
         "evidence_ref": evidence_ref,
     }

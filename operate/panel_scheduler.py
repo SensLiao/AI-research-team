@@ -10,14 +10,15 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
-import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Iterable, Optional
 
 import yaml
 
+from ..tools._latex_sandbox import LatexSandboxViolation, atomic_write_bytes
 from ..tools.budget_tracker import BudgetExceeded, assert_within
+from ..tools.manuscript_security import ManuscriptPathViolation, validate_run_owned_path
 from .bounded_repair import load_state
 from .output_versions import (
     finalize_output,
@@ -25,6 +26,7 @@ from .output_versions import (
     prepare_plan,
     resolve_effective_output,
 )
+from ..tools.validate_artifact import validate_payload
 
 
 CONTRACT_VERSION = "panel-dispatch/v1"
@@ -187,6 +189,50 @@ def _sha256(path: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
+def _claim_evidence_contract_error(path: Path, reason: str) -> PanelContractError:
+    """Return the non-migrating failure for a current evidence_deep linker bundle."""
+    return PanelContractError(
+        "evidence_deep claim-evidence-linker output contract BLOCK at "
+        f"{path}: expected claim_evidence_map with attribution_contract_version='claim-span/v1' "
+        f"and mappings[].loci[]; {reason}. Citation-coverage-auditor and downstream workers "
+        "are not released. Re-run claim-evidence-linker with the current worker contract because "
+        "the legacy claims/evidence shape cannot provide strict machine-verifiable exact-span "
+        "provenance. If only an old bundle is available, start a new evidence_deep run; automatic "
+        "migration is intentionally disabled."
+    )
+
+
+def _validate_current_worker_output_contract(mode: str, stage: str, node: dict, path: Path) -> None:
+    """Validate load-bearing current-run output before a dependent worker can be released.
+
+    The generic scheduler normally only needs an output file to exist.  For
+    evidence_deep, citation auditing is meaningful only when the linker emitted
+    the current strict claim-span contract.  Validate that producer at the
+    scheduler boundary rather than allowing a legacy ``claims/evidence`` shape
+    to unlock the citation auditor and fail much later.
+    """
+    if (mode, stage, node.get("label")) != ("evidence_deep", "DISCOVER", "claim-evidence-linker"):
+        return
+    try:
+        bundle = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise _claim_evidence_contract_error(path, f"bundle is unreadable JSON ({exc})") from exc
+    claim_map = bundle.get("claim_evidence_map") if isinstance(bundle, dict) else None
+    if not isinstance(claim_map, dict):
+        raise _claim_evidence_contract_error(path, "bundle has no object-valued claim_evidence_map")
+    if claim_map.get("attribution_contract_version") != "claim-span/v1":
+        legacy_hint = "legacy claims/evidence fields detected" if "claims" in claim_map else (
+            "missing or unsupported attribution_contract_version"
+        )
+        raise _claim_evidence_contract_error(path, legacy_hint)
+    errors = validate_payload("claim_evidence_map", claim_map)
+    if errors:
+        detail = "; ".join(str(row) for row in errors[:5])
+        if len(errors) > 5:
+            detail += f"; plus {len(errors) - 5} more schema error(s)"
+        raise _claim_evidence_contract_error(path, f"current claim-span schema validation failed: {detail}")
+
+
 def _repair_cycle(run_dir: Path, stage: str) -> dict:
     try:
         state = load_state(run_dir)
@@ -215,6 +261,21 @@ def _infer_plain_repair_targets(nodes: list[dict], attempt: Optional[dict]) -> s
     if not reason:
         return set()
     labels = set()
+    # Some validation failures name a typed collection rather than the worker
+    # output filename.  Keep this narrow, explicit mapping before the legacy
+    # terminal-worker fallback so a leaf payload never gets "repaired" by a
+    # downstream synthesizer that cannot alter it.
+    collection_owners = {
+        "stalenessreports": "staleness-auditor",
+        "sourcequality": "source-quality-ranker",
+        "datasetcards": "dataset-card-builder",
+        "invalidationproposals": "contradiction-miner",
+        "claimevidencemap": "claim-evidence-linker",
+    }
+    known_labels = {str(node.get("label") or "") for node in nodes}
+    for marker, owner in collection_owners.items():
+        if marker in reason and owner in known_labels:
+            labels.add(owner)
     for node in nodes:
         output_name = Path(str(node.get("output_rel") or "")).name.split(".", 1)[0]
         candidates = (str(node.get("label") or ""), output_name)
@@ -277,11 +338,26 @@ def _load_receipt(path: Path, stage: str) -> dict:
     return value
 
 
-def _save_receipt(path: Path, receipt: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+def _save_receipt(run_dir: Path, path: Path, receipt: dict) -> None:
+    """Publish a receipt only into the scheduler-owned run directory."""
+    root = Path(run_dir).absolute()
+    target = Path(path).absolute()
+    receipt_root = root / "inbox" / "panel-scheduler"
+    if target.parent != receipt_root:
+        raise PanelContractError("unsafe scheduler receipt path: unexpected receipt location")
+    try:
+        validate_run_owned_path(
+            target,
+            run_root=root,
+            purpose="write",
+            owned_output_roots=(receipt_root,),
+        )
+        atomic_write_bytes(
+            target,
+            (json.dumps(receipt, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+        )
+    except (ManuscriptPathViolation, LatexSandboxViolation) as exc:
+        raise PanelContractError(f"unsafe scheduler receipt path: {exc}") from exc
 
 
 def _finalized_noop_supplement(run_dir: Path, row: dict) -> bool:
@@ -551,6 +627,52 @@ def _external_refs(run_dir: Path, node: dict) -> tuple[list[dict], list[str]]:
     return evidence, missing
 
 
+def capability_overlay_block(run_dir: Path, stage: str) -> tuple[str, Optional[dict]]:
+    """Render the stage-relevant, internally curated quality guidance.
+
+    The task-frame plan is advisory and metadata-only.  It never adds workers, tools, reads,
+    network access, or output permissions; it only helps an already-authorized worker apply the
+    right research-quality lenses without requiring the director to remember separate skills.
+    Legacy task frames intentionally return no block.
+    """
+    payload = _task_payload(run_dir)
+    plan = payload.get("capability_overlay_plan")
+    if not isinstance(plan, dict):
+        return "", None
+    selected = [
+        item for item in (plan.get("overlays") or [])
+        if isinstance(item, dict) and stage in (item.get("target_stages") or [])
+    ]
+    if not selected:
+        return "", {
+            "contract_version": plan.get("contract_version"),
+            "stage": stage,
+            "overlay_ids": [],
+            "advisory_only": True,
+            "external_skill_execution": False,
+            "network_access": False,
+        }
+    lines = [
+        "\n\nRESEARCH CAPABILITY OVERLAYS (advisory quality lenses; not extra tasks or tools)",
+        "Apply only what is scientifically relevant to your assigned output. Do not copy or run "
+        "third-party skills, do not expand scope, and do not change the scheduler input/output contract.",
+    ]
+    for item in selected:
+        lines.append(f"- {item['title']}: {item['guidance']}")
+        non_goals = ", ".join(item.get("non_goals") or [])
+        if non_goals:
+            lines.append(f"  non_goals: {non_goals}")
+    contract = {
+        "contract_version": plan.get("contract_version"),
+        "stage": stage,
+        "overlay_ids": [item["overlay_id"] for item in selected],
+        "advisory_only": True,
+        "external_skill_execution": False,
+        "network_access": False,
+    }
+    return "\n".join(lines) + "\n", contract
+
+
 def _worker_for_dispatch(
     run_dir: Path,
     stage: str,
@@ -606,7 +728,10 @@ def _worker_for_dispatch(
     )
     if feedback:
         fence += "\n" + feedback + "\n"
-    worker["prompt"] = str(worker.get("prompt") or "") + fence
+    overlay_block, overlay_contract = capability_overlay_block(run_dir, stage)
+    if overlay_contract is not None:
+        worker["capability_overlay_contract"] = overlay_contract
+    worker["prompt"] = str(worker.get("prompt") or "") + overlay_block + fence
     return worker
 
 
@@ -722,13 +847,18 @@ def schedule_next_wave(
         if cycle and node["label"] in targets:
             path = physical_output(root, repair_plan, node["id"])
             if path and path.is_file():
+                _validate_current_worker_output_contract(mode, stage, node, path)
                 finalize_output(root, stage, cycle, node["id"], ts)
                 return True
             return False
         try:
-            return resolve_effective_output(root, stage, node["output_path"]).is_file()
+            path = resolve_effective_output(root, stage, node["output_path"])
         except ValueError as exc:
             raise PanelContractError(str(exc)) from exc
+        if not path.is_file():
+            return False
+        _validate_current_worker_output_contract(mode, stage, node, path)
+        return True
 
     def authorized(node: dict) -> bool:
         return node["id"] in (current_auth if cycle and node["label"] in targets else any_auth)
@@ -864,7 +994,7 @@ def schedule_next_wave(
                 "authorized_at": ts,
                 "authorization_kind": "supplement" if is_supplement else "initial",
             })
-        _save_receipt(receipt_path, receipt)
+        _save_receipt(root, receipt_path, receipt)
     else:
         wave_no = len(receipt["waves"]) + 1
 

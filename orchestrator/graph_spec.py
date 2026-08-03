@@ -102,6 +102,23 @@ def validate_mode_registry(registry: Optional[dict] = None, roster: Optional[Set
                 errors.append(f"{mode}.agent_subset unknown agent: {a}")
         if spec.get("gate_level") not in GATE_LEVELS:
             errors.append(f"{mode}.gate_level invalid: {spec.get('gate_level')}")
+        gate_stages = spec.get("director_gate_stages")
+        if gate_stages is not None:
+            if spec.get("gate_level") != "director_signoff":
+                errors.append(f"{mode}.director_gate_stages requires gate_level director_signoff")
+            if not isinstance(gate_stages, list) or not gate_stages:
+                errors.append(f"{mode}.director_gate_stages must be a non-empty list")
+            else:
+                driven = path if isinstance(path, list) and path else (
+                    STAGES[STAGES.index(entry_stage):] if entry_stage in STAGES else []
+                )
+                for stage in gate_stages:
+                    if stage not in STAGES:
+                        errors.append(f"{mode}.director_gate_stages invalid stage: {stage}")
+                    elif stage not in driven:
+                        errors.append(f"{mode}.director_gate_stages stage {stage} is not driven")
+                if len(set(gate_stages)) != len(gate_stages):
+                    errors.append(f"{mode}.director_gate_stages must not contain duplicates")
         if "max_agent_hops" not in (spec.get("budget") or {}):
             errors.append(f"{mode}.budget missing max_agent_hops")
     return errors

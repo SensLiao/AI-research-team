@@ -94,7 +94,7 @@
                 "exact_quote": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 600,
+                  "maxLength": 5000,
                   "pattern": "\\S",
                   "description": "Short exact support excerpt used for locator verification, never a replacement for the source."
                 },

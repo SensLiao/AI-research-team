@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from research_agent_teams.operate.artifacts import GateBlock
+from research_agent_teams.operate.artifacts import GateBlock, TargetedGateBlock
 from research_agent_teams.operate.bounded_repair import (
     DEFAULT_MAX_DEBUG_RETRIES,
     attempt_with_repair,
@@ -17,7 +17,7 @@ BUDGET = {"max_agent_hops": 6, "max_debug_retries_per_run": 3}
 
 
 class FlakyDets:
-    """Raises GateBlock for the first `fail_times` calls, then succeeds."""
+    """Raises an explicitly scoped supplement request for the first calls, then succeeds."""
 
     def __init__(self, fail_times):
         self.fail_times = fail_times
@@ -26,7 +26,16 @@ class FlakyDets:
     def __call__(self):
         self.calls += 1
         if self.calls <= self.fail_times:
-            raise GateBlock(f"evidence gate BLOCK: missing strong source (call {self.calls})")
+            raise TargetedGateBlock(
+                f"evidence gate BLOCK: missing strong source (call {self.calls})",
+                [{
+                    "defect_id": "D-source",
+                    "location": "DISCOVER/evidence-table",
+                    "summary": "refresh the missing strong source",
+                    "target_agents": ["lit-scout"],
+                    "refresh_agents": ["claim-extractor"],
+                }],
+            )
         return ["evidence/DISCOVER/ok.artifact.json"]
 
 
@@ -34,6 +43,24 @@ def test_success_passes_through_untouched(tmp_path):
     out = attempt_with_repair(tmp_path, "DISCOVER", BUDGET, TS, FlakyDets(0))
     assert out == ("ok", ["evidence/DISCOVER/ok.artifact.json"])
     assert load_state(tmp_path)["attempts"] == []              # no failure, no state
+
+
+def test_generic_gateblock_is_immediately_terminal_and_not_recorded_as_repair(tmp_path):
+    def opaque_block():
+        raise GateBlock("citation gate BLOCK: opaque integrity failure")
+
+    with pytest.raises(GateBlock, match="opaque integrity"):
+        attempt_with_repair(tmp_path, "DISCOVER", BUDGET, TS, opaque_block)
+    assert load_state(tmp_path)["attempts"] == []
+
+
+def test_targeted_block_verdict_is_immediately_terminal_and_not_recorded_as_repair(tmp_path):
+    def terminal_targeted_block():
+        raise TargetedGateBlock("terminal collision", [], verdict="BLOCK")
+
+    with pytest.raises(TargetedGateBlock, match="terminal collision"):
+        attempt_with_repair(tmp_path, "DISCOVER", BUDGET, TS, terminal_targeted_block)
+    assert load_state(tmp_path)["attempts"] == []
 
 
 def test_three_repairs_then_success_under_cap_3(tmp_path):

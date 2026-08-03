@@ -10,6 +10,7 @@ import csv
 import hashlib
 import io
 import json
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,9 @@ CITATION_MANIFEST_REL = Path("inbox/citation-snapshots/fulltext-contexts.manifes
 _POSITIVE_RELATIONS = {"entails", "partial"}
 _NEGATIVE_RELATIONS = {"contradicts", "insufficient"}
 _ALL_RELATIONS = _POSITIVE_RELATIONS | _NEGATIVE_RELATIONS
+_TEXT_SOURCE_SUFFIXES = {".txt", ".md", ".markdown", ".py", ".json", ".yaml", ".yml", ".csv"}
+_HTML_SOURCE_SUFFIXES = {".html", ".htm"}
+_MAX_LOCAL_TEXT_BYTES = 16 * 1024 * 1024
 
 
 def _rows(value: object) -> list[dict]:
@@ -67,24 +71,85 @@ def load_explicit_legacy_replay(run_dir: str | Path) -> dict | None:
     }
 
 
+class _HTMLBodyText(HTMLParser):
+    """Small, deterministic HTML text extractor; scripts and styles never enter evidence."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+        self._hidden_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:  # noqa: D401 - HTMLParser callback
+        if tag.casefold() in {"script", "style", "noscript", "template"}:
+            self._hidden_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:  # noqa: D401 - HTMLParser callback
+        if tag.casefold() in {"script", "style", "noscript", "template"} and self._hidden_depth:
+            self._hidden_depth -= 1
+
+    def handle_data(self, data: str) -> None:  # noqa: D401 - HTMLParser callback
+        if not self._hidden_depth and data.strip():
+            self._parts.append(data.strip())
+
+    def text(self) -> str:
+        return "\n".join(self._parts)
+
+
 def _complete_local_contexts(doc_paths: list[str] | None) -> list[dict]:
+    """Extract immutable text from supported local primary-source files.
+
+    PDFs retain page-level PyMuPDF extraction.  Official challenge protocols,
+    repositories, and evaluation rules are often primary HTML/Markdown/Python/
+    JSON rather than PDFs, so a bounded UTF-8 / HTML-body path is accepted too.
+    It never executes source code or JavaScript and records a parser version per
+    context for downstream attribution.
+    """
     contexts = []
     for raw in doc_paths or []:
         path = Path(raw)
-        if not path.is_file() or path.suffix.casefold() != ".pdf":
+        if not path.is_file():
+            continue
+        suffix = path.suffix.casefold()
+        if suffix == ".pdf":
+            try:
+                import fitz
+                with fitz.open(str(path)) as document:
+                    for page_index, page in enumerate(document, start=1):
+                        text = page.get_text("text")
+                        if text.strip():
+                            contexts.append({
+                                "doc_ref": str(path.resolve()),
+                                "page": page_index,
+                                "excerpt": text,
+                                "parser_version": "pymupdf-page-text/v1",
+                            })
+            except Exception:
+                continue
+            continue
+        if suffix not in _TEXT_SOURCE_SUFFIXES | _HTML_SOURCE_SUFFIXES:
             continue
         try:
-            import fitz
-            with fitz.open(str(path)) as document:
-                for page_index, page in enumerate(document, start=1):
-                    text = page.get_text("text")
-                    if text.strip():
-                        contexts.append({
-                            "doc_ref": str(path.resolve()),
-                            "page": page_index,
-                            "excerpt": text,
-                        })
-        except Exception:
+            raw_bytes = path.read_bytes()
+            if len(raw_bytes) > _MAX_LOCAL_TEXT_BYTES:
+                continue
+            source_text = raw_bytes.decode("utf-8-sig")
+            if suffix in _HTML_SOURCE_SUFFIXES:
+                parser = _HTMLBodyText()
+                parser.feed(source_text)
+                parser.close()
+                text = parser.text()
+                parser_version = "html-body-text/v1"
+            else:
+                text = source_text
+                parser_version = "utf8-source-text/v1"
+            if text.strip():
+                contexts.append({
+                    "doc_ref": str(path.resolve()),
+                    "page": None,
+                    "excerpt": text,
+                    "parser_version": parser_version,
+                })
+        except (OSError, UnicodeError):
             continue
     return contexts
 
@@ -96,9 +161,10 @@ def write_fulltext_context_snapshot(
 ) -> dict | None:
     """Materialize a stable UTF-8 char-offset snapshot for exact attribution.
 
-    Local PDFs use complete page-text extraction. When no readable local PDF
-    exists, the function falls back honestly to the retrieval excerpts and
-    marks that narrower coverage boundary in the manifest.
+    Local PDFs, official HTML pages, and raw UTF-8 repository/protocol files
+    use controlled complete-source extraction. When no readable local source
+    exists, the function falls back honestly to retrieval excerpts and marks
+    that narrower coverage boundary in the manifest.
     """
     complete_contexts = _complete_local_contexts(doc_paths)
     contexts = complete_contexts or [
@@ -124,19 +190,26 @@ def write_fulltext_context_snapshot(
             "context_ref": f"CTX-{index:04d}",
             "doc_ref": str(context.get("doc_ref") or ""),
             "page": context.get("page"),
+            "parser_version": str(context.get("parser_version") or "utf-8-char/v1"),
             "char_start": start,
             "char_end": end,
             "exact_quote": excerpt,
         })
     raw = text.encode("utf-8")
     snapshot_path.write_bytes(raw)
+    local_parsers = {str(row.get("parser_version") or "") for row in complete_contexts}
     manifest = {
         "contract_version": "citation-context-snapshot/v1",
         "snapshot_ref": CITATION_SNAPSHOT_REL.as_posix(),
         "document_hash": hashlib.sha256(raw).hexdigest(),
-        "parser_version": "pymupdf-page-text/v1" if complete_contexts else "utf-8-char/v1",
+        "parser_version": (
+            next(iter(local_parsers)) if len(local_parsers) == 1 else
+            "mixed-local-source/v1" if complete_contexts else "utf-8-char/v1"
+        ),
         "coverage_boundary": (
             "complete local PDF page-text extraction; visual content remains separately audited"
+            if local_parsers == {"pymupdf-page-text/v1"} else
+            "complete local source extraction (PDF page text / HTML body / UTF-8 source); visual content remains separately audited"
             if complete_contexts else
             "fulltext-qa excerpts only; not the complete source document"
         ),
@@ -146,19 +219,61 @@ def write_fulltext_context_snapshot(
     return manifest
 
 
+def _fulltext_report_contexts(complete_contexts: list[dict]) -> list[dict]:
+    """Make compact QA contexts from the same frozen extract used for attribution.
+
+    ``fulltext_qa`` is intentionally PDF-oriented.  Do not pass Markdown, HTML,
+    or source code to its PyMuPDF fallback merely because a mixed source set also
+    contains a PDF.  Instead, use the controlled local extractor as the unified
+    mixed-source engine and expose short, non-inline contexts for worker QA.
+    """
+    contexts: list[dict] = []
+    for row in complete_contexts:
+        excerpt = str(row.get("excerpt") or "").strip()
+        doc_ref = str(row.get("doc_ref") or "").strip()
+        if not excerpt or not doc_ref:
+            continue
+        contexts.append({
+            "doc_ref": doc_ref,
+            "page": row.get("page"),
+            "excerpt": excerpt[:500],
+            "relevance": None,
+        })
+    return contexts
+
+
 def prepare_fulltext_citation_inputs(run_dir: str | Path, question: str,
                                      doc_paths: list[str]) -> str | None:
-    """Create the shared fulltext report and immutable citation snapshot for a mode."""
+    """Create the shared report and immutable snapshot using a mixed-source-safe engine.
+
+    A source set may contain PDFs plus official protocol Markdown, task HTML, or
+    repository Python.  The old path selected PyMuPDF when *any* PDF was present,
+    then passed every source to it; that made an otherwise valid mixed set report
+    ``available=false``.  One controlled extractor now produces both the compact
+    fulltext-QA contexts and the complete attribution snapshot for every supported
+    local source.  It never executes code or scripts.
+    """
     if not doc_paths:
         return None
     from . import fulltext_qa
 
     docs = list(doc_paths)
-    report = fulltext_qa.ask(
-        question,
-        docs,
-        retraction_flags=fulltext_qa.retraction_check(docs),
-    )
+    complete_contexts = _complete_local_contexts(docs)
+    qa_contexts = _fulltext_report_contexts(complete_contexts)
+    report = {
+        "question": question,
+        "available": bool(qa_contexts),
+        "reason": "" if qa_contexts else (
+            "no supported readable local PDF, HTML, or UTF-8 source yielded a frozen context"
+        ),
+        "answer_summary": (
+            f"Extracted {len(qa_contexts)} compact context(s) from {len(docs)} local source document(s) "
+            "using the controlled mixed-source extractor."
+            if qa_contexts else ""
+        ),
+        "contexts": qa_contexts,
+        "retraction_flags": fulltext_qa.retraction_check(docs),
+    }
     path = Path(run_dir) / "inbox" / "fulltext-qa.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")

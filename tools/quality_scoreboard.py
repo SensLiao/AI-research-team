@@ -130,7 +130,12 @@ def build_quality_scoreboard(
     invalid_manifests = len(runs["invalid_manifests"])
     business_output_failures = int(business_outputs["fail"])
     business_output_advisories = int(business_outputs["advisory"])
-    overall = "blocked" if required_machine_failures or invalid_manifests or business_output_failures else (
+    # A board that is red forever stops being read. Pre-contract runs cannot grow a conforming product
+    # by re-rendering — only by re-running, which is the director's call. So the CURRENT-contract
+    # failures decide the verdict and the legacy backlog stays visible beside it, never hidden.
+    current_failures = int(business_outputs.get("fail_current", business_output_failures))
+    legacy_failures = int(business_outputs.get("fail_legacy", 0))
+    overall = "blocked" if required_machine_failures or invalid_manifests or current_failures else (
         "needs_manual" if eval_scorecard["summary"]["manual_open"] else "machine_clean"
     )
     return {
@@ -142,6 +147,8 @@ def build_quality_scoreboard(
             "manual_open": eval_scorecard["summary"]["manual_open"],
             "invalid_manifests": invalid_manifests,
             "business_output_failures": business_output_failures,
+            "business_output_failures_current_contract": current_failures,
+            "business_output_failures_legacy_contract": legacy_failures,
             "business_output_advisories": business_output_advisories,
             "run_count": runs["run_count"],
             "vault_write": False,

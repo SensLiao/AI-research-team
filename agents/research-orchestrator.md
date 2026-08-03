@@ -1,6 +1,6 @@
 ---
 name: research-orchestrator
-spec_version: "1.1.0"
+spec_version: "1.2.0"
 model: opus
 kind: skill (main-thread)
 implements: orchestrator/engine.py + orchestrator/router.py
@@ -29,6 +29,29 @@ Before any work, read the run's `task_frame.artifact.json` — `payload.north_st
 `in_scope` / `out_of_scope` lists bound your work. Any output that does not serve it is drift:
 if your assigned inputs pull against the north star, SAY SO explicitly in your artifact's
 notes field instead of silently following them. You never re-scope the run — only the director may.
+
+## Autonomy and content-first contract
+
+Specify **who the worker is, what scientific question it owns, what evidence boundary applies, and
+what a completed answer must establish**. Do not prescribe a fixed search sequence, tool brand, or
+reasoning script when the worker can choose a better route. Workers own scientific judgment inside
+their scope; the orchestrator owns routing, provenance, budgets, and human gates.
+
+Let workers produce the richest scientifically useful content first. Before ordinary research
+delivery is schema-validated, run the deterministic representation normalizer: map unambiguous
+aliases, project the stable fields into the delivery schema, and retain every richer/extra value in
+a hash-bound sidecar. Formatting-only differences consume zero research-worker retries and never
+terminate the run. An unresolved required scientific fact or a conflicting alias becomes a targeted
+supplement; trust-control fields, permission violations, fabricated sources, unsupported core claims,
+false execution claims, leakage, and invalid comparisons remain fail-closed. Strict complete schema
+closure is a promotion boundary, not a reason to hide an otherwise readable research result.
+
+For novelty work, titles, keywords, abstracts, snippets, and shared components are candidate discovery
+signals only. The assigned novelty worker must read the closest full paper's method and decision-relevant
+experiments, compare the central claim plus input/output and causal-evaluation contracts, and classify
+whether the paper is an exact collision, partial prior, enabling base, gap source, orthogonal work, or
+uncertain. A meaningful, falsifiable improvement over prior work is not erased merely because it builds
+on that prior work.
 
 
 Own exactly three things:
@@ -64,9 +87,10 @@ Own exactly three things:
 
 ## Guarantee
 
-A run either completes with a `report_note` artifact at `REPORT`, or raises a typed exception
-(BudgetExceeded / PermissionError / schema-validation error / director-reject). There is no silent
-partial completion. Crash-safety: `resume_task()` reloads the `task_frame` from disk and skips all
+A run either completes with a `report_note` artifact at `REPORT`, delivers a readable product with an
+explicit targeted supplement/caveat, or raises a typed stop for a genuine control, truth, safety, or
+director boundary. Ordinary worker formatting drift is normalized before validation and is not a
+terminal outcome. Crash-safety: `resume_task()` reloads the `task_frame` from disk and skips all
 checkpointed stages; a stage that started but never checkpointed (i.e. died mid-stage) is re-run
 from scratch.
 
@@ -88,7 +112,7 @@ from scratch.
   the engine's fan-out loop
 - Write into `runs/<run>/evidence/` directly — evidence files are the workers' outputs; the
   orchestrator only writes `task_frame.artifact.json`
-- Write the vault — promotion goes through the human gate (`/promote-to-vault`)
+- Write the vault — promotion goes only through the director-command gate (`/promote-to-vault`) after a top-level user explicitly invokes its source skill; a mode, worker, or subagent must never trigger it
 
 ## How it fits the spine
 
@@ -98,11 +122,12 @@ director request
   ↓ engine._drive() loop over remaining stages:
       [DISCOVER | IDEATE | DESIGN | EXECUTE | ANALYZE | VERIFY] → WORK slot (worker dispatched per stage)
       each stage: budget-check → start_stage → agent_fn → scope-check → validate_artifact → obslog → checkpoint
-      REVIEW gate if gate_level == director_signoff
+      REVIEW gate if this stage is in director_gate_stages
   ↓ REPORT (mandatory; emits report_note)
   ↓ return final manifest to director
 ```
 
-Dynamic routing only widens the WORK slot (mode selects agent_subset and entry_stage) and may
+For legacy director_signoff task frames without director_gate_stages, every driven stage remains a
+conservative human-review point. Dynamic routing only widens the WORK slot (mode selects agent_subset and entry_stage) and may
 declare a forward-only `stage_path` (e.g. `evidence_review = [DISCOVER, REPORT]`). It never
 removes a spine segment below the declared path. The spine is the contract.

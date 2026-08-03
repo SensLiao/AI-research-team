@@ -14,6 +14,31 @@ GitHub 发布只包含 machine 代码、agents、modes、schemas、tests、profi
 run 的 frozen handoff，但仍属于项目工作区；普通周报、临时图和运行索引不进入 vault。只有人类确认具有长期价值的
 结论、决策或冻结结果，才通过 `/promote-to-vault` 转为永久知识页。
 
+## 1.1 最终 Markdown 的“实拷贝入库”规则（2026-07-14）
+
+`runs/` 不是永久资料库。一个 agent run 完成后，必须把内容分成三类，而不是把所有东西永久留在 scratch：
+
+| 产物类别 | 示例 | 入库动作 | 清理条件 |
+|---|---|---|---|
+| 机器证据 / 中间件 | bundles、JSON、搜索缓存、日志、repair trace | 不直接入库；只在最终 Markdown 的 provenance 中保留必要 hash/来源摘要 | 对应最终页面已完成 SHA 绑定、lint 通过且没有独有的人类可读价值 |
+| 最终研究 Markdown | paper card、evidence brief、research master、教授简报、被保留的 idea portfolio | 通过 `/promote-to-vault` 的 **director-reviewed document admission** lane，把完整正文实拷贝到 `02-wiki/` 的 typed page | admission batch 全量 `admissible: true`、vault index/hot/log 已更新、目标页面 lint 通过 |
+| 冻结实验结果 | 有真实 executor receipt 的 metrics/result | 仍只走原有 frozen-result lane：leakage + fairness + reviewer + director freeze | 按结果审计与复现政策保存；绝不被普通文档 admission 替代 |
+
+document admission 的基本原则：
+
+1. **保存正文，不只保存 run 路径。** Vault 页面必须包含完整可读 Markdown；`source-markdown-sha256`、原始 workshop 路径与 admission id 仅是 provenance，不是唯一内容。
+2. **不伪造结果状态。** document page 不得写 `result-status` 或 `can-cite-thesis`；文献结论、设计、ideas 仍保留 `LIMITED`、`HOLD`、`UNVERIFIED`、`draft` 或 `in-consideration` 等真实边界。
+3. **批次全有或全无。** 在写入任何 vault 页面前，gate 要验证全部 source SHA、项目绑定、slug 冲突、type-specific frontmatter 和链接目标；任一失败则整批不入库，避免“删了一半 run、只剩半套文档”。
+4. **在 cleanup 之前保留 admission record。** 每一页的 `document_promotion_record` 与 batch `admission-ledger.jsonl` 是 run 可删的凭据；删除后 vault 不依赖 scratch 路径才能阅读。
+5. **Ideas 的状态不会因复制而升级。** 未经过 `/idea-bet` 的 idea portfolio 可以作为 `draft`/`in-consideration` 的知识页留存，但不能写成 `greenlit`、已完成方法或论文贡献。
+
+当 director 在对话中明确调用 `source-command-promote-to-vault` 时，主线程代为执行 gate；
+worker、subagent、mode 和定时任务仍不能自行调用。无需让 director 手动设置环境变量：
+
+```powershell
+python -m research_agent_teams.tools.promote_gate --document-batch <batch-directory> --admission-id <admission-id> --workspace-root . --decided-by director --director-invoked
+```
+
 ## 2. 一个 run 的标准目录
 
 ```text

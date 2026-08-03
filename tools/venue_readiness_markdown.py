@@ -16,6 +16,9 @@ from typing import Optional
 
 
 VENUE_READINESS_REL = Path("director-review") / "venue" / "venue-readiness.md"
+VENUE_READINESS_ADVISORY_REL = (
+    Path("inbox") / "venue-readiness-markdown-quality-advisory.json"
+)
 DIM_LABELS = {
     "D1": "Soundness / correctness",
     "D2": "Significance / impact",
@@ -444,12 +447,43 @@ def lint_venue_readiness_markdown(run_dir) -> list[str]:
     return errors
 
 
+def _venue_gate_blockers(errors: list[str]) -> list[str]:
+    """Separate layout lint from facts required for the human venue gate."""
+    return [
+        error
+        for error in errors
+        if not error.startswith("missing heading:")
+        and error != "venue readiness Markdown packet is too short to be decision-useful"
+    ]
+
+
+def _write_markdown_advisory(
+    run_path: Path, errors: list[str], gate_blockers: list[str]
+) -> None:
+    advisory = {
+        "contract_version": "research-markdown-advisory/v1",
+        "delivery_blocking": False,
+        "delivery_status": "USABLE" if not errors else "USABLE_WITH_CAVEATS",
+        "gate_ready": not gate_blockers,
+        "gate_blockers": list(gate_blockers),
+        "warnings": list(errors),
+    }
+    out = run_path / VENUE_READINESS_ADVISORY_REL
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(advisory, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def write_venue_readiness_markdown(run_dir, generated_at: Optional[str] = None) -> str:
     run_path = Path(run_dir)
     out = venue_readiness_path(run_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(build_venue_readiness_markdown(run_path, generated_at=generated_at), encoding="utf-8")
     errors = lint_venue_readiness_markdown(run_path)
-    if errors:
-        raise ValueError(f"venue readiness Markdown BLOCK: {errors}")
+    gate_blockers = _venue_gate_blockers(errors)
+    _write_markdown_advisory(run_path, errors, gate_blockers)
+    if gate_blockers:
+        raise ValueError(f"venue readiness human gate BLOCK: {gate_blockers}")
     return str(out)

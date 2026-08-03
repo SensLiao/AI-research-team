@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/document_promotion_candidate.schema.json",
+  "title": "Director-Reviewed Document Admission Candidate",
+  "description": "Untrusted staged input for the document-admission lane of /promote-to-vault. This lane copies a director-approved final Markdown document into System D without pretending that it is a frozen experimental result. The source is bound by a workspace-relative path and SHA-256; the gate verifies both before writing.",
+  "type": "object",
+  "required": [
+    "admission_id",
+    "slug",
+    "vault_type",
+    "project",
+    "title",
+    "source_ref",
+    "status",
+    "confidence",
+    "evidence_class",
+    "metadata"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "admission_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 100
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 100
+    },
+    "vault_type": {
+      "type": "string",
+      "enum": [
+        "paper",
+        "synthesis",
+        "idea",
+        "source",
+        "method",
+        "model",
+        "dataset",
+        "protocol",
+        "experiment"
+      ]
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 50
+    },
+    "title": {"type": "string", "minLength": 1, "maxLength": 300},
+    "status": {"type": "string", "enum": ["draft", "active", "parked", "deprecated"]},
+    "confidence": {"type": "string", "enum": ["high", "medium", "low", "unverified"]},
+    "evidence_class": {
+      "type": "string",
+      "enum": ["PAPER-CITE", "VAULT-CITE", "ASSUMPTION", "DECISION-CITE", "MEETING-CITE", "DATA-CITE", "EXP-RESULT"]
+    },
+    "source_ref": {"$ref": "#/$defs/source_ref"},
+    "metadata": {
+      "type": "object",
+      "description": "Type-specific metadata. The gate applies a strict per-type allowlist and required-field check before rendering."
+    },
+    "rq": {"type": "array", "items": {"type": "string"}},
+    "contrib": {"type": "array", "items": {"type": "string"}},
+    "domain": {"type": "array", "items": {"type": "string"}},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "related": {"type": "array", "items": {"type": "string"}},
+    "aliases": {"type": "array", "items": {"type": "string"}},
+    "canonical_redirects": {
+      "type": "array",
+      "description": "Existing canonical source-page slugs to mark as historical pointers to this admitted current-route synthesis. The gate accepts only same-project canonical pages under 02-wiki/sources/.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+        "maxLength": 100
+      }
+    },
+    "supersede_pages": {
+      "type": "array",
+      "description": "Existing same-project non-result pages to retain as deprecated historical pointers to this admitted current-route synthesis. The gate changes only lifecycle metadata and appends a replacement pointer; it never deletes or rewrites their historical body.",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["vault_type", "slug"],
+        "additionalProperties": false,
+        "properties": {
+          "vault_type": {
+            "type": "string",
+            "enum": ["paper", "synthesis", "idea", "source", "method", "model", "dataset", "protocol", "experiment"]
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "maxLength": 100
+          }
+        }
+      }
+    },
+    "_path": {"type": "string"},
+    "_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "source_ref": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "\\S.*\\.md$",
+          "maxLength": 500,
+          "description": "Workspace-relative Markdown path. The gate rejects absolute paths, traversal, non-project roots and inbox artifacts."
+        },
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

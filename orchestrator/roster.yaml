@@ -88,6 +88,10 @@ agents:
     - decision-surfacer
     - manuscript-architect
     - manuscript-evidence-steward
+    - domain-reality-auditor
+    - cognitive-intent-modeler
+    - curriculum-design-specialist
+    - research-engineering-planner
   execute:
     - script-author
     - execution-evidence-auditor
@@ -163,8 +167,10 @@ agents:
     - manuscript-domain-contribution-reviewer
     - manuscript-methods-reproducibility-reviewer
     - manuscript-figure-table-reviewer
+    - causal-mechanism-critic
   report:
     - quality-controller
     - integrity-refusal-recommender
     - manuscript-polish-editor
     - manuscript-submission-packager
+    - hypothesis-compiler

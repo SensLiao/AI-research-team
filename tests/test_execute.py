@@ -15,7 +15,7 @@ import pytest
 
 from research_agent_teams.execute import config
 from research_agent_teams.execute.job import (
-    JobSpec, assert_in_workdir, build_job_script, remote_run_dir, tmux_submit_command,
+    JobSpec, assert_in_workdir, build_job_script, tmux_submit_command,
 )
 from research_agent_teams.execute.runner import LiveConnectionRefused, connect, is_authorized, plan, submit
 
@@ -55,6 +55,53 @@ def test_config_holds_no_secret_and_summary_redacts(fake_env):
     assert summ["host"] == "fake.lab.example.edu" and summ["user"] == "tester"
 
 
+def test_config_can_select_an_isolated_second_server_by_env_reference(fake_env, monkeypatch):
+    alt = {
+        "host": "RAT_ALT_HOST",
+        "port": "RAT_ALT_PORT",
+        "user": "RAT_ALT_USER",
+        "password": "RAT_ALT_PASSWORD",
+        "remote_workdir": "RAT_ALT_WORKDIR",
+        "known_hosts": "RAT_ALT_KNOWN_HOSTS",
+    }
+    monkeypatch.setenv("RAT_ALT_HOST", "second.lab.example.edu")
+    monkeypatch.setenv("RAT_ALT_PORT", "2202")
+    monkeypatch.setenv("RAT_ALT_USER", "second-user")
+    monkeypatch.setenv("RAT_ALT_PASSWORD", "SECOND-SENTINEL-DO-NOT-LEAK")
+    monkeypatch.setenv("RAT_ALT_WORKDIR", "/mnt/HDD4")
+    monkeypatch.setenv("RAT_ALT_KNOWN_HOSTS", "/tmp/second-known-hosts")
+
+    cfg = config.load_config(fake_env, env_refs=alt)
+
+    assert cfg.host == "second.lab.example.edu"
+    assert cfg.port == 2202 and cfg.user == "second-user" and cfg.workdir == "/mnt/HDD4"
+    assert cfg.password_env == "RAT_ALT_PASSWORD"
+    assert cfg.has_password is True
+    assert "SECOND-SENTINEL-DO-NOT-LEAK" not in repr(cfg)
+
+
+def test_transport_reads_selected_resource_credential_reference(fake_env, monkeypatch):
+    from research_agent_teams.execute import runner
+
+    monkeypatch.setenv("RAT_ALT_HOST", "second.lab.example.edu")
+    monkeypatch.setenv("RAT_ALT_USER", "second-user")
+    monkeypatch.setenv("RAT_ALT_PASSWORD", "SECOND-SENTINEL")
+    cfg = config.load_config(fake_env, env_refs={
+        "host": "RAT_ALT_HOST",
+        "user": "RAT_ALT_USER",
+        "password": "RAT_ALT_PASSWORD",
+    })
+    seen = {}
+
+    class FakeClient:
+        def connect(self, **kwargs):
+            seen.update(kwargs)
+
+    runner._connect_verified_transport(FakeClient(), cfg)
+    assert seen["password"] == "SECOND-SENTINEL"
+    assert seen["username"] == "second-user"
+
+
 def test_repr_omits_operational_identifiers(fake_env, monkeypatch):
     """ServerConfig.__repr__ (L2 hygiene) shows only host/port/auth — never user / workdir / known_hosts
     values — so a stray repr / log line / traceback frame cannot spill them."""
@@ -80,6 +127,49 @@ def test_repr_reflects_ssh_key_and_none_auth_modes(fake_env, monkeypatch):
 
     monkeypatch.delenv("RAT_SERVER_SSH_KEY", raising=False)
     assert repr(config.load_config(fake_env)).endswith("auth=none)")
+
+
+def test_direct_ip_endpoint_is_separate_from_canonical_host_identity(fake_env, monkeypatch):
+    monkeypatch.setenv("RAT_SERVER_CONNECT_HOST", "192.0.2.25")
+    cfg = config.load_config(fake_env)
+
+    assert cfg.host == "fake.lab.example.edu"
+    assert cfg.connect_host == "192.0.2.25"
+    summary = config.redacted_summary(cfg)
+    assert summary["connection_route"] == "direct-ip/canonical-host-key"
+    assert "192.0.2.25" not in str(summary)
+    assert "192.0.2.25" not in repr(cfg)
+
+
+def test_direct_endpoint_opens_ip_socket_but_paramiko_verifies_canonical_name(
+    fake_env, monkeypatch
+):
+    from research_agent_teams.execute import runner
+
+    monkeypatch.setenv("RAT_SERVER_CONNECT_HOST", "192.0.2.25")
+    cfg = config.load_config(fake_env)
+    socket_token = object()
+    seen = {}
+
+    def socket_factory(address, timeout):
+        seen["socket"] = {"address": address, "timeout": timeout}
+        return socket_token
+
+    class FakeClient:
+        def connect(self, **kwargs):
+            seen["connect"] = kwargs
+
+    runner._connect_verified_transport(FakeClient(), cfg, socket_factory=socket_factory)
+
+    assert seen["socket"] == {"address": ("192.0.2.25", 22), "timeout": 30}
+    assert seen["connect"]["hostname"] == "fake.lab.example.edu"
+    assert seen["connect"]["sock"] is socket_token
+
+
+def test_direct_endpoint_must_be_an_ip_literal(fake_env, monkeypatch):
+    monkeypatch.setenv("RAT_SERVER_CONNECT_HOST", "another.mutable.hostname.example")
+    with pytest.raises(RuntimeError, match="IP literal"):
+        config.load_config(fake_env)
 
 
 def test_job_script_encodes_runbook_footguns(fake_env):
@@ -129,6 +219,83 @@ def test_authorization_is_per_run(fake_env, monkeypatch):
     monkeypatch.setenv("RAT_EXECUTE_AUTHORIZED", "exp-1")
     assert is_authorized(JobSpec(run_id="exp-1", script="t.py")) is True
     assert is_authorized(JobSpec(run_id="OTHER-run", script="t.py")) is False   # scoped to the authorized run
+
+
+def test_explicit_director_command_authorizes_without_environment(fake_env):
+    """The primary assistant can carry the director's in-chat confirmation into one live call."""
+    job = JobSpec(run_id="exp-1", script="t.py")
+    assert is_authorized(job, explicit_director_command=True) is True
+
+
+def test_connect_accepts_explicit_director_command_but_still_requires_credentials(
+    fake_env, monkeypatch
+):
+    """An explicit command crosses only the human gate; it does not weaken SSH authentication."""
+    monkeypatch.delenv("RAT_SERVER_PASSWORD", raising=False)
+    monkeypatch.delenv("RAT_SERVER_SSH_KEY", raising=False)
+    job = JobSpec(run_id="exp-1", script="t.py")
+
+    with pytest.raises(RuntimeError, match="no auth"):
+        connect(job, env_path=fake_env, explicit_director_command=True)
+
+
+def test_live_cli_cannot_self_assert_director_invocation():
+    """The ordinary CLI keeps the legacy env gate; no public bypass flag is exposed."""
+    from research_agent_teams.execute.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args([
+            "submit", "--run-id", "exp-1", "--script", "t.py", "--director-invoked"
+        ])
+
+
+def test_submit_threads_explicit_command_and_records_authorization_basis(fake_env, monkeypatch):
+    """A live receipt must say whether approval came from the top-level director command."""
+    from research_agent_teams.execute import runner
+
+    class FakeSftp:
+        def file(self, *_args, **_kwargs):
+            class Sink:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_exc):
+                    return False
+
+                def write(self, _text):
+                    return None
+
+            return Sink()
+
+        def close(self):
+            return None
+
+    class FakeClient:
+        def exec_command(self, _command):
+            return None, None, None
+
+        def open_sftp(self):
+            return FakeSftp()
+
+        def close(self):
+            return None
+
+    cfg = config.load_config(fake_env)
+    seen = {}
+
+    def fake_connect(job, env_path, *, explicit_director_command=False):
+        seen["explicit"] = explicit_director_command
+        return FakeClient(), cfg
+
+    monkeypatch.setattr(runner, "connect", fake_connect)
+    receipt = runner.submit(
+        JobSpec(run_id="exp-1", script="t.py"),
+        env_path=fake_env,
+        explicit_director_command=True,
+    )
+
+    assert seen == {"explicit": True}
+    assert receipt["authorization_basis"] == "explicit-director-command"
 
 
 # ----------------------------- ④ remote command injection -----------------------------

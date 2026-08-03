@@ -1,9 +1,9 @@
 ---
 phase: 01
 slug: operated-ai-manuscript-authoring
-status: approved
+status: verified
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-07-21
 ---
 
@@ -63,8 +63,8 @@ created: 2026-07-21
 | 01-18-T1 | 4 | `python -m pytest tests/test_operate_manuscript_review.py -q` | planned |
 | 01-19-T1 | 5 | `python -m pytest tests/test_operate_manuscript_authoring.py tests/test_operate_manuscript_review.py tests/test_operate_wiring.py tests/test_operate_wave1_modes.py -q` | planned |
 | 01-19-T2 | 5 | `python -m pytest tests/test_agent_connectivity.py tests/test_capability_catalog.py tests/test_operate_wiring.py -q` | planned |
-| 01-20-T1 | 6 | `python -m pytest tests/test_manuscript_environment.py tests/test_manuscript_completion.py tests/test_capability_catalog.py -q --junitxml=.planning/evidence/phase-01/completion-junit.xml` | planned |
-| 01-20-T2 | 6 | `python -m pytest tests/test_manuscript_completion.py -q --junitxml=.planning/evidence/phase-01/director-route-junit.xml` | planned |
+| 01-20-T1 | 6 | `python -m pytest tests/test_manuscript_environment.py tests/test_manuscript_completion.py tests/test_capability_catalog.py -q --junitxml=.planning/evidence/phase-01/completion-junit.xml` | PASS: release evidence and completion gate; 111 passed in final expanded completion run |
+| 01-20-T2 | 6 | `python -m pytest tests/test_manuscript_completion.py -q --junitxml=.planning/evidence/phase-01/director-route-junit.xml` | PASS: 5 passed; D-07 transport spy verified |
 
 The map has exactly 25 task rows. Every row names its final plan task and an automated check; no task relies on a watch process or a manual-only pass condition.
 
@@ -246,3 +246,26 @@ The smoke PDF was 35,362 bytes, SHA-256 `19b1639769b2b0e8d79c85fae1a74cab8b5aa04
 - [x] Plan checker rerun passed this revision with zero blockers and zero warnings; `nyquist_compliant` is `true`.
 
 **Approval:** independent checker PASS on 2026-07-21.
+
+## Execution Result (2026-07-22)
+
+Phase 01 execution is complete. The final evidence bundle is under
+`.planning/evidence/phase-01/` and was re-parsed by the explicit
+`RAT_VERIFY_PHASE_EVIDENCE=1` gate after all producer commands completed.
+
+- Windows real-build gate: 4 passed, zero failures/errors/skips; the sanitized
+  `COMPILED` receipt is at `windows/real-build-receipt.json`.
+- Immutable Docker Linux `linux/amd64` gate: 125 passed, 1 expected
+  non-host-TeX skip, zero failures/errors; platform and pinned digest are
+  recorded beside `linux/targeted.xml`.
+- AI evaluation: 4/4 scenarios pass, 13/13 machine checks pass, with zero
+  required machine failures.
+- Security gate: 141 passed, 1 platform-permission skip, zero failures/errors.
+- Director route: 5 passed; expanded completion/integration/renderer gate: 111
+  passed; final full suite: 3728 passed, 4 expected platform skips, zero
+  failures/errors. The explicit release parser also verified identical
+  before/after SHA-256 inventories for 765 current source files.
+
+These checks verify the concrete recipes and their safety/build boundaries.
+They do not claim a real GPU experiment, an autonomous submission, an external
+independent review, or a vault promotion.

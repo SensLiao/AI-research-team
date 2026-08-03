@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0.0",
+  "harness": "rat_eval_harness",
+  "summary": {
+    "scenario_count": 4,
+    "pass": 4,
+    "needs_manual": 0,
+    "fail": 0,
+    "machine_checks": 13,
+    "manual_open": 0,
+    "required_machine_failures": 0
+  },
+  "scenarios": [
+    {
+      "id": "rat-research-product-quality",
+      "category": "research-output-quality",
+      "severity": "critical",
+      "status": "pass",
+      "checks": [
+        {
+          "id": "every-operated-mode-has-director-markdown-contract",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "missing=[] extra=[]"
+        },
+        {
+          "id": "contracts-test-business-depth-not-json-shape",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "shallow_contracts=[]"
+        }
+      ]
+    },
+    {
+      "id": "rat-capability-surface-honesty",
+      "category": "capability-governance",
+      "severity": "critical",
+      "status": "pass",
+      "checks": [
+        {
+          "id": "no-operate-registry-drift",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "operate_registry_drift=[]"
+        },
+        {
+          "id": "operated-count-matches-summary",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "operated=12 summary=12"
+        },
+        {
+          "id": "spec-only-not-in-default-tier-catalog",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "spec_only_modes_with_intent_tiers=[]"
+        },
+        {
+          "id": "spec-only-has-honesty-note",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "every spec-only mode must say it is not push-button"
+        }
+      ]
+    },
+    {
+      "id": "rat-execution-boundary-honesty",
+      "category": "execution-honesty",
+      "severity": "critical",
+      "status": "pass",
+      "checks": [
+        {
+          "id": "full-rigor-server-gated",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "full_rigor_minimal must not imply real GPU execution without server evidence"
+        },
+        {
+          "id": "server-gated-modes-have-note",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "server_gated=['debug_failed_run', 'full_rigor_minimal', 'm2_accept', 'tree_explore']"
+        },
+        {
+          "id": "execute-modes-have-no-execution-claim-note",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "execute_modes=['aers_enhanced_research_pack', 'check_run', 'debug_failed_run', 'full_rigor_minimal', 'm2_accept', 'repo_code_audit', 'tree_explore']"
+        }
+      ]
+    },
+    {
+      "id": "rat-vault-and-aers-boundary",
+      "category": "boundary-safety",
+      "severity": "critical",
+      "status": "pass",
+      "checks": [
+        {
+          "id": "capability-catalog-never-writes-vault",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "vault_write=False"
+        },
+        {
+          "id": "capability-catalog-never-executes-external-skills",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "external_skill_execution=False"
+        },
+        {
+          "id": "aers-router-is-catalog-only",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "aers_summary={'total_candidates': 1150, 'by_recommendation': {'review_required': 507, 'safe_reference': 642, 'do_not_use': 1}, 'by_risk_level': {'medium': 507, 'low': 642, 'high': 1}, 'missing_catalog_paths': ['skills/69-Paper-WorkFlow/SKILL.md'], 'catalog_only': True, 'vault_write': False, 'child_skill_bodies_read': False, 'metadata_snapshot': True, 'catalog_root': 'C:\\\\Users\\\\廖神\\\\Desktop\\\\Innovation_projects\\\\Self-project\\\\Personal AI Infrastructure\\\\cases\\\\Route A\\\\AI agent database (for research)\\\\research_agent_teams\\\\agents\\\\references\\\\aers-catalog'}"
+        },
+        {
+          "id": "aers-missing-or-escaping-paths-are-do-not-use",
+          "kind": "machine",
+          "required": true,
+          "passed": true,
+          "message": "flagged=['skills/69-Paper-WorkFlow/SKILL.md']"
+        }
+      ]
+    }
+  ]
+}

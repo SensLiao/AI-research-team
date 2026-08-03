@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-agent-teams.local/schemas/native_targeted_re_review.schema.json",
+  "title": "Native targeted repair re-review",
+  "description": "Fresh-agent verification that only replicated defects were closed without scientific scope drift.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evaluation_id",
+    "reviewer_id",
+    "agent_id",
+    "canonical_agent_task_name",
+    "repair_packet_sha256",
+    "source_candidate_sha256",
+    "repaired_candidate_sha256",
+    "reconciliation_sha256",
+    "reviewed_repairs",
+    "regression_checks",
+    "fatal_defects",
+    "overall_verdict",
+    "overall_rationale",
+    "reviewed_at",
+    "runtime_usage"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "properties": {
+    "schema_version": {"const": "native-targeted-re-review/v1"},
+    "evaluation_id": {"const": "T4-SM0-BLIND-01"},
+    "reviewer_id": {"type": "string", "minLength": 1},
+    "agent_id": {"type": "string", "minLength": 1},
+    "canonical_agent_task_name": {"type": "string", "pattern": "^/[A-Za-z0-9._/-]+$"},
+    "repair_packet_sha256": {"$ref": "#/$defs/sha256"},
+    "source_candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "repaired_candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "reconciliation_sha256": {"$ref": "#/$defs/sha256"},
+    "reviewed_repairs": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["replication_key", "status", "evidence_locator", "assessment"],
+        "properties": {
+          "replication_key": {
+            "enum": [
+              "primary_endpoint_not_frozen",
+              "no_m0_neutralization_not_frozen",
+              "ambiguity_strata_not_frozen",
+              "curriculum_schedule_not_frozen"
+            ]
+          },
+          "status": {"enum": ["CLOSED", "PARTIAL", "OPEN"]},
+          "evidence_locator": {"type": "string", "minLength": 1},
+          "assessment": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "regression_checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "six_joint_ontology_unchanged",
+        "simple_first_primary_unchanged",
+        "cross_attention_still_deferred",
+        "oof_not_regenerated",
+        "existing_experiments_unchanged",
+        "truth_boundary_preserved"
+      ],
+      "properties": {
+        "six_joint_ontology_unchanged": {"type": "boolean"},
+        "simple_first_primary_unchanged": {"type": "boolean"},
+        "cross_attention_still_deferred": {"type": "boolean"},
+        "oof_not_regenerated": {"type": "boolean"},
+        "existing_experiments_unchanged": {"type": "boolean"},
+        "truth_boundary_preserved": {"type": "boolean"}
+      }
+    },
+    "fatal_defects": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "overall_verdict": {"enum": ["PASS", "FAIL"]},
+    "overall_rationale": {"type": "string", "minLength": 1},
+    "reviewed_at": {"type": "string", "format": "date-time"},
+    "runtime_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {"status": {"const": "UNOBSERVED"}}
+    }
+  }
+}

@@ -25,6 +25,8 @@
         "manual_open",
         "invalid_manifests",
         "business_output_failures",
+        "business_output_failures_current_contract",
+        "business_output_failures_legacy_contract",
         "business_output_advisories",
         "run_count",
         "vault_write",
@@ -35,6 +37,14 @@
         "manual_open": { "type": "integer", "minimum": 0 },
         "invalid_manifests": { "type": "integer", "minimum": 0 },
         "business_output_failures": { "type": "integer", "minimum": 0 },
+        "business_output_failures_current_contract": {
+          "type": "integer", "minimum": 0,
+          "description": "Completed runs that pinned today's product contract yet produced no conforming director Markdown. These BLOCK the board — a live regression."
+        },
+        "business_output_failures_legacy_contract": {
+          "type": "integer", "minimum": 0,
+          "description": "Completed runs that predate the product contract. Re-rendering cannot make them conform; only re-running can, which is the director's call. Counted and listed, never blocking."
+        },
         "business_output_advisories": { "type": "integer", "minimum": 0 },
         "run_count": { "type": "integer", "minimum": 0 },
         "vault_write": { "type": "boolean", "const": false },
@@ -88,12 +98,20 @@
     "business_outputs": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["completed_run_count", "pass", "advisory", "fail", "not_scored", "runs"],
+      "required": ["completed_run_count", "pass", "advisory", "fail", "fail_current",
+                   "fail_legacy", "legacy_failure_run_ids", "not_scored", "runs"],
       "properties": {
         "completed_run_count": { "type": "integer", "minimum": 0 },
         "pass": { "type": "integer", "minimum": 0 },
         "advisory": { "type": "integer", "minimum": 0 },
-        "fail": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0,
+                  "description": "Every failing completed run, regardless of contract era." },
+        "fail_current": { "type": "integer", "minimum": 0,
+                          "description": "Failures under today's pinned product contract — live regressions that block the board." },
+        "fail_legacy": { "type": "integer", "minimum": 0,
+                         "description": "Failures from runs predating the product contract. Re-rendering cannot fix them; only re-running can, which is the director's call. Visible backlog, never a block." },
+        "legacy_failure_run_ids": { "type": "array", "items": { "type": "string" },
+                                    "description": "Named so the backlog can never be quietly forgotten." },
         "not_scored": { "type": "integer", "minimum": 0 },
         "runs": {
           "type": "array",

@@ -1,0 +1,109 @@
+TOOL_SHA256 latexmk=85a166631fecc56b37cdf87d4e4e238372007178046327dc2d780b455caad3fa
+TOOL_SHA256 perl=cedb9dc636e89eeb6cf7ab467830b72a2467e744d01492a349255b1272b99f5e
+argv=["latexmk.EXE", "--disable-installer", "-norc", "-gg", "-pdf", "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-recorder", "-no-shell-escape", "-outdir=<RUN>\\build\\.latex-private-c9gbynzu\\output", "main.tex"]
+return_code=0
+duration_ms=1297
+timed_out=false
+stdout=Initial Win CP for (console input, console output, system): (CP936, CP65001, CP936)
+I changed them all to CP936
+Rc files read (in order):
+  NONE
+Latexmk: This is Latexmk, John Collins, 9 March 2026. Version 4.88.
+Latexmk: Doing full clean up for 'main.tex'
+No existing .aux file, so I'll make a simple one, and require run of *latex.
+Force everything to be remade.
+Latexmk: applying rule 'pdflatex'...
+Rule 'pdflatex':  Reasons for rerun
+Category 'other':
+  Rerun of 'pdflatex' forced or previously required:
+    Reason or flag: 'go_mode'
+
+------------
+Run number 1 of rule 'pdflatex'
+------------
+------------
+Running 'pdflatex  --disable-installer -interaction=nonstopmode -halt-on-error -file-line-error -no-shell-escape -recorder -output-directory="<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output"  "main.tex"'
+------------
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex.fmt)
+entering extended mode
+(main.tex
+LaTeX2e <2025-11-01>
+L3 programming layer <2025-12-24>
+(<HOME>\AppData\Local\Programs\MiKTeX\tex/latex/base\article.cls
+Document Class: article 2025/01/22 v1.4n Standard LaTeX document class
+(<HOME>\AppData\Local\Programs\MiKTeX\tex/latex/base\size10.clo))
+(<HOME>\AppData\Local\Programs\MiKTeX\tex/latex/l3backend\l3backend-pd
+ftex.def)
+(<HOME>/AppData/Local/Temp/pytest-of-廖神/pytest-2117/test_real_late
+x_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output\main.aux)
+
+LaTeX Warning: Reference `sec:fixture' on page 1 undefined on input line 4.
+
+[1{<HOME>/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}]
+(<HOME>/AppData/Local/Temp/pytest-of-廖神/pytest-2117/test_real_late
+x_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output\main.aux)
+
+LaTeX Warning: There were undefined references.
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
+ )<<HOME>/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm
+/cmbx10.pfb><<HOME>/AppData/Local/Programs/MiKTeX/fonts/type1/public/a
+msfonts/cm/cmbx12.pfb><<HOME>/AppData/Local/Programs/MiKTeX/fonts/type
+1/public/amsfonts/cm/cmr10.pfb>
+Output written on <HOME>\AppData\Local\Temp\pytest-of-廖神\pytest-21
+17\test_real_latex_build_emits_sa0\real-latex-run\build\.latex-private-c9gbynzu
+\output\main.pdf (1 page, 34423 bytes).
+Transcript written on <HOME>\AppData\Local\Temp\pytest-of-廖神\pytes
+t-2117\test_real_latex_build_emits_sa0\real-latex-run\build\.latex-private-c9gb
+ynzu\output\main.log.
+Latexmk: Getting log file '<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.log'
+Latexmk: Examining '<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.fls'
+Latexmk: Examining '<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.log'
+Latexmk: References changed.
+Latexmk: Log file says output to '<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.pdf'
+Latexmk: applying rule 'pdflatex'...
+Rule 'pdflatex':  Reasons for rerun
+Changed files or newly in use/created:
+  <HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.aux
+
+------------
+Run number 2 of rule 'pdflatex'
+------------
+------------
+Running 'pdflatex  --disable-installer -interaction=nonstopmode -halt-on-error -file-line-error -no-shell-escape -recorder -output-directory="<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output"  "main.tex"'
+------------
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex.fmt)
+entering extended mode
+(main.tex
+LaTeX2e <2025-11-01>
+L3 programming layer <2025-12-24>
+(<HOME>\AppData\Local\Programs\MiKTeX\tex/latex/base\article.cls
+Document Class: article 2025/01/22 v1.4n Standard LaTeX document class
+(<HOME>\AppData\Local\Programs\MiKTeX\tex/latex/base\size10.clo))
+(<HOME>\AppData\Local\Programs\MiKTeX\tex/latex/l3backend\l3backend-pd
+ftex.def)
+(<HOME>/AppData/Local/Temp/pytest-of-廖神/pytest-2117/test_real_late
+x_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output\main.aux)
+[1{<HOME>/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}]
+(<HOME>/AppData/Local/Temp/pytest-of-廖神/pytest-2117/test_real_late
+x_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output\main.aux)
+ )<<HOME>/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm
+/cmbx12.pfb><<HOME>/AppData/Local/Programs/MiKTeX/fonts/type1/public/a
+msfonts/cm/cmr10.pfb>
+Output written on <HOME>\AppData\Local\Temp\pytest-of-廖神\pytest-21
+17\test_real_latex_build_emits_sa0\real-latex-run\build\.latex-private-c9gbynzu
+\output\main.pdf (1 page, 24321 bytes).
+Transcript written on <HOME>\AppData\Local\Temp\pytest-of-廖神\pytes
+t-2117\test_real_latex_build_emits_sa0\real-latex-run\build\.latex-private-c9gb
+ynzu\output\main.log.
+Latexmk: Getting log file '<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.log'
+Latexmk: Examining '<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.fls'
+Latexmk: Examining '<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.log'
+Latexmk: Log file says output to '<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.pdf'
+Latexmk: All targets (<HOME>/AppData/Local/Temp/pytest-of-����/pytest-2117/test_real_latex_build_emits_sa0/real-latex-run/build/.latex-private-c9gbynzu/output/main.pdf) are up-to-date
+
+
+stderr=Reverting Windows console CPs to (in,out) = (936,65001)
+

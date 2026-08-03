@@ -20,6 +20,7 @@ from research_agent_teams.tools.manuscript_security import (
     validate_run_owned_path,
     validate_tex_sources,
 )
+from research_agent_teams.tools._manuscript_integrator_security import scan_candidate_text
 from research_agent_teams.tools._latex_sandbox import (
     LatexSandboxViolation,
     atomic_write_bytes,
@@ -86,6 +87,27 @@ class LatexBuildError(RuntimeError):
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime(_STAMP)
+
+
+def _miktex_installer_guard(executable: str) -> list[str]:
+    """Disable MiKTeX's implicit package downloader for a bounded build."""
+
+    return ["--disable-installer"] if "miktex" in str(executable).casefold() else []
+
+
+def _scan_durable_bytes(
+    label: str,
+    files: Mapping[str, bytes],
+    *,
+    sentinels: Mapping[str, str] | None,
+    patterns: Mapping[str, Any] | None,
+) -> None:
+    """Run the shared byte-aware secret scan without exposing matched values."""
+
+    def fail(code: str, _message: str, *_details: object) -> None:
+        raise LatexBuildError(code, f"{label} failed the durable-output safety scan")
+
+    scan_candidate_text(files, fail=fail, sentinels=sentinels, patterns=patterns)
 
 
 def _canonical(value: Any) -> bytes:
@@ -216,6 +238,15 @@ def _preflight(
 ) -> tuple[str | None, str | None]:
     if any(Path(name).suffix.casefold() in _EXECUTABLE_SUPPORT_SUFFIXES for name in source_files):
         return "UNSAFE_TEX_SUPPORT_FILE", "local executable TeX support files are forbidden"
+    try:
+        _scan_durable_bytes(
+            "manuscript source",
+            source_files,
+            sentinels=sentinels,
+            patterns=patterns,
+        )
+    except LatexBuildError as exc:
+        return exc.code, "source tree failed durable-material safety scanning"
     try:
         validate_tex_sources(tex_sources, run_root=run, source_root=source)
     except ManuscriptTexViolation:
@@ -593,9 +624,10 @@ def build_latex_project(
     with private_workspace(build) as (_workspace, staged_source, private_output):
         stage_files(staged_source, source_files)
         deadline = time.monotonic() + max(0.001, float(timeout))
+        last_command_timeout = float("inf")
 
         def run_command(command: list[str], cwd: Path) -> Mapping[str, Any]:
-            nonlocal failure_code, failure_message
+            nonlocal failure_code, failure_message, last_command_timeout
             if not identity_is_current():
                 failure_code = "TOOL_IDENTITY_CHANGED"
                 failure_message = "selected tool identity changed after readiness probing"
@@ -604,13 +636,16 @@ def build_latex_project(
                     "returncode": 126, "timed_out": False, "duration_ms": 0,
                     "started_at": stamp, "finished_at": stamp,
                 }
-            remaining = deadline - time.monotonic()
+            # Preserve a strictly shrinking allowance for a multi-process
+            # direct pipeline even on coarse monotonic-clock platforms.
+            remaining = min(deadline - time.monotonic(), last_command_timeout - 1e-6)
             if remaining <= 0:
                 stamp = clock()
                 return {
                     "returncode": 124, "timed_out": True, "duration_ms": 0,
                     "started_at": stamp, "finished_at": stamp,
                 }
+            last_command_timeout = remaining
             outcome = invoke_runner(
                 runner, command, cwd=cwd, environment=env, timeout=remaining,
                 output_limit=output_limit,
@@ -626,14 +661,15 @@ def build_latex_project(
         if selected["driver"] == "latexmk":
             executable_path = selected["executables"]["latexmk"]
             executable = Path(executable_path).name
+            installer_guard = _miktex_installer_guard(executable_path)
             actual = [
-                executable_path, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
+                executable_path, *installer_guard, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
                 "-halt-on-error", "-file-line-error", "-recorder", "-no-shell-escape",
                 f"-outdir={private_output}", "main.tex",
             ]
             result = run_command(actual, staged_source)
             portable_argv = [
-                executable, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
+                executable, *installer_guard, "-norc", "-gg", "-pdf", "-interaction=nonstopmode",
                 "-halt-on-error", "-file-line-error", "-recorder", "-no-shell-escape",
                 "-outdir=private-output", "main.tex",
             ]
@@ -642,12 +678,14 @@ def build_latex_project(
             engine = selected["executables"]["pdflatex"]
             bib_name = selected["bibliography"]
             bib = selected["executables"][bib_name]
+            engine_guard = _miktex_installer_guard(engine)
+            bibliography_guard = _miktex_installer_guard(bib)
             engine_args = [
-                "-interaction=nonstopmode", "-halt-on-error", "-file-line-error",
+                *engine_guard, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error",
                 "-recorder", "-no-shell-escape", f"-output-directory={private_output}",
                 "main.tex",
             ]
-            passes = [[engine, *engine_args], [bib, "main"], [engine, *engine_args], [engine, *engine_args]]
+            passes = [[engine, *engine_args], [bib, *bibliography_guard, "main"], [engine, *engine_args], [engine, *engine_args]]
             for index, command in enumerate(passes):
                 result = run_command(command, private_output if index == 1 else staged_source)
                 if result["returncode"] != 0 or result["timed_out"] or failure_code:
@@ -655,7 +693,7 @@ def build_latex_project(
             executable = "direct-pipeline"
             portable_argv = [
                 executable, "-norc", "-recorder", "-halt-on-error", "-no-shell-escape",
-                "pdflatex", bib_name, "pdflatex", "pdflatex",
+                *engine_guard, "pdflatex", *bibliography_guard, bib_name, "pdflatex", "pdflatex",
             ]
             aggregate = {
                 "returncode": int(result["returncode"]),
@@ -712,6 +750,12 @@ def build_latex_project(
             try:
                 pdf_bytes = stable_file_bytes(private_output / "main.pdf", max_bytes=512 * 1024 * 1024)
                 recorder_bytes = stable_file_bytes(private_output / "main.fls", max_bytes=output_limit)
+                _scan_durable_bytes(
+                    "compiler output",
+                    {"main.pdf": pdf_bytes, "main.fls": recorder_bytes},
+                    sentinels=secret_sentinels,
+                    patterns=secret_patterns,
+                )
                 roots = [staged_source, private_output]
                 for key in ("LOCALAPPDATA", "APPDATA", "PROGRAMDATA"):
                     if env.get(key):
@@ -728,6 +772,8 @@ def build_latex_project(
                 failure_code, failure_message = "PDF_MISSING", "build did not produce PDF and recorder outputs"
             except LatexSandboxViolation:
                 failure_code, failure_message = "OUTPUT_IDENTITY_INVALID", "PDF or recorder identity failed validation"
+            except LatexBuildError as exc:
+                failure_code, failure_message = exc.code, "compiler output failed durable-material safety scanning"
             if not failure_code and not pdf_bytes:
                 failure_code, failure_message = "PDF_MISSING", "build did not produce a non-empty PDF"
             if not failure_code:

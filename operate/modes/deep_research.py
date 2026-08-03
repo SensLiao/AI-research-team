@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Optional
 
 from . import _shared
-from ..artifacts import GateBlock, write_artifact
+from ..artifacts import GateBlock, TargetedGateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
+from ..output_versions import resolve_effective_output
 from ...tools.budget_tracker import assert_within
 from ...tools.citation_attribution import (
     build_run_attribution_report,
@@ -29,7 +30,6 @@ from ...tools.research_brief_markdown import (
     write_research_brief_markdown,
 )
 from ...tools.source_methodology_audit import audit_source_quality_report
-from ...tools.validate_artifact import validate_payload
 
 STAGES = ["DISCOVER", "REPORT"]
 DEFAULT_VAULT = "AI agent database/PhD-Research-OS"
@@ -103,9 +103,10 @@ def _worker_model(model_policy: str, agent: str) -> str:
 
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
-               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8) -> str:
+               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
+               queries=None) -> str:
     return _shared.pre_search(run_dir, request, ts, transport=transport,
-                              sources=sources, limit_per_source=limit_per_source)
+                              sources=sources, limit_per_source=limit_per_source, queries=queries)
 
 
 def fulltext_pre(run_dir: str, question: str, doc_paths, ts: str) -> Optional[str]:
@@ -139,10 +140,21 @@ Sources by reference only:
 - live retrieval bundle if present: `{run_dir}/inbox/search-results.json`
 - fulltext contexts if present: `{run_dir}/inbox/fulltext-qa.json`
 - exact citation offsets if present: `{run_dir}/inbox/citation-snapshots/fulltext-contexts.manifest.json`
+- agent Web Search fallback when API recall is empty/off-topic or a named method is absent; accept
+  only paper originals, official publisher/project pages, or authors' official repositories, and
+  carry them by resolvable reference through the same citation gates
 
 {_prior_inputs(run_dir, prior_agents)}
 Write ONLY JSON to `{out}`. The output must be compressed research judgment, not raw notes.
 Never invent slugs, DOIs, papers, datasets, or metrics.
+
+When the topic asks whether an idea is novel or collides with prior art, metadata, titles, abstracts,
+snippets, and shared components only discover candidates. A fatal collision requires reading the
+closest paper's full method and decision-relevant results and recording inspectable loci. Compare the
+central claim, input/output contract, mechanism, causal controls, evaluation target, and scope. Use
+the relations exact_collision, partial_component_prior, enabling_base, gap_source, orthogonal, and
+uncertain. If decisive full text is unavailable, state UNVERIFIED; never infer global novelty or a
+collision. Choose the retrieval and reasoning route yourself; this evidence boundary is the contract.
 """
     perspective = {agent_name: (pid, angle) for agent_name, pid, angle in PERSPECTIVE_WORKERS}
     if agent == "lit-scout":
@@ -152,7 +164,9 @@ Output exactly: {"evidence_table": {"evidence_contract_version":"evidence-table/
 "source_quality_report_ref":"evidence/DISCOVER/source-quality-report.artifact.json",
 "search_trace_ref":"evidence/DISCOVER/evidence-search-trace.artifact.json",
 query, sources, "saturation_reached":false}}.
-Use 5-10 sources when available, including negative and boundary evidence. The saturation field is a
+Use 5-10 sources when available, including negative and boundary evidence. For novelty questions,
+retrieve candidates across the central claim, mechanism, input/output contract, causal assay, and
+strongest falsifying alternative; do not stop at topical similarity. The saturation field is a
 fixed compatibility placeholder; only the deterministic search-trace evaluator derives completion.
 """
     if agent == "source-quality-ranker":
@@ -162,7 +176,11 @@ Output exactly: {"source_quality_report": {"quality_contract_version":"source-me
 "review_status":"CURRENT", ranked_sources, ranking_rationale, n_sources_ranked}}.
 Every row must contain review_status, directness, study_design, all methodology_review and
 sample_evaluation_review dimensions, applicability, evidence_refs with locator plus exact quote or
-reported result, and limitations. `rigor_score` is only an ordering hint and never proves strength.
+reported result, and limitations. Judge applicability against the full research question in the task
+frame, not one convenient subclaim. Use `direct` only when the source directly addresses the whole
+atomic question; a source covering one component of a bundled question remains `partial` or
+`indirect`. Never upgrade applicability merely to clear a gate. `rigor_score` is only an ordering hint
+and never proves strength.
 """
     if agent in perspective:
         pid, angle = perspective[agent]
@@ -180,6 +198,8 @@ decision-reversing result in kill_criteria.
         return common + """
 Task: extract 3-6 cross-perspective atomic claims from the perspective notes.
 Output exactly: {"claim_list": {source_scope, claims:[{claim_id,text,source_ref,kind,confidence}]}}.
+For `source_ref`, copy the evidence-table row's resolvable `ref` value, never its local `id` such as
+`s1`; the id is only an internal join key and is not a citable reference.
 Each claim must be useful for a research decision, not just descriptive. Include material boundary
 or limitation claims so the synthesis is not a one-sided positive summary.
 """
@@ -202,6 +222,7 @@ mappings:[{claim_id,overall_support,loci,claim_risk}]}}.
 Every locus must include source_ref, location, kind, reported_result, supports_claim, support_relation,
 directness, span_id, snapshot_ref, document_hash, parser_version, exact_quote, and either char_start/char_end,
 table_cell_ref, or figure_region_ref. Perspective summaries may guide retrieval but are never citable evidence.
+For `source_ref`, copy the evidence-table row's resolvable `ref` value, never its local `id` such as `s1`.
 """
     if agent == "citation-coverage-auditor":
         return common + """
@@ -227,13 +248,17 @@ counterevidence from a scope/protocol mismatch that explains the disagreement.
 Task: synthesize the final research brief and human Markdown memo from all prior bundles.
 Output exactly: {"research_brief": {topic,perspectives,findings,bottom_line,consensus,
 live_disagreements,evidence_gaps,actionable_next_questions,iterations_used,
-saturation_reached,evidence_ref}, "usage": {iterations_without_new_evidence, fulltext_reads},
-"research_markdown_brief": {topic,markdown,evidence_refs,perspective_ids,quality_caveats}}.
+saturation_reached,evidence_ref}, "usage": {iterations_without_new_evidence, fulltext_reads}}.
+You may also include an optional `research_markdown_brief` worker draft with
+{topic,markdown,evidence_refs,perspective_ids,quality_caveats}.
 The bottom_line must explicitly state the belief update, confidence boundary, and immediate
 project/idea/experiment implication. actionable_next_questions must put the single highest expected
-information-value evidence first. The Markdown is a worker draft retained as evidence; the final
-director page is rendered and linted deterministically from all panel structures. Keep the research
-brief's saturation_reached compatibility field false; search completion is derived elsewhere. Minimum 700 characters.
+information-value evidence first. Any worker Markdown is advisory only; the final director page and
+its typed artifact are rendered and linted deterministically from all panel structures. Keep the research
+brief's saturation_reached compatibility field false; search completion is derived elsewhere. For a
+novelty question, distinguish exact collision, partial prior, enabling base, gap source, orthogonal
+work, and unresolved uncertainty, and state what the closest paper did, did not do, and what
+falsifiable delta survives. Never convert missing full text into a novelty conclusion.
 """
     raise ValueError(f"unknown deep_research agent {agent}")
 
@@ -278,7 +303,11 @@ def _load_worker_bundles(run_dir) -> dict:
     missing = []
     raw = {}
     for agent in PANEL_AGENTS:
-        p = _bundle_path(run_dir, agent)
+        logical = _bundle_path(run_dir, agent)
+        try:
+            p = resolve_effective_output(Path(run_dir), "DISCOVER", logical)
+        except ValueError as exc:
+            raise GateBlock(f"supplement lineage BLOCK: {exc}") from exc
         if not p.exists():
             if not (replay is not None and agent in {
                 "citation-coverage-auditor", "evidence-search-moderator"
@@ -289,29 +318,49 @@ def _load_worker_bundles(run_dir) -> dict:
     if missing:
         raise GateBlock(f"deep_research DISCOVER missing worker bundle(s): {missing}")
 
+    def take(agent: str, key: str, *, required: bool = True, default=None):
+        source = raw.get(agent)
+        if source is None:
+            if required:
+                raise GateBlock(
+                    f"deep_research DISCOVER missing worker bundle for {agent}"
+                )
+            return default
+        return _shared.extract_worker_bundle_value(
+            source, key, stage="DISCOVER", mode="deep_research", agent=agent,
+            required=required, default=default,
+        )
+
     perspective_notes = []
     for agent, _pid, _angle in PERSPECTIVE_WORKERS:
-        note = raw[agent].get("research_perspective_note")
-        if note is None:
-            raise GateBlock(f"deep_research bundle key BLOCK: {agent} missing research_perspective_note")
-        perspective_notes.append(note)
+        perspective_notes.append(take(agent, "research_perspective_note"))
 
-    synth = raw["landscape-mapper"]
     b = {
-        "evidence_table": raw["lit-scout"].get("evidence_table"),
-        "source_quality_report": raw["source-quality-ranker"].get("source_quality_report"),
+        "evidence_table": take("lit-scout", "evidence_table"),
+        "source_quality_report": take("source-quality-ranker", "source_quality_report"),
         "perspective_notes": perspective_notes,
-        "claim_list": raw["claim-extractor"].get("claim_list"),
-        "evidence_search_trace": (raw.get("evidence-search-moderator") or {}).get("evidence_search_trace"),
-        "claim_evidence_map": raw["claim-evidence-linker"].get("claim_evidence_map"),
-        "citation_audit": (raw.get("citation-coverage-auditor") or {}).get("citation_audit"),
-        "contradiction_report": raw["contradiction-miner"].get("contradiction_report"),
-        "research_brief": synth.get("research_brief"),
-        "usage": synth.get("usage"),
-        "research_markdown_brief": synth.get("research_markdown_brief"),
+        "claim_list": take("claim-extractor", "claim_list"),
+        "evidence_search_trace": take(
+            "evidence-search-moderator", "evidence_search_trace",
+            required=replay is None, default=None,
+        ),
+        "claim_evidence_map": take("claim-evidence-linker", "claim_evidence_map"),
+        "citation_audit": take(
+            "citation-coverage-auditor", "citation_audit",
+            required=replay is None, default=None,
+        ),
+        "contradiction_report": take("contradiction-miner", "contradiction_report"),
+        "research_brief": take("landscape-mapper", "research_brief"),
+        "usage": take("landscape-mapper", "usage"),
+        "research_markdown_brief": take(
+            "landscape-mapper", "research_markdown_brief", required=False, default=None,
+        ),
         "legacy_replay": replay is not None,
     }
-    missing_keys = [k for k, v in b.items() if v is None]
+    missing_keys = [
+        k for k, v in b.items()
+        if v is None and k != "research_markdown_brief"
+    ]
     if replay is not None:
         missing_keys = [k for k in missing_keys if k not in {"citation_audit", "evidence_search_trace"}]
     if missing_keys:
@@ -328,6 +377,13 @@ def _normalize_compat_enums(b: dict) -> None:
     source_kind = {
         "official-protocol": "benchmark",
         "paper-card": "doc",
+        # Workers often describe an official foundation-model release as a
+        # `model`.  The evidence schema classifies the citable object rather
+        # than its subject, so an official model repository is a `repo`.
+        # Normalize this representation-only label before schema validation;
+        # otherwise a complete research panel is terminally failed for a
+        # harmless vocabulary mismatch.
+        "model": "repo",
     }
     claim_kind = {
         "baseline": "comparison",
@@ -347,37 +403,153 @@ def _normalize_compat_enums(b: dict) -> None:
     }
     for row in (b.get("evidence_table") or {}).get("sources") or []:
         row["kind"] = source_kind.get(row.get("kind"), row.get("kind"))
+    # Some otherwise well-grounded workers use the evidence table's local id
+    # (`s1`) where the citation contract requires the row's citable `ref`.
+    # The mapping is unique inside one frozen evidence table, so resolving it
+    # is a representation-only normalization; unknown ids remain untouched and
+    # still fail the citation gate.
+    source_ref_by_id = {
+        str(row.get("id")): str(row.get("ref"))
+        for row in (b.get("evidence_table") or {}).get("sources") or []
+        if row.get("id") and row.get("ref")
+    }
     for row in (b.get("claim_list") or {}).get("claims") or []:
         row["kind"] = claim_kind.get(row.get("kind"), row.get("kind"))
+        row["source_ref"] = source_ref_by_id.get(
+            str(row.get("source_ref")), row.get("source_ref")
+        )
+    for mapping in (b.get("claim_evidence_map") or {}).get("mappings") or []:
+        for locus in mapping.get("loci") or []:
+            locus["source_ref"] = source_ref_by_id.get(
+                str(locus.get("source_ref")), locus.get("source_ref")
+            )
     for row in (b.get("contradiction_report") or {}).get("conflicts") or []:
         row["kind"] = conflict_kind.get(row.get("kind"), row.get("kind"))
         row["resolution_status"] = resolution.get(
             row.get("resolution_status"), row.get("resolution_status")
         )
+    for note in b.get("perspective_notes") or []:
+        if not isinstance(note, dict):
+            continue
+        confidence = note.get("confidence")
+        if isinstance(confidence, dict):
+            overall = str(confidence.get("overall") or "").casefold()
+            note["confidence"] = "high" if overall.startswith("high") else (
+                "low" if overall.startswith("low") else "medium"
+            )
+        if isinstance(note.get("finding_summary"), dict):
+            rich_summary = note["finding_summary"]
+            note["finding_summary"] = str(
+                rich_summary.get("changed_belief")
+                or rich_summary.get("project_implication")
+                or json.dumps(rich_summary, ensure_ascii=False, sort_keys=True)
+            )
+        elif isinstance(note.get("finding_summary"), list):
+            note["finding_summary"] = " ".join(str(item) for item in note["finding_summary"])
+        for field in ("actionable_opportunities", "kill_criteria"):
+            values = note.get(field)
+            if isinstance(values, list):
+                note[field] = [
+                    value if isinstance(value, str) else json.dumps(
+                        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                    )
+                    for value in values
+                ]
+        refs = note.get("source_refs")
+        if isinstance(refs, list):
+            note["source_refs"] = [
+                str(value.get("source_ref") or value.get("ref") or "")
+                if isinstance(value, dict) else str(value)
+                for value in refs
+            ]
 
 
-def _validate_payloads(b: dict) -> None:
+def _data_descendants(agent: str) -> list[str]:
+    impacted = set()
+    frontier = {agent}
+    while frontier:
+        current = frontier.pop()
+        for candidate, dependencies in DEEP_RESEARCH_DEPENDENCIES.items():
+            if current in dependencies and candidate not in impacted:
+                impacted.add(candidate)
+                frontier.add(candidate)
+    impacted.discard(agent)
+    return [candidate for candidate in PANEL_AGENTS if candidate in impacted]
+
+
+def _validate_payloads(run_dir, b: dict) -> dict:
     _normalize_compat_enums(b)
+    # Normalize every typed worker payload before scientific gates consume it.
+    # Original bundles stay immutable; richer fields are hash-bound in
+    # inbox/normalization sidecars and the canonical projection is what reaches
+    # evidence/.  This is a zero-worker representation repair.
+    plan = (
+        ("evidence_table", "evidence_table", "lit-scout"),
+        ("source_quality_report", "source_quality_report", "source-quality-ranker"),
+        ("evidence_search_trace", "evidence_search_trace", "evidence-search-moderator"),
+        ("claim_list", "claim_list", "claim-extractor"),
+        ("claim_evidence_map", "claim_evidence_map", "claim-evidence-linker"),
+        ("contradiction_report", "contradiction_report", "contradiction-miner"),
+        ("research_brief", "research_brief", "landscape-mapper"),
+    )
     errors = []
-    for atype, key in (
-        ("evidence_table", "evidence_table"),
-        ("source_quality_report", "source_quality_report"),
-        ("evidence_search_trace", "evidence_search_trace"),
-        ("claim_list", "claim_list"),
-        ("claim_evidence_map", "claim_evidence_map"),
-        ("contradiction_report", "contradiction_report"),
-        ("research_brief", "research_brief"),
-        ("research_markdown_brief", "research_markdown_brief"),
-    ):
+    defects = []
+    reports = []
+    for atype, key, agent in plan:
         if b.get("legacy_replay") and b.get(key) is None:
             continue
-        for e in validate_payload(atype, b[key] if isinstance(b[key], dict) else {}):
+        normalized, item_errors, report = _shared.normalize_worker_payload(
+            run_dir, "DISCOVER", agent, atype, b.get(key), label=key,
+        )
+        b[key] = normalized
+        reports.append(report)
+        for e in item_errors:
             errors.append(f"{key}: {e}")
+        if item_errors:
+            defects.append({
+                "defect_id": f"deep-research-schema-{key.replace('_', '-')}",
+                "category": "schema-semantic-gap",
+                "location": f"DISCOVER/{key}",
+                "summary": "; ".join(item_errors)[:4000],
+                "target_agents": [agent],
+                "refresh_agents": _data_descendants(agent),
+            })
+    perspective_agent = {pid: agent for agent, pid, _angle in PERSPECTIVE_WORKERS}
     for i, note in enumerate(b.get("perspective_notes") or [], start=1):
-        for e in validate_payload("research_perspective_note", note if isinstance(note, dict) else {}):
+        pid = str((note or {}).get("perspective_id") or f"P{i}") if isinstance(note, dict) else f"P{i}"
+        agent = perspective_agent.get(pid, PERSPECTIVE_WORKERS[min(i - 1, 3)][0])
+        normalized, item_errors, report = _shared.normalize_worker_payload(
+            run_dir, "DISCOVER", agent, "research_perspective_note", note,
+            label=f"research-perspective-{pid}",
+        )
+        b["perspective_notes"][i - 1] = normalized
+        reports.append(report)
+        for e in item_errors:
             errors.append(f"perspective_notes[{i}]: {e}")
+        if item_errors:
+            defects.append({
+                "defect_id": f"deep-research-schema-perspective-{pid}",
+                "category": "schema-semantic-gap",
+                "location": f"DISCOVER/perspective_notes/{i}",
+                "summary": "; ".join(item_errors)[:4000],
+                "target_agents": [agent],
+                "refresh_agents": _data_descendants(agent),
+            })
     if errors:
-        raise GateBlock(f"deep_research artifact schema BLOCK: {errors}")
+        raise TargetedGateBlock(
+            f"deep_research payload needs a local supplement after automatic normalization: {errors}",
+            defects,
+        )
+    return {
+        "normalized_payloads": sum(
+            1 for report in reports
+            if report.get("changes") or report.get("preserved_extras")
+        ),
+        "format_changes": sum(len(report.get("changes") or []) for report in reports),
+        "preserved_extra_fields": sum(
+            len(report.get("preserved_extras") or []) for report in reports
+        ),
+    }
 
 
 def _source_refs(et: dict) -> set[str]:
@@ -413,7 +585,21 @@ def _consistency_checks(b: dict) -> None:
         }
         outside_trace = sorted(trace_refs - refs)
         if outside_trace:
-            raise GateBlock(f"search trace source(s) outside evidence table: {outside_trace}")
+            raise TargetedGateBlock(
+                f"search trace source(s) outside evidence table: {outside_trace}",
+                [{
+                    "defect_id": "deep-research-unfrozen-search-hit",
+                    "location": "DISCOVER/evidence-search-trace",
+                    "summary": "Freeze, assess, and include each discovered literature source in the "
+                               "evidence table before using it in the search trace.",
+                    "target_agents": ["lit-scout", "source-quality-ranker", "evidence-search-moderator"],
+                    "refresh_agents": [
+                        "model-dataset-scout", "future-work-miner", "cross-domain-transfer-scout",
+                        "weakness-spotter", "claim-extractor", "claim-evidence-linker",
+                        "citation-coverage-auditor", "contradiction-miner", "landscape-mapper",
+                    ],
+                }],
+            )
 
     pids = [str(p.get("perspective_id")) for p in b["perspective_notes"]]
     if len(set(pids)) != len(pids):
@@ -426,11 +612,6 @@ def _consistency_checks(b: dict) -> None:
     missing = sorted(set(pids) - brief_ids) + sorted(set(pids) - finding_ids)
     if missing:
         raise GateBlock(f"deep_research brief consistency BLOCK: missing perspective(s) {sorted(set(missing))}")
-
-    markdown_ids = set(str(x) for x in b["research_markdown_brief"].get("perspective_ids") or [])
-    # Worker-declared Markdown coverage is navigation metadata, not scientific
-    # truth. The rendered report is audited separately and delivered with a
-    # visible caveat when perspective labels are incomplete.
 
     ranked = b["source_quality_report"].get("ranked_sources") or []
     outside = [r.get("source_ref") for r in ranked if str(r.get("source_ref") or "") not in refs]
@@ -467,7 +648,7 @@ def _enforce_usage_budget(run_dir, usage: dict) -> tuple[int, int]:
 
 
 def _discover_dets(run_dir, ts, b) -> tuple:
-    _validate_payloads(b)
+    normalization = _validate_payloads(run_dir, b)
     _consistency_checks(b)
     iters, reads = _enforce_usage_budget(run_dir, b["usage"])
 
@@ -499,12 +680,41 @@ def _discover_dets(run_dir, ts, b) -> tuple:
 
     ev = build_verdict(et, source_quality_report=source_quality, search_trace=search_trace,
                        strict_current=True)
+    evidence_reasons = list(ev.get("reasons") or [])
+    strength_shortfall_only = bool(evidence_reasons) and all(
+        str(reason).startswith("too few strong-support sources")
+        for reason in evidence_reasons
+    )
     paths.append(write_artifact(run_dir, "DISCOVER", "evidence-verdict.artifact.json",
                                 "evidence_verdict", "evidence-verifier", ev, ts,
-                                "draft" if legacy else
+                                "draft" if legacy or (
+                                    ev["verdict"] == "BLOCK" and strength_shortfall_only
+                                ) else
                                 "blocked" if ev["verdict"] == "BLOCK" else "approved"))
-    if ev["verdict"] == "BLOCK" and not legacy:
-        raise GateBlock(f"evidence gate BLOCK: {ev['reasons']}")
+    if ev["verdict"] == "BLOCK" and not legacy and not strength_shortfall_only:
+        raise TargetedGateBlock(
+            f"evidence gate BLOCK: {evidence_reasons}",
+            [{
+                "defect_id": "deep-research-evidence-input",
+                "location": "DISCOVER/evidence-table + source-quality + search-trace",
+                "summary": "Refresh the frozen source set, methodology assessment, and search trace; "
+                           "then refresh every dependent synthesis bundle.",
+                "target_agents": ["lit-scout", "source-quality-ranker", "evidence-search-moderator"],
+                "refresh_agents": [
+                    "model-dataset-scout", "future-work-miner", "cross-domain-transfer-scout",
+                    "weakness-spotter", "claim-extractor", "claim-evidence-linker",
+                    "citation-coverage-auditor", "contradiction-miner", "landscape-mapper",
+                ],
+            }],
+        )
+    # A source-strength shortfall is an important scientific boundary, but it
+    # is not a reason to discard a fully attributed literature landscape.  In
+    # particular, an exploratory research question may deliberately target a
+    # gap for which no existing paper directly proves the proposed mechanism.
+    # Preserve the deterministic BLOCK verdict for promotion/downstream
+    # contracts, then deliver the brief with an explicit caveat.  Citation,
+    # attribution, integrity, and execution failures remain fail-closed below.
+    evidence_block = ev["verdict"] == "BLOCK" and not legacy
 
     cv = build_report(b["claim_list"], b["claim_evidence_map"],
                       resolvable_refs=_shared.resolvable_refs(et))
@@ -562,9 +772,6 @@ def _discover_dets(run_dir, ts, b) -> tuple:
                                 b["contradiction_report"], ts))
     paths.append(write_artifact(run_dir, "DISCOVER", "research-brief.artifact.json",
                                 "research_brief", "landscape-mapper", b["research_brief"], ts))
-    paths.append(write_artifact(run_dir, "DISCOVER", "research-markdown-brief.artifact.json",
-                                "research_markdown_brief", "landscape-mapper",
-                                b["research_markdown_brief"], ts))
     report = {
         "evidence_gate": "LEGACY_UNVERIFIED" if legacy else ev["verdict"],
         "source_methodology_status": source_audit.get("audit_status"),
@@ -587,7 +794,12 @@ def _discover_dets(run_dir, ts, b) -> tuple:
         "fulltext_reads": reads,
         "iterations_used": brief.get("iterations_used", 0),
         "saturation_reached": bool(search_audit.get("semantic_complete")),
+        "representation_normalization": normalization,
     }
+    if evidence_block:
+        report["markdown_delivery_status"] = "USABLE_WITH_CAVEATS"
+        report["evidence_gate_reasons"] = list(ev.get("reasons") or [])
+    render_caveats = []
     try:
         report["director_markdown_brief"] = write_research_brief_markdown(
             run_dir,
@@ -606,10 +818,60 @@ def _discover_dets(run_dir, ts, b) -> tuple:
         report["director_markdown_brief"] = write_research_brief_fallback(
             run_dir, mode="deep_research", reason=str(exc), report=report)
         report["markdown_delivery_status"] = "USABLE_WITH_CAVEATS"
+        render_caveats.append(f"deterministic Markdown fallback used: {exc}")
+
+    markdown_advisory_path = (
+        Path(run_dir) / "inbox" / "deep_research-markdown-quality-advisory.json"
+    )
+    if markdown_advisory_path.is_file():
+        markdown_advisory = _load_json(markdown_advisory_path)
+        advisory_warnings = [
+            str(row) for row in markdown_advisory.get("warnings") or []
+            if str(row).strip()
+        ]
+        render_caveats.extend(advisory_warnings)
+        if markdown_advisory.get("delivery_status") == "USABLE_WITH_CAVEATS":
+            report["markdown_delivery_status"] = "USABLE_WITH_CAVEATS"
+    if evidence_block:
+        render_caveats.extend(str(row) for row in ev.get("reasons") or [])
+
+    rendered_markdown = Path(report["director_markdown_brief"]).read_text(encoding="utf-8")
+    evidence_refs = list(dict.fromkeys(
+        str(source.get("ref") or "").strip()
+        for source in et.get("sources") or []
+        if str(source.get("ref") or "").strip()
+    ))
+    if not evidence_refs:
+        evidence_refs = list(dict.fromkeys(
+            str(ref).strip()
+            for ref in brief.get("evidence_ref") or []
+            if str(ref).strip()
+        ))
+    perspective_ids = list(dict.fromkeys(
+        str(note.get("perspective_id") or "").strip()
+        for note in b["perspective_notes"]
+        if str(note.get("perspective_id") or "").strip()
+    ))
+    markdown_payload = {
+        "topic": str(brief.get("topic") or et.get("query") or "deep research brief"),
+        "markdown": rendered_markdown,
+        "evidence_refs": evidence_refs,
+        "perspective_ids": perspective_ids,
+        "quality_caveats": list(dict.fromkeys(render_caveats)),
+    }
+    paths.append(write_artifact(
+        run_dir, "DISCOVER", "research-markdown-brief.artifact.json",
+        "research_markdown_brief", "deterministic-research-brief-renderer",
+        markdown_payload, ts, "draft" if legacy else "approved",
+    ))
     return paths, report
 
 
 def _report(run_dir, ts) -> tuple:
+    verdict_path = Path(run_dir) / "evidence" / "DISCOVER" / "evidence-verdict.artifact.json"
+    verdict = _load_json(verdict_path) if verdict_path.is_file() else {}
+    verdict_payload = verdict.get("payload") or {}
+    evidence_block = str(verdict_payload.get("verdict") or "") == "BLOCK"
     note = {
         "summary": "deep_research: true perspective panel completed with a structured research brief "
                    "and director-facing Markdown memo.",
@@ -621,6 +883,8 @@ def _report(run_dir, ts) -> tuple:
         ],
         "produced_artifacts": [],
         "open_questions": [],
+        "delivery_status": "USABLE_WITH_CAVEATS" if evidence_block else "USABLE",
+        "delivery_caveats": list(verdict_payload.get("reasons") or []) if evidence_block else [],
     }
     return ([write_artifact(run_dir, "REPORT", "report-note.artifact.json",
                             "report_note", "research-orchestrator", note, ts)], {})

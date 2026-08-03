@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/manuscript_venue_profile_slice.schema.json",
+  "title": "Manuscript Venue Profile Slice",
+  "description": "Closed, hash-bound venue authority slice for a frozen manuscript snapshot. The scout may report official rules and template facts, but cannot select a venue or alter the frozen manuscript contract.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "venue_profile_slice_id",
+    "worker_role",
+    "authorization_receipt",
+    "manuscript_snapshot_sha256",
+    "local_literature_coverage_ref",
+    "local_literature_coverage_sha256",
+    "venue_profile",
+    "venue_profile_slice_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0"
+    },
+    "venue_profile_slice_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "worker_role": {
+      "const": "manuscript-venue-corpus-scout"
+    },
+    "authorization_receipt": {
+      "$ref": "#/$defs/authorization_receipt"
+    },
+    "manuscript_snapshot_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "local_literature_coverage_ref": {
+      "$ref": "#/$defs/safe_ref"
+    },
+    "local_literature_coverage_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "venue_profile": {
+      "$ref": "#/$defs/venue_profile"
+    },
+    "venue_profile_slice_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "safe_ref": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^\\u0000-\\u001f]+$"
+    },
+    "authorization_receipt": {
+      "type": "object",
+      "required": [
+        "ref",
+        "sha256",
+        "worker_role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "worker_role": {
+          "const": "manuscript-venue-corpus-scout"
+        }
+      }
+    },
+    "hashed_reference": {
+      "type": "object",
+      "required": [
+        "ref",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "venue_profile": {
+      "type": "object",
+      "required": [
+        "venue_id",
+        "venue_family",
+        "year",
+        "track",
+        "retrieved_at",
+        "official_rule_refs",
+        "template_ref",
+        "template_sha256",
+        "requires_pdf",
+        "hard_field_policy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "venue_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "venue_family": {
+          "$ref": "#/$defs/identifier"
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 2000,
+          "maximum": 9999
+        },
+        "track": {
+          "$ref": "#/$defs/identifier"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "official_rule_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/hashed_reference"
+          }
+        },
+        "template_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "template_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "requires_pdf": {
+          "type": "boolean"
+        },
+        "hard_field_policy": {
+          "$ref": "#/$defs/hard_field_policy"
+        }
+      }
+    },
+    "hard_field_policy": {
+      "type": "object",
+      "required": [
+        "requires_pdf"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "requires_pdf": {
+          "type": "object",
+          "required": [
+            "classification",
+            "weakenable",
+            "source_ref",
+            "source_sha256"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "classification": {
+              "const": "OFFICIAL_HARD"
+            },
+            "weakenable": {
+              "const": false
+            },
+            "source_ref": {
+              "$ref": "#/$defs/safe_ref"
+            },
+            "source_sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      }
+    }
+  }
+}

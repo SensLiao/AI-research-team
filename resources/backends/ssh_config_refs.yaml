@@ -4,6 +4,7 @@ schema_version: 1
 servers:
   server.honor.gpu:
     host_ref: RAT_SERVER_HOST
+    connect_host_ref: RAT_SERVER_CONNECT_HOST
     port_ref: RAT_SERVER_PORT
     user_ref: RAT_SERVER_USER
     auth: password
@@ -12,3 +13,16 @@ servers:
     scheduler: tmux                 # honor_cron tmux session (not Slurm/PBS)
     read_only_monitor: true         # server-query never runs rm/kill/mv/sudo
     daily_reports_subdir: daily_reports   # <remote_workdir>/daily_reports/{snapshots,training_events,eval_results,logs}
+  server.usyd.bdav_z390_3090:
+    host_ref: RAT_BDAV_Z390_HOST
+    connect_host_ref: RAT_BDAV_Z390_CONNECT_HOST
+    port_ref: RAT_BDAV_Z390_PORT
+    user_ref: RAT_BDAV_Z390_USER
+    auth: password
+    ssh_key_ref: RAT_BDAV_Z390_SSH_KEY
+    known_hosts_ref: RAT_BDAV_Z390_KNOWN_HOSTS
+    remote_workdir_ref: RAT_BDAV_Z390_REMOTE_WORKDIR
+    scheduler_ref: RAT_BDAV_Z390_SCHEDULER
+    read_only_monitor: true
+    status: read_only_verified
+    execution_status: blocked_disk_env_scheduler

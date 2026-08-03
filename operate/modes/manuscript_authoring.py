@@ -58,6 +58,9 @@ ANALYZE_INTEGRATION_ARTIFACT = "evidence/ANALYZE/manuscript-integration.artifact
 ANALYZE_ASSET_ARTIFACT = "evidence/ANALYZE/manuscript-asset-manifest.artifact.json"
 ANALYZE_BUILD_ARTIFACT = "evidence/ANALYZE/manuscript-build-receipt.artifact.json"
 ANALYZE_QUALITY_ARTIFACT = "evidence/ANALYZE/manuscript-quality-report.artifact.json"
+DESIGN_CLAIM_EVIDENCE_MAP_ARTIFACT = "evidence/DESIGN/claim-evidence-map.artifact.json"
+DESIGN_VENUE_PROFILE_SLICE_ARTIFACT = "evidence/DESIGN/manuscript-venue-profile-slice.artifact.json"
+DESIGN_EVIDENCE_SLICE_ARTIFACT = "evidence/DESIGN/manuscript-evidence-slice.artifact.json"
 
 _SECTION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -176,6 +179,100 @@ def _worker_payload(run_dir: str | Path, role: str, *, key: str, section_id: str
 def _artifact_payload(run_dir: str | Path, relative: str, *, required: bool = True) -> dict[str, Any] | None:
     raw = _read_json(run_dir, relative, required=required)
     return None if raw is None else _payload(raw)
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        _fail("ARTIFACT_READ_FAILED", f"cannot hash {path.name}: {type(exc).__name__}")
+    return digest.hexdigest()
+
+
+def _bound_run_reference(run_dir: str | Path, ref: Any, sha256: Any, *, label: str) -> dict[str, str]:
+    """Return a run-owned ref only after its declared bytes re-hash exactly.
+
+    The slice schemas intentionally store generic safe refs.  At this operated
+    boundary we make the scheduler/worker provenance concrete: a reference to
+    a missing, escaped, or later-mutated run file is not admissible evidence.
+    """
+
+    if not isinstance(ref, str) or not ref.strip() or not isinstance(sha256, str) or not _SHA256.fullmatch(sha256):
+        _fail("REFERENCE_HASH_REQUIRED", f"{label} requires a safe ref and SHA-256")
+    portable = ref.replace("\\", "/")
+    path = _path(run_dir, portable)
+    if not path.is_file():
+        _fail("MISSING_ARTIFACT", f"{label} is missing: {portable}")
+    actual = _file_sha256(path)
+    if actual != sha256:
+        _fail("REFERENCE_HASH_MISMATCH", f"{label} hash does not match: {portable}")
+    return {"ref": portable, "sha256": actual}
+
+
+def _authorization_receipt(
+    run_dir: str | Path,
+    slice_seed: Mapping[str, Any],
+    *,
+    worker_role: str,
+    label: str,
+) -> dict[str, str]:
+    receipt = slice_seed.get("authorization_receipt")
+    if not isinstance(receipt, Mapping) or receipt.get("worker_role") != worker_role:
+        _fail("AUTHORIZATION_RECEIPT_REQUIRED", f"{label} lacks the declared {worker_role} authorization receipt")
+    bound = _bound_run_reference(
+        run_dir,
+        receipt.get("ref"),
+        receipt.get("sha256"),
+        label=f"{label} authorization receipt",
+    )
+    return {**bound, "worker_role": worker_role}
+
+
+def _slice_seed(bundle: Mapping[str, Any], key: str, *, label: str) -> dict[str, Any]:
+    value = bundle.get(key)
+    if not isinstance(value, Mapping):
+        _fail("WORKER_BUNDLE_MISSING", f"{label} must include object {key!r}")
+    return copy.deepcopy(dict(value))
+
+
+def _stamped_payload(value: Mapping[str, Any], field: str) -> dict[str, Any]:
+    stamped = copy.deepcopy(dict(value))
+    stamped[field] = _hash(stamped, omit=field)
+    return stamped
+
+
+def _write_schema_artifact(
+    run_dir: str | Path,
+    stage: str,
+    filename: str,
+    artifact_type: str,
+    created_by: str,
+    payload: Mapping[str, Any],
+    ts: str,
+) -> str:
+    """Schema-check a deterministic payload before the normal envelope writer.
+
+    ``write_artifact`` validates again at the persistence boundary.  Keeping a
+    local check gives each operated mode a stable, actionable error before any
+    file is written, while retaining the standard double validation.
+    """
+
+    body = copy.deepcopy(dict(payload))
+    errors = validate_payload(artifact_type, body)
+    if errors:
+        _fail("SLICE_SCHEMA_INVALID", f"{artifact_type}: {errors[0]}")
+    try:
+        return write_artifact(run_dir, stage, filename, artifact_type, created_by, body, ts)
+    except ValueError as exc:
+        _fail("SLICE_SCHEMA_INVALID", f"{artifact_type}: {exc}")
+
+
+def _same_frozen_value(label: str, supplied: Any, frozen: Any) -> None:
+    if supplied != frozen:
+        _fail("FROZEN_SLICE_MISMATCH", f"{label} does not match the frozen manuscript contract")
 
 
 def required_sections_from_contract(contract: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -461,16 +558,12 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str | None = None,
         return {"label": "manuscript-authoring-independent-audits", "workers": workers,
                 "worker_order": [row["label"] for row in workers],
                 "parallel_groups": [[row["label"] for row in workers]], "group_barriers": False}
+    # Submission packaging is a review-run responsibility. The authoring
+    # REPORT stage renders only its frozen manuscript evidence; dispatching
+    # the review-only packager here would give it the wrong run scope and could
+    # not truthfully populate ``review_run_id``.
     if stage == "REPORT":
-        packager = _worker(
-            "manuscript-submission-packager", stage, request,
-            output=_worker_rel("manuscript-submission-packager"),
-            allowed_inputs=[CONTRACT_REL, DISCOVERY_COVERAGE_ARTIFACT, ANALYZE_INTEGRATION_ARTIFACT,
-                            ANALYZE_BUILD_ARTIFACT, ANALYZE_QUALITY_ARTIFACT, VERIFY_SUMMARY_REL],
-        )
-        return {"label": "manuscript-authoring-report", "workers": [packager],
-                "worker_order": [packager["label"]], "parallel_groups": [[packager["label"]]],
-                "group_barriers": False}
+        return None
     return None
 
 
@@ -517,6 +610,147 @@ def _discover_dets(run_dir: str | Path, ts: str) -> tuple[list[str], dict[str, A
     return [path], {"coverage_states": sorted(states), "metadata_search_authorized": bool(plans)}
 
 
+def _write_frozen_slice_artifacts(
+    run_dir: str | Path,
+    frozen: Mapping[str, Any],
+    *,
+    ts: str,
+) -> list[str]:
+    """Persist the two authoring slices only after a contract snapshot exists.
+
+    Scout/steward bundles are planning inputs.  Their final schema artifacts
+    cannot honestly bind a frozen manuscript hash until the architect's draft
+    has passed ``freeze_manuscript_contract``.  This reducer keeps the worker
+    provenance (including a byte-checked authorization receipt), reuses only
+    values that exactly match the frozen contract, and emits the final slices
+    through the normal artifact writer.
+    """
+
+    snapshot = frozen.get("manuscript_snapshot_sha256")
+    run_id = frozen.get("run_id")
+    if not isinstance(snapshot, str) or not _SHA256.fullmatch(snapshot) or not isinstance(run_id, str) or not _SECTION_ID.fullmatch(run_id):
+        _fail("CONTRACT_HASH_MISMATCH", "frozen contract has no valid run id/snapshot hash")
+
+    discovery = _worker_payload(
+        run_dir,
+        "manuscript-venue-corpus-scout",
+        key="manuscript_discovery",
+    )
+    steward = _worker_payload(
+        run_dir,
+        "manuscript-evidence-steward",
+        key="manuscript_evidence_admission",
+    )
+    assert discovery is not None and steward is not None
+
+    coverage = _artifact_payload(run_dir, DISCOVERY_COVERAGE_ARTIFACT)
+    if coverage is None:
+        _fail("MISSING_ARTIFACT", "local literature coverage is required before freezing slices")
+    coverage_errors = validate_payload("local_literature_coverage", coverage)
+    if coverage_errors:
+        _fail("LOCAL_COVERAGE_INVALID", coverage_errors[0])
+    coverage_ref = _bound_run_reference(
+        run_dir,
+        DISCOVERY_COVERAGE_ARTIFACT,
+        _file_sha256(_path(run_dir, DISCOVERY_COVERAGE_ARTIFACT)),
+        label="local literature coverage artifact",
+    )
+
+    venue_seed = _slice_seed(
+        discovery,
+        "manuscript_venue_profile_slice",
+        label="venue scout bundle",
+    )
+    _same_frozen_value("venue profile slice", venue_seed.get("venue_profile"), frozen.get("venue_profile"))
+    venue_receipt = _authorization_receipt(
+        run_dir,
+        venue_seed,
+        worker_role="manuscript-venue-corpus-scout",
+        label="venue profile slice",
+    )
+    venue_slice = _stamped_payload(
+        {
+            "contract_version": "1.0",
+            "venue_profile_slice_id": f"venue-profile-slice-{run_id}",
+            "worker_role": "manuscript-venue-corpus-scout",
+            "authorization_receipt": venue_receipt,
+            "manuscript_snapshot_sha256": snapshot,
+            "local_literature_coverage_ref": coverage_ref["ref"],
+            "local_literature_coverage_sha256": coverage_ref["sha256"],
+            "venue_profile": copy.deepcopy(dict(frozen["venue_profile"])),
+        },
+        "venue_profile_slice_sha256",
+    )
+    venue_path = _write_schema_artifact(
+        run_dir,
+        "DESIGN",
+        "manuscript-venue-profile-slice.artifact.json",
+        "manuscript_venue_profile_slice",
+        "manuscript-venue-corpus-scout",
+        venue_slice,
+        ts,
+    )
+
+    claim_map = steward.get("claim_evidence_map")
+    if not isinstance(claim_map, Mapping):
+        _fail("WORKER_BUNDLE_MISSING", "evidence steward must include claim_evidence_map")
+    claim_map_path = _write_schema_artifact(
+        run_dir,
+        "DESIGN",
+        "claim-evidence-map.artifact.json",
+        "claim_evidence_map",
+        "manuscript-evidence-steward",
+        claim_map,
+        ts,
+    )
+    claim_map_relative = Path(claim_map_path).relative_to(Path(run_dir).absolute()).as_posix()
+    claim_map_ref = _bound_run_reference(
+        run_dir,
+        claim_map_relative,
+        _file_sha256(_path(run_dir, claim_map_relative)),
+        label="claim evidence map artifact",
+    )
+
+    evidence_seed = _slice_seed(
+        steward,
+        "manuscript_evidence_slice",
+        label="evidence steward bundle",
+    )
+    for field in ("evidence_refs", "result_refs", "bibliography"):
+        _same_frozen_value(f"evidence slice {field}", evidence_seed.get(field), frozen.get(field))
+    evidence_receipt = _authorization_receipt(
+        run_dir,
+        evidence_seed,
+        worker_role="manuscript-evidence-steward",
+        label="evidence slice",
+    )
+    evidence_slice = _stamped_payload(
+        {
+            "contract_version": "1.0",
+            "evidence_slice_id": f"evidence-slice-{run_id}",
+            "worker_role": "manuscript-evidence-steward",
+            "authorization_receipt": evidence_receipt,
+            "manuscript_snapshot_sha256": snapshot,
+            "claim_evidence_map_ref": claim_map_ref["ref"],
+            "claim_evidence_map_sha256": claim_map_ref["sha256"],
+            "evidence_refs": copy.deepcopy(frozen["evidence_refs"]),
+            "result_refs": copy.deepcopy(frozen["result_refs"]),
+            "bibliography": copy.deepcopy(dict(frozen["bibliography"])),
+        },
+        "evidence_slice_sha256",
+    )
+    evidence_path = _write_schema_artifact(
+        run_dir,
+        "DESIGN",
+        "manuscript-evidence-slice.artifact.json",
+        "manuscript_evidence_slice",
+        "manuscript-evidence-steward",
+        evidence_slice,
+        ts,
+    )
+    return [venue_path, claim_map_path, evidence_path]
+
+
 def _design_dets(run_dir: str | Path, ts: str) -> tuple[list[str], dict[str, Any]]:
     draft = _worker_payload(run_dir, "manuscript-architect", key="manuscript_contract_draft")
     steward = _worker_payload(run_dir, "manuscript-evidence-steward", key="manuscript_evidence_admission")
@@ -537,7 +771,13 @@ def _design_dets(run_dir: str | Path, ts: str) -> tuple[list[str], dict[str, Any
     _write_json_once(run_dir, ASSIGNMENTS_REL, {"contract_sha256": frozen["manuscript_snapshot_sha256"], "assignments": assignments})
     path = write_artifact(run_dir, "DESIGN", "manuscript-contract.artifact.json", "manuscript_contract",
                           "manuscript-architect", frozen, ts)
-    return [path], {"frozen_contract": CONTRACT_REL, "required_section_count": len(assignments)}
+    slice_paths = _write_frozen_slice_artifacts(run_dir, frozen, ts=ts)
+    return [path, *slice_paths], {
+        "frozen_contract": CONTRACT_REL,
+        "required_section_count": len(assignments),
+        "venue_profile_slice": DESIGN_VENUE_PROFILE_SLICE_ARTIFACT,
+        "evidence_slice": DESIGN_EVIDENCE_SLICE_ARTIFACT,
+    }
 
 
 def _bundle_payloads(run_dir: str | Path, contract: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
@@ -684,7 +924,9 @@ def run_dets_with_repair(run_dir: str, stage: str, ts: str):
 
 __all__ = [
     "ANALYZE_BUILD_ARTIFACT", "ANALYZE_INTEGRATION_ARTIFACT", "ANALYZE_QUALITY_ARTIFACT",
-    "CONTRACT_REL", "DEFAULT_VAULT", "ManuscriptAuthoringError", "SPECIALIZED_SECTION_OWNERS",
+    "CONTRACT_REL", "DEFAULT_VAULT", "DESIGN_CLAIM_EVIDENCE_MAP_ARTIFACT",
+    "DESIGN_EVIDENCE_SLICE_ARTIFACT", "DESIGN_VENUE_PROFILE_SLICE_ARTIFACT",
+    "ManuscriptAuthoringError", "SPECIALIZED_SECTION_OWNERS",
     "STAGES", "assign_section_owners", "integrate_section_bundles", "llm_step", "load_frozen_contract",
     "repair_budget", "required_sections_from_contract", "run_dets", "run_dets_with_repair",
     "validate_section_bundle_closure",

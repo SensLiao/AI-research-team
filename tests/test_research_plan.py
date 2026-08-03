@@ -7,6 +7,7 @@ human gates a chain passes through are surfaced, and one link's output threads i
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -14,6 +15,7 @@ import pytest
 
 from research_agent_teams.tools import research_plan as rp
 from research_agent_teams.tools import runstore
+from research_agent_teams.tools.citation_attribution import build_attribution_report
 
 
 # --------------------------------------------------------------------------- catalog integrity
@@ -186,21 +188,59 @@ def test_propose_for_request_forced_intent():
 
 # --------------------------------------------------------------------------- chain threading
 
+def _write_completed_report_ledger(run_dir: Path, *, completed_stage: str = "REPORT") -> None:
+    """Create a minimally valid, manifest-anchored completed-run ledger fixture."""
+    ledger = run_dir / "ledger.jsonl"
+    if ledger.exists():
+        ledger.unlink()
+    runstore.append_event(
+        ledger, "run_started", {"mode": "deep_research", "entry_stage": "DISCOVER"},
+        "2026-07-13T00:00:00Z",
+    )
+    runstore.append_event(
+        ledger, "task_frame_pinned", {"task_frame_sha256": runstore.hash_file(
+            run_dir / "task_frame.artifact.json")},
+        "2026-07-13T00:00:01Z",
+    )
+    runstore.append_event(
+        ledger, "step_done", {"stage": completed_stage, "artifacts": [], "idempotency_key": "fixture"},
+        "2026-07-13T00:00:02Z",
+    )
+    boundary = runstore.append_event(
+        ledger, "boundary", {"completed_stage": completed_stage, "next": None},
+        "2026-07-13T00:00:03Z",
+    )
+    (run_dir / "manifest.yaml").write_text(
+        f"status: done\nlast_boundary_hash: {boundary['hash']}\n", encoding="utf-8")
+
+
 def _fake_prev_run(tmp_path, run_id="dr-1", mode="deep_research", summary="found 12 strong sources",
                    with_backlog=False):
     rd = tmp_path / "runs" / "proj" / run_id
     (rd / "evidence" / "REPORT").mkdir(parents=True)
+    contract = rp._mode_handoff(mode)
     (rd / "task_frame.artifact.json").write_text(json.dumps(
-        {"payload": {"mode": mode, "request_text": "validate my idea X", "task_id": run_id}}),
+        {"payload": {"mode": mode, "request_text": "validate my idea X", "task_id": run_id,
+                     "product_contract": contract}}),
         encoding="utf-8")
     (rd / "evidence" / "REPORT" / "report-note.artifact.json").write_text(json.dumps(
         {"payload": {"summary": summary}}), encoding="utf-8")
+    primary = str(contract.get("primary_markdown") or "")
+    if primary:
+        primary_path = rd / primary.replace("<paper>", "fixture-paper")
+        primary_path.parent.mkdir(parents=True, exist_ok=True)
+        primary_path.write_text("# Fixture product\n", encoding="utf-8")
+    for name in contract.get("reusable_artifacts") or []:
+        artifact = rd / "evidence" / "DISCOVER" / str(name)
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text("{}", encoding="utf-8")
     if with_backlog:
         (rd / "evidence" / "IDEATE").mkdir(parents=True)
         (rd / "evidence" / "IDEATE" / "idea-backlog.artifact.json").write_text(json.dumps(
             {"payload": {"ranked_ideas": [
                 {"idea_id": "IDEA-1", "summary": "the top idea"},
                 {"idea_id": "IDEA-2", "summary": "the runner up"}]}}), encoding="utf-8")
+    _write_completed_report_ledger(rd)
     return str(rd)
 
 
@@ -220,6 +260,26 @@ def test_upstream_grounding_extracts_summary_and_ideas(tmp_path):
     assert all(row["sha256"].startswith("sha256:") for row in up["artifact_manifest"])
     assert all(not row["run_relative_path"].startswith(str(tmp_path))
                for row in up["artifact_manifest"])
+
+
+def test_gap_breadth_handoff_declares_the_artifact_the_mode_actually_writes(tmp_path):
+    """The gap scan must remain consumable by deep_ideation without a singular/plural mismatch."""
+    contract = rp._mode_handoff("gap_breadth")
+    assert "gap-dossiers.artifact.json" in contract["reusable_artifacts"]
+    assert "gap-dossier.artifact.json" not in contract["reusable_artifacts"]
+
+    prev = _fake_prev_run(tmp_path, mode="gap_breadth")
+    upstream = rp.upstream_grounding(
+        [prev], downstream_mode="deep_ideation"
+    )["upstream_runs"][0]
+    assert "gap-dossiers.artifact.json" not in upstream["missing_declared_artifacts"]
+    assert any(
+        row["run_relative_path"].endswith("gap-dossiers.artifact.json")
+        for row in upstream["artifact_manifest"]
+    )
+    assert rp._mode_handoff("gap_breadth")["accepts_delivery_statuses"] == [
+        "USABLE", "USABLE_WITH_CAVEATS"
+    ]
 
 
 def test_pinned_upstream_product_version_wins_over_current_registry(tmp_path):
@@ -248,15 +308,395 @@ def test_handoff_compatibility_accepts_declared_chain_and_rejects_mismatch(tmp_p
         rp.upstream_grounding([prev], downstream_mode="read_paper_deep")
 
 
+def test_write_upstream_grounding_rejects_incomplete_upstream_for_downstream(tmp_path):
+    """A downstream mode must not treat a running, empty run as established evidence."""
+    prev = Path(_fake_prev_run(tmp_path, mode="deep_research"))
+    frame_path = prev / "task_frame.artifact.json"
+    frame = json.loads(frame_path.read_text(encoding="utf-8"))
+    frame["payload"]["product_contract"] = rp._mode_handoff("deep_research")
+    frame_path.write_text(json.dumps(frame), encoding="utf-8")
+    (prev / "manifest.yaml").write_text("status: running\n", encoding="utf-8")
+    downstream = tmp_path / "runs" / "proj" / "downstream"
+    downstream.mkdir(parents=True)
+    (downstream / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "deep_ideation", "product_contract": rp._mode_handoff("deep_ideation"),
+    }}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="not complete"):
+        rp.write_upstream_grounding(
+            str(downstream), [str(prev)], downstream_mode="deep_ideation")
+
+
+def test_write_upstream_grounding_rejects_missing_upstream_ledger(tmp_path):
+    """A done manifest alone is insufficient: the upstream ledger must be present and valid."""
+    prev = Path(_fake_prev_run(tmp_path, mode="deep_research"))
+    (prev / "ledger.jsonl").unlink()
+    downstream = tmp_path / "runs" / "proj" / "downstream-no-ledger"
+    downstream.mkdir(parents=True)
+    (downstream / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "deep_ideation", "product_contract": rp._mode_handoff("deep_ideation"),
+    }}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="upstream ledger"):
+        rp.write_upstream_grounding(
+            str(downstream), [str(prev)], downstream_mode="deep_ideation")
+
+
+def test_write_upstream_grounding_rejects_tampered_upstream_ledger_chain(tmp_path):
+    """An upstream ledger with a modified event cannot be used merely because REPORT exists."""
+    prev = Path(_fake_prev_run(tmp_path, mode="deep_research"))
+    ledger_path = prev / "ledger.jsonl"
+    events = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines()]
+    events[0]["payload"]["mode"] = "tampered-mode"
+    ledger_path.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
+    downstream = tmp_path / "runs" / "proj" / "downstream-tampered-ledger"
+    downstream.mkdir(parents=True)
+    (downstream / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "deep_ideation", "product_contract": rp._mode_handoff("deep_ideation"),
+    }}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="upstream ledger chain"):
+        rp.write_upstream_grounding(
+            str(downstream), [str(prev)], downstream_mode="deep_ideation")
+
+
+def test_write_upstream_grounding_rejects_upstream_without_report_boundary(tmp_path):
+    """A hash-valid upstream ledger still cannot hand off before its REPORT boundary."""
+    prev = Path(_fake_prev_run(tmp_path, mode="deep_research"))
+    _write_completed_report_ledger(prev, completed_stage="DISCOVER")
+    downstream = tmp_path / "runs" / "proj" / "downstream-no-report"
+    downstream.mkdir(parents=True)
+    (downstream / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "deep_ideation", "product_contract": rp._mode_handoff("deep_ideation"),
+    }}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="REPORT completion"):
+        rp.write_upstream_grounding(
+            str(downstream), [str(prev)], downstream_mode="deep_ideation")
+
+
+def test_caveated_completed_research_brief_is_explicitly_handed_to_deep_ideation(tmp_path):
+    """Caveated research is usable for ideation only when the consumer opts in explicitly."""
+    prev = Path(_fake_prev_run(tmp_path, mode="deep_research"))
+    frame_path = prev / "task_frame.artifact.json"
+    frame = json.loads(frame_path.read_text(encoding="utf-8"))
+    frame["payload"]["product_contract"] = rp._mode_handoff("deep_research")
+    frame_path.write_text(json.dumps(frame), encoding="utf-8")
+    report = prev / "evidence" / "REPORT" / "report-note.artifact.json"
+    report.write_text(json.dumps({"payload": {
+        "summary": "bounded research landscape",
+        "delivery_status": "USABLE_WITH_CAVEATS",
+        "delivery_caveats": ["no high-strength source directly proves the proposed mechanism"],
+    }}), encoding="utf-8")
+    (prev / "director-review" / "research").mkdir(parents=True, exist_ok=True)
+    (prev / "director-review" / "research" / "research-brief.md").write_text(
+        "# Caveated research brief\n", encoding="utf-8")
+    for name in rp._mode_handoff("deep_research")["reusable_artifacts"]:
+        path = prev / "evidence" / "DISCOVER" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+
+    downstream = tmp_path / "runs" / "proj" / "downstream-caveated"
+    downstream.mkdir(parents=True)
+    (downstream / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "deep_ideation", "product_contract": rp._mode_handoff("deep_ideation"),
+    }}), encoding="utf-8")
+
+    path = rp.write_upstream_grounding(
+        str(downstream), [str(prev)], downstream_mode="deep_ideation")
+    grounding = json.loads(Path(path).read_text(encoding="utf-8"))
+    upstream = grounding["upstream_runs"][0]
+    assert upstream["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert upstream["delivery_caveats"]
+    assert rp.validate_upstream_grounding(grounding) == []
+    assert "landscape-map.artifact.json" not in upstream["missing_declared_artifacts"]
+
+
 def test_handoff_hash_change_blocks_downstream_reuse(tmp_path):
     prev = _fake_prev_run(tmp_path)
     new_run = tmp_path / "runs" / "proj" / "nd-hash"
     new_run.mkdir(parents=True)
+    (new_run / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "deep_ideation", "product_contract": rp._mode_handoff("deep_ideation"),
+    }}), encoding="utf-8")
     rp.write_upstream_grounding(str(new_run), [prev], downstream_mode="deep_ideation")
     report = Path(prev) / "evidence" / "REPORT" / "report-note.artifact.json"
     report.write_text('{"payload":{"summary":"replaced after handoff"}}', encoding="utf-8")
     with pytest.raises(ValueError, match="handoff integrity failed"):
         rp.augment_worker_with_upstream({"prompt": "BODY"}, str(new_run))
+
+
+def test_upstream_grounding_materializes_hash_verified_citation_snapshot(tmp_path):
+    """A downstream run can re-open a hash-pinned upstream citation snapshot locally."""
+    prev = Path(_fake_prev_run(tmp_path))
+    quote = "An exact upstream citation snapshot."
+    source = prev / "inbox" / "citation-snapshots" / "fulltext-contexts.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text(quote, encoding="utf-8")
+    document_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+
+    claim_map = prev / "evidence" / "DISCOVER" / "claim-evidence-map.artifact.json"
+    claim_map.parent.mkdir(parents=True, exist_ok=True)
+    claim_map.write_text(json.dumps({
+        "artifact_type": "claim_evidence_map",
+        "status": "approved",
+        "payload": {
+            "attribution_contract_version": "claim-span/v1",
+            "mappings": [{
+                "claim_id": "C1",
+                "overall_support": "supported",
+                "loci": [{
+                    "locus_id": "L1",
+                    "source_ref": "doi:10.1/upstream",
+                    "location": "snapshot",
+                    "kind": "text",
+                    "reported_result": quote,
+                    "supports_claim": True,
+                    "support_relation": "entails",
+                    "directness": "direct",
+                    "span_id": "SPAN-1",
+                    "snapshot_ref": "inbox/citation-snapshots/fulltext-contexts.txt",
+                    "document_hash": document_hash,
+                    "parser_version": "utf-8-char/v1",
+                    "char_start": 0,
+                    "char_end": len(quote),
+                    "exact_quote": quote,
+                }],
+            }],
+        },
+    }), encoding="utf-8")
+
+    downstream = tmp_path / "runs" / "proj" / "downstream"
+    downstream.mkdir(parents=True)
+    grounding_path = Path(rp.write_upstream_grounding(str(downstream), [str(prev)]))
+    grounding = json.loads(grounding_path.read_text(encoding="utf-8"))
+
+    bridge = grounding["citation_snapshot_handoff"]
+    materialized_manifest = downstream / bridge["manifest_ref"]
+    manifest = json.loads(materialized_manifest.read_text(encoding="utf-8"))
+    assert bridge["n_snapshots"] == 1
+    assert manifest["contract_version"] == "upstream-citation-snapshot/v1"
+    local_ref = manifest["snapshots"][0]["local_snapshot_ref"]
+    assert (downstream / local_ref).read_text(encoding="utf-8") == quote
+    rebased = json.loads((downstream / manifest["rebased_claim_maps"][0]["local_claim_map_ref"])
+                         .read_text(encoding="utf-8"))
+    rebased_locus = rebased["payload"]["mappings"][0]["loci"][0]
+    assert rebased_locus["snapshot_ref"] == local_ref
+    assert rebased_locus["document_hash"] == document_hash
+    assert rp.validate_materialized_citation_snapshots(downstream, grounding) == []
+    report = build_attribution_report(
+        {"claims": [{"claim_id": "C1", "text": "The upstream claim is supported.",
+                     "source_ref": "doi:10.1/upstream"}]},
+        rebased["payload"],
+        {"contract_version": "citation-attribution/v1", "independent_of_linker": True,
+         "claim_results": [{"claim_id": "C1", "verdict": "entails", "locator_verified": True,
+                            "verified_locus_ids": ["L1"], "unsupported_locus_ids": [],
+                            "notes": "Independent reread."}]},
+        run_dir=downstream,
+    )
+    assert report["verdict"] == "PASS"
+
+
+def test_materialization_uses_the_same_claim_map_bytes_it_hashes(tmp_path, monkeypatch):
+    """A map replaced between hashing and parsing cannot redirect the imported snapshot set."""
+    prev = Path(_fake_prev_run(tmp_path))
+    source_dir = prev / "inbox" / "citation-snapshots"
+    source_dir.mkdir(parents=True)
+    first = source_dir / "first.txt"
+    second = source_dir / "second.txt"
+    first.write_text("first snapshot", encoding="utf-8")
+    second.write_text("second snapshot", encoding="utf-8")
+    first_hash = hashlib.sha256(first.read_bytes()).hexdigest()
+    second_hash = hashlib.sha256(second.read_bytes()).hexdigest()
+    claim_map = prev / "evidence" / "DISCOVER" / "claim-evidence-map.artifact.json"
+    claim_map.parent.mkdir(parents=True, exist_ok=True)
+
+    def map_payload(snapshot_name, digest):
+        return {
+            "artifact_type": "claim_evidence_map",
+            "status": "approved",
+            "payload": {
+                "attribution_contract_version": "claim-span/v1",
+                "mappings": [{"claim_id": "C1", "loci": [{
+                    "snapshot_ref": f"inbox/citation-snapshots/{snapshot_name}",
+                    "document_hash": digest,
+                }]}],
+            },
+        }
+
+    original_payload = map_payload("first.txt", first_hash)
+    replacement_payload = map_payload("second.txt", second_hash)
+    claim_map.write_text(json.dumps(original_payload), encoding="utf-8")
+    grounding = rp.upstream_grounding([str(prev)])
+    original_read_json = rp._read_json
+
+    def swap_claim_map_before_parse(path):
+        if Path(path) == claim_map:
+            claim_map.write_text(json.dumps(replacement_payload), encoding="utf-8")
+        return original_read_json(path)
+
+    # This reproduces the old hash-then-second-read race deterministically without a timing race.
+    monkeypatch.setattr(rp, "_read_json", swap_claim_map_before_parse)
+    downstream = tmp_path / "runs" / "proj" / "downstream-single-read"
+    (downstream / "inbox").mkdir(parents=True)
+    bridge = rp.materialize_upstream_citation_snapshots(downstream, grounding)
+    manifest = json.loads((downstream / bridge["manifest_ref"]).read_text(encoding="utf-8"))
+    assert [row["document_hash"] for row in manifest["snapshots"]] == [first_hash]
+
+
+def test_upstream_grounding_refuses_mismatched_citation_snapshot_hash(tmp_path):
+    """A changed upstream snapshot never creates a partial downstream evidence copy."""
+    prev = Path(_fake_prev_run(tmp_path))
+    source = prev / "inbox" / "citation-snapshots" / "fulltext-contexts.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("changed source", encoding="utf-8")
+    claim_map = prev / "evidence" / "DISCOVER" / "claim-evidence-map.artifact.json"
+    claim_map.parent.mkdir(parents=True, exist_ok=True)
+    claim_map.write_text(json.dumps({
+        "artifact_type": "claim_evidence_map",
+        "status": "approved",
+        "payload": {
+            "attribution_contract_version": "claim-span/v1",
+            "mappings": [{"claim_id": "C1", "loci": [{
+                "snapshot_ref": "inbox/citation-snapshots/fulltext-contexts.txt",
+                "document_hash": "0" * 64,
+            }]}],
+        },
+    }), encoding="utf-8")
+    downstream = tmp_path / "runs" / "proj" / "downstream"
+    downstream.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="snapshot hash mismatch"):
+        rp.write_upstream_grounding(str(downstream), [str(prev)])
+    assert not (downstream / "inbox" / "citation-snapshots" / "upstream").exists()
+
+
+def test_augment_worker_rejects_tampered_handoff_ledger_chain(tmp_path):
+    """Changing both grounding and its pin payload without rehashing the ledger is rejected."""
+    prev = _fake_prev_run(tmp_path)
+    runs = tmp_path / "runs"
+    runstore.create_run(runs, "downstream", "deep_research", "DISCOVER", "2026-07-13T00:00:00Z",
+                        project="proj")
+    downstream = runs / "proj" / "downstream"
+    grounding_path = Path(rp.write_upstream_grounding(str(downstream), [prev]))
+    runstore.pin_upstream_grounding(downstream, grounding_path, "2026-07-13T00:00:01Z")
+
+    grounding = json.loads(grounding_path.read_text(encoding="utf-8"))
+    grounding["tamper_note"] = "changed after the handoff was pinned"
+    grounding_path.write_text(json.dumps(grounding), encoding="utf-8")
+    ledger_path = downstream / "ledger.jsonl"
+    events = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines()]
+    pin = next(event for event in events if event["event_type"] == "upstream_handoff_pinned")
+    pin["payload"]["grounding_sha256"] = runstore.hash_file(grounding_path)
+    ledger_path.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="ledger chain"):
+        rp.augment_worker_with_upstream({"prompt": "BODY"}, str(downstream))
+
+
+def test_materialization_rejects_claim_map_outside_declared_upstream_run(tmp_path):
+    """An absolute artifact path cannot redirect a handoff to another directory."""
+    prev = Path(_fake_prev_run(tmp_path))
+    source = prev / "inbox" / "citation-snapshots" / "fulltext-contexts.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("quoted upstream evidence", encoding="utf-8")
+    document_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    payload = {
+        "artifact_type": "claim_evidence_map",
+        "status": "approved",
+        "payload": {
+            "attribution_contract_version": "claim-span/v1",
+            "mappings": [{"claim_id": "C1", "loci": [{
+                "snapshot_ref": "inbox/citation-snapshots/fulltext-contexts.txt",
+                "document_hash": document_hash,
+            }]}],
+        },
+    }
+    local_map = prev / "evidence" / "DISCOVER" / "claim-evidence-map.artifact.json"
+    local_map.parent.mkdir(parents=True, exist_ok=True)
+    local_map.write_text(json.dumps(payload), encoding="utf-8")
+    external_map = tmp_path / "external-claim-map.json"
+    external_map.write_text(json.dumps(payload), encoding="utf-8")
+    grounding = rp.upstream_grounding([str(prev)])
+    item = next(row for row in grounding["upstream_runs"][0]["artifact_manifest"]
+                if row["artifact_type"] == "claim_evidence_map")
+    item["path"] = str(external_map)
+    item["sha256"] = "sha256:" + hashlib.sha256(external_map.read_bytes()).hexdigest()
+    downstream = tmp_path / "runs" / "proj" / "downstream"
+    downstream.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="outside the declared upstream run"):
+        rp.materialize_upstream_citation_snapshots(downstream, grounding)
+
+
+def test_materialization_keeps_final_handoff_absent_if_staging_write_fails(tmp_path, monkeypatch):
+    """A failed multi-snapshot import cannot expose a partially written handoff."""
+    prev = Path(_fake_prev_run(tmp_path))
+    snap_dir = prev / "inbox" / "citation-snapshots"
+    snap_dir.mkdir(parents=True)
+    first = snap_dir / "first.txt"
+    second = snap_dir / "second.txt"
+    first.write_text("first evidence", encoding="utf-8")
+    second.write_text("second evidence", encoding="utf-8")
+    claim_map = prev / "evidence" / "DISCOVER" / "claim-evidence-map.artifact.json"
+    claim_map.parent.mkdir(parents=True, exist_ok=True)
+    claim_map.write_text(json.dumps({
+        "artifact_type": "claim_evidence_map",
+        "status": "approved",
+        "payload": {
+            "attribution_contract_version": "claim-span/v1",
+            "mappings": [{"claim_id": "C1", "loci": [
+                {"snapshot_ref": "inbox/citation-snapshots/first.txt",
+                 "document_hash": hashlib.sha256(first.read_bytes()).hexdigest()},
+                {"snapshot_ref": "inbox/citation-snapshots/second.txt",
+                 "document_hash": hashlib.sha256(second.read_bytes()).hexdigest()},
+            ]}],
+        },
+    }), encoding="utf-8")
+    grounding = rp.upstream_grounding([str(prev)])
+    downstream = tmp_path / "runs" / "proj" / "downstream"
+    (downstream / "inbox").mkdir(parents=True)
+    original = rp._write_bytes_atomic
+    calls = {"count": 0}
+
+    def fail_second_snapshot(root, ref, value, *, label):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise OSError("simulated staging write failure")
+        return original(root, ref, value, label=label)
+
+    monkeypatch.setattr(rp, "_write_bytes_atomic", fail_second_snapshot)
+    with pytest.raises(OSError, match="staging write failure"):
+        rp.materialize_upstream_citation_snapshots(downstream, grounding)
+    assert not (downstream / "inbox" / "upstream-citation-handoff").exists()
+    assert not list((downstream / "inbox").glob(".upstream-citation-handoff-*"))
+
+
+def test_write_upstream_grounding_checks_a_reparse_parent_before_any_mkdir(tmp_path, monkeypatch):
+    """Portable stand-in for a Windows junction, which CI may lack permission to create."""
+    prev = _fake_prev_run(tmp_path)
+    downstream = tmp_path / "runs" / "proj" / "downstream-reparse"
+    inbox = downstream / "inbox"
+    inbox.mkdir(parents=True)
+    (downstream / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "deep_ideation", "product_contract": rp._mode_handoff("deep_ideation"),
+    }}), encoding="utf-8")
+    original_reparse = rp._is_reparse_point
+    original_mkdir = Path.mkdir
+
+    def fake_reparse(path):
+        return Path(path) == inbox or original_reparse(path)
+
+    def fail_if_unchecked_inbox_mkdir(path, *args, **kwargs):
+        if Path(path) == inbox:
+            raise AssertionError("unsafe inbox mkdir before reparse check")
+        return original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(rp, "_is_reparse_point", fake_reparse)
+    monkeypatch.setattr(Path, "mkdir", fail_if_unchecked_inbox_mkdir)
+    with pytest.raises(ValueError, match="symlink or junction"):
+        rp.write_upstream_grounding(
+            str(downstream), [prev], downstream_mode="deep_ideation")
 
 
 def test_handoff_manifest_itself_is_ledger_pinned(tmp_path):
@@ -297,9 +737,12 @@ def test_upstream_grounding_robust_to_empty_run(tmp_path):
 
 def test_write_and_augment_single_worker(tmp_path):
     prev = _fake_prev_run(tmp_path)
-    new_run = tmp_path / "runs" / "proj" / "nd-2"
-    new_run.mkdir(parents=True)
-    rp.write_upstream_grounding(str(new_run), [prev])
+    runs = tmp_path / "runs"
+    runstore.create_run(runs, "nd-2", "deep_research", "DISCOVER", "2026-07-13T00:00:00Z",
+                        project="proj")
+    new_run = runs / "proj" / "nd-2"
+    grounding = rp.write_upstream_grounding(str(new_run), [prev])
+    runstore.pin_upstream_grounding(new_run, grounding, "2026-07-13T00:00:01Z")
     worker = {"label": "x", "prompt": "ORIGINAL PROMPT BODY"}
     out = rp.augment_worker_with_upstream(worker, str(new_run))
     assert "ORIGINAL PROMPT BODY" in out["prompt"]
@@ -309,9 +752,12 @@ def test_write_and_augment_single_worker(tmp_path):
 
 def test_augment_panel_worker(tmp_path):
     prev = _fake_prev_run(tmp_path)
-    new_run = tmp_path / "runs" / "proj" / "nd-3"
-    new_run.mkdir(parents=True)
-    rp.write_upstream_grounding(str(new_run), [prev])
+    runs = tmp_path / "runs"
+    runstore.create_run(runs, "nd-3", "deep_research", "DISCOVER", "2026-07-13T00:00:00Z",
+                        project="proj")
+    new_run = runs / "proj" / "nd-3"
+    grounding = rp.write_upstream_grounding(str(new_run), [prev])
+    runstore.pin_upstream_grounding(new_run, grounding, "2026-07-13T00:00:01Z")
     worker = {"workers": [{"prompt": "A"}, {"prompt": "B"}], "panel_note": "n"}
     out = rp.augment_worker_with_upstream(worker, str(new_run))
     assert all("PRIOR CHAIN CONTEXT" in w["prompt"] for w in out["workers"])
@@ -320,9 +766,12 @@ def test_augment_panel_worker(tmp_path):
 
 def test_augment_panel_sends_full_upstream_only_to_root_workers(tmp_path):
     prev = _fake_prev_run(tmp_path)
-    new_run = tmp_path / "runs" / "proj" / "nd-4"
-    new_run.mkdir(parents=True)
-    rp.write_upstream_grounding(str(new_run), [prev])
+    runs = tmp_path / "runs"
+    runstore.create_run(runs, "nd-4", "deep_research", "DISCOVER", "2026-07-13T00:00:00Z",
+                        project="proj")
+    new_run = runs / "proj" / "nd-4"
+    grounding = rp.write_upstream_grounding(str(new_run), [prev])
+    runstore.pin_upstream_grounding(new_run, grounding, "2026-07-13T00:00:01Z")
     panel = {"workers": [
         {"label": "root", "prompt": "ROOT"},
         {"label": "child", "prompt": "CHILD", "depends_on": ["root"]},

@@ -1,9 +1,10 @@
 """Director-facing Markdown renderer for the /idea-bet decision surface.
 
 The canonical machine evidence stays under evidence/<STAGE>/*.artifact.json.
-This file writes only the human review page:
+This file writes a short decision landing page plus one human card per direction:
 
     director-review/ideas/idea-bet-menu.md
+    director-review/ideas/cards/direction-01.md
 
 It is deliberately descriptive. It never records a selected idea and never writes
 the vault/database.
@@ -15,11 +16,15 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from research_agent_teams.operate.output_versions import resolve_effective_output
+
 from .idea_quality_eval import build_quality_eval
 from .scientific_investment_score import validate_assessments
 
 
 IDEA_BET_REL = Path("director-review") / "ideas" / "idea-bet-menu.md"
+IDEA_CARDS_REL = Path("director-review") / "ideas" / "cards"
+IDEA_BET_ADVISORY_REL = Path("inbox") / "idea-bet-markdown-quality-advisory.json"
 MEMO_CONTRACT_VERSION = "idea-investment-memo/v2"
 REQUIRED_HEADINGS = [
     "## Decision Snapshot",
@@ -119,7 +124,12 @@ def _grounding_by_id(grounding: dict) -> dict[str, dict]:
 
 
 def _bundle(run_path: Path, stem: str) -> dict:
-    data = _read_json(run_path / "inbox" / f"{stem}.bundle.json")
+    logical = run_path / "inbox" / f"{stem}.bundle.json"
+    try:
+        path = resolve_effective_output(run_path, "IDEATE", logical)
+    except ValueError as exc:
+        raise ValueError(f"supplement lineage BLOCK: {exc}") from exc
+    data = _read_json(path)
     return data if isinstance(data, dict) else {}
 
 
@@ -415,7 +425,17 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
             f"| {_table_cell(first)} | {_table_cell(kill)} | {_table_cell(branch)} |"
         )
 
+    lines.extend(["", "## Individual Idea Cards", ""])
+    for idea in ranked:
+        iid = str(idea.get("idea_id") or "")
+        proposal = proposal_by.get(iid) or idea
+        title = _text(proposal.get("summary") or idea.get("summary"), "Untitled direction")
+        lines.append(
+            f"- [{title}](./cards/direction-{int(idea.get('rank') or 0):02d}.md)"
+        )
     lines.extend([
+        "",
+        "以下详细内容保留在组合页中以便横向检索；正常阅读请优先打开上面的单独卡片。",
         "",
         "## Candidate Ideas",
         "",
@@ -738,12 +758,81 @@ def lint_idea_bet_menu(run_dir) -> list[str]:
     return errors
 
 
+def _idea_bet_gate_blockers(errors: list[str]) -> list[str]:
+    """Keep scientific and human-authority defects out of the /idea-bet gate."""
+    presentation_prefixes = (
+        "missing heading:",
+        "idea-bet Markdown menu is too short",
+        "expected ",
+    )
+    return [
+        error
+        for error in errors
+        if not error.startswith(presentation_prefixes)
+        and "missing investment memo field:" not in error
+    ]
+
+
+def _write_markdown_advisory(
+    run_path: Path, errors: list[str], gate_blockers: list[str]
+) -> None:
+    advisory = {
+        "contract_version": "research-markdown-advisory/v1",
+        "delivery_blocking": False,
+        "delivery_status": "USABLE" if not errors else "USABLE_WITH_CAVEATS",
+        "gate_ready": not gate_blockers,
+        "gate_blockers": list(gate_blockers),
+        "warnings": list(errors),
+    }
+    out = run_path / IDEA_BET_ADVISORY_REL
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(advisory, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_individual_idea_cards(text: str, cards_dir: Path) -> list[Path]:
+    """Split the detailed portfolio into timeless, human-readable direction cards."""
+    pattern = re.compile(
+        r"^### Direction (\d+) \| (.+?)\n<!-- idea_key: ([^>]+) -->\n(.*?)"
+        r"(?=^### Direction \d+ \||^## Cut Before Betting)",
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    for match in pattern.finditer(text):
+        rank, title, idea_key, body = match.groups()
+        body = re.sub(r"^##### ", "### ", body, flags=re.MULTILINE)
+        body = re.sub(r"^#### ", "## ", body, flags=re.MULTILINE)
+        card = "\n".join([
+            f"# {title.strip()}",
+            f"<!-- idea_key: {idea_key.strip()} -->",
+            "",
+            "> 这是一张候选研究方向卡，用于判断是否值得投入；它不代表系统已经替人做出研究押注。",
+            body.strip(),
+            "",
+        ])
+        path = cards_dir / f"direction-{int(rank):02d}.md"
+        path.write_text(card, encoding="utf-8")
+        written.append(path)
+    return written
+
+
 def write_idea_bet_menu(run_dir, generated_at: Optional[str] = None) -> str:
     run_path = Path(run_dir)
     out = idea_bet_menu_path(run_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(build_idea_bet_menu_markdown(run_path, generated_at=generated_at), encoding="utf-8")
+    text = build_idea_bet_menu_markdown(run_path, generated_at=generated_at)
+    out.write_text(text, encoding="utf-8")
+    cards = _write_individual_idea_cards(text, run_path / IDEA_CARDS_REL)
     errors = lint_idea_bet_menu(run_path)
-    if errors:
-        raise ValueError(f"idea-bet Markdown BLOCK: {errors}")
+    backlog = _stage_payload(run_path, "IDEATE", "idea-backlog.artifact.json")
+    expected = len(backlog.get("ranked_ideas") or [])
+    if len(cards) != expected:
+        errors.append(f"expected {expected} individual idea cards, wrote {len(cards)}")
+    gate_blockers = _idea_bet_gate_blockers(errors)
+    _write_markdown_advisory(run_path, errors, gate_blockers)
+    if gate_blockers:
+        raise ValueError(f"idea-bet human gate BLOCK: {gate_blockers}")
     return str(out)

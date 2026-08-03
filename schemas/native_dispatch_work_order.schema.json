@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-agent-teams.local/schemas/native_dispatch_work_order.schema.json",
+  "title": "Native collaboration dispatch work order",
+  "description": "Immutable pre-dispatch record. It binds one role to the actual collaboration agent identity, frozen input, scheduler authorization, dependency outputs, nonce and an absent output path. It contains no provider-usage claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "work_order_id",
+    "stage",
+    "role",
+    "applicability",
+    "agent_id",
+    "canonical_agent_task_name",
+    "input_packet_path",
+    "input_packet_sha256",
+    "authorization_path",
+    "authorization_sha256",
+    "nonce",
+    "dependencies",
+    "expected_output_path",
+    "authorized_at",
+    "recorded_at",
+    "output_precondition",
+    "runtime_usage"
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "safeRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:|/|\\\\)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"
+    },
+    "runtimeUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "UNOBSERVED"
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "work_order_id",
+        "role",
+        "output_sha256"
+      ],
+      "properties": {
+        "work_order_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "output_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "native-dispatch-work-order/v1"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "work_order_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "stage": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "role": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "applicability": {
+      "enum": [
+        "APPLICABLE",
+        "RESULT_ROLE_NO_EXECUTOR"
+      ]
+    },
+    "agent_id": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "canonical_agent_task_name": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/[A-Za-z0-9._/-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "input_packet_path": {
+      "$ref": "#/$defs/safeRelativePath"
+    },
+    "input_packet_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authorization_path": {
+      "$ref": "#/$defs/safeRelativePath"
+    },
+    "authorization_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{32,256}$"
+    },
+    "dependencies": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/dependency"
+      }
+    },
+    "expected_output_path": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/safeRelativePath"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "authorized_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "output_precondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exists_at_authorization",
+        "checked_at"
+      ],
+      "properties": {
+        "exists_at_authorization": {
+          "const": false
+        },
+        "checked_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "runtime_usage": {
+      "$ref": "#/$defs/runtimeUsage"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "applicability": {
+            "const": "APPLICABLE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "canonical_agent_task_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_output_path": {
+            "$ref": "#/$defs/safeRelativePath"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "applicability": {
+            "const": "RESULT_ROLE_NO_EXECUTOR"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "agent_id": {
+            "type": "null"
+          },
+          "canonical_agent_task_name": {
+            "type": "null"
+          },
+          "expected_output_path": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

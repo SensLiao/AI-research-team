@@ -117,12 +117,14 @@ IDEATE_BUNDLE = {
 COLLISION_BUNDLE = {
     "findings": [{"idea_id": "IDEA-1", "method_combination": "LoRA on promptable 3D seg",
                   "application": "canal segmentation", "domain": "medical imaging",
-                  "queries": ["LoRA promptable 3D segmentation"], "verdict": "clear", "colliding_papers": [],
-                  "confidence": "medium", "retrieval_note": "offline — vault only"},
+                  "queries": ["LoRA promptable 3D segmentation"], "verdict": "unverified", "colliding_papers": [],
+                  "confidence": "medium", "retrieval_status": "unavailable",
+                  "retrieval_note": "offline — vault only"},
                  {"idea_id": "IDEA-2", "method_combination": "fair-budget benchmark",
                   "application": "SAM medical", "domain": "medical imaging",
-                  "queries": ["fair budget SAM medical benchmark"], "verdict": "clear", "colliding_papers": [],
-                  "confidence": "medium", "retrieval_note": "offline — vault only"}],
+                  "queries": ["fair budget SAM medical benchmark"], "verdict": "unverified", "colliding_papers": [],
+                  "confidence": "medium", "retrieval_status": "unavailable",
+                  "retrieval_note": "offline — vault only"}],
     "evidence_ref": ["inbox/COLLISION.bundle.json"],
 }
 
@@ -214,6 +216,7 @@ def test_deep_ideation_runs_discover_ideate_report_end_to_end(tmp_path):
     menu_text = menu.read_text(encoding="utf-8")
     assert "Minimal experiment sketch" in menu_text
     assert "Falsifier:" in menu_text
+    assert len(list(Path(rd, "director-review", "ideas", "cards").glob("direction-*.md"))) == 2
 
     rpaths, _ = deep_ideation.run_dets(rd, "REPORT", TS)
     gsc = _payload(rd, "REPORT", "global-quality-scorecard.artifact.json")

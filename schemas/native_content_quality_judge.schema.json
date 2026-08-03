@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-agent-teams.local/schemas/native_content_quality_judge.schema.json",
+  "title": "Single-project native content-quality blind judge sheet",
+  "description": "One descriptive-only blind review of two candidates for a single frozen project case. It is not an inferential A/B experiment and carries no provider-usage claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "rubric_version",
+    "analysis_mode",
+    "inferential_statistics_claimed",
+    "evaluation_id",
+    "project_id",
+    "case_id",
+    "judge_id",
+    "judge_role",
+    "agent_id",
+    "canonical_agent_task_name",
+    "packet_sha256",
+    "blindness_attestation",
+    "runtime_usage",
+    "candidates",
+    "winner",
+    "winner_rationale",
+    "findings",
+    "overall_notes"
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "runtimeUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "UNOBSERVED"
+        }
+      }
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Q1",
+        "Q2",
+        "Q3",
+        "Q4",
+        "Q5",
+        "Q6",
+        "Q7",
+        "Q8"
+      ],
+      "properties": {
+        "Q1": {"type": "integer", "minimum": 0, "maximum": 4},
+        "Q2": {"type": "integer", "minimum": 0, "maximum": 4},
+        "Q3": {"type": "integer", "minimum": 0, "maximum": 4},
+        "Q4": {"type": "integer", "minimum": 0, "maximum": 4},
+        "Q5": {"type": "integer", "minimum": 0, "maximum": 4},
+        "Q6": {"type": "integer", "minimum": 0, "maximum": 4},
+        "Q7": {"type": "integer", "minimum": 0, "maximum": 4},
+        "Q8": {"type": "integer", "minimum": 0, "maximum": 4}
+      }
+    },
+    "fatalDefect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "summary",
+        "locator"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "const": "FATAL"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scores",
+        "fatal_defects",
+        "rationale"
+      ],
+      "properties": {
+        "scores": {
+          "$ref": "#/$defs/scores"
+        },
+        "fatal_defects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fatalDefect"
+          }
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "replication_key",
+        "candidate",
+        "kind",
+        "substantive",
+        "severity",
+        "summary",
+        "locator",
+        "repair"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "replication_key": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "candidate": {
+          "enum": [
+            "X",
+            "Y",
+            "BOTH",
+            "SYSTEM"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "SUBSTANTIVE_DESIGN",
+            "TRUTH",
+            "SCOPE",
+            "SAFETY",
+            "REPRODUCIBILITY",
+            "STYLE"
+          ]
+        },
+        "substantive": {
+          "type": "boolean"
+        },
+        "severity": {
+          "enum": [
+            "CRITICAL",
+            "HIGH",
+            "MEDIUM",
+            "LOW"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repair": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "STYLE"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "substantive": {
+                "const": false
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "substantive": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "native-content-quality-judge/v1"
+    },
+    "rubric_version": {
+      "const": "native-content-quality-rubric/v1"
+    },
+    "analysis_mode": {
+      "const": "SINGLE_PROJECT_DESCRIPTIVE_ONLY"
+    },
+    "inferential_statistics_claimed": {
+      "const": false
+    },
+    "evaluation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "judge_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "judge_role": {
+      "enum": [
+        "domain_mechanism",
+        "methods_statistics",
+        "evidence_integrity"
+      ]
+    },
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonical_agent_task_name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^/[A-Za-z0-9._/-]+$"
+    },
+    "packet_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "blindness_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "condition_mapping_not_seen",
+        "runtime_data_not_seen",
+        "sibling_review_data_not_seen"
+      ],
+      "properties": {
+        "condition_mapping_not_seen": {
+          "const": true
+        },
+        "runtime_data_not_seen": {
+          "const": true
+        },
+        "sibling_review_data_not_seen": {
+          "const": true
+        }
+      }
+    },
+    "runtime_usage": {
+      "$ref": "#/$defs/runtimeUsage"
+    },
+    "candidates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "X",
+        "Y"
+      ],
+      "properties": {
+        "X": {
+          "$ref": "#/$defs/candidate"
+        },
+        "Y": {
+          "$ref": "#/$defs/candidate"
+        }
+      }
+    },
+    "winner": {
+      "enum": [
+        "X",
+        "Y",
+        "TIE"
+      ]
+    },
+    "winner_rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "overall_notes": {
+      "type": "string"
+    }
+  }
+}

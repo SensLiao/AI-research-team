@@ -1,0 +1,103 @@
+{
+  "contract_version": "mechanism-council/v1",
+  "kind": "optional_cross_disciplinary_advisory_panel",
+  "activation": {
+    "automatic_min_signal_groups": 2,
+    "signal_groups": {
+      "state_relative_intent": [
+        "state-relative",
+        "state relative",
+        "current state",
+        "m0",
+        "scribble intent",
+        "intent depends",
+        "状态相对",
+        "当前分割",
+        "意图依赖"
+      ],
+      "mechanism_and_falsification": [
+        "mechanism",
+        "causal",
+        "falsifier",
+        "ablation",
+        "机制",
+        "因果",
+        "证伪",
+        "消融"
+      ],
+      "cross_disciplinary": [
+        "cross-disciplinary",
+        "cross domain",
+        "mathematics",
+        "physics",
+        "cognitive",
+        "curriculum",
+        "engineering",
+        "跨学科",
+        "数学",
+        "物理",
+        "认知",
+        "课程",
+        "工程"
+      ]
+    }
+  },
+  "roles": [
+    {
+      "role": "mathematical_formalizer",
+      "agent_spec": "agents/mathematical-formalizer.md",
+      "purpose": "Restate the problem as variables, states, operators, hypotheses, and observable distinctions without choosing a method.",
+      "depends_on": []
+    },
+    {
+      "role": "domain_reality_auditor",
+      "agent_spec": "agents/domain-reality-auditor.md",
+      "purpose": "Check that the proposal respects acquisition physics, anatomy, label semantics, data provenance, and the real deployment boundary.",
+      "depends_on": []
+    },
+    {
+      "role": "cognitive_intent_modeler",
+      "agent_spec": "agents/cognitive-intent-modeler.md",
+      "purpose": "Model what the user action means relative to the current system state and identify ambiguities that geometry alone cannot resolve.",
+      "depends_on": []
+    },
+    {
+      "role": "curriculum_design_specialist",
+      "agent_spec": "agents/curriculum-design-specialist.md",
+      "purpose": "Turn difficulty, ambiguity, and failure modes into a measurable training curriculum without changing the scientific target.",
+      "depends_on": ["mathematical_formalizer", "cognitive_intent_modeler"]
+    },
+    {
+      "role": "research_engineering_planner",
+      "agent_spec": "agents/research-engineering-planner.md",
+      "purpose": "Specify implementable modules, tensors, interfaces, losses, baselines, resource needs, and dry-run checks.",
+      "depends_on": ["mathematical_formalizer", "domain_reality_auditor", "cognitive_intent_modeler"]
+    },
+    {
+      "role": "causal_mechanism_critic",
+      "agent_spec": "agents/causal-mechanism-critic.md",
+      "purpose": "Challenge the proposed causal story with competing explanations, confounds, leakage paths, and discriminating experiments.",
+      "depends_on": ["mathematical_formalizer", "domain_reality_auditor", "cognitive_intent_modeler"]
+    },
+    {
+      "role": "hypothesis_compiler",
+      "agent_spec": "agents/hypothesis-compiler.md",
+      "purpose": "Resolve—not hide—role conflicts and compile one explicit hypothesis-to-mechanism-to-falsifiable-experiment chain.",
+      "depends_on": [
+        "mathematical_formalizer",
+        "domain_reality_auditor",
+        "cognitive_intent_modeler",
+        "curriculum_design_specialist",
+        "research_engineering_planner",
+        "causal_mechanism_critic"
+      ]
+    }
+  ],
+  "truth_boundary": {
+    "advisory_only": true,
+    "may_create_results": false,
+    "may_claim_novelty": false,
+    "unverified_external_fact_status": "UNVERIFIED",
+    "required_final_chain": ["hypothesis", "mechanism", "falsifiable_experiment"]
+  }
+}

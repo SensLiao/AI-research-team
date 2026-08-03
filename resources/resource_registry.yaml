@@ -15,6 +15,7 @@ resources:
     owner: director
     auth: password                       # matches reality (no pubkey today)
     endpoint_ref: RAT_SERVER_HOST
+    connect_host_ref: RAT_SERVER_CONNECT_HOST
     port_ref: RAT_SERVER_PORT
     remote_workdir_ref: RAT_REMOTE_WORKDIR
     secret_refs:
@@ -23,7 +24,66 @@ resources:
       password: RAT_SERVER_PASSWORD
     capabilities: [query_status, pull_logs, submit_job]   # submit_job = live execute (gated)
     default_policy: least_privilege
+    hardware_inventory:
+      verified_at: "2026-07-31T11:08:12Z"
+      gpu_count: 2
+      gpus:
+        - {index: 0, model: "NVIDIA RTX A6000", memory_mib: 49140}
+        - {index: 1, model: "NVIDIA RTX A6000", memory_mib: 49140}
+      driver_version: "530.41.03"
+    intended_use: >-
+      Primary PET/CT training, held-out inference, evaluation and downstream Route A execution after
+      each experiment's frozen gate and explicit live-submit authorization.
+    execution_ready: true
+    execution_status: gated_available
     status: available
+
+  - resource_id: server.usyd.bdav_z390_3090
+    type: hardware.ssh_server
+    display_name: "USyd BDAV Z390 mixed-GPU server (RTX 3090 + GTX 1080 Ti; read-only verified)"
+    scope: shared
+    owner: director
+    auth: password
+    endpoint_ref: RAT_BDAV_Z390_HOST
+    port_ref: RAT_BDAV_Z390_PORT
+    remote_workdir_ref: RAT_BDAV_Z390_REMOTE_WORKDIR
+    python_ref: RAT_BDAV_Z390_REMOTE_PYTHON
+    conda_env_ref: RAT_BDAV_Z390_REMOTE_CONDA_ENV
+    conda_sh_ref: RAT_BDAV_Z390_REMOTE_CONDA_SH
+    scheduler_ref: RAT_BDAV_Z390_SCHEDULER
+    results_pull_dir_ref: RAT_BDAV_Z390_RESULTS_PULL_DIR
+    known_hosts_ref: RAT_BDAV_Z390_KNOWN_HOSTS
+    connect_host_ref: RAT_BDAV_Z390_CONNECT_HOST
+    ssh_key_ref: RAT_BDAV_Z390_SSH_KEY
+    secret_refs:
+      host: RAT_BDAV_Z390_HOST
+      user: RAT_BDAV_Z390_USER
+      password: RAT_BDAV_Z390_PASSWORD
+    capabilities: [query_status, pull_logs, submit_job]
+    default_policy: least_privilege
+    hardware_inventory:
+      verified_at: "2026-07-31T11:08:48Z"
+      gpu_count: 2
+      gpus:
+        - {index: 0, model: "NVIDIA GeForce RTX 3090", memory_mib: 24576}
+        - {index: 1, model: "NVIDIA GeForce GTX 1080 Ti", memory_mib: 11264}
+      driver_version: "535.230.02"
+      reported_cuda_version: "12.2"
+    intended_use: >-
+      Secondary or overflow PET/CT execution resource after a fresh live execution-admission check;
+      authenticated read-only status and log queries remain independently available when authorized.
+    execution_ready: false
+    execution_status: director_reported_resolved_live_reverification_pending
+    execution_blockers:
+      - live_execution_admission_not_reverified
+    note: >-
+      Strict-pinned authenticated read-only inventory passed on 2026-07-31. The director reported on
+      2026-08-01 that the prior 3090-server problem was resolved, but this T4 task intentionally made no
+      live query. Historical disk/environment/scheduler blockers therefore cannot be carried forward as
+      current facts, and execution readiness also cannot be asserted. Keep submit_job default-denied until
+      a fresh live preflight verifies identity, GPU/process ownership, storage, environment, scheduler,
+      receipts/gates and duplicate-job risk.
+    status: director_reported_resolved_reverification_pending
 
   # --- research APIs ----------------------------------------------------------------------------
   - resource_id: api.semantic_scholar
@@ -36,9 +96,9 @@ resources:
     status: available
   - resource_id: api.openalex_crossref
     type: polite_pool
-    display_name: "OpenAlex / Crossref (polite pool, identified by contact email)"
+    display_name: "OpenAlex / Crossref (OpenAlex API key plus contact identity)"
     scope: shared
-    secret_refs: {contact_mail: RAT_CONTACT_MAIL}
+    secret_refs: {contact_mail: RAT_CONTACT_MAIL, openalex_api_key: RAT_OPENALEX_API_KEY}
     capabilities: [paper_search, citation_existence]
     status: available
   - resource_id: api.ollama_local
@@ -50,7 +110,7 @@ resources:
     capabilities: [mock_review]
     status: available
 
-  # --- harness web tools (provided by Claude Code; no project-held secret) -----------------------
+  # --- harness web tools (provided by Claud Code; no project-held secret) -----------------------
   - resource_id: tool.exa
     type: harness_connector
     display_name: "Exa web search + fetch (Claude Code MCP)"

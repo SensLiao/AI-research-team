@@ -1,0 +1,5 @@
+PyYAML==6.0.2
+jsonschema==4.25.1
+cryptography==47.0.0
+PyMuPDF==1.26.5
+paramiko==2.8.1

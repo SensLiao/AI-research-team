@@ -85,7 +85,11 @@ def test_engine_reject_does_not_checkpoint_and_is_unresumable(tmp_path):
     run_dir = runs / "r"
     m = read_manifest(run_dir)
     assert m["status"] == "rejected"
-    assert m["completed_work"] == []                                   # rejected stage NOT a clean boundary
+    # DISCOVER is automatic; the configured human boundary is IDEATE. The
+    # rejected IDEATE menu itself is never checkpointed by the synchronous
+    # engine adapter.
+    assert [row["stage"] for row in m["completed_work"]] == ["DISCOVER"]
+    assert m["rejected"]["stage"] == "IDEATE"
 
     events = read_events(run_dir / "ledger.jsonl")
     assert verify_chain(events) == []

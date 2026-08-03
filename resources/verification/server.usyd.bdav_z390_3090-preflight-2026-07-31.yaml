@@ -1,0 +1,255 @@
+schema_version: 1
+resource_ref: server.usyd.bdav_z390_3090
+observed_at: "2026-07-31"
+verification_state: read_only_verified_execution_blocked
+authenticated_login_attempted: true
+server_write_attempted: true
+secret_material_recorded: false
+
+historical_unauthenticated_network_recheck:
+  observed_at: "2026-07-31T11:35:47+08:00"
+  authenticated_login_attempted: false
+  server_write_attempted: false
+  local_dns_result: 198.18.0.67
+  local_dns_interpretation: locally_overridden_fake_ip_not_usable_as_ssh_identity_evidence
+  direct_tcp_22:
+    destination: 172.17.34.184
+    reachable: true
+    interface_alias: "以太网 2"
+  decision: remain_credential_recovery_required
+  reason: >-
+    Network reachability alone does not recover the rotated credential or provide independent
+    out-of-band host-key identity proof.
+
+network_observations:
+  canonical_host: bdav-z390-3090.cs.usyd.edu.au
+  local_dns_result: 198.18.0.67
+  local_dns_interpretation: locally_overridden_fake_ip_not_usable_as_ssh_identity_evidence
+  independent_public_dns_results:
+    google_doh: 172.17.34.184
+    cloudflare_doh: 172.17.34.184
+  direct_tcp_22:
+    destination: 172.17.34.184
+    reachable: true
+    interface_alias: "以太网 2"
+    local_source_address: 10.48.22.109
+  interpretation: vpn_or_campus_private_route_reaches_the_internal_ssh_endpoint
+
+observed_untrusted_host_keys:
+  - algorithm: ssh-rsa
+    sha256_fingerprint: "SHA256:i0/AVpw935l5KW+uD9z2dbsEnp89IAkVEswLW7AlcOg"
+  - algorithm: ecdsa-sha2-nistp256
+    sha256_fingerprint: "SHA256:AMmhlSQEtiKaaV4IK8a6xHAXE+Am1Zk8hG10sRrYHAs"
+  - algorithm: ssh-ed25519
+    sha256_fingerprint: "SHA256:EklACa9zriDvscnH50sAvy88+YuVxErBgg8lY2v2sLw"
+
+trust_gate:
+  expected_fingerprint_from_trusted_out_of_band_channel: null
+  decision: strict_director_authorized_first_use_pin_active
+  reason: >-
+    The director explicitly authorized first login and host-key enrollment. This is an
+    authorized first-use pin, not independent out-of-band identity proof.
+  required_next_action: >-
+    Retain the current pin and obtain independent university-admin or existing-trusted-user
+    confirmation before treating it as externally verified.
+
+live_read_attempts:
+  - attempted_at: "2026-07-31"
+    intent: "director-authorized read-only configuration inventory"
+    canonical_dns_route:
+      result: "blocked_before_authentication"
+      detail: "local hostname override did not deliver an SSH protocol banner"
+  - attempted_at: "2026-07-31"
+    intent: "read-only configuration inventory via verified direct TCP route"
+    tcp_endpoint: "172.17.34.184:22"
+    canonical_host_key_identity: "bdav-z390-3090.cs.usyd.edu.au"
+    result: "blocked_before_authentication"
+    detail: "server presented a key, but no trusted known_hosts entry exists"
+  - attempted_at: "2026-07-31"
+    intent: "director-authorized first login and mandatory initial-password rotation"
+    tcp_endpoint: "172.17.34.184:22"
+    canonical_host_key_identity: "bdav-z390-3090.cs.usyd.edu.au"
+    pinned_key:
+      algorithm: "ssh-ed25519"
+      sha256_fingerprint: "SHA256:EklACa9zriDvscnH50sAvy88+YuVxErBgg8lY2v2sLw"
+    result: "authentication_and_password_rotation_succeeded"
+    detail: >-
+      A fresh strict-pinned-key login using the rotated password succeeded. The local private
+      handoff persistence then failed before the generated credential could be retained; no
+      configuration inventory was run and credential recovery is required.
+  - attempted_at: "2026-07-31T10:40:40Z"
+    intent: "fresh strict-pinned authenticated read-only inventory after administrator recovery"
+    tcp_endpoint: "172.17.34.184:22"
+    canonical_host_key_identity: "bdav-z390-3090.cs.usyd.edu.au"
+    result: "PASS_READ_ONLY_VERIFIED"
+    authentication_material_observed_or_emitted: false
+    server_write_attempted: false
+    job_submission_attempted: false
+    detail: >-
+      Existing resolver references loaded an authentication mode without exposing its value, the
+      private known_hosts file existed, and the canonical hostname pin matched. A fresh authenticated
+      SSH session completed through ReadOnlyExecutor.
+
+fresh_authenticated_read_only_inventory:
+  observed_at_utc: "2026-07-31T10:40:40Z"
+  hostname: "BDAV-Z390-3090"
+  os: "Ubuntu 20.04.6 LTS"
+  kernel: "5.15.0-139-generic"
+  identity_verified: true
+  credential_value_observed_or_recorded: false
+  strict_host_key_verification: true
+  canonical_host_pin_matched: true
+  direct_tcp_canonical_identity_route: true
+  gpu_inventory:
+    - index: 0
+      model: "NVIDIA GeForce RTX 3090"
+      memory_mib: 24576
+      utilization_percent_at_snapshot: 0
+      operational_note: "idle at snapshot; existence is not submit authorization"
+    - index: 1
+      model: "NVIDIA GeForce GTX 1080 Ti"
+      memory_mib: 11264
+      utilization_percent_at_snapshot: 98
+      temperature_c_at_snapshot: 71
+      operational_note: "another user's live workload; do not schedule, interrupt or inspect beyond status"
+  driver_version: "535.230.02"
+  reported_cuda_version: "12.2"
+  disk:
+    mount: "/mnt/HDD4"
+    size_human: "7.3T"
+    used_human: "6.8T"
+    free_human: "66G"
+    reported_use_percent: 100
+  workdir_metadata_readable: true
+  workdir_write_probe_performed: false
+  python:
+    path_present: true
+    version: "3.8.10"
+  conda:
+    on_noninteractive_path: false
+    project_environment_verified: false
+  tmux_version: "3.0a"
+  scheduler:
+    slurm_client_present: true
+    slurm_usable: false
+    blocker: "/etc/slurm-llnl/slurm.conf missing; sinfo/squeue timed out after reporting the missing file"
+    safe_fallback_not_selected: "tmux/nohup must be explicitly configured and preflighted before execution"
+  active_compute:
+    gpu0_rtx3090: idle
+    gpu1_gtx1080ti: occupied_by_other_user
+    current_project_job_found: false
+  decision: "READ_ONLY_VERIFIED_EXECUTION_BLOCKED"
+  execution_blockers:
+    - hdd4_reported_100_percent_capacity
+    - project_conda_environment_not_configured
+    - scheduler_mode_not_operationally_configured
+    - remote_write_and_run_preflight_not_authorized_or_verified
+
+durable_connection_contract:
+  canonical_host: "bdav-z390-3090.cs.usyd.edu.au"
+  direct_tcp_route_env_ref: "RAT_BDAV_Z390_CONNECT_HOST"
+  direct_tcp_route_candidate: "172.17.34.184"
+  ssh_port: 22
+  workdir_constraint: "/mnt/HDD4"
+  credential_policy: "values remain only in gitignored environment variables; never record password values"
+  initial_login_policy: "pin the director-authorized first-use host key, then rotate the initial password before automated use"
+  current_readiness: "READ_ONLY_VERIFIED_EXECUTION_BLOCKED"
+
+governance:
+  project_alias: secondary_gpu
+  allowed_capabilities: [query_status, pull_logs]
+  allowed_skill: server-query
+  submit_job: default_denied
+  credential_recovery: completed_out_of_repo_and_fresh_authentication_passed
+  remote_workdir_constraint: /mnt/HDD4
+  package_policy: project_conda_environment_only
+  known_hosts_policy: canonical_hostname_plus_pinned_verified_key
+
+historical_offline_verification:
+  observed_at: "2026-07-31T11:35:47+08:00"
+  scope: credential_free_local_resource_evidence_and_non_auth_network_route_only
+  secret_store_inspected: false
+  ssh_authentication_attempted: false
+  ssh_session_opened: false
+  server_write_attempted: false
+  dns_a_record_observed: 198.18.0.67
+  direct_tcp_22_observed_reachable: true
+  decision: remain_credential_recovery_required
+  interpretation: >-
+    DNS and TCP reachability are transport observations only. They do not prove server identity,
+    recover credentials, authenticate a user, verify a GPU, or authorize execution.
+
+recovery_and_first_inventory_plan:
+  state: COMPLETED_THROUGH_INV1_READ_ONLY_VERIFIED_EXECUTION_BLOCKED
+  hard_invariants:
+    - no_credential_value_in_repo_logs_or_evidence
+    - strict_pinned_canonical_identity_required_for_read_only_verified_state
+    - external_identity_confirmation_not_claimed_without_out_of_band_evidence
+    - canonical_hostname_remains_the_ssh_host_key_identity
+    - tcp_reachability_is_not_authentication_or_gpu_readiness
+    - first_inventory_is_read_only
+    - submit_job_remains_default_denied
+  steps:
+    - id: CR-1
+      status: COMPLETE
+      owner: university_admin_and_director
+      action: >-
+        Reset or reissue the lost rotated credential and transfer it through the director's private,
+        out-of-repository handoff channel.
+      completion_evidence: >-
+        Record only that the private handoff exists; never record, print, hash, or copy the credential value.
+    - id: TRUST-1
+      status: COMPLETE_STRICT_PIN_ACTIVE_EXTERNAL_CONFIRMATION_NOT_RECORDED
+      owner: university_admin_or_existing_trusted_user
+      action: >-
+        Independently confirm the canonical hostname and at least one expected SSH host-key fingerprint.
+      completion_evidence: >-
+        Only the key algorithm, SHA256 fingerprint, confirmer role, and confirmation date may enter evidence.
+    - id: LOCAL-1
+      status: COMPLETE
+      owner: director_authorized_local_operator
+      prerequisites: [CR-1, TRUST-1]
+      action: >-
+        Populate the existing gitignored environment references and a strict known_hosts entry keyed by the
+        canonical hostname. Do not add credential values or machine-specific trust files to the repository.
+      completion_evidence: >-
+        Boolean presence and permission checks only; do not emit environment values or private paths.
+    - id: INV-1
+      status: PASS_READ_ONLY
+      owner: director_authorized_local_operator
+      prerequisites: [LOCAL-1, explicit_live_query_authorization]
+      action: >-
+        Open one strict-pinned-key authenticated read-only session and collect the minimum inventory: hostname,
+        UTC time, OS/kernel, user/group identity, GPU count/model/memory/driver/CUDA report, /mnt/HDD4 free space,
+        workdir existence/readability, and Python/Conda command availability.
+      prohibited_actions:
+        - package_installation
+        - file_creation_or_write_probe
+        - job_submission
+        - training_or_inference
+      completion_evidence: >-
+        Redacted command receipts and inventory facts bound to the independently confirmed fingerprint; writable
+        workdir status remains unverified until a separately authorized write probe.
+    - id: POST-1
+      status: COMPLETE_READ_ONLY_VERIFIED_SUBMIT_DENIED
+      owner: resource_governance
+      prerequisites: [INV-1]
+      pass_transition: >-
+        Set only read_only_verified and retain query_status/pull_logs; submit_job stays default-denied.
+      fail_transition: >-
+        Retain configured_unverified and credential_recovery_required; do not retry with alternate identities,
+        host keys, run roots, or credentials.
+
+execution_admission_plan:
+  state: BLOCKED
+  hard_rule: >-
+    Read-only verification and the presence of an RTX 3090 do not authorize job submission.
+  required_closures:
+    - owner_or_administrator_restores_safe_hdd4_headroom
+    - project_conda_environment_is_configured_under_hdd4_and_verified
+    - scheduler_mode_is_explicitly_selected_and_operationally_verified
+    - separately_authorized_write_and_minimal_run_preflight_passes
+    - fresh_gpu_occupancy_check_preserves_other_users_workloads
+  pass_transition: >-
+    Only after every closure may governance separately consider a human-gated submit_job policy change.
+  current_transition: retain_query_status_and_pull_logs_only

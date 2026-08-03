@@ -14,8 +14,9 @@ Design invariants:
     Network/HTTP failures raise ScholarLookupError -> callers must treat that as "could not
     check", NEVER as "does not exist" (the citation_existence checker depends on this split).
   - Pure parsing helpers (_parse_*) are separated from I/O for direct unit-testing.
-  - No keys required. Optional env: RAT_S2_API_KEY (Semantic Scholar quota),
-    RAT_CONTACT_MAIL (polite-pool identification for OpenAlex/Crossref).
+  - Optional env: RAT_OPENALEX_API_KEY (OpenAlex API budget), RAT_S2_API_KEY
+    (Semantic Scholar quota), RAT_CONTACT_MAIL (polite-pool identification for
+    OpenAlex/Crossref).
   - This module never writes files and never touches the vault.
 
 Normalized record:
@@ -26,8 +27,10 @@ Normalized record:
 from __future__ import annotations
 
 import json
+import http.client
 import os
 import re
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -48,8 +51,6 @@ _S2_FIELDS = "title,year,venue,authors,externalIds,citationCount,url"
 
 _ARXIV_ID_RE = re.compile(r"(?:arxiv[:/\s]*)?(\d{4}\.\d{4,5})(?:v\d+)?$", re.IGNORECASE)
 _DOI_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/)?(10\.\d{4,9}/\S+)$", re.IGNORECASE)
-
-
 _SCHOLAR_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)\b(api[_-]?key|access[_-]?token|token|credential|secret|mailto|contact|email)="
@@ -129,6 +130,14 @@ def default_transport(url: str, headers: Dict[str, str]) -> bytes:
         raise _HTTPStatusError(e.code, url) from e
     except urllib.error.URLError as e:
         raise ScholarLookupError(f"network failure for {url}: {e.reason}") from e
+    except (TimeoutError, socket.timeout, ConnectionError, OSError,
+            http.client.HTTPException) as e:
+        # ``urlopen`` may succeed and only fail while ``resp.read()`` consumes the TLS socket.
+        # urllib does not wrap those read-time failures in URLError, so normalize them here too;
+        # callers must record LOOKUP_ERROR rather than crash or misclassify the citation as absent.
+        raise ScholarLookupError(
+            f"network failure for {url}: {type(e).__name__}: {e}"
+        ) from e
 
 
 def _get(url: str, transport: Optional[Transport], extra_headers: Optional[Dict[str, str]] = None) -> bytes:
@@ -251,7 +260,7 @@ def _parse_s2_search(body: bytes) -> List[dict]:
 # --------------------------------------------------------------------------- search (query -> records)
 
 def search_arxiv(query: str, limit: int = 10, transport: Optional[Transport] = None) -> List[dict]:
-    q = urllib.parse.quote(f"all:{query}")
+    q = urllib.parse.quote(f"all:{query}", encoding="utf-8", errors="strict")
     url = f"{ARXIV_API}?search_query={q}&start=0&max_results={int(limit)}"
     return _fetch_parse(url, _parse_arxiv_atom, transport)[:limit]
 
@@ -264,15 +273,22 @@ def _reject_openalex_query_key() -> None:
         )
 
 
+def _openalex_params(params: Dict[str, object]) -> Dict[str, object]:
+    """Return metadata params only; OpenAlex query-key auth is unsafe for this client."""
+    _reject_openalex_query_key()
+    return dict(params)
+
+
 def search_openalex(query: str, limit: int = 10, transport: Optional[Transport] = None) -> List[dict]:
     _reject_openalex_query_key()
     params = {"search": query, "per-page": int(limit)}
-    url = f"{OPENALEX_API}?{urllib.parse.urlencode(params)}"
+    url = f"{OPENALEX_API}?{urllib.parse.urlencode(params, encoding='utf-8', errors='strict')}"
     return _fetch_parse(url, _parse_openalex, transport)[:limit]
 
 
 def search_crossref(query: str, limit: int = 10, transport: Optional[Transport] = None) -> List[dict]:
-    url = f"{CROSSREF_API}?{urllib.parse.urlencode({'query': query, 'rows': int(limit)})}"
+    url = (f"{CROSSREF_API}?" + urllib.parse.urlencode(
+        {"query": query, "rows": int(limit)}, encoding="utf-8", errors="strict"))
     return _fetch_parse(url, _parse_crossref_list, transport)[:limit]
 
 
@@ -283,7 +299,8 @@ def _s2_headers() -> Dict[str, str]:
 
 def search_s2(query: str, limit: int = 10, transport: Optional[Transport] = None) -> List[dict]:
     params = {"query": query, "limit": int(limit), "fields": _S2_FIELDS}
-    url = f"{S2_API}/paper/search?{urllib.parse.urlencode(params)}"
+    url = (f"{S2_API}/paper/search?" +
+           urllib.parse.urlencode(params, encoding="utf-8", errors="strict"))
     return _fetch_parse(url, _parse_s2_search, transport, _s2_headers())[:limit]
 
 

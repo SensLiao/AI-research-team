@@ -21,14 +21,19 @@ is a bounded composition over a frozen, human-authored menu — not a free-form 
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
+import os
+import shutil
+import stat
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import yaml
 
-from research_agent_teams.tools.ledger import last_of_type, read_events
+from research_agent_teams.tools.ledger import last_of_type, read_events, verify_chain
 
 _PKG = Path(__file__).resolve().parents[1]                       # research_agent_teams/
 _CATALOG_PATH = _PKG / "orchestrator" / "plan_catalog.yaml"
@@ -36,6 +41,9 @@ _REGISTRY_PATH = _PKG / "orchestrator" / "mode_registry.yaml"
 
 UPSTREAM_GROUNDING_FILE = "upstream-grounding.json"              # under <run>/inbox/
 HANDOFF_CONTRACT_VERSION = "mode-handoff/v2"
+UPSTREAM_CITATION_HANDOFF_VERSION = "upstream-citation-snapshot/v1"
+UPSTREAM_CITATION_HANDOFF_ROOT_REL = Path("inbox/upstream-citation-handoff")
+UPSTREAM_CITATION_HANDOFF_MANIFEST_REL = UPSTREAM_CITATION_HANDOFF_ROOT_REL / "manifest.json"
 
 # Cost bands (sum of the chain's modes' max_agent_hops) — drives the "fastest/cheapest" labelling.
 _BAND_LIGHT_MAX = 6
@@ -245,6 +253,361 @@ def _sha256_file(path: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
+def _sha256_hex(path: Path) -> str:
+    return _sha256_file(path).removeprefix("sha256:").lower()
+
+
+def _normalise_sha256(value: object) -> str:
+    return str(value or "").removeprefix("sha256:").strip().lower()
+
+
+def _is_reparse_point(path: Path) -> bool:
+    """True for a symlink or Windows reparse point (including directory junctions)."""
+    try:
+        if path.is_symlink():
+            return True
+        if os.name == "nt":
+            attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+            return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+    except OSError:
+        return False
+    return False
+
+
+def _path_inside(root: Path, ref: str, *, label: str) -> Path:
+    """Resolve a relative handoff path without admitting escapes, symlinks, or junction hops."""
+    raw = Path(ref)
+    if raw.is_absolute() or any(part == ".." for part in raw.parts):
+        raise ValueError(f"{label} must be a relative path inside its run: {ref!r}")
+    base = root.resolve()
+    candidate = base / raw
+    current = base
+    for part in raw.parts:
+        if part in {"", "."}:
+            continue
+        current = current / part
+        if current.exists() and _is_reparse_point(current):
+            raise ValueError(f"{label} must not traverse a symlink or junction: {ref!r}")
+    try:
+        resolved = candidate.resolve(strict=False)
+        resolved.relative_to(base)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{label} escapes its run: {ref!r}") from exc
+    return resolved
+
+
+def _ensure_directory_inside(root: Path, ref: str, *, label: str) -> Path:
+    """Create a directory path one component at a time without following reparse points."""
+    raw = Path(ref)
+    if raw.is_absolute() or any(part == ".." for part in raw.parts):
+        raise ValueError(f"{label} must be a relative path inside its run: {ref!r}")
+    base = root.resolve()
+    if not base.is_dir():
+        raise ValueError(f"{label} root is not a directory: {base}")
+    current = base
+    for part in raw.parts:
+        if part in {"", "."}:
+            continue
+        current = current / part
+        if _is_reparse_point(current):
+            raise ValueError(f"{label} must not traverse a symlink or junction: {ref!r}")
+        if not current.exists():
+            try:
+                current.mkdir()
+            except FileExistsError:
+                pass
+            if _is_reparse_point(current):
+                raise ValueError(f"{label} must not traverse a symlink or junction: {ref!r}")
+        if not current.is_dir():
+            raise ValueError(f"{label} component is not a directory: {current}")
+        try:
+            current.resolve(strict=False).relative_to(base)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"{label} escapes its run: {ref!r}") from exc
+    return _path_inside(base, ref, label=label)
+
+
+def _write_bytes_atomic(root: Path, ref: str, value: bytes, *, label: str) -> Path:
+    """Atomically write a new file only through non-reparse path components under ``root``."""
+    target = _path_inside(root, ref, label=label)
+    parent_ref = Path(ref).parent.as_posix()
+    parent = _ensure_directory_inside(
+        root, parent_ref if parent_ref != "." else "", label=label + " parent")
+    # Re-check after creation: an attacker cannot swap an unchecked parent for a junction.
+    target = _path_inside(root, ref, label=label)
+    if target.exists() and _is_reparse_point(target):
+        raise ValueError(f"refusing to replace symlinked or junctioned {label}: {target}")
+    fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(parent))
+    temp = Path(temp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if _is_reparse_point(temp):
+            raise ValueError(f"refusing to use reparse-point temporary {label}: {temp}")
+        # Re-check the final parent and leaf immediately before the replacement.
+        _ensure_directory_inside(root, parent_ref if parent_ref != "." else "", label=label + " parent")
+        target = _path_inside(root, ref, label=label)
+        if target.exists() and _is_reparse_point(target):
+            raise ValueError(f"refusing to replace symlinked or junctioned {label}: {target}")
+        os.replace(temp, target)
+    finally:
+        if temp.exists():
+            temp.unlink()
+    return target
+
+
+def _write_json_atomic(root: Path, ref: str, value: dict, *, label: str) -> Path:
+    raw = (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    return _write_bytes_atomic(root, ref, raw, label=label)
+
+
+def _strict_claim_map_payload(raw: dict) -> dict | None:
+    payload = raw.get("payload") if isinstance(raw, dict) else None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("attribution_contract_version") != "claim-span/v1":
+        return None
+    return payload
+
+
+def materialize_upstream_citation_snapshots(new_run_dir: str | Path, grounding: dict) -> dict:
+    """Copy only hash-verified upstream claim snapshots into a downstream run.
+
+    The copied files make previously verified sources reopenable by the existing
+    current-run-only citation resolver.  The source claim map is itself already
+    hash-pinned in ``upstream-grounding.json``; this function verifies both that
+    map and each referenced snapshot before writing any downstream evidence.
+    """
+    root = Path(new_run_dir).resolve()
+    final_root = _path_inside(root, UPSTREAM_CITATION_HANDOFF_ROOT_REL.as_posix(),
+                              label="citation snapshot handoff destination")
+    if final_root.exists():
+        raise ValueError("citation snapshot handoff destination already exists")
+    pending_snapshots: dict[str, bytes] = {}
+    snapshot_rows: list[dict] = []
+    pending_views: list[tuple[str, dict, dict]] = []
+
+    for upstream in grounding.get("upstream_runs") or []:
+        upstream_root = Path(str(upstream.get("run_dir") or "")).resolve()
+        run_id = str(upstream.get("run_id") or upstream_root.name)
+        for item in upstream.get("artifact_manifest") or []:
+            if item.get("artifact_type") != "claim_evidence_map":
+                continue
+            if str(item.get("status") or "").lower() not in {"approved", "frozen"}:
+                continue
+            map_ref = str(item.get("run_relative_path") or "")
+            try:
+                map_path = _path_inside(upstream_root, map_ref,
+                                        label=f"{run_id} upstream claim-evidence map")
+            except ValueError as exc:
+                raise ValueError(f"{run_id}: claim-evidence map is outside the declared upstream run") from exc
+            stated_path = Path(str(item.get("path") or ""))
+            try:
+                if stated_path.resolve() != map_path:
+                    raise ValueError(f"{run_id}: claim-evidence map is outside the declared upstream run")
+            except OSError as exc:
+                raise ValueError(f"{run_id}: claim-evidence map path cannot be resolved") from exc
+            if not map_path.is_file():
+                raise ValueError(f"{run_id}: declared claim-evidence map is unavailable")
+            expected_map_hash = str(item.get("sha256") or "")
+            try:
+                map_bytes = map_path.read_bytes()
+            except OSError as exc:
+                raise ValueError(f"{run_id}: declared claim-evidence map cannot be read") from exc
+            actual_map_hash = "sha256:" + hashlib.sha256(map_bytes).hexdigest()
+            if actual_map_hash != expected_map_hash:
+                raise ValueError(f"{run_id}: claim-evidence map hash changed before handoff")
+            try:
+                raw_map = json.loads(map_bytes.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError(f"{run_id}: declared claim-evidence map is invalid JSON") from exc
+            payload = _strict_claim_map_payload(raw_map)
+            if payload is None:
+                continue
+
+            rebased = copy.deepcopy(raw_map)
+            rebased_payload = rebased["payload"]
+            rewrites = 0
+            for mapping in rebased_payload.get("mappings") or []:
+                if not isinstance(mapping, dict):
+                    continue
+                for locus in mapping.get("loci") or []:
+                    if not isinstance(locus, dict):
+                        continue
+                    snapshot_ref = str(locus.get("snapshot_ref") or "")
+                    document_hash = _normalise_sha256(locus.get("document_hash"))
+                    if not snapshot_ref and not document_hash:
+                        continue
+                    if not snapshot_ref or len(document_hash) != 64 or any(
+                        char not in "0123456789abcdef" for char in document_hash
+                    ):
+                        raise ValueError(
+                            f"{run_id}: strict citation locus has incomplete snapshot provenance"
+                        )
+                    source = _path_inside(
+                        upstream_root, snapshot_ref, label=f"{run_id} upstream snapshot_ref"
+                    )
+                    if not source.is_file():
+                        raise ValueError(f"{run_id}: upstream citation snapshot is unavailable: {snapshot_ref}")
+                    raw_bytes = source.read_bytes()
+                    actual_hash = hashlib.sha256(raw_bytes).hexdigest()
+                    if actual_hash != document_hash:
+                        raise ValueError(
+                            f"{run_id}: upstream citation snapshot hash mismatch for {snapshot_ref}"
+                        )
+                    local_ref = (UPSTREAM_CITATION_HANDOFF_ROOT_REL / "snapshots" /
+                                 f"{document_hash}.snapshot").as_posix()
+                    pending_snapshots.setdefault(document_hash, raw_bytes)
+                    locus["snapshot_ref"] = local_ref
+                    rewrites += 1
+                    snapshot_rows.append({
+                        "upstream_run_id": run_id,
+                        "upstream_claim_map_ref": str(item.get("run_relative_path") or ""),
+                        "upstream_claim_map_sha256": expected_map_hash,
+                        "upstream_snapshot_ref": snapshot_ref,
+                        "document_hash": document_hash,
+                        "local_snapshot_ref": local_ref,
+                        "local_snapshot_sha256": f"sha256:{document_hash}",
+                    })
+
+            if not rewrites:
+                continue
+            map_hash = _normalise_sha256(expected_map_hash)
+            view_ref = (UPSTREAM_CITATION_HANDOFF_ROOT_REL / "rebased" / f"{map_hash}.json").as_posix()
+            pending_views.append((view_ref, rebased, {
+                "upstream_run_id": run_id,
+                "upstream_claim_map_ref": map_ref,
+                "upstream_claim_map_sha256": expected_map_hash,
+            }))
+
+    # Build an entirely private staging directory.  If any source check or write
+    # fails, no effective handoff path is created under the final destination.
+    inbox = _ensure_directory_inside(root, "inbox", label="citation snapshot handoff inbox")
+    staging: Path | None = None
+    try:
+        staging = Path(tempfile.mkdtemp(prefix=".upstream-citation-handoff-", dir=str(inbox)))
+        try:
+            staging_ref = staging.resolve().relative_to(root).as_posix()
+        except (OSError, ValueError) as exc:
+            raise ValueError("citation snapshot handoff staging directory escapes its run") from exc
+        staging = _path_inside(root, staging_ref, label="citation snapshot handoff staging directory")
+        if _is_reparse_point(staging):
+            raise ValueError("citation snapshot handoff staging directory is a reparse point")
+
+        rebased_rows: list[dict] = []
+        for document_hash, raw_bytes in pending_snapshots.items():
+            stage_ref = (Path("snapshots") / f"{document_hash}.snapshot").as_posix()
+            _write_bytes_atomic(staging, stage_ref, raw_bytes, label="materialized citation snapshot")
+
+        for view_ref, view, provenance in pending_views:
+            stage_ref = (Path("rebased") / Path(view_ref).name).as_posix()
+            view_path = _write_json_atomic(staging, stage_ref, view,
+                                           label="rebased upstream claim-evidence map")
+            rebased_rows.append({
+                **provenance,
+                "local_claim_map_ref": view_ref,
+                "local_claim_map_sha256": _sha256_file(view_path),
+            })
+
+        manifest = {
+            "contract_version": UPSTREAM_CITATION_HANDOFF_VERSION,
+            "snapshots": snapshot_rows,
+            "rebased_claim_maps": rebased_rows,
+        }
+        staged_manifest = _write_json_atomic(staging, "manifest.json", manifest,
+                                              label="citation snapshot handoff manifest")
+        manifest_hash = _sha256_file(staged_manifest)
+        # Re-check the final parent immediately before the atomic directory move.
+        _ensure_directory_inside(root, "inbox", label="citation snapshot handoff inbox")
+        final_root = _path_inside(root, UPSTREAM_CITATION_HANDOFF_ROOT_REL.as_posix(),
+                                  label="citation snapshot handoff destination")
+        if final_root.exists():
+            raise ValueError("citation snapshot handoff destination appeared during materialization")
+        os.replace(staging, final_root)
+        staging = None
+        return {
+            "contract_version": UPSTREAM_CITATION_HANDOFF_VERSION,
+            "manifest_ref": UPSTREAM_CITATION_HANDOFF_MANIFEST_REL.as_posix(),
+            "manifest_sha256": manifest_hash,
+            "n_snapshots": len(pending_snapshots),
+            "n_rebased_claim_maps": len(rebased_rows),
+        }
+    finally:
+        if staging is not None and staging.exists() and not _is_reparse_point(staging):
+            shutil.rmtree(staging, ignore_errors=True)
+
+
+def validate_materialized_citation_snapshots(run_dir: str | Path, grounding: dict) -> list[str]:
+    """Verify the downstream local copies that an upstream handoff pinned."""
+    bridge = grounding.get("citation_snapshot_handoff") or {}
+    if not bridge:
+        return []
+    errors: list[str] = []
+    root = Path(run_dir).resolve()
+    if bridge.get("contract_version") != UPSTREAM_CITATION_HANDOFF_VERSION:
+        return ["unsupported upstream citation snapshot handoff contract"]
+    try:
+        manifest_path = _path_inside(root, str(bridge.get("manifest_ref") or ""),
+                                     label="citation snapshot handoff manifest")
+    except ValueError as exc:
+        return [str(exc)]
+    if not manifest_path.is_file():
+        return ["materialized citation snapshot manifest is unavailable"]
+    if _sha256_file(manifest_path) != str(bridge.get("manifest_sha256") or ""):
+        return ["materialized citation snapshot manifest hash mismatch"]
+    manifest = _read_json(manifest_path)
+    if not isinstance(manifest, dict) or manifest.get("contract_version") != UPSTREAM_CITATION_HANDOFF_VERSION:
+        return ["materialized citation snapshot manifest is invalid"]
+    snapshots = manifest.get("snapshots") or []
+    if int(bridge.get("n_snapshots") or 0) != len({row.get("document_hash") for row in snapshots if isinstance(row, dict)}):
+        errors.append("materialized citation snapshot count mismatch")
+
+    upstream = {str(row.get("run_id") or ""): row for row in grounding.get("upstream_runs") or []}
+    for row in snapshots:
+        if not isinstance(row, dict):
+            errors.append("materialized citation snapshot row is invalid")
+            continue
+        run = upstream.get(str(row.get("upstream_run_id") or ""))
+        if run is None:
+            errors.append("materialized citation snapshot names an unknown upstream run")
+            continue
+        matching_map = any(
+            item.get("artifact_type") == "claim_evidence_map"
+            and item.get("run_relative_path") == row.get("upstream_claim_map_ref")
+            and item.get("sha256") == row.get("upstream_claim_map_sha256")
+            for item in run.get("artifact_manifest") or []
+        )
+        if not matching_map:
+            errors.append("materialized citation snapshot lost its pinned upstream claim-map provenance")
+        try:
+            local = _path_inside(root, str(row.get("local_snapshot_ref") or ""),
+                                 label="materialized citation snapshot")
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        expected = _normalise_sha256(row.get("document_hash"))
+        if not local.is_file() or _sha256_hex(local) != expected:
+            errors.append(f"materialized citation snapshot hash mismatch: {row.get('local_snapshot_ref')}")
+        if str(row.get("local_snapshot_sha256") or "") != f"sha256:{expected}":
+            errors.append("materialized citation snapshot manifest carries an inconsistent local hash")
+
+    for row in manifest.get("rebased_claim_maps") or []:
+        if not isinstance(row, dict):
+            errors.append("rebased claim-map row is invalid")
+            continue
+        try:
+            local = _path_inside(root, str(row.get("local_claim_map_ref") or ""),
+                                 label="rebased upstream claim-evidence map")
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        if not local.is_file() or _sha256_file(local) != str(row.get("local_claim_map_sha256") or ""):
+            errors.append("rebased upstream claim-evidence map hash mismatch")
+    return errors
+
+
 def _mode_handoff(mode: str) -> dict:
     spec = ((load_mode_registry().get("modes") or {}).get(mode) or {}).get("handoff") or {}
     return dict(spec) if isinstance(spec, dict) else {}
@@ -257,6 +620,9 @@ def _normalise_contract(raw: dict, *, pinned: bool) -> dict:
         "primary_markdown": str(raw.get("primary_markdown") or ""),
         "reusable_artifacts": [str(x) for x in (raw.get("reusable_artifacts") or [])],
         "accepts": [str(x) for x in (raw.get("accepts") or [])],
+        "accepts_delivery_statuses": [
+            str(x) for x in (raw.get("accepts_delivery_statuses") or ["USABLE"])
+        ],
         "contract_pinned": pinned,
         "contract_source": "task_frame" if pinned else "registry_fallback_for_legacy_run",
     }
@@ -305,6 +671,61 @@ def _manifest_item(path: Path, run_dir: Path) -> dict:
     }
 
 
+def _upstream_completion_errors(run: dict, run_root: Path, run_id: str) -> list[str]:
+    """Require a completed, ledger-anchored REPORT before a run becomes handoff input."""
+    errors: list[str] = []
+    if not run_root.is_dir():
+        return [f"{run_id}: upstream run directory is unavailable"]
+    manifest = _read_yaml(run_root / "manifest.yaml")
+    if not manifest:
+        return [f"{run_id}: upstream manifest is unavailable"]
+    actual_status = str(manifest.get("status") or "unknown")
+    if actual_status != "done":
+        errors.append(f"{run_id}: upstream run is not complete")
+    if str(run.get("run_status") or "unknown") != actual_status:
+        errors.append(f"{run_id}: upstream run status no longer matches its manifest")
+
+    try:
+        ledger_path = _path_inside(run_root, "ledger.jsonl", label=f"{run_id} upstream ledger")
+    except ValueError as exc:
+        return errors + [str(exc)]
+    if not ledger_path.is_file():
+        return errors + [f"{run_id}: upstream ledger is missing"]
+    try:
+        events = read_events(ledger_path)
+    except (OSError, ValueError) as exc:
+        return errors + [f"{run_id}: upstream ledger cannot be read: {exc}"]
+    ledger_errors = verify_chain(events)
+    if ledger_errors:
+        errors.append(f"{run_id}: upstream ledger chain is invalid: {'; '.join(ledger_errors)}")
+        return errors
+    boundaries = [event for event in events if event.get("event_type") == "boundary"]
+    if not boundaries or str((boundaries[-1].get("payload") or {}).get("completed_stage") or "") != "REPORT":
+        errors.append(f"{run_id}: upstream REPORT completion boundary is missing")
+    elif str(manifest.get("last_boundary_hash") or "") != str(boundaries[-1].get("hash") or ""):
+        errors.append(f"{run_id}: upstream manifest does not anchor its REPORT completion boundary")
+
+    try:
+        report_path = _path_inside(
+            run_root, "evidence/REPORT/report-note.artifact.json", label=f"{run_id} upstream REPORT")
+    except ValueError as exc:
+        return errors + [str(exc)]
+    report = _read_json(report_path) if report_path.is_file() else None
+    if not isinstance(report, dict):
+        errors.append(f"{run_id}: upstream REPORT artifact is unavailable")
+        return errors
+    expected_ref = report_path.relative_to(run_root.resolve()).as_posix()
+    report_hash = _sha256_file(report_path)
+    if not any(
+        str(item.get("run_relative_path") or "") == expected_ref
+        and str(item.get("sha256") or "") == report_hash
+        for item in (run.get("artifact_manifest") or [])
+        if isinstance(item, dict)
+    ):
+        errors.append(f"{run_id}: upstream REPORT artifact is not hash-pinned in the handoff manifest")
+    return errors
+
+
 def validate_upstream_grounding(grounding: dict) -> list[str]:
     """Verify only transport integrity and declared contract compatibility.
 
@@ -318,16 +739,36 @@ def validate_upstream_grounding(grounding: dict) -> list[str]:
             f"expected {HANDOFF_CONTRACT_VERSION!r}"
         )
     for run in grounding.get("upstream_runs") or []:
+        run_id = str(run.get("run_id") or "?")
+        try:
+            run_root = Path(str(run.get("run_dir") or "")).resolve()
+        except OSError:
+            errors.append(f"{run_id}: upstream run directory cannot be resolved")
+            continue
+        errors.extend(_upstream_completion_errors(run, run_root, run_id))
         for item in run.get("artifact_manifest") or []:
-            path = Path(str(item.get("path") or ""))
+            try:
+                path = _path_inside(run_root, str(item.get("run_relative_path") or ""),
+                                    label=f"{run_id} handoff artifact")
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+            try:
+                stated_path = Path(str(item.get("path") or "")).resolve()
+                if stated_path != path:
+                    errors.append(f"{run_id}: handoff artifact path is outside the declared upstream run")
+                    continue
+            except OSError:
+                errors.append(f"{run_id}: handoff artifact path cannot be resolved")
+                continue
             if not path.is_file():
-                errors.append(f"{run.get('run_id')}: missing handoff file {path}")
+                errors.append(f"{run_id}: missing handoff file {path}")
                 continue
             expected = str(item.get("sha256") or "")
             actual = _sha256_file(path)
             if expected != actual:
                 errors.append(
-                    f"{run.get('run_id')}: handoff hash mismatch for "
+                    f"{run_id}: handoff hash mismatch for "
                     f"{item.get('run_relative_path') or path.name}"
                 )
     downstream = grounding.get("downstream_contract") or {}
@@ -341,6 +782,25 @@ def validate_upstream_grounding(grounding: dict) -> list[str]:
                 f"mode handoff mismatch: downstream accepts {sorted(accepted)}, "
                 f"but upstream {run.get('run_id')!r} provides {product!r}"
             )
+    if grounding.get("downstream_mode"):
+        accepted_delivery = {
+            str(value) for value in (downstream.get("accepts_delivery_statuses") or ["USABLE"])
+        }
+        for run in grounding.get("upstream_runs") or []:
+            contract = run.get("product_contract") or {}
+            run_id = str(run.get("run_id") or "?")
+            if not contract.get("contract_pinned"):
+                errors.append(f"{run_id}: upstream product contract is not pinned")
+            if str(run.get("run_status") or "") != "done":
+                errors.append(f"{run_id}: upstream run is not complete")
+            missing = [str(item) for item in (run.get("missing_declared_artifacts") or [])]
+            if missing:
+                errors.append(f"{run_id}: missing declared handoff artifact(s): {', '.join(missing)}")
+            delivery = str(run.get("delivery_status") or "UNKNOWN")
+            if delivery not in accepted_delivery:
+                errors.append(
+                    f"{run_id}: downstream does not accept upstream delivery status {delivery!r}"
+                )
     return errors
 
 
@@ -394,6 +854,10 @@ def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] 
                 or report_payload.get("delivery_status")
                 or ("USABLE" if entry["run_status"] == "done" else "UNKNOWN")
             )
+            entry["delivery_caveats"] = [
+                str(item) for item in (report_payload.get("delivery_caveats") or [])
+                if str(item).strip()
+            ]
             entry["key_artifacts"].append(str(report))
         backlog = d / "evidence" / "IDEATE" / "idea-backlog.artifact.json"
         bl = _read_json(backlog)
@@ -411,7 +875,7 @@ def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] 
             d / "evidence" / "DISCOVER" / "citation-attribution-report.artifact.json",
             d / "evidence" / "DISCOVER" / "contradiction-report.artifact.json",
             d / "evidence" / "DISCOVER" / "landscape-map.artifact.json",
-            d / "evidence" / "DISCOVER" / "gap-dossier.artifact.json",
+            d / "evidence" / "DISCOVER" / "gap-dossiers.artifact.json",
         )
         declared, missing = _declared_files(d, entry["product_contract"])
         entry["missing_declared_artifacts"] = missing
@@ -441,18 +905,26 @@ def upstream_grounding(prev_run_dirs: List[str], downstream_mode: Optional[str] 
 
 
 def write_upstream_grounding(new_run_dir: str, prev_run_dirs: List[str],
-                             downstream_mode: Optional[str] = None) -> str:
+                              downstream_mode: Optional[str] = None) -> str:
     """Write the downstream run's `inbox/upstream-grounding.json` from the upstream links. Returns
     the path. Called by `operate begin --upstream-run <prev>` before the first worker is built."""
-    inbox = Path(new_run_dir) / "inbox"
-    inbox.mkdir(parents=True, exist_ok=True)
-    out = inbox / UPSTREAM_GROUNDING_FILE
-    task_frame = _read_json(Path(new_run_dir) / "task_frame.artifact.json") or {}
+    root = Path(new_run_dir).resolve()
+    _ensure_directory_inside(root, "inbox", label="upstream grounding inbox")
+    out = _path_inside(root, (Path("inbox") / UPSTREAM_GROUNDING_FILE).as_posix(),
+                       label="upstream grounding manifest")
+    task_frame = _read_json(root / "task_frame.artifact.json") or {}
     payload = task_frame.get("payload") or {}
     pinned_downstream = _contract_for_run(payload, str(payload.get("mode") or downstream_mode or ""))
-    out.write_text(json.dumps(upstream_grounding(prev_run_dirs, downstream_mode, pinned_downstream),
-                              ensure_ascii=False, indent=2),
-                   encoding="utf-8")
+    grounding = upstream_grounding(prev_run_dirs, downstream_mode, pinned_downstream)
+    readiness_errors = validate_upstream_grounding(grounding)
+    if readiness_errors:
+        raise ValueError("upstream handoff readiness failed: " + "; ".join(readiness_errors))
+    grounding["citation_snapshot_handoff"] = materialize_upstream_citation_snapshots(
+        new_run_dir, grounding
+    )
+    _write_json_atomic(root,
+                        (Path("inbox") / UPSTREAM_GROUNDING_FILE).as_posix(),
+                        grounding, label="upstream grounding manifest")
     return str(out)
 
 
@@ -478,11 +950,25 @@ def _grounding_block(run_dir: str, grounding: dict) -> str:
                 "      frozen reusable evidence (reuse before new retrieval): "
                 + ", ".join(reusable)
             )
+        if str(up.get("delivery_status") or "") == "USABLE_WITH_CAVEATS":
+            caveats = [str(item) for item in (up.get("delivery_caveats") or []) if str(item).strip()]
+            suffix = "; ".join(caveats) if caveats else "upstream evidence is usable only with caveats"
+            lines.append(
+                "      CAUTION: carry this upstream limitation forward; do not turn it into a novelty "
+                f"or method-effect claim: {suffix}"
+            )
         ideas = up.get("top_ideas") or []
         if ideas:
             ids = ", ".join(str(i.get("idea_id")) for i in ideas if i.get("idea_id"))
             if ids:
                 lines.append(f"      candidate ideas carried in: {ids}")
+    citation_handoff = grounding.get("citation_snapshot_handoff") or {}
+    if int(citation_handoff.get("n_snapshots") or 0):
+        lines.append(
+            "  • hash-verified upstream citation snapshots are materialized locally at "
+            f"`{citation_handoff.get('manifest_ref')}`; use its rebased claim maps rather than "
+            "external snapshot paths."
+        )
     lines.append(
         "Build the NEXT step ON this established ground; do not repeat upstream work. If the upstream "
         "output conflicts with your inputs, SAY SO rather than silently diverging — you never re-scope.")
@@ -509,13 +995,21 @@ def augment_worker_with_upstream(worker: Optional[dict], run_dir: str) -> Option
     if not grounding or not (grounding.get("upstream_runs")):
         return worker
     integrity_errors = validate_upstream_grounding(grounding)
+    integrity_errors.extend(validate_materialized_citation_snapshots(run_dir, grounding))
     ledger_path = Path(run_dir) / "ledger.jsonl"
-    if ledger_path.is_file():
-        pin = last_of_type(read_events(ledger_path), "upstream_handoff_pinned")
-        if pin is None:
-            integrity_errors.append("upstream handoff manifest is not pinned in the run ledger")
-        elif str((pin.get("payload") or {}).get("grounding_sha256") or "") != _sha256_file(p):
-            integrity_errors.append("upstream handoff manifest hash does not match its ledger pin")
+    if not ledger_path.is_file():
+        integrity_errors.append("upstream handoff ledger is missing")
+    else:
+        events = read_events(ledger_path)
+        ledger_errors = verify_chain(events)
+        if ledger_errors:
+            integrity_errors.append("upstream handoff ledger chain is invalid: " + "; ".join(ledger_errors))
+        else:
+            pin = last_of_type(events, "upstream_handoff_pinned")
+            if pin is None:
+                integrity_errors.append("upstream handoff manifest is not pinned in the run ledger")
+            elif str((pin.get("payload") or {}).get("grounding_sha256") or "") != _sha256_file(p):
+                integrity_errors.append("upstream handoff manifest hash does not match its ledger pin")
     if integrity_errors:
         raise ValueError("upstream handoff integrity failed: " + "; ".join(integrity_errors))
     block = _grounding_block(run_dir, grounding)

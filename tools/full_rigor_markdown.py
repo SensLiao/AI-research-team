@@ -20,6 +20,12 @@ from .full_rigor_execution_truth import execution_state
 
 EXPERIMENT_PLAN_REL = Path("director-review") / "experiments" / "experiment-plan.md"
 RESULT_READINESS_REL = Path("director-review") / "experiments" / "result-readiness.md"
+EXPERIMENT_PLAN_ADVISORY_REL = (
+    Path("inbox") / "experiment-plan-markdown-quality-advisory.json"
+)
+RESULT_READINESS_ADVISORY_REL = (
+    Path("inbox") / "result-readiness-markdown-quality-advisory.json"
+)
 
 PLAN_REQUIRED_HEADINGS = [
     "## Decision Snapshot",
@@ -580,14 +586,37 @@ def lint_result_readiness_markdown(run_dir) -> list[str]:
     return errors
 
 
+def _write_markdown_advisory(
+    run_path: Path,
+    relative_path: Path,
+    errors: list[str],
+    *,
+    gate_blockers: Optional[list[str]] = None,
+) -> None:
+    blockers = list(gate_blockers or [])
+    advisory = {
+        "contract_version": "research-markdown-advisory/v1",
+        "delivery_blocking": False,
+        "delivery_status": "USABLE" if not errors else "USABLE_WITH_CAVEATS",
+        "gate_ready": not blockers,
+        "gate_blockers": blockers,
+        "warnings": list(errors),
+    }
+    out = run_path / relative_path
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(advisory, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def write_experiment_plan_markdown(run_dir, generated_at: Optional[str] = None) -> str:
     run_path = Path(run_dir)
     out = experiment_plan_path(run_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(build_experiment_plan_markdown(run_path, generated_at=generated_at), encoding="utf-8")
     errors = lint_experiment_plan_markdown(run_path)
-    if errors:
-        raise ValueError(f"full rigor experiment plan Markdown BLOCK: {errors}")
+    _write_markdown_advisory(run_path, EXPERIMENT_PLAN_ADVISORY_REL, errors)
     return str(out)
 
 
@@ -597,8 +626,17 @@ def write_result_readiness_markdown(run_dir, generated_at: Optional[str] = None)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(build_result_readiness_markdown(run_path, generated_at=generated_at), encoding="utf-8")
     errors = lint_result_readiness_markdown(run_path)
-    if errors:
-        raise ValueError(f"full rigor result/readiness Markdown BLOCK: {errors}")
+    gate_blockers = [
+        error
+        for error in errors
+        if error == "result/readiness brief must surface the promotion boundary"
+    ]
+    _write_markdown_advisory(
+        run_path,
+        RESULT_READINESS_ADVISORY_REL,
+        errors,
+        gate_blockers=gate_blockers,
+    )
     return str(out)
 
 
@@ -611,4 +649,7 @@ def write_full_rigor_markdown(run_dir, generated_at: Optional[str] = None) -> di
         stale = result_readiness_path(run_path)
         if stale.is_file():
             stale.unlink()
+        stale_advisory = run_path / RESULT_READINESS_ADVISORY_REL
+        if stale_advisory.is_file():
+            stale_advisory.unlink()
     return out

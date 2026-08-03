@@ -114,6 +114,57 @@ mode_questions:
         - {label: "顶会 (CVPR/NeurIPS/ICML…)", value: tier1}
         - {label: "专科会议/期刊 (如医学影像)", value: tier2}
         - {label: "期刊", value: tier3}
+  ingest_paper:
+    - key: paper_ref
+      ask: "读哪一篇?(给标题/DOI/arXiv 号,或说'已经放进 01-raw 了')"
+      maps_to: north_star
+      options:
+        - {label: "文件已放进 01-raw/", value: in-raw}
+        - {label: "我给标题或链接", value: specify}
+    - key: pre_search
+      ask: "顺带联网核一下这篇的出处和被引情况?"
+      maps_to: pre_search
+      options:
+        - {label: "联网核对 · 推荐", value: live}
+        - {label: "只用手上的文件", value: vault-only}
+  read_paper_deep:
+    - key: paper_ref
+      ask: "深读哪一篇?(给标题/DOI/arXiv 号,或说'已经放进 01-raw 了')"
+      maps_to: north_star
+      options:
+        - {label: "文件已放进 01-raw/", value: in-raw}
+        - {label: "我给标题或链接", value: specify}
+    - key: read_focus
+      ask: "这次深读最想要什么?(会影响 20 席的重心,不会砍掉任何一席)"
+      maps_to: north_star
+      options:
+        - {label: "全面拆解 · 推荐", value: full}
+        - {label: "重点看方法能不能搬到我们项目", value: transfer}
+        - {label: "重点看结果和统计站不站得住", value: results}
+  manuscript_authoring:
+    - key: draft_scope
+      ask: "这次写到哪一步?"
+      maps_to: north_star
+      options:
+        - {label: "全稿初稿", value: full-draft}
+        - {label: "只写某几节(方法/实验/讨论)", value: sections}
+    - key: evidence_note
+      ask: "只用已冻结、有回执的结果写(没有结果的地方留空并标出),确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 不许编数字", value: frozen-only}
+  manuscript_review:
+    - key: review_target
+      ask: "审哪一份稿?"
+      maps_to: north_star
+      options:
+        - {label: "上一步刚写出来的那份", value: upstream}
+        - {label: "我现在指定一份", value: specify}
+    - key: independence_note
+      ask: "审稿人不会看到写稿过程(防自评),因此它可能提出写稿方已经想过的问题,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 要的就是独立视角", value: blind}
 
 # ----------------------------------------------------------------------------------------------------
 # Which human gate(s) a mode routes THROUGH. When a chain reaches such a mode it PAUSES there; the
@@ -129,6 +180,8 @@ mode_gates:
 # research_plan.validate_chain flags a STRICTLY-decreasing step (e.g. venue before ideate) as a
 # violation. Within a rank the order is free (e.g. scan a gap before OR after deep-reading evidence).
 phase_rank:
+  ingest_paper: 1       # discovery / read a single source
+  read_paper_deep: 1
   gap_breadth: 1        # discovery / scan
   deep_research: 1      # discovery / evidence
   evidence_review: 1
@@ -137,6 +190,8 @@ phase_rank:
   deep_ideation: 2
   full_rigor_minimal: 3 # design / execute
   venue_readiness: 4    # venue / publish
+  manuscript_authoring: 4
+  manuscript_review: 4
 
 # ----------------------------------------------------------------------------------------------------
 # Intents — the research arcs a director request maps onto. Each tier's `modes` is an ordered chain of
@@ -224,8 +279,73 @@ intents:
         modes: [gap_breadth, deep_research, deep_ideation]
         why: "扫空白 → 深证据 → 跨域深度产点子(直到 /idea-bet)。"
 
+  # 2026-08-01: added because four one-button modes had NO intent at all — a director asking to read a
+  # paper, design an experiment, or write/review a manuscript fell through to the direction-finding arc.
+  # A capability with no route is a capability the director cannot reach.
+  read_paper:
+    aliases: ["读论文", "读这篇论文", "精读", "精读论文", "深读这篇", "拆解方法", "收论文", "收论文进库",
+              "论文入库", "read this paper", "read paper", "deep read", "paper reading", "ingest paper",
+              "这篇论文讲了什么", "帮我看这篇论文"]
+    keywords: ["论文", "paper", "精读", "深读", "拆解", "入库", "ingest"]
+    description: "把一篇具体论文读进来:从一页论文卡,到逐条主张/方法/图表/数值的深读。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [ingest_paper]
+        why: "一页论文卡:来源、要点、主张、方法数据指标、跟我们项目的关系、下一步读什么。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [read_paper_deep]
+        why: "20 席深读:核心主张 + 证据在第几页 + 方法拆解 + 结果复核 + 图表数学复现材料 + 审稿人会攻击的点。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [read_paper_deep, evidence_deep]
+        why: "深读这一篇 → 再把它放回文献里做深度证据评估(它跟别人矛盾吗、结论还站得住吗)。"
+
+  design_experiment:
+    aliases: ["设计实验", "怎么做实验", "实验怎么设计", "设计这个实验", "design experiment",
+              "experiment design", "实验方案", "做个实验计划", "预注册"]
+    keywords: ["实验", "experiment", "设计方案", "预注册", "protocol", "消融", "ablation"]
+    description: "把一个想法变成可执行、可证伪、统计上站得住的实验方案(含预注册与可运行脚本)。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [full_rigor_minimal]
+        why: "研究问题 → 变量与对照 → 数据划分 → 指标与统计 → 预注册冻结 → 可运行脚本 + 止损条件。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [evidence_deep, full_rigor_minimal]
+        why: "先把相关证据和已有基线查扎实,再设计实验——避免设计出一个别人已经回答过的实验。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [deep_research, evidence_deep, full_rigor_minimal]
+        why: "深读文献 → 深度证据评估 → 实验设计,把基线公平性和统计严谨度都拉满。"
+
+  write_manuscript:
+    aliases: ["写稿", "写论文", "帮我写稿", "起草论文", "写初稿", "审稿", "审一遍我的稿",
+              "独立审稿", "帮我审稿", "manuscript", "write the paper", "draft the paper",
+              "review my manuscript", "peer review"]
+    keywords: ["写稿", "初稿", "稿件", "审稿", "manuscript", "draft"]
+    description: "把已经成立的结果写成稿件,并用独立盲审挑毛病(写与审分开跑,防自评)。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [manuscript_review]
+        why: "只审不写:对你已有的稿子做一份独立审稿报告(主张、统计、图表、引用)。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [manuscript_authoring, manuscript_review]
+        why: "先写稿,再由一个完全独立、不看写稿过程的评审去挑毛病——作者不能给自己打分。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [manuscript_authoring, manuscript_review, venue_readiness]
+        why: "写稿 → 独立审稿 → 投稿就绪度(模拟盲审 + 目标会议匹配),一路到 /venue-pick。"
+
   prep_submission:
-    aliases: ["够投顶会吗", "投稿就绪", "能投吗", "venue", "venue readiness", "submission ready",
+    aliases: ["够投顶会吗", "够投吗", "投稿就绪", "能投吗", "venue", "venue readiness", "submission ready",
               "投稿准备", "评审会怎么看", "够发表吗"]
     keywords: ["投稿", "顶会", "发表", "venue", "submission", "审稿", "能投"]
     description: "评估一个结果是否达到目标会议/期刊的发表门槛。"

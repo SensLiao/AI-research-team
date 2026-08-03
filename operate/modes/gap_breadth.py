@@ -34,6 +34,7 @@ from typing import Optional
 from . import _shared
 from ..artifacts import GateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
+from ..output_versions import resolve_effective_output
 from ...tools.classify_gap import build_classification
 from ...tools.gap_breadth_markdown import lint_gap_scan, render_gap_scan
 from ...tools.novelty_aggregate import aggregate_novelty
@@ -99,8 +100,11 @@ Read the real vault at `{vault}/02-wiki/papers/` (glob the .md pages relevant to
 ~8-12 fully). IF `{run_dir}/inbox/search-results.json` exists, use its live-retrieval records to \
 avoid proposing gaps recent literature already closed.
 
-HONESTY (hard): reference papers ONLY by their real `[[slug]]`; never invent a slug (a deterministic \
-gate checks every slug against the vault). Ground every signal in what a page actually states. Stay \
+HONESTY (hard): reference vault papers only by their real `[[slug]]`; never invent a slug (a \
+deterministic gate checks every slug against the vault). A recent external paper may instead use a \
+resolvable `doi:...`, `arXiv:...`, or primary-source URL only when that exact record already exists \
+in `search-results.json`; never fabricate an external reference. Ground every signal in what the \
+vault page or frozen search record actually states. Stay \
 inside YOUR lens — the other four hunters cover the rest; overlap wastes the panel's diversity.
 
 If this prompt carries a REPAIR ATTEMPT block: fix EXACTLY what the gate feedback names and re-emit \
@@ -120,16 +124,17 @@ _TYPE_FIELDS_HINT = '"derived_from":["<your lens tag>"], "...type-setting fields
 PROSECUTOR_PROMPT = """You are the independent `gap-prosecutor`. You did not generate the gaps and
 must try to close them. Read all five frozen hunter bundles:
 {hunter_inputs}
-Also read `{run_dir}/inbox/search-results.json` when present. For every gap, run targeted searches
-for the exact method/problem/setting combination; when available, use the scholarly connector or
-harness web search and record the actual query. Inspect the paper, not only its title.
+Also read `{run_dir}/inbox/search-results.json` when present. For every gap, investigate the central
+claim and closest functional equivalents and record the actual queries. Choose the retrieval and
+reading route that best fits the available environment. Inspect the full paper, not only its title.
 A CLOSED decision must be auditable from a run-local UTF-8 full-text snapshot; title, abstract, or
 source existence alone can never close a gap.
 
 {north_star}
 
 Status contract:
-- CLOSED only when a specific real paper already completed the material scope and reports a result.
+- CLOSED only when a specific real full paper already tested the same central claim under materially
+  equivalent input/output and causal-evaluation contracts and reports a result.
   It requires `closure_evidence` with source_ref, title, completed_scope, reported_result,
   result_locator, and `scope_verification`. Save the inspected full text under this run's `inbox/`,
   bind its SHA-256, and quote separate exact spans for scope and result. The deterministic gate reopens
@@ -142,7 +147,8 @@ Write ONLY JSON to `{out}` with exactly one prosecution per hunter gap:
   "gap_id":"FW-1","search_query":"<targeted query>",
   "closure_status":"OPEN|CLOSED|UNVERIFIED","why_status":"<evidence-bounded reason>",
   "strongest_prior_art":[{{"source_ref":"[[slug]] or doi:/arXiv:","title":"<title>",
-    "relationship":"same|adjacent|precursor","result_locator":"<page/section/table>"}}],
+    "relationship":"exact_collision|partial_component_prior|enabling_base|gap_source|orthogonal|uncertain",
+    "result_locator":"<page/section/table>"}}],
   "positive_open_evidence":[{{"source_ref":"[[slug]]","open_scope_or_limitation":"<exact boundary>",
     "locator":"<page/section/table>"}}],
   "closure_evidence":[{{"source_ref":"[[slug]] or doi:/arXiv:","title":"<title>",
@@ -239,10 +245,11 @@ def _worker_model(model_policy: str) -> str:
 
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
-               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8) -> str:
+               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
+               queries=None) -> str:
     """Live-retrieval pre-step (audit H5/M1)."""
     return _shared.pre_search(run_dir, request, ts, transport=transport,
-                              sources=sources, limit_per_source=limit_per_source)
+                              sources=sources, limit_per_source=limit_per_source, queries=queries)
 
 
 def _bundle_path(run_dir, agent: str) -> Path:
@@ -321,7 +328,12 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
 def _load_hunter_bundles(run_dir) -> dict:
     bundles, missing = {}, []
     for hunter in HUNTERS:
-        p = _bundle_path(run_dir, hunter)
+        try:
+            p = resolve_effective_output(
+                Path(run_dir), "DISCOVER", _bundle_path(run_dir, hunter)
+            )
+        except ValueError as exc:
+            raise GateBlock(f"supplement lineage BLOCK: {exc}") from exc
         if not p.exists():
             missing.append(hunter)
             continue
@@ -336,7 +348,12 @@ def _load_hunter_bundles(run_dir) -> dict:
 def _load_post_hunter_bundles(run_dir) -> dict:
     bundles, missing = {}, []
     for agent in POST_HUNTER_AGENTS:
-        p = _bundle_path(run_dir, agent)
+        try:
+            p = resolve_effective_output(
+                Path(run_dir), "DISCOVER", _bundle_path(run_dir, agent)
+            )
+        except ValueError as exc:
+            raise GateBlock(f"supplement lineage BLOCK: {exc}") from exc
         if not p.exists():
             missing.append(agent)
             continue

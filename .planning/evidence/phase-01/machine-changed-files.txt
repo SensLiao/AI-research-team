@@ -1,0 +1,150 @@
+ M .env.example
+ M .planning/ROADMAP.md
+ M .planning/STATE.md
+ M .planning/phases/01-operated-ai-manuscript-authoring/01-15-SUMMARY.md
+ M .planning/phases/01-operated-ai-manuscript-authoring/01-VALIDATION.md
+ M PLATFORM-FACTS.md
+ M README.md
+ M agents/gap-prosecutor.md
+ M agents/lit-scout.md
+ M agents/novelty-collision-checker.md
+ M agents/paper-appraiser.md
+ M agents/paper-markdown-writer.md
+ M agents/paper-relations-mapper.md
+ M agents/research-orchestrator.md
+ M agents/source-quality-ranker.md
+ M agents/venue-reviewer-adversarial.md
+ M agents/venue-reviewer-persona.md
+ M docs/IDEA-CARD-STANDARD-CN.md
+ M docs/PAPER-READING-STANDARD-CN.md
+ M docs/STORAGE-PIPELINE-AND-PROMOTION-CN.md
+ M execute/__init__.py
+ M execute/cli.py
+ M execute/config.py
+ M execute/runner.py
+ M gates/promote-to-vault.md
+ M operate/bounded_repair.py
+ M operate/cli.py
+ M operate/modes/_deep_ideate.py
+ M operate/modes/_shared.py
+ M operate/modes/deep_ideation.py
+ M operate/modes/deep_research.py
+ M operate/modes/evidence_deep.py
+ M operate/modes/evidence_review.py
+ M operate/modes/gap_breadth.py
+ M operate/modes/ingest_paper.py
+ M operate/modes/manuscript_authoring.py
+ M operate/modes/manuscript_review.py
+ M operate/modes/new_direction.py
+ M operate/modes/read_paper_deep.py
+ M operate/modes/venue_readiness.py
+ M operate/output_versions.py
+ M operate/panel_scheduler.py
+ M operate/spine.py
+ M orchestrator/engine.py
+ M orchestrator/graph_spec.py
+ M orchestrator/mode_registry.yaml
+ M orchestrator/router.py
+ M resources/resource_registry.yaml
+ M schemas/claim_evidence_map.schema.json
+ M schemas/collision_findings.schema.json
+ M schemas/ledger_event.schema.json
+ M schemas/novelty_collision_report.schema.json
+ M schemas/paper_appraisal.schema.json
+ M schemas/paper_markdown_card.schema.json
+ M schemas/promotion_record.schema.json
+ M schemas/report_note.schema.json
+ M schemas/research_markdown_brief.schema.json
+ M schemas/run_manifest.schema.json
+ M schemas/task_frame.schema.json
+ M server_monitor/PLATFORM-NOTES.md
+ M server_monitor/monitor.py
+ M skills/research-lookup.md
+ M tests/test_agent_connectivity.py
+ M tests/test_bounded_repair.py
+ M tests/test_classify_gap.py
+ M tests/test_collision_gate_integration.py
+ M tests/test_director_packet.py
+ M tests/test_director_veto.py
+ M tests/test_drift_gate.py
+ M tests/test_engine.py
+ M tests/test_execute.py
+ M tests/test_execution_registry.py
+ M tests/test_graph_spec.py
+ M tests/test_idea_bet_investment_memo.py
+ M tests/test_latex_build.py
+ M tests/test_m3a_new_direction.py
+ M tests/test_manuscript_renderer.py
+ M tests/test_manuscript_schema_contracts.py
+ M tests/test_novelty_collision.py
+ M tests/test_operate_deep_ideation.py
+ M tests/test_operate_full_rigor.py
+ M tests/test_operate_gap_breadth.py
+ M tests/test_operate_manuscript_authoring.py
+ M tests/test_operate_manuscript_review.py
+ M tests/test_operate_read_paper_deep.py
+ M tests/test_operate_shared.py
+ M tests/test_operate_spine.py
+ M tests/test_operate_venue_readiness.py
+ M tests/test_operate_wave1_modes.py
+ M tests/test_panel_scheduler.py
+ M tests/test_paper_appraisal_schema.py
+ M tests/test_paper_search.py
+ M tests/test_promote_gate.py
+ M tests/test_quality_scoreboard.py
+ M tests/test_research_output_quality.py
+ M tests/test_research_plan.py
+ M tests/test_router.py
+ M tests/test_runstore.py
+ M tests/test_schema_normalizer.py
+ M tests/test_scholar_clients.py
+ M tests/test_validate_artifact.py
+ M tools/_latex_sandbox.py
+ M tools/citation_attribution.py
+ M tools/classify_gap.py
+ M tools/director_packet.py
+ M tools/drift_gate.py
+ M tools/execution_registry.py
+ M tools/full_rigor_markdown.py
+ M tools/idea_bet_markdown.py
+ M tools/latex_build.py
+ M tools/ledger.py
+ M tools/manuscript_renderer.py
+ M tools/novelty_collision.py
+ M tools/paper_search.py
+ M tools/project_memory.py
+ M tools/projects.py
+ M tools/promote.py
+ M tools/promote_gate.py
+ M tools/research_output_quality.py
+ M tools/research_plan.py
+ M tools/resource_resolver.py
+ M tools/runstore.py
+ M tools/schema_normalizer.py
+ M tools/scholar_clients.py
+ M tools/validate_artifact.py
+ M tools/venue_readiness_markdown.py
+?? .planning/evidence/
+?? .planning/phases/01-operated-ai-manuscript-authoring/01-20-SUMMARY.md
+?? .planning/phases/01-operated-ai-manuscript-authoring/01-VERIFICATION.md
+?? .planning/tmp/
+?? orchestrator/gate_policy.py
+?? requirements-dev.txt
+?? requirements.txt
+?? schemas/document_promotion_candidate.schema.json
+?? schemas/document_promotion_record.schema.json
+?? schemas/manuscript_evidence_slice.schema.json
+?? schemas/manuscript_venue_profile_slice.schema.json
+?? schemas/submission_checklist.schema.json
+?? tests/test_collision_schema_contract.py
+?? tests/test_document_promotion.py
+?? tests/test_evidence_deep_source_preflight.py
+?? tests/test_gate_policy.py
+?? tests/test_manuscript_completion.py
+?? tests/test_manuscript_environment.py
+?? tests/test_output_versions.py
+?? tests/test_worker_bundle_extractor.py
+?? tools/document_candidate_builder.py
+?? tools/document_promotion.py
+?? workspace/audit_log.jsonl
+?? workspace/lease_registry.jsonl

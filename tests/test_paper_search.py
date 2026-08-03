@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
 
 import pytest
 
@@ -9,7 +10,9 @@ from research_agent_teams.operate.artifacts import envelope
 from research_agent_teams.tools.paper_search import (
     neighbor_overlap,
     no_semantic_neighbor_found,
+    query_title_relevance,
     search,
+    search_many,
     to_evidence_sources,
     write_search_bundle,
 )
@@ -118,6 +121,57 @@ def test_write_search_bundle(tmp_path):
     assert data["query"] == "tubular segmentation"
     assert len(data["evidence_rows"]) == 3 and data["retrieved_at"] == "2026-06-10T12:00:00Z"
     assert "crossref" in data["source_errors"]
+
+
+def test_multilingual_query_plan_is_utf8_and_filters_off_topic_crossref_noise():
+    query = "医学图像 涂鸦 交互分割"
+    body = json.dumps({"message": {"items": [
+        {"title": ["医学图像涂鸦交互分割方法"], "DOI": "10.1000/relevant",
+         "issued": {"date-parts": [[2025]]}, "container-title": ["Medical Imaging"]},
+        {"title": ["科学家故事融入初中科学教育的模式构建和实践验证"],
+         "DOI": "10.1000/noise", "issued": {"date-parts": [[2025]]},
+         "container-title": ["Education"]},
+    ]}}, ensure_ascii=False).encode("utf-8")
+    seen = []
+
+    def transport(url, headers):
+        seen.append(url)
+        return body
+
+    result = search_many([query], sources=("crossref",), transport=transport)
+    decoded_query = urllib.parse.parse_qs(urllib.parse.urlsplit(seen[0]).query)["query"][0]
+    assert decoded_query == query
+    assert result["queries"] == [query]
+    assert [record["doi"] for record in result["records"]] == ["10.1000/relevant"]
+    assert result["relevance_filter"]["n_candidates"] == 2
+    assert result["relevance_filter"]["n_accepted"] == 1
+    assert result["relevance_filter"]["n_rejected"] == 1
+    assert query_title_relevance(query, "医学图像涂鸦交互分割方法") > 0
+    assert query_title_relevance(query, "教学模式构建与验证") == 0
+
+
+def test_query_filter_rejects_generic_budget_match_and_supplement_components():
+    query = "interactive segmentation baseline fairness prompt budget same initial mask"
+    body = json.dumps({"message": {"items": [
+        {"title": ["Deep Interactive Segmentation of Medical Images"],
+         "DOI": "10.1000/interactive", "issued": {"date-parts": [[2024]]}},
+        {"title": ["When to Repair a Graph Index: A Matched-Budget Baseline"],
+         "DOI": "10.1000/graph", "issued": {"date-parts": [[2025]]}},
+        {"title": ["Interactive Segmentation with Prompt Masks_supp1-123.mp4"],
+         "DOI": "10.1000/interactive/mm1", "issued": {"date-parts": [[2024]]}},
+    ]}}).encode("utf-8")
+
+    result = search_many([query], sources=("crossref",), transport=lambda *_: body)
+
+    assert [record["doi"] for record in result["records"]] == ["10.1000/interactive"]
+    assert result["relevance_filter"] == {
+        "kind": "multilingual_query_title_lexical/v1",
+        "min_score": 0.5,
+        "n_candidates": 3,
+        "n_accepted": 1,
+        "n_rejected": 2,
+        "n_merged_duplicates": 0,
+    }
 
 
 def test_vault_path_is_refused_by_both_write_paths(tmp_path):

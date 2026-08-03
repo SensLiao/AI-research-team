@@ -131,6 +131,17 @@ def test_paper_type_null_validates():
     assert validate_against(SCHEMA, instance) == []
 
 
+def test_not_applicable_dimension_may_use_null_score_with_note():
+    instance = {
+        "source_ref": "x",
+        "dimensions": [{
+            "dim": "domain_validity", "score": None,
+            "note": "Not applicable to this methodological paper.",
+        }],
+    }
+    assert validate_against(SCHEMA, instance) == []
+
+
 def test_null_checklist_validates():
     """checklist accepts null (no formal standard applies)."""
     instance = {

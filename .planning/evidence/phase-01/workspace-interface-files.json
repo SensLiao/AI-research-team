@@ -1,0 +1,22 @@
+[
+    {
+        "scope":  "same-workspace-interface-outside-machine-git",
+        "path":  "C:\\Users\\廖神\\Desktop\\Innovation_projects\\Self-project\\Personal AI Infrastructure\\cases\\Route A\\AI agent database (for research)\\AGENTS.md",
+        "sha256":  "8714567a12590123fe5cb4b9387b2d09c81d9f144ee0e003510c7dcfe6051128"
+    },
+    {
+        "scope":  "same-workspace-interface-outside-machine-git",
+        "path":  "C:\\Users\\廖神\\Desktop\\Innovation_projects\\Self-project\\Personal AI Infrastructure\\cases\\Route A\\AI agent database (for research)\\.agents\\skills\\research-orchestrator\\SKILL.md",
+        "sha256":  "4057ad0ab08dd6c953d2272087ac77a9426a7a4a4a5bd98155a1e8a63f57142d"
+    },
+    {
+        "scope":  "same-workspace-interface-outside-machine-git",
+        "path":  "C:\\Users\\廖神\\Desktop\\Innovation_projects\\Self-project\\Personal AI Infrastructure\\cases\\Route A\\AI agent database (for research)\\.agents\\skills\\source-command-run-mode\\SKILL.md",
+        "sha256":  "161e39ce631cc2ee82786549d8d19fea6ea4e0b14be62ea1743b880cf253d0b9"
+    },
+    {
+        "scope":  "same-workspace-interface-outside-machine-git",
+        "path":  "C:\\Users\\廖神\\Desktop\\Innovation_projects\\Self-project\\Personal AI Infrastructure\\cases\\Route A\\AI agent database (for research)\\.agents\\skills\\source-command-start-research\\SKILL.md",
+        "sha256":  "0848a7f50d113f9fb919fa6a882832f35b758139982cf5ac709cc0d316356e2a"
+    }
+]

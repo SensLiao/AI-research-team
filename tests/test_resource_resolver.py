@@ -90,3 +90,32 @@ def test_ttl_capped_by_policy(tmp_path, monkeypatch, resource_projects_root):
     span = (datetime.strptime(rec["expires_at"], fmt) - datetime.strptime(rec["granted_at"], fmt)).total_seconds()
     assert span <= 3600
     assert r.lease_id == "lease-r1-001"
+
+
+def test_petct_dual_gpu_candidates_are_discoverable_but_only_a6000_is_execution_ready(
+    tmp_path, monkeypatch
+):
+    """Discovery separates bound hardware from readiness and never grants submit_job."""
+    monkeypatch.delenv("RAT_RESOURCES_ROOT", raising=False)
+    monkeypatch.delenv("RAT_PROJECTS_ROOT", raising=False)
+    resolver = ResourceResolver(workspace_root=str(tmp_path / "ws"))
+
+    query_candidates = resolver.candidates(
+        project="petct-residual-correction",
+        resource_type="hardware.ssh_server",
+        capability="query_status",
+    )
+    assert [(item["alias"], item["resource_id"]) for item in query_candidates] == [
+        ("primary_gpu", "server.honor.gpu"),
+        ("secondary_gpu", "server.usyd.bdav_z390_3090"),
+    ]
+    assert all(item["submit_job_allowed"] is False for item in query_candidates)
+
+    execution_ready = resolver.candidates(
+        project="petct-residual-correction",
+        resource_type="hardware.ssh_server",
+        require_execution_ready=True,
+    )
+    assert [(item["alias"], item["execution_status"]) for item in execution_ready] == [
+        ("primary_gpu", "gated_available"),
+    ]

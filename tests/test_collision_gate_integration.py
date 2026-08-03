@@ -15,6 +15,7 @@ the vault is forced unreachable (VAULT_ROOT_OVERRIDE=False) so slug checks degra
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -26,6 +27,9 @@ from research_agent_teams.tools.project_memory import load_prior_art
 from research_agent_teams.tools.validate_artifact import validate_artifact
 
 TS = "2026-06-18T00:00:00Z"
+COLLISION_PDF_BYTES = b"%PDF-1.4 full paper fixture"
+COLLISION_PDF_REF = "inbox/fulltext-docs/colliding-paper.pdf"
+COLLISION_PDF_SHA256 = hashlib.sha256(COLLISION_PDF_BYTES).hexdigest()
 
 # A fake CrossRef transport: every DOI/title lookup resolves -> citation_existence marks it 'verified'
 # (so a colliding paper PASSES the existence fact-check). Offline: no real network is ever touched.
@@ -77,12 +81,23 @@ _COLLISION_BUNDLE = {
          "colliding_papers": [
              {"ref": "doi:10.5555/collide", "title": "The Colliding Paper",
               "does_same_method_on_same_problem": True, "experimentally_validated": True,
+              "full_text_reviewed": True, "relationship": "exact_collision",
+              "fulltext_snapshot_ref": COLLISION_PDF_REF,
+              "fulltext_snapshot_sha256": COLLISION_PDF_SHA256,
+              "same_central_claim": True, "same_input_output_contract": True,
+              "same_causal_evaluation": True,
+              "evidence_loci": ["p.4 method", "p.7 Table 2"],
+              "method_evidence_loci": ["p.4 method"],
+              "result_evidence_loci": ["p.7 Table 2"],
+              "material_surviving_delta": False, "surviving_gap": "none",
               "justification": "same loss combo on the same canal task, with experiments",
               "quote": "we train Tversky+boundary on the frozen encoder for canal segmentation"}],
-         "confidence": "high", "retrieval_note": "covered arXiv + crossref"},
+         "confidence": "high", "retrieval_status": "complete",
+         "retrieval_note": "covered arXiv + crossref"},
         {"idea_id": "IDEA-2", "method_combination": "gated TTA", "application": "canal segmentation",
          "domain": "dental CBCT", "queries": ["gated test-time adaptation canal segmentation"],
          "verdict": "clear", "colliding_papers": [], "confidence": "medium",
+         "retrieval_status": "complete",
          "retrieval_note": "no collision found within coverage"},
     ],
     "evidence_ref": ["inbox/COLLISION.bundle.json"],
@@ -110,7 +125,11 @@ def _begin_run(tmp_path, *, project=None):
         (tmp_path / "projects" / project / "notes").mkdir(parents=True, exist_ok=True)
     plan = spine.begin(str(runs), "cg1", "find a canal segmentation direction", "new_direction", TS,
                        north_star=_NORTH_STAR, project=project)
-    return Path(plan["run_dir"])
+    run_dir = Path(plan["run_dir"])
+    snapshot = run_dir / COLLISION_PDF_REF
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_bytes(COLLISION_PDF_BYTES)
+    return run_dir
 
 
 def _seed_discover(run_dir):
@@ -163,6 +182,50 @@ def test_colliding_idea_is_cut_from_the_menu_and_survivors_remain(tmp_path):
     # the report counters reflect exactly one evidenced cut.
     assert report["collision_cut"] == 1
     assert report["collision_retrieval_grounded"] is True
+
+
+def test_schema_invalid_string_booleans_never_cut_an_idea(tmp_path):
+    run_dir = _begin_run(tmp_path)
+    _seed_discover(run_dir)
+    _inject(run_dir, "IDEATE.bundle.json", _IDEATE_BUNDLE)
+    malformed = json.loads(json.dumps(_COLLISION_BUNDLE))
+    paper = malformed["findings"][0]["colliding_papers"][0]
+    for key in (
+        "does_same_method_on_same_problem",
+        "experimentally_validated",
+        "full_text_reviewed",
+        "same_central_claim",
+        "same_input_output_contract",
+        "same_causal_evaluation",
+    ):
+        paper[key] = "false"
+    _inject(run_dir, "COLLISION.bundle.json", malformed)
+
+    _paths, report = new_direction.run_dets(run_dir, "IDEATE", TS)
+
+    assert report["collision_cut"] == 0
+    verdict = _payload(run_dir, "IDEATE", "novelty-collision-verdict.artifact.json")
+    assert verdict["cut_ids"] == []
+    assert all(row["verdict"] == "UNVERIFIED" for row in verdict["ideas"])
+
+
+def test_hash_mismatched_fulltext_snapshot_never_cuts_an_idea(tmp_path):
+    run_dir = _begin_run(tmp_path)
+    _seed_discover(run_dir)
+    _inject(run_dir, "IDEATE.bundle.json", _IDEATE_BUNDLE)
+    mismatched = json.loads(json.dumps(_COLLISION_BUNDLE))
+    mismatched["findings"][0]["colliding_papers"][0][
+        "fulltext_snapshot_sha256"
+    ] = "0" * 64
+    _inject(run_dir, "COLLISION.bundle.json", mismatched)
+
+    _paths, report = new_direction.run_dets(run_dir, "IDEATE", TS)
+
+    assert report["collision_cut"] == 0
+    verdict = _payload(run_dir, "IDEATE", "novelty-collision-verdict.artifact.json")
+    row = next(item for item in verdict["ideas"] if item["idea_id"] == "IDEA-1")
+    assert row["verdict"] == "UNVERIFIED"
+    assert row["colliding_papers"][0]["fulltext_snapshot_verified"] is False
 
 
 def test_collision_verdict_artifact_is_written_and_schema_valid(tmp_path):

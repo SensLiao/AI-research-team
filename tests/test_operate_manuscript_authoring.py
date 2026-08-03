@@ -7,13 +7,20 @@ can reach the single integration transform.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
+from research_agent_teams.operate.artifacts import write_artifact
 from research_agent_teams.operate.modes import manuscript_authoring as authoring
+from research_agent_teams.tools.validate_artifact import validate_artifact
+from tests.test_manuscript_predraft_schemas import (
+    valid_local_literature_coverage,
+    valid_manuscript_contract,
+)
 
 
 def _sha(value: object) -> str:
@@ -116,6 +123,121 @@ def _write_contract(run_dir: Path, contract: dict) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def _write_json(path: Path, value: object) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _claim_evidence_map() -> dict:
+    return {
+        "attribution_contract_version": "claim-span/v1",
+        "mappings": [
+            {
+                "claim_id": "CLM-001",
+                "loci": [
+                    {
+                        "locus_id": "LOC-001",
+                        "source_ref": "evidence/local-paper-001",
+                        "location": "Section 2",
+                        "kind": "text",
+                        "reported_result": "The local source supports the frozen claim.",
+                        "supports_claim": True,
+                        "support_relation": "entails",
+                        "span_id": "span-001",
+                        "snapshot_ref": "evidence/local-paper-001",
+                        "document_hash": "c" * 64,
+                        "parser_version": "fixture-parser/v1",
+                        "char_start": 0,
+                        "char_end": 12,
+                        "exact_quote": "local source",
+                    }
+                ],
+                "overall_support": "supported",
+            }
+        ],
+    }
+
+
+def _prepare_design_slice_run(
+    run_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    tamper_receipt: bool = False,
+    omit_evidence_slice: bool = False,
+) -> dict:
+    frozen = valid_manuscript_contract()
+    frozen["manuscript_snapshot_sha256"] = authoring._hash(
+        frozen, omit="manuscript_snapshot_sha256"
+    )
+    coverage = valid_local_literature_coverage()
+    coverage["manuscript_snapshot_sha256"] = frozen["manuscript_snapshot_sha256"]
+    write_artifact(
+        run_dir,
+        "DISCOVER",
+        "local-literature-coverage.artifact.json",
+        "local_literature_coverage",
+        "manuscript-venue-corpus-scout",
+        coverage,
+        "2026-07-22T00:00:00Z",
+    )
+    receipts_root = run_dir / authoring.WORKER_ROOT_REL / "receipts"
+    venue_receipt_rel = f"{authoring.WORKER_ROOT_REL}/receipts/venue-scout.json"
+    evidence_receipt_rel = f"{authoring.WORKER_ROOT_REL}/receipts/evidence-steward.json"
+    venue_receipt_sha = _write_json(receipts_root / "venue-scout.json", {"scope": "DISCOVER"})
+    evidence_receipt_sha = _write_json(receipts_root / "evidence-steward.json", {"scope": "DESIGN"})
+    if tamper_receipt:
+        _write_json(receipts_root / "evidence-steward.json", {"scope": "TAMPERED"})
+    venue_seed = {
+        "authorization_receipt": {
+            "ref": venue_receipt_rel,
+            "sha256": venue_receipt_sha,
+            "worker_role": "manuscript-venue-corpus-scout",
+        },
+        "venue_profile": copy.deepcopy(frozen["venue_profile"]),
+    }
+    evidence_seed = {
+        "authorization_receipt": {
+            "ref": evidence_receipt_rel,
+            "sha256": evidence_receipt_sha,
+            "worker_role": "manuscript-evidence-steward",
+        },
+        "evidence_refs": copy.deepcopy(frozen["evidence_refs"]),
+        "result_refs": copy.deepcopy(frozen["result_refs"]),
+        "bibliography": copy.deepcopy(frozen["bibliography"]),
+    }
+    _write_json(
+        run_dir / authoring.DISCOVERY_REL,
+        {"payload": {"manuscript_discovery": {"manuscript_venue_profile_slice": venue_seed}}},
+    )
+    _write_json(
+        run_dir / authoring.ARCHITECT_REL,
+        {"payload": {"manuscript_contract_draft": {}}},
+    )
+    admission = {
+        "claim_evidence_map": _claim_evidence_map(),
+        "evidence_refs": copy.deepcopy(frozen["evidence_refs"]),
+        "result_refs": copy.deepcopy(frozen["result_refs"]),
+        "bibliography": copy.deepcopy(frozen["bibliography"]),
+    }
+    if not omit_evidence_slice:
+        admission["manuscript_evidence_slice"] = evidence_seed
+    _write_json(
+        run_dir / authoring.EVIDENCE_STEWARD_REL,
+        {"payload": {"manuscript_evidence_admission": admission}},
+    )
+    monkeypatch.setattr(
+        authoring,
+        "freeze_manuscript_contract",
+        lambda *_args, **_kwargs: copy.deepcopy(frozen),
+    )
+    return {
+        "frozen": frozen,
+        "venue_receipt_rel": venue_receipt_rel,
+        "evidence_receipt_rel": evidence_receipt_rel,
+    }
 
 
 GOLD_CASE_ASSERTIONS = {
@@ -246,3 +368,67 @@ def test_recipe_caps_schema_supplements_at_two(tmp_path):
     budget = authoring.repair_budget(str(tmp_path))
 
     assert budget["max_debug_retries_per_run"] == 2
+
+
+def test_design_stage_writes_hash_bound_venue_and_evidence_slices(tmp_path, monkeypatch):
+    fixture = _prepare_design_slice_run(tmp_path, monkeypatch)
+
+    paths, details = authoring.run_dets(str(tmp_path), "DESIGN", "2026-07-22T00:00:00Z")
+
+    assert details["venue_profile_slice"] == authoring.DESIGN_VENUE_PROFILE_SLICE_ARTIFACT
+    assert details["evidence_slice"] == authoring.DESIGN_EVIDENCE_SLICE_ARTIFACT
+    assert any(path.endswith("manuscript-venue-profile-slice.artifact.json") for path in paths)
+    assert any(path.endswith("manuscript-evidence-slice.artifact.json") for path in paths)
+    venue_artifact = json.loads(
+        (tmp_path / authoring.DESIGN_VENUE_PROFILE_SLICE_ARTIFACT).read_text(encoding="utf-8")
+    )
+    evidence_artifact = json.loads(
+        (tmp_path / authoring.DESIGN_EVIDENCE_SLICE_ARTIFACT).read_text(encoding="utf-8")
+    )
+    assert validate_artifact(venue_artifact) == []
+    assert validate_artifact(evidence_artifact) == []
+    venue = venue_artifact["payload"]
+    evidence = evidence_artifact["payload"]
+    coverage_path = tmp_path / authoring.DISCOVERY_COVERAGE_ARTIFACT
+    claim_map_path = tmp_path / authoring.DESIGN_CLAIM_EVIDENCE_MAP_ARTIFACT
+    assert venue["manuscript_snapshot_sha256"] == fixture["frozen"]["manuscript_snapshot_sha256"]
+    assert venue["local_literature_coverage_ref"] == authoring.DISCOVERY_COVERAGE_ARTIFACT
+    assert venue["local_literature_coverage_sha256"] == hashlib.sha256(coverage_path.read_bytes()).hexdigest()
+    assert venue["authorization_receipt"]["ref"] == fixture["venue_receipt_rel"]
+    assert venue["authorization_receipt"]["sha256"] == hashlib.sha256(
+        (tmp_path / fixture["venue_receipt_rel"]).read_bytes()
+    ).hexdigest()
+    assert venue["venue_profile_slice_sha256"] == authoring._hash(
+        venue, omit="venue_profile_slice_sha256"
+    )
+    assert evidence["claim_evidence_map_ref"] == authoring.DESIGN_CLAIM_EVIDENCE_MAP_ARTIFACT
+    assert evidence["claim_evidence_map_sha256"] == hashlib.sha256(claim_map_path.read_bytes()).hexdigest()
+    assert evidence["authorization_receipt"]["ref"] == fixture["evidence_receipt_rel"]
+    assert evidence["evidence_slice_sha256"] == authoring._hash(
+        evidence, omit="evidence_slice_sha256"
+    )
+
+
+@pytest.mark.parametrize(
+    ("tamper_receipt", "omit_evidence_slice", "match"),
+    [
+        (True, False, "REFERENCE_HASH_MISMATCH"),
+        (False, True, "WORKER_BUNDLE_MISSING"),
+    ],
+)
+def test_design_slices_fail_closed_on_missing_or_tampered_provenance(
+    tmp_path, monkeypatch, tamper_receipt, omit_evidence_slice, match
+):
+    _prepare_design_slice_run(
+        tmp_path,
+        monkeypatch,
+        tamper_receipt=tamper_receipt,
+        omit_evidence_slice=omit_evidence_slice,
+    )
+
+    with pytest.raises(authoring.ManuscriptAuthoringError, match=match):
+        authoring.run_dets(str(tmp_path), "DESIGN", "2026-07-22T00:00:00Z")
+
+
+def test_authoring_report_does_not_schedule_the_review_only_submission_packager(tmp_path):
+    assert authoring.llm_step(str(tmp_path), "REPORT", "render") is None

@@ -20,6 +20,7 @@ from research_agent_teams.tools.novelty_collision import (
     WORKER_ADJACENT,
     WORKER_CLEAR,
     WORKER_COLLISION,
+    WORKER_UNVERIFIED,
     build_collision_verdict,
 )
 
@@ -35,14 +36,27 @@ def _finding(idea_id, verdict, papers=None, **extra):
     """A collision_findings[] entry by idea_id (mirrors the worker bundle shape)."""
     f = {"idea_id": idea_id, "method_combination": "m", "application": "a", "domain": "d",
          "queries": ["q"], "verdict": verdict, "colliding_papers": list(papers or []),
-         "confidence": "high"}
+         "confidence": "high", "retrieval_status": "complete"}
     f.update(extra)
     return f
 
 
 def _paper(ref, *, same=True, ran=True, title="A Paper"):
     return {"ref": ref, "title": title, "does_same_method_on_same_problem": same,
-            "experimentally_validated": ran, "justification": "why"}
+            "experimentally_validated": ran,
+            "full_text_reviewed": True,
+            "fulltext_snapshot_ref": "inbox/fulltext-docs/paper.pdf",
+            "_fulltext_snapshot_verified": True,
+            "relationship": "exact_collision" if same else "partial_component_prior",
+            "same_central_claim": same,
+            "same_input_output_contract": same,
+            "same_causal_evaluation": same,
+            "evidence_loci": ["p.4 method; p.7 Table 2"],
+            "method_evidence_loci": ["p.4 method"],
+            "result_evidence_loci": ["p.7 Table 2"],
+            "material_surviving_delta": not same,
+            "surviving_gap": "none" if same else "central claim differs",
+            "justification": "why"}
 
 
 def _by_id(verdict):
@@ -64,11 +78,77 @@ def test_dead_via_worker_when_verified_paper_does_same_and_ran():
     # recorded shape: the colliding paper carries its existence state + the experiments flag
     cp = e["colliding_papers"][0]
     assert cp == {"ref": "arXiv:2407.01517", "existence": "verified",
-                  "experimentally_validated": True}
+                  "experimentally_validated": True, "full_text_reviewed": True,
+                  "fulltext_snapshot_ref": "inbox/fulltext-docs/paper.pdf",
+                  "fulltext_snapshot_verified": True,
+                  "relationship": "exact_collision", "same_central_claim": True,
+                  "same_input_output_contract": True, "same_causal_evaluation": True,
+                  "method_evidence_loci": ["p.4 method"],
+                  "result_evidence_loci": ["p.7 Table 2"],
+                  "material_surviving_delta": False, "surviving_gap": "none"}
     # The other two ideas survive, but another idea's finding cannot silently clear them.
     assert v["survivors"] == ["IDEA-2", "IDEA-3"]
     assert _by_id(v)["IDEA-2"]["verdict"] == VERDICT_UNVERIFIED
     assert "per-idea coverage is missing" in _by_id(v)["IDEA-2"]["reason"]
+
+
+def test_component_overlap_without_full_claim_equivalence_never_cuts():
+    paper = _paper("arXiv:base")
+    paper.update({
+        "relationship": "enabling_base",
+        "same_central_claim": False,
+        "same_causal_evaluation": False,
+        "surviving_gap": "same-state causal scope assay is absent",
+    })
+    findings = [_finding("IDEA-1", WORKER_COLLISION, [paper])]
+    verdict = build_collision_verdict(IDEAS, findings, {"arXiv:base": "verified"}, {})
+    row = _by_id(verdict)["IDEA-1"]
+    assert row["verdict"] == VERDICT_UNVERIFIED
+    assert row["cut"] is False
+
+
+def test_material_surviving_delta_never_cuts_even_with_full_claim_flags():
+    paper = _paper("arXiv:improvable")
+    paper["material_surviving_delta"] = True
+    paper["surviving_gap"] = "the candidate adds a falsifiable state-relative causal control"
+    findings = [_finding("IDEA-1", WORKER_COLLISION, [paper])]
+    verdict = build_collision_verdict(
+        IDEAS, findings, {"arXiv:improvable": "verified"}, {})
+    row = _by_id(verdict)["IDEA-1"]
+    assert row["verdict"] == VERDICT_UNVERIFIED
+    assert row["cut"] is False
+
+
+@pytest.mark.parametrize("missing_field", ["method_evidence_loci", "result_evidence_loci"])
+def test_missing_method_or_result_locator_never_cuts(missing_field):
+    paper = _paper("arXiv:thin-locus")
+    paper[missing_field] = []
+    findings = [_finding("IDEA-1", WORKER_COLLISION, [paper])]
+    verdict = build_collision_verdict(
+        IDEAS, findings, {"arXiv:thin-locus": "verified"}, {})
+    assert _by_id(verdict)["IDEA-1"]["verdict"] == VERDICT_UNVERIFIED
+    assert verdict["cut_ids"] == []
+
+
+def test_abstract_only_match_never_cuts_even_when_worker_calls_it_collision():
+    paper = _paper("arXiv:abstract")
+    paper["full_text_reviewed"] = False
+    paper["evidence_loci"] = []
+    findings = [_finding("IDEA-1", WORKER_COLLISION, [paper])]
+    verdict = build_collision_verdict(IDEAS, findings, {"arXiv:abstract": "verified"}, {})
+    assert _by_id(verdict)["IDEA-1"]["verdict"] == VERDICT_UNVERIFIED
+    assert verdict["cut_ids"] == []
+
+
+def test_unbound_fulltext_claim_never_cuts_even_when_worker_calls_it_collision():
+    paper = _paper("arXiv:unbound")
+    paper["_fulltext_snapshot_verified"] = False
+    findings = [_finding("IDEA-1", WORKER_COLLISION, [paper])]
+    verdict = build_collision_verdict(
+        IDEAS, findings, {"arXiv:unbound": "verified"}, {}
+    )
+    assert _by_id(verdict)["IDEA-1"]["verdict"] == VERDICT_UNVERIFIED
+    assert verdict["cut_ids"] == []
 
 
 def test_dead_via_worker_accepts_the_design_alias_EXISTS():
@@ -131,6 +211,19 @@ def test_adjacent_is_white_space_and_never_cut():
     assert "IDEA-1" in v["survivors"]
 
 
+def test_adjacent_with_partial_retrieval_stays_unverified_not_publishable_white_space():
+    findings = [_finding(
+        "IDEA-1", WORKER_ADJACENT, [_paper("arXiv:adj-partial", same=False)],
+        retrieval_status="partial",
+    )]
+    verdict = build_collision_verdict(
+        IDEAS, findings, {"arXiv:adj-partial": "verified"}, {}, retrieval_grounded=True)
+    row = _by_id(verdict)["IDEA-1"]
+    assert row["verdict"] == VERDICT_UNVERIFIED
+    assert row["cut"] is False
+    assert "provisional" in row["reason"]
+
+
 # --------------------------------------------------------------------------- 5. clear x retrieval_grounded
 
 def test_clear_with_retrieval_grounded_is_clear():
@@ -162,6 +255,26 @@ def test_clear_without_retrieval_grounded_is_unverified():
     assert v["retrieval_grounded"] is False
 
 
+def test_partial_retrieval_cannot_clear_an_idea():
+    findings = [_finding("IDEA-1", WORKER_CLEAR, [], retrieval_status="partial")]
+    verdict = build_collision_verdict(IDEAS, findings, {}, {}, retrieval_grounded=True)
+    row = _by_id(verdict)["IDEA-1"]
+    assert row["verdict"] == VERDICT_UNVERIFIED
+    assert row["cut"] is False
+
+
+def test_full_text_unavailable_worker_state_is_explicitly_unverified():
+    paper = _paper("arXiv:near")
+    paper.update({"full_text_reviewed": False, "relationship": "uncertain",
+                  "evidence_loci": []})
+    findings = [_finding("IDEA-1", WORKER_UNVERIFIED, [paper])]
+    verdict = build_collision_verdict(
+        IDEAS, findings, {"arXiv:near": "verified"}, {}, retrieval_grounded=True)
+    row = _by_id(verdict)["IDEA-1"]
+    assert row["verdict"] == VERDICT_UNVERIFIED
+    assert row["cut"] is False
+
+
 # --------------------------------------------------------------------------- 6. retrieval ungrounded, no findings
 
 def test_retrieval_not_grounded_makes_everything_unverified_and_cuts_nothing():
@@ -176,21 +289,21 @@ def test_retrieval_not_grounded_makes_everything_unverified_and_cuts_nothing():
 
 # --------------------------------------------------------------------------- 7. ledger pre-match -> DEAD
 
-def test_prior_art_ledger_hit_is_dead_from_ledger_even_with_no_worker_finding():
+def test_prior_art_ledger_hit_is_a_lead_not_an_automatic_cut():
     """A known-dead idea (matched the cross-run ledger) stays DEAD with source='ledger' — the machine
     must not re-output it — even though there is no fresh worker finding this run."""
     row = {"run_id": "r-old", "idea_id": "IDEA-2", "summary": "x",
            "colliding_refs": ["arXiv:old"], "experimentally_validated": True, "verdict": "DEAD"}
     v = build_collision_verdict(IDEAS, [], {"arXiv:old": "verified"}, {"IDEA-2": row})
     e = _by_id(v)["IDEA-2"]
-    assert e["verdict"] == VERDICT_DEAD
+    assert e["verdict"] == VERDICT_UNVERIFIED
     assert e["source"] == SOURCE_LEDGER
-    assert e["cut"] is True
+    assert e["cut"] is False
     assert e["colliding_papers"][0]["ref"] == "arXiv:old"
-    assert "IDEA-2" in v["cut_ids"]
+    assert "IDEA-2" not in v["cut_ids"]
 
 
-def test_ledger_hit_wins_over_a_worker_clear_finding():
+def test_fresh_full_paper_finding_wins_over_a_lexical_ledger_lead():
     """The ledger is authoritative: an idea the worker reports 'clear' is still DEAD if the ledger
     already cut it (the machine never re-outputs a known-dead idea)."""
     row = {"run_id": "r-old", "idea_id": "IDEA-1", "summary": "x",
@@ -198,7 +311,7 @@ def test_ledger_hit_wins_over_a_worker_clear_finding():
     findings = [_finding("IDEA-1", WORKER_CLEAR, [])]
     v = build_collision_verdict(IDEAS, findings, {}, {"IDEA-1": row})
     e = _by_id(v)["IDEA-1"]
-    assert e["verdict"] == VERDICT_DEAD and e["source"] == SOURCE_LEDGER and e["cut"] is True
+    assert e["verdict"] == VERDICT_CLEAR and e["source"] == SOURCE_WORKER and e["cut"] is False
 
 
 # --------------------------------------------------------------------------- 8. hard_block=False -> flag-only
@@ -214,12 +327,12 @@ def test_hard_block_false_labels_dead_but_does_not_cut():
     assert v["policy"] == {"hard_block": False, "cut_requires_experiments": True}
 
 
-def test_hard_block_false_keeps_a_ledger_dead_idea_too():
+def test_hard_block_false_does_not_promote_a_ledger_lead_to_dead():
     row = {"run_id": "r-old", "idea_id": "IDEA-3", "summary": "x",
            "colliding_refs": ["arXiv:z"], "experimentally_validated": True, "verdict": "DEAD"}
     v = build_collision_verdict(IDEAS, [], {}, {"IDEA-3": row}, hard_block=False)
     e = _by_id(v)["IDEA-3"]
-    assert e["verdict"] == VERDICT_DEAD and e["cut"] is False
+    assert e["verdict"] == VERDICT_UNVERIFIED and e["cut"] is False
     assert v["cut_ids"] == []
 
 

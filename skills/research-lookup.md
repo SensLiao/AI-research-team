@@ -16,7 +16,7 @@ python -m research_agent_teams.tools.paper_search "<query>" --sources arxiv,open
 ```
 
 (arXiv + OpenAlex + Crossref + Semantic Scholar, free-first, NO Sci-Hub; optional env:
-`RAT_S2_API_KEY`, `RAT_CONTACT_MAIL`. In operated runs the recipe pre-step drops the same
+`RAT_OPENALEX_API_KEY`, `RAT_S2_API_KEY`, `RAT_CONTACT_MAIL`. In operated runs the recipe pre-step drops the same
 result shape at `runs/<run>/inbox/search-results.json` — read that first.)
 
 ## Routing discipline (absorbed pattern)

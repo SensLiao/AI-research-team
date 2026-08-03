@@ -1,0 +1,397 @@
+{
+  "schema_version": "external-research-skill-sources/v1",
+  "review_date": "2026-07-31",
+  "review_root": "C:/Users/廖神/Desktop/Honor degree/.tmp/research-agent-skills-review/2026-07-31",
+  "path_semantics": "source_artifacts paths are POSIX-style repository-relative paths at the pinned commit",
+  "source_count": 9,
+  "skill_count_total": 359,
+  "sources": [
+    {
+      "source_id": "orchestra_research_skills",
+      "repository": "https://github.com/Orchestra-Research/AI-research-SKILLs",
+      "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+      "snapshot_dir": "ai-research-skills-orchestra",
+      "skill_count": 98,
+      "license_status": "MIT",
+      "license_spdx": "MIT",
+      "license_file": "LICENSE",
+      "copy_policy": "concept_only_no_code_or_long_text",
+      "commercial_use_policy": "allowed_with_license_notice",
+      "attribution_required": true,
+      "admission": "concept_only",
+      "selectable": true,
+      "implementation_status": "guidance_only",
+      "source_artifacts": [
+        {
+          "path": "LICENSE",
+          "sha256": "643d327cf8aefe47de791ed5a6562a18d5ff0001ab014730bd59be38f80dcf9a",
+          "role": "license_notice"
+        },
+        {
+          "path": "0-autoresearch-skill/SKILL.md",
+          "sha256": "5e625f3aecd610ba09938519b09dff95a073b8217abb185c60ed5b48ed01b935",
+          "role": "orchestration_contract"
+        },
+        {
+          "path": "21-research-ideation/brainstorming-research-ideas/SKILL.md",
+          "sha256": "66e20904576e880969f710fd2b631467bbd53094e346efafab8adf8160455ec5",
+          "role": "ideation_contract"
+        },
+        {
+          "path": "20-ml-paper-writing/ml-paper-writing/SKILL.md",
+          "sha256": "a05a71b0932ece4b9142340d229da4639c9d731a03018a07bf172d3d120bb658",
+          "role": "methods_writing_contract"
+        }
+      ]
+    },
+    {
+      "source_id": "claude_scholar",
+      "repository": "https://github.com/Galaxy-Dawn/claude-scholar",
+      "commit": "2f7766fd541a723d4ddc6230b3277f948d61b093",
+      "snapshot_dir": "claude-scholar-galaxy-dawn",
+      "skill_count": 45,
+      "license_status": "MIT",
+      "license_spdx": "MIT",
+      "license_file": "LICENSE",
+      "copy_policy": "concept_only_no_code_or_long_text",
+      "commercial_use_policy": "allowed_with_license_notice",
+      "attribution_required": true,
+      "admission": "concept_only",
+      "selectable": true,
+      "implementation_status": "guidance_only",
+      "source_artifacts": [
+        {
+          "path": "LICENSE",
+          "sha256": "60a91cbe1fed7857523cce7edad213c5fbbaede263c3582df1d41c964b9f9a8f",
+          "role": "license_notice"
+        },
+        {
+          "path": "skills/results-analysis/SKILL.md",
+          "sha256": "51fba8bca97738d03b175802d0f0a3854357d344dd2ac78eec3ceb273a1142f4",
+          "role": "results_analysis_contract"
+        },
+        {
+          "path": "skills/paper-self-review/SKILL.md",
+          "sha256": "d0cf298b45da5db87c5a1b0450e94085d09051d92c9f97b7d2d8d4fd4d1e3bed",
+          "role": "paper_review_contract"
+        },
+        {
+          "path": "skills/ml-paper-writing/SKILL.md",
+          "sha256": "25edf4c880d299d0d31b981167fdc3cf8cda9d4d1c328addd5ee294b8c694b2e",
+          "role": "manuscript_writing_contract"
+        }
+      ]
+    },
+    {
+      "source_id": "academic_research_skills",
+      "repository": "https://github.com/Imbad0202/academic-research-skills",
+      "commit": "2cf3a51e159458b7a8c8784bb874248e79601f7b",
+      "snapshot_dir": "academic-research-skills",
+      "skill_count": 4,
+      "license_status": "CC-BY-NC-4.0",
+      "license_spdx": "CC-BY-NC-4.0",
+      "license_file": "LICENSE",
+      "copy_policy": "clean_room_reimplementation_no_code_or_long_text",
+      "commercial_use_policy": "noncommercial_only_unless_separately_licensed",
+      "attribution_required": true,
+      "admission": "concept_only",
+      "selectable": true,
+      "implementation_status": "guidance_only",
+      "source_artifacts": [
+        {
+          "path": "LICENSE",
+          "sha256": "164f886a1b137a1899c31ff711aa93d9000d51f5fbc5ff2727fb4b924a95e1c9",
+          "role": "license_notice"
+        },
+        {
+          "path": "deep-research/SKILL.md",
+          "sha256": "7150d7ea280f7aed79395247efbfa744969f45906adbf6fea311b6dc146df76b",
+          "role": "deep_research_contract"
+        },
+        {
+          "path": "academic-paper-reviewer/SKILL.md",
+          "sha256": "301f52402c8d67b38c24cd60163de4819093f0baa09ffe2298303521d5ee4bdb",
+          "role": "reviewer_contract"
+        },
+        {
+          "path": "academic-paper-reviewer/references/sprint_contract_protocol.md",
+          "sha256": "72cf2c4a0e843b5bb8c788bcbc7b28d12606d93eb66f4c811f5bbf6fffa45b82",
+          "role": "blind_handoff_contract"
+        },
+        {
+          "path": "academic-pipeline/references/claim_audit_calibration_protocol.md",
+          "sha256": "1d44ca89e9ecb46177aaeec4c6620942c569f227bdf69bdeb3537e2b00772317",
+          "role": "claim_calibration_contract"
+        },
+        {
+          "path": "academic-paper-reviewer/references/statistical_reporting_standards.md",
+          "sha256": "40bc3ca892223b730838ad630d0760a4c6c6044a503ab53cf7f67ca22e875da2",
+          "role": "statistical_reporting_contract"
+        }
+      ]
+    },
+    {
+      "source_id": "agent_research_skills",
+      "repository": "https://github.com/lingzhi227/agent-research-skills",
+      "commit": "9e6c085d65e313e475e921fdfe795ac11eb7589e",
+      "snapshot_dir": "agent-research-skills",
+      "skill_count": 31,
+      "license_status": "NOASSERTION",
+      "license_spdx": "NOASSERTION",
+      "license_file": null,
+      "copy_policy": "concept_only_no_code_or_text",
+      "commercial_use_policy": "not_permitted_without_separate_license",
+      "attribution_required": true,
+      "admission": "concept_only_no_code",
+      "selectable": true,
+      "implementation_status": "guidance_only",
+      "source_artifacts": [
+        {
+          "path": "skills/backward-traceability/SKILL.md",
+          "sha256": "5a7812d315f4f31a4c70a2f4f5700bc66f2d76d824083a65e391114bd3dc028f",
+          "role": "traceability_contract"
+        },
+        {
+          "path": "skills/figure-generation/SKILL.md",
+          "sha256": "5361b6c1550d5dc753fb41e12c8e0126cdb41b5d20784ac5062be1ab86900c36",
+          "role": "figure_generation_contract"
+        },
+        {
+          "path": "skills/paper-writing-section/SKILL.md",
+          "sha256": "1c6320937089350a04f1cf92b529a52509e42d20b39c6d28679c67b9f0872846",
+          "role": "methods_writing_contract"
+        },
+        {
+          "path": "skills/paper-to-code/SKILL.md",
+          "sha256": "ae83667aaa347fdeb689972be807ec38df44deee06be26036bc5107e625c0136",
+          "role": "paper_to_code_contract"
+        }
+      ]
+    },
+    {
+      "source_id": "scientific_agent_skills",
+      "repository": "https://github.com/K-Dense-AI/scientific-agent-skills",
+      "commit": "ab2f84ab10597c59fac186ecda6d5edd5dcc8b92",
+      "snapshot_dir": "scientific-agent-skills",
+      "skill_count": 158,
+      "license_status": "MIT",
+      "license_spdx": "MIT",
+      "license_file": "LICENSE.md",
+      "copy_policy": "selective_concepts_no_runtime_code",
+      "commercial_use_policy": "allowed_with_license_notice",
+      "attribution_required": true,
+      "admission": "selective_concept_only",
+      "selectable": true,
+      "implementation_status": "guidance_only",
+      "source_artifacts": [
+        {
+          "path": "LICENSE.md",
+          "sha256": "5c793d8fe1c553d49c305f3c178ac360b6d32607bdf1bca06b10d3ba9881d78f",
+          "role": "license_notice"
+        },
+        {
+          "path": "README.md",
+          "sha256": "d430311fb36f861a856d99cce3ce9e099e332ecc63d11785ba3fe520c46c8d8a",
+          "role": "source_inventory"
+        },
+        {
+          "path": "skills/hypothesis-generation/SKILL.md",
+          "sha256": "e18e00ed9bd98939f57254b627b6db52c276f7c2f0ae2eac52da89fdd896ad49",
+          "role": "hypothesis_contract"
+        },
+        {
+          "path": "skills/hypothesis-generation/scripts/validate_hypothesis_schema.py",
+          "sha256": "509553a72d2f531ca63080189eaeac4aa02b83e175bc300976ca91578d37c234",
+          "role": "hypothesis_validator_candidate"
+        },
+        {
+          "path": "skills/hypothesis-generation/scripts/validate_prediction_matrix.py",
+          "sha256": "608e8ef9c14f42a715fa77999c9d902f0de6cbc0191c131fc2e5b337adc7df50",
+          "role": "prediction_validator_candidate"
+        },
+        {
+          "path": "skills/statistical-power/SKILL.md",
+          "sha256": "1a75ab4006fc13190b7a92705c299aa9e0bad90196df782254c931d0f71e61ed",
+          "role": "power_contract"
+        },
+        {
+          "path": "skills/pydicom/SKILL.md",
+          "sha256": "220129691b516d2b5c04fb4699a7f9c0ad5b9076eba44410241be508cba7ac07",
+          "role": "dicom_contract"
+        },
+        {
+          "path": "skills/pydicom/scripts/dicom_inventory.py",
+          "sha256": "732b49980b1106941f88eca6f89460b15ae9145295daaf96ef9a6b285bb87c06",
+          "role": "dicom_inventory_candidate"
+        },
+        {
+          "path": "skills/pydicom/scripts/deidentification_audit.py",
+          "sha256": "29c173107a0bd48478e71eef9b12c09209135c45fe69ac2fabd1663f90472614",
+          "role": "deidentification_audit_candidate"
+        },
+        {
+          "path": "skills/scientific-visualization/SKILL.md",
+          "sha256": "d5b507dec004191eff12c5b387434b1666085b552c4c3c33713482689bc3d205",
+          "role": "figure_contract"
+        },
+        {
+          "path": "skills/scientific-visualization/scripts/figure_export.py",
+          "sha256": "6e40a373d878372ef1de38f0c04ea9b02bd8a194d3a08c03c60cdfaec8e6367c",
+          "role": "figure_export_candidate"
+        }
+      ]
+    },
+    {
+      "source_id": "scipilot_figure_skill",
+      "repository": "https://github.com/Haojae/scipilot-figure-skill",
+      "commit": "43098ddb9e6a6d142218540c114f9ed38922fc42",
+      "snapshot_dir": "scipilot-figure-skill",
+      "skill_count": 1,
+      "license_status": "MIT",
+      "license_spdx": "MIT",
+      "license_file": "LICENSE",
+      "copy_policy": "layout_and_export_qa_concepts_only",
+      "commercial_use_policy": "allowed_with_license_notice",
+      "attribution_required": true,
+      "admission": "layout_and_export_qa_concepts_only",
+      "selectable": true,
+      "implementation_status": "guidance_only",
+      "source_artifacts": [
+        {
+          "path": "LICENSE",
+          "sha256": "4fdfc91285913fa0fb889e2e39e4b2d7a60c2340ac382ad4b8b4396c1a1a2a71",
+          "role": "license_notice"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "a9f2008acc6876f40eb55390a9488510f12261e2c0c1cdf671056d31c793402f",
+          "role": "figure_qa_contract"
+        }
+      ]
+    },
+    {
+      "source_id": "drawio_skills",
+      "repository": "https://github.com/bahayonghang/drawio-skills",
+      "commit": "27dac02ce3b4901c844aaa623ad64c3d577c3a72",
+      "snapshot_dir": "drawio-skills",
+      "skill_count": 2,
+      "license_status": "MIT-with-bundled-notices",
+      "license_spdx": "MIT",
+      "license_file": "LICENSE",
+      "copy_policy": "planned_offline_adapter_no_runtime_code",
+      "commercial_use_policy": "allowed_with_all_required_notices",
+      "attribution_required": true,
+      "admission": "offline_adapter_concept",
+      "selectable": true,
+      "implementation_status": "planned_adapter",
+      "source_artifacts": [
+        {
+          "path": "LICENSE",
+          "sha256": "275c7e6eb0debac6b400221834d7d32dfd17bb50ad82bcb723b093c443802484",
+          "role": "license_notice"
+        },
+        {
+          "path": "skills/drawio/SKILL.md",
+          "sha256": "a30d46f1389b9cff1829bc5ee46270f1964647a8276acf0dc2b9c18d3b876f97",
+          "role": "offline_drawio_contract"
+        },
+        {
+          "path": "skills/drawio-academic-skills/SKILL.md",
+          "sha256": "094d2802a2bfe9f13c9d966124896f0c093300e59f67f6b09430852e25b28d1a",
+          "role": "academic_figure_contract"
+        },
+        {
+          "path": "skills/drawio/scripts/cli.js",
+          "sha256": "4e7f37b47262d43e696400d46838f9885eb1eb9cb92af989acf3761c8b5c030e",
+          "role": "offline_adapter_candidate"
+        },
+        {
+          "path": "skills/drawio/assets/schemas/spec.schema.json",
+          "sha256": "8885b1aec23ca9b8f51e7fa53e8d0ee31dfcd878d9594899eb01ed8d7e9dafc4",
+          "role": "diagram_schema"
+        },
+        {
+          "path": "skills/drawio/scripts/vendor/elkjs/LICENSE.md",
+          "sha256": "daead55392c44b5d19227e1aff826e5f0bd2572e72ddefb74997e035c48c0a24",
+          "role": "bundled_license_notice"
+        },
+        {
+          "path": "skills/drawio/scripts/vendor/js-yaml/LICENSE.md",
+          "sha256": "ee4f82f5f6cbbdd3b9eecb24e646e541b0982037b3ee5e741a9ca055d6c84c1c",
+          "role": "bundled_license_notice"
+        }
+      ]
+    },
+    {
+      "source_id": "drawio_scientific_illustrator",
+      "repository": "https://github.com/icebird1998/drawio-scientific-illustrator",
+      "commit": "9bbeca93ffd134a29bfc90023f22c65359efe584",
+      "snapshot_dir": "drawio-scientific-illustrator",
+      "skill_count": 1,
+      "license_status": "MIT",
+      "license_spdx": "MIT",
+      "license_file": "LICENSE",
+      "copy_policy": "rejected_no_runtime_use",
+      "commercial_use_policy": "allowed_with_license_notice",
+      "attribution_required": true,
+      "admission": "rejected_live_control",
+      "selectable": false,
+      "implementation_status": "rejected",
+      "source_artifacts": [
+        {
+          "path": "LICENSE",
+          "sha256": "c4bfba4f1f7adbc8f6c740f633807f647f0a8c8c5509a25de1ae74a776ccb3f8",
+          "role": "license_notice"
+        },
+        {
+          "path": "plugins/drawio-scientific-illustrator/skills/recreate-scientific-figure-in-drawio/SKILL.md",
+          "sha256": "ffedd1bc94b46e8232a38b5d64de1a401464cf34ad7a1e1c7d374377e08aa4e1",
+          "role": "rejected_live_mcp_contract"
+        }
+      ]
+    },
+    {
+      "source_id": "nature_skills",
+      "repository": "https://github.com/Yuan1z0825/nature-skills",
+      "commit": "cc29e56abcd14e6f8fb6a7b065208a051397f47a",
+      "snapshot_dir": "nature-skills",
+      "skill_count": 19,
+      "license_status": "Apache-2.0",
+      "license_spdx": "Apache-2.0",
+      "license_file": "LICENSE",
+      "copy_policy": "selective_rubric_concepts_no_published_assets",
+      "commercial_use_policy": "allowed_with_license_notice",
+      "attribution_required": true,
+      "admission": "selective_rubric_concepts_only",
+      "selectable": true,
+      "implementation_status": "guidance_only",
+      "source_artifacts": [
+        {
+          "path": "LICENSE",
+          "sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+          "role": "license_notice"
+        },
+        {
+          "path": "skills/nature-writing/SKILL.md",
+          "sha256": "fa5edd741c366fd73f5dbcded834dabe1c8e43a49435ed826eeab53b8da2b33d",
+          "role": "writing_rubric"
+        },
+        {
+          "path": "skills/nature-reviewer/SKILL.md",
+          "sha256": "4f8c04d433a8341582684797d3fbb9d15a66d318ee9f13e025ddb562d7fc9d3b",
+          "role": "reviewer_rubric"
+        },
+        {
+          "path": "skills/nature-figure/SKILL.md",
+          "sha256": "54f9feaa31a210e4d29b494ac7b870cbd9418fa22869a5f522c9b87b5f4f6854",
+          "role": "figure_rubric"
+        },
+        {
+          "path": "skills/nature-statistics/SKILL.md",
+          "sha256": "35cddb084c1652e418db4ae8d99811bd0542b97721d81820e9530cba268d63f3",
+          "role": "statistics_rubric"
+        }
+      ]
+    }
+  ]
+}

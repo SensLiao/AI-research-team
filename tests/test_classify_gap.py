@@ -282,6 +282,27 @@ def test_build_classification_carries_derived_from():
     assert result["gaps"][0]["derived_from"] == ["future_work", "white_space_present"]
 
 
+def test_build_classification_canonicalizes_descriptive_source_kind_from_provenance():
+    """Worker-facing prose must not leak an invalid source_kind into the schema artifact.
+
+    Future-work hunters naturally describe their evidence as ``author-stated future
+    work``.  The durable classification contract needs the canonical enum
+    ``future_work`` and already carries the authoritative provenance in
+    ``derived_from``.
+    """
+    signals = [{
+        "gap_id": "GAP-FW-1",
+        "statement": "The authors call for a larger user study.",
+        "source_ref": "[[paper]]",
+        "evidence_ref": ["[[paper]]"],
+        "derived_from": ["future_work"],
+        "source_kind": "author-stated future work",
+    }]
+    result = build_classification(signals)
+    assert result["gaps"][0]["source_kind"] == "future_work"
+    assert validate_against("gap_classification.schema.json", result) == []
+
+
 def test_build_classification_validates_against_schema():
     """The payload from build_classification must validate against gap_classification.schema.json."""
     signals = _make_signals()

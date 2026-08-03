@@ -18,6 +18,8 @@ from research_agent_teams.orchestrator.model_policy import (
     haiku_offenders,
     load_agent_models,
     resolve_model,
+    runtime_observability_contract,
+    runtime_observability_fields,
     safe_resolve_model,
 )
 
@@ -82,6 +84,44 @@ def test_runtime_binding_comes_from_environment_not_agent_specs():
     }
 
 
+def test_runtime_binding_is_explicitly_not_provider_observation():
+    env = {
+        RUNTIME_MODEL_ENV: "provider/frontier-model",
+        RUNTIME_REASONING_ENV: "maximum",
+        RUNTIME_SERVICE_ENV: "preferred",
+    }
+    assert runtime_observability_fields("opus", environ=env) == {
+        "runtime_observation_status": "unobserved",
+        "runtime_binding_source": "deployment_environment",
+        "runtime_observation_reason": "operate_process_has_no_provider_response_metadata",
+    }
+    assert runtime_observability_fields("opus", environ={}) == {
+        "runtime_observation_status": "unobserved",
+        "runtime_binding_source": "none",
+        "runtime_observation_reason": "operate_process_has_no_provider_response_metadata",
+    }
+    assert runtime_observability_fields(NO_MODEL) == {
+        "runtime_observation_status": "not_applicable",
+        "runtime_binding_source": "none",
+        "runtime_observation_reason": "deterministic_or_unresolved_no_model_seat",
+    }
+
+
+def test_runtime_observability_contract_forbids_estimated_usage():
+    contract = runtime_observability_contract("opus")
+    assert contract["status"] == "unobserved"
+    assert contract["provider_receipt_available"] is False
+    assert contract["estimated_usage_allowed"] is False
+    assert contract["required_observed_fields"] == [
+        "resolved_model",
+        "service_tier",
+        "reasoning_effort",
+        "input_tokens",
+        "output_tokens",
+        "elapsed_ms",
+    ]
+
+
 def test_capability_requirements_are_provider_neutral():
     assert capability_requirements("sonnet")["reasoning_quality"] == "strong"
     assert capability_requirements("opus")["reasoning_quality"] == "frontier"
@@ -99,6 +139,8 @@ def test_worker_runtime_decoration_preserves_logical_tier_and_adds_capabilities(
     assert decorated["model_tier"] == "opus"
     assert decorated["capability_requirements"]["reasoning_quality"] == "frontier"
     assert decorated["capability_requirements"]["provider"] == "any"
+    assert decorated["runtime_observability"]["status"] == "unobserved"
+    assert decorated["runtime_observability"]["estimated_usage_allowed"] is False
     assert "runtime_model" not in decorated
 
 
@@ -111,6 +153,7 @@ def test_worker_runtime_decoration_handles_panels(monkeypatch):
     for worker in decorated["workers"]:
         assert worker["model_tier"] == worker["model"]
         assert worker["capability_requirements"]["provider"] == "any"
+        assert worker["runtime_observability"]["provider_receipt_available"] is False
         assert "runtime_model" not in worker
 
 

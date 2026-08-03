@@ -33,8 +33,9 @@ from pathlib import Path
 from typing import Optional
 
 from . import _deep_ideate, _shared
-from ..artifacts import GateBlock, write_artifact
+from ..artifacts import GateBlock, TargetedGateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
+from ..output_versions import resolve_effective_output
 from ...tools.citation_checker import build_report
 from ...tools.classify_gap import build_classification
 from ...tools.elo_tournament import build_elo_tournament
@@ -74,6 +75,9 @@ to the request — read ~12-20 pages fully). Each page has YAML frontmatter (key
 IF `{run_dir}/inbox/search-results.json` exists: it is the sanctioned live-retrieval bundle — use its \
 records to check whether a gap is already closed by recent literature outside the vault, and you may cite \
 its rows as extra sources (`doi:`/`arXiv:` refs allowed for those rows only).
+If that bundle is empty/off-topic or misses a named method, use agent Web Search to retrieve only paper \
+originals, official publisher/project pages, or authors' official repositories; snippets are leads only, \
+and every accepted source must still pass the common existence and citation gates.
 
 HONESTY (hard): reference vault papers ONLY by their real `[[slug]]` (page filename without .md); never \
 invent a slug — a deterministic gate checks every slug against the vault and BLOCKs fabrications. \
@@ -218,23 +222,38 @@ do not reward mere ease. Emit `evolved: []` when no mutation is genuinely strong
 selection, approval, or director decision. After writing, verify valid JSON."""
 
 
-INVESTMENT_COLLISION_WORKER_PROMPT = """You are the NOVELTY-COLLISION CHECKER, an independent prior-art
-auditor. You did not propose or rank the ideas. Read:
+INVESTMENT_COLLISION_WORKER_PROMPT = """You are the NOVELTY-COLLISION CHECKER, an independent full-paper
+novelty auditor. You did not propose or rank the ideas. Read:
   - `{run_dir}/inbox/IDEATE.bundle.json` for original proposals
   - `{run_dir}/inbox/RANKING.bundle.json` for evolved proposals and comparative assessments
   - `{run_dir}/inbox/search-results.json` if it exists
 
 {north_star}
 
-For every original and evolved idea, decompose method combination, application/problem, and domain.
-Search hardest for the exact method x problem combination. A collision requires a specific, real paper
-that ran the same combination on the same problem. Adjacent work or a proposal without experiments is
-white space, not a collision. Never fabricate a paper, identifier, or quote. If uncertain, use `adjacent`
-or `clear`; never make a speculative cut. You do not rank, select, or drop ideas.
+For every original and evolved idea, identify its central falsifiable contribution and the closest
+real work. Search results, titles, abstracts, shared keywords, and shared components are discovery
+signals only. They can narrow a broad first-claim, but cannot kill an idea.
 
-For the investment memo, also identify the closest relevant work even when it is merely adjacent and
-state the exact remaining delta. `difference_from_prior_art` must distinguish method, mechanism,
-evaluation, data, or control regime; "this is novel" is not a difference.
+Before emitting `collision`, obtain and read the full closest paper, including the method and the
+experiments bearing on the claim. Compare the problem/target, input state, interaction, output/edit
+semantics, mechanism/training, causal controls, primary evaluation target, actual results, and scope.
+An exact collision requires the same central claim, a materially equivalent input/output contract,
+an equivalent causal assay, and experiments when experiments are required. If full text or decisive
+evidence is unavailable, the relationship is `uncertain`, the per-idea verdict is `unverified`, and
+it cannot be a fatal collision or a false clearance.
+
+For every exact collision, preserve the full-text file actually read inside the current run and
+record its run-local path plus SHA-256. The retrieval route remains your choice; the receipt is
+required so a destructive cut is inspectable. Without it, emit `unverified`, never a fatal cut.
+
+Classify each closest paper as `exact_collision`, `partial_component_prior`, `enabling_base`,
+`gap_source`, `orthogonal`, or `uncertain`. An idea that improves or closes a gap in prior work is not
+covered merely because it inherits a prior component. State what the prior solved, what it did not
+solve, the surviving delta, and the strongest reviewer case that the delta is only a rename.
+
+Choose the retrieval, reading, and comparison route that best fits the available environment. Do not
+fabricate a paper, identifier, locator, result, figure interpretation, or quote. You do not rank,
+select, or drop ideas.
 
 Write ONLY this JSON to `{out}`:
 {{
@@ -242,22 +261,38 @@ Write ONLY this JSON to `{out}`:
   "findings": [{{
     "idea_id":"IDEA-1","method_combination":"<combined methods>",
     "application":"<problem>","domain":"<field>","queries":["<targeted query>"],
-    "verdict":"collision|adjacent|clear","colliding_papers":[{{
+    "verdict":"collision|adjacent|clear|unverified","colliding_papers":[{{
       "ref":"arXiv:2407.01517","title":"<title>",
       "does_same_method_on_same_problem":true,"experimentally_validated":true,
-      "justification":"<why the work is the same>","quote":"<short support>"
+      "full_text_reviewed":true,"relationship":"exact_collision|partial_component_prior|enabling_base|gap_source|orthogonal|uncertain",
+      "fulltext_snapshot_ref":"inbox/fulltext-docs/closest-paper.pdf",
+      "fulltext_snapshot_sha256":"<64 lowercase hex characters>",
+      "same_central_claim":true,"same_input_output_contract":true,
+      "same_causal_evaluation":true,"evidence_loci":["p.4 Method","p.7 Table 2"],
+      "method_evidence_loci":["p.4 Method"],"result_evidence_loci":["p.7 Table 2"],
+      "material_surviving_delta":false,
+      "surviving_gap":"<what remains unestablished>",
+      "justification":"<what it did, did not do, and why this relation follows>",
+      "quote":"<short support actually inspected>"
     }}],
     "closest_prior_art":[{{"ref":"<real ref>","title":"<title>",
-      "relationship":"<collision|adjacent|precursor>","difference":"<specific delta>"}}],
+      "relationship":"<exact_collision|partial_component_prior|enabling_base|gap_source|orthogonal|uncertain>",
+      "difference":"<specific, falsifiable delta>"}}],
     "difference_from_prior_art":"<precise surviving delta or already-done statement>",
     "visual_evidence":[{{"source_ref":"<paper/page/figure or table actually inspected>",
       "asset_ref":"<optional stable relative image path or null>",
       "content":"<axes/table structure and comparison>","key_observation":"<numbers/trend>",
       "supports":"<narrow conclusion>","does_not_support":"<boundary>"}}],
-    "confidence":"high|medium|low","retrieval_note":"<coverage limits>"
+    "confidence":"high|medium|low","retrieval_status":"complete|partial|unavailable",
+    "retrieval_note":"<coverage, full-text availability, and unresolved limits>"
   }}],
   "evidence_ref":["inbox/COLLISION.bundle.json"]
 }}
+`collision` requires at least one existence-verifiable paper with full_text_reviewed=true and a
+hash-verified run-local fulltext snapshot,
+relationship=exact_collision, all three same_* fields true, experimental validation, separate
+method/result evidence loci, and material_surviving_delta=false. Otherwise use adjacent or
+unverified and preserve the paper as a partial prior, enabling base, or gap source.
 `colliding_papers` must be empty for `clear`; `closest_prior_art` may still name verified adjacent work.
 Emit `visual_evidence` only after actual visual inspection; otherwise use an empty list and do not infer
 image content from captions or OCR.
@@ -275,10 +310,11 @@ def _worker_model(stage: str, model_policy: str) -> str:
 
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
-               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8) -> str:
+               sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
+               queries=None) -> str:
     """Live-retrieval pre-step (audit H5): grounds DISCOVER + novelty in real literature."""
     return _shared.pre_search(run_dir, request, ts, transport=transport,
-                              sources=sources, limit_per_source=limit_per_source)
+                              sources=sources, limit_per_source=limit_per_source, queries=queries)
 
 
 def discover_worker(run_dir: str, request: str, vault: str = DEFAULT_VAULT,
@@ -373,7 +409,11 @@ def _collision_hard_block(run_dir) -> bool:
 
 
 def _load_bundle(run_dir, stage) -> dict:
-    p = Path(run_dir) / "inbox" / f"{stage}.bundle.json"
+    logical = Path(run_dir) / "inbox" / f"{stage}.bundle.json"
+    try:
+        p = resolve_effective_output(Path(run_dir), stage, logical)
+    except ValueError as exc:
+        raise GateBlock(f"supplement lineage BLOCK: {exc}") from exc
     if not p.exists():
         raise FileNotFoundError(
             f"{stage} worker bundle missing at {p} — dispatch the {stage} LLM worker first (see llm_step).")
@@ -450,25 +490,72 @@ def _require_legacy_replay_receipt(run_dir: str, ideate_path: Path) -> dict:
     return receipt
 
 
+_PANEL_OWNER = {
+    "IDEATE": "hypothesis-generator",
+    "RANKING": "idea-tournament-ranker",
+    "COLLISION": "novelty-collision-checker",
+    "EXPERIMENT": "experiment-planner",
+}
+
+_PANEL_REFRESH = {
+    "IDEATE": ["idea-tournament-ranker", "novelty-collision-checker", "experiment-planner"],
+    "RANKING": ["novelty-collision-checker", "experiment-planner"],
+    "COLLISION": [],
+    "EXPERIMENT": [],
+}
+
+
+def _panel_supplement(name: str, defect: str, summary: str) -> TargetedGateBlock:
+    owner = _PANEL_OWNER.get(name, name.casefold())
+    return TargetedGateBlock(
+        summary,
+        [{
+            "defect_id": f"new-direction-{name.casefold()}-{defect}",
+            "category": "worker-output-contract",
+            "location": f"IDEATE/{name}.bundle.json",
+            "summary": summary,
+            "target_agents": [owner],
+            "refresh_agents": _PANEL_REFRESH.get(name, []),
+        }],
+    )
+
+
 def _load_current_panel_bundle(run_dir: str, name: str, required_keys: tuple[str, ...]) -> dict:
-    path = Path(run_dir) / "inbox" / f"{name}.bundle.json"
+    logical = Path(run_dir) / "inbox" / f"{name}.bundle.json"
+    try:
+        path = resolve_effective_output(Path(run_dir), "IDEATE", logical)
+    except ValueError as exc:
+        raise GateBlock(f"supplement lineage BLOCK: {exc}") from exc
     if not path.is_file():
-        raise GateBlock(
-            f"current idea panel BLOCK: {name}.bundle.json missing; proposer, ranker, collision "
+        raise _panel_supplement(
+            name, "missing-bundle",
+            f"current idea panel needs a targeted supplement: {name}.bundle.json missing; proposer, ranker, collision "
             "checker, and experiment planner are all mandatory independent seats"
         )
     try:
         bundle = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise GateBlock(f"current idea panel BLOCK: {name}.bundle.json is unreadable: {exc}") from exc
+        raise _panel_supplement(
+            name, "unreadable-json",
+            f"current idea panel needs a targeted JSON supplement: {name}.bundle.json is unreadable: {exc}",
+        ) from exc
     if not isinstance(bundle, dict):
-        raise GateBlock(f"current idea panel BLOCK: {name}.bundle.json must be a JSON object")
+        raise _panel_supplement(
+            name, "json-wrapper",
+            f"current idea panel needs one object-valued {name}.bundle.json",
+        )
     if bundle.get("memo_contract_version") != MEMO_CONTRACT_VERSION:
-        raise GateBlock(
-            f"current idea panel BLOCK: {name}.bundle.json must declare "
+        raise _panel_supplement(
+            name, "contract-version",
+            f"current idea panel needs a contract-field supplement: {name}.bundle.json must declare "
             f"memo_contract_version={MEMO_CONTRACT_VERSION!r}"
         )
-    _shared.require_bundle_keys(bundle, required_keys, stage=name, mode="new_direction")
+    missing = [key for key in required_keys if key not in bundle]
+    if missing:
+        raise _panel_supplement(
+            name, "missing-required-content",
+            f"new_direction {name} bundle needs required field(s) {missing}; preserve all existing content",
+        )
     return bundle
 
 
@@ -719,7 +806,8 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
         judged = {tuple(sorted((m["pair_a"], m["pair_b"]))) for m in matches}
         missing = sorted(expected - judged)
         if missing:
-            raise GateBlock(
+            raise _panel_supplement(
+                "RANKING", "incomplete-tournament",
                 f"tournament incomplete: unjudged idea pair(s) {missing} — the IDEATE worker must "
                 "judge EVERY unordered pair of its (deduplicated) ideas exactly once")
         tournament = build_elo_tournament(matches, evidence_ref=[ranking_ref],
@@ -765,8 +853,8 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
                                 "idea_grounding_report", "feasibility-reranker", grounding, ts))
 
     # NOVELTY-COLLISION GATE (director lock 2026-06-18): the mandatory pre-/idea-bet prior-art check.
-    # An EVIDENCED collision (a real, existence-verified paper that already did this method×problem AND
-    # ran it) is CUT here + recorded to the known-prior-art ledger; only SURVIVORS reach the menu. A
+    # A cut requires an existence-verified, full-text-reviewed exact collision on the central claim,
+    # input/output contract, causal assay, and required experiments. The ledger only supplies leads. A
     # novelty SCORE still never cuts (design §1). Offline -> nothing cut, all UNVERIFIED, flagged below.
     survivors, cverdict, cpath = _shared.run_collision_gate(
         run_dir, "IDEATE", ts, menu_ideas, hard_block=_collision_hard_block(run_dir))
@@ -786,11 +874,20 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
         assessment_errors = validate_assessments(
             assessments, [str(row.get("idea_id")) for row in survivors])
         if assessment_errors:
-            raise GateBlock(f"scientific-investment rank BLOCK: {assessment_errors}")
-        experiment_path = Path(run_dir) / "inbox" / "EXPERIMENT.bundle.json"
+            raise _panel_supplement(
+                "RANKING", "invalid-investment-assessment",
+                f"scientific-investment assessment needs a targeted supplement: {assessment_errors}",
+            )
+        try:
+            experiment_path = resolve_effective_output(
+                Path(run_dir), "IDEATE", Path(run_dir) / "inbox" / "EXPERIMENT.bundle.json"
+            )
+        except ValueError as exc:
+            raise GateBlock(f"supplement lineage BLOCK: {exc}") from exc
         if not experiment_path.is_file():
-            raise GateBlock(
-                "scientific-investment rank BLOCK: EXPERIMENT.bundle.json missing; "
+            raise _panel_supplement(
+                "EXPERIMENT", "missing-bundle",
+                "scientific-investment rank needs a supplement: EXPERIMENT.bundle.json missing; "
                 "dispatch the independent experiment-planner before ranking"
             )
         experiment_bundle = json.loads(experiment_path.read_text(encoding="utf-8"))

@@ -1,0 +1,933 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/submission_checklist.schema.json",
+  "title": "Submission Checklist",
+  "description": "Closed, hash-bound director evidence packet emitted by manuscript-submission-packager. It records reconciled truth and never grants submission authority.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "checklist_id",
+    "review_run_id",
+    "producer_role",
+    "manuscript_snapshot_sha256",
+    "reconciliation",
+    "quality_report",
+    "daily_state",
+    "submission_ready",
+    "build_truth",
+    "capability_coverage",
+    "checks",
+    "findings",
+    "submission_blockers",
+    "evidence_links",
+    "outstanding_director_decisions",
+    "submission_authorization",
+    "submission_checklist_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "checklist_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "review_run_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "producer_role": {
+      "const": "manuscript-submission-packager"
+    },
+    "manuscript_snapshot_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "reconciliation": {
+      "$ref": "#/$defs/reconciliation_binding"
+    },
+    "quality_report": {
+      "$ref": "#/$defs/hashed_reference"
+    },
+    "daily_state": {
+      "type": "string",
+      "enum": [
+        "USABLE",
+        "USABLE_WITH_CAVEATS",
+        "NEEDS_SUPPLEMENT",
+        "BLOCK"
+      ]
+    },
+    "submission_ready": {
+      "type": "boolean"
+    },
+    "build_truth": {
+      "$ref": "#/$defs/build_truth"
+    },
+    "capability_coverage": {
+      "$ref": "#/$defs/capability_coverage"
+    },
+    "checks": {
+      "$ref": "#/$defs/checks"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "submission_blockers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/submission_blocker"
+      }
+    },
+    "evidence_links": {
+      "$ref": "#/$defs/evidence_links"
+    },
+    "outstanding_director_decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/director_decision"
+      }
+    },
+    "submission_authorization": {
+      "const": false
+    },
+    "submission_checklist_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "submission_ready"
+        ],
+        "properties": {
+          "submission_ready": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "submission_blockers": {
+            "maxItems": 0
+          },
+          "findings": {
+            "not": {
+              "contains": {
+                "$ref": "#/$defs/open_submission_block"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "findings": {
+            "contains": {
+              "$ref": "#/$defs/open_submission_block"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "submission_ready": {
+            "const": false
+          },
+          "submission_blockers": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "checks": {
+            "anyOf": [
+              {
+                "required": ["official_rules"],
+                "properties": {
+                  "official_rules": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["anonymity_privacy"],
+                "properties": {
+                  "anonymity_privacy": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["scientific_citation_number_closure"],
+                "properties": {
+                  "scientific_citation_number_closure": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["assets"],
+                "properties": {
+                  "assets": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["cross_references"],
+                "properties": {
+                  "cross_references": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["source_build_pdf_truth"],
+                "properties": {
+                  "source_build_pdf_truth": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "submission_ready": {
+            "const": false
+          },
+          "submission_blockers": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability_coverage": {
+            "anyOf": [
+              {
+                "required": ["domain_contribution"],
+                "properties": {
+                  "domain_contribution": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["methods_reproducibility"],
+                "properties": {
+                  "methods_reproducibility": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["figure_table"],
+                "properties": {
+                  "figure_table": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["factual"],
+                "properties": {
+                  "factual": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["citation"],
+                "properties": {
+                  "citation": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              },
+              {
+                "required": ["venue_style_latex"],
+                "properties": {
+                  "venue_style_latex": {
+                    "required": ["state"],
+                    "properties": {"state": {"const": "BLOCK"}}
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "submission_ready": {
+            "const": false
+          },
+          "submission_blockers": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "build_truth": {
+            "required": [
+              "requires_pdf",
+              "build_state"
+            ],
+            "properties": {
+              "requires_pdf": {
+                "const": true
+              },
+              "build_state": {
+                "enum": [
+                  "TOOLCHAIN_MISSING",
+                  "COMPILE_FAILED"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "submission_ready": {
+            "const": false
+          },
+          "submission_blockers": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "build_truth": {
+            "required": [
+              "build_state"
+            ],
+            "properties": {
+              "build_state": {
+                "const": "COMPILED"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evidence_links": {
+            "required": [
+              "pdf"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "evidence_links": {
+            "properties": {
+              "pdf": false
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonempty": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "safe_ref": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^\\u0000-\\u001f]+$"
+    },
+    "hashed_reference": {
+      "type": "object",
+      "required": [
+        "ref",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "reconciliation_binding": {
+      "type": "object",
+      "required": [
+        "ref",
+        "sha256",
+        "source_finding_index_ref",
+        "source_finding_index_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_finding_index_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "source_finding_index_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "build_truth": {
+      "type": "object",
+      "required": [
+        "receipt_ref",
+        "receipt_sha256",
+        "build_state",
+        "requires_pdf",
+        "source_tree_ref",
+        "source_tree_sha256",
+        "pdf"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "receipt_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "build_state": {
+          "type": "string",
+          "enum": [
+            "COMPILED",
+            "TOOLCHAIN_MISSING",
+            "COMPILE_FAILED"
+          ]
+        },
+        "requires_pdf": {
+          "type": "boolean"
+        },
+        "source_tree_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "source_tree_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "pdf": {
+          "$ref": "#/$defs/pdf_truth"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "build_state"
+            ],
+            "properties": {
+              "build_state": {
+                "const": "COMPILED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pdf": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/pdf_truth"
+                  },
+                  {
+                    "properties": {
+                      "available": {
+                        "const": true
+                      },
+                      "ref": {
+                        "$ref": "#/$defs/safe_ref"
+                      },
+                      "sha256": {
+                        "$ref": "#/$defs/sha256"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "pdf": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/pdf_truth"
+                  },
+                  {
+                    "properties": {
+                      "available": {
+                        "const": false
+                      },
+                      "ref": {
+                        "type": "null"
+                      },
+                      "sha256": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "pdf_truth": {
+      "type": "object",
+      "required": [
+        "available",
+        "ref",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/safe_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "capability_coverage": {
+      "type": "object",
+      "required": [
+        "domain_contribution",
+        "methods_reproducibility",
+        "figure_table",
+        "factual",
+        "citation",
+        "venue_style_latex"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "domain_contribution": {
+          "$ref": "#/$defs/capability_state"
+        },
+        "methods_reproducibility": {
+          "$ref": "#/$defs/capability_state"
+        },
+        "figure_table": {
+          "$ref": "#/$defs/capability_state"
+        },
+        "factual": {
+          "$ref": "#/$defs/capability_state"
+        },
+        "citation": {
+          "$ref": "#/$defs/capability_state"
+        },
+        "venue_style_latex": {
+          "$ref": "#/$defs/capability_state"
+        }
+      }
+    },
+    "capability_state": {
+      "type": "object",
+      "required": [
+        "state",
+        "source_ref",
+        "source_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "NEEDS_REPAIR",
+            "BLOCK",
+            "UNRESOLVED"
+          ]
+        },
+        "source_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "official_rules",
+        "anonymity_privacy",
+        "scientific_citation_number_closure",
+        "assets",
+        "cross_references",
+        "source_build_pdf_truth"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "official_rules": {
+          "$ref": "#/$defs/check"
+        },
+        "anonymity_privacy": {
+          "$ref": "#/$defs/check"
+        },
+        "scientific_citation_number_closure": {
+          "$ref": "#/$defs/check"
+        },
+        "assets": {
+          "$ref": "#/$defs/check"
+        },
+        "cross_references": {
+          "$ref": "#/$defs/check"
+        },
+        "source_build_pdf_truth": {
+          "$ref": "#/$defs/check"
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "required": [
+        "state",
+        "summary",
+        "evidence_refs",
+        "finding_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "CLEAR",
+            "CAVEAT",
+            "BLOCK",
+            "UNVERIFIED"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/hashed_reference"
+          }
+        },
+        "finding_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "finding_id",
+        "source_ref",
+        "source_sha256",
+        "finding_class",
+        "status",
+        "disposition",
+        "daily_effect",
+        "submission_effect",
+        "minority",
+        "abstention",
+        "unresolved_science",
+        "owner",
+        "required_repair",
+        "summary",
+        "evidence_refs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "finding_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "finding_class": {
+          "type": "string",
+          "enum": [
+            "HARD",
+            "ADVISORY"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "OPEN",
+            "RESOLVED"
+          ]
+        },
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "PRESERVED",
+            "RECONCILED",
+            "UNRESOLVED"
+          ]
+        },
+        "daily_effect": {
+          "type": "string",
+          "enum": [
+            "NONE",
+            "CAVEAT",
+            "SUPPLEMENT",
+            "BLOCK"
+          ]
+        },
+        "submission_effect": {
+          "type": "string",
+          "enum": [
+            "NONE",
+            "BLOCK"
+          ]
+        },
+        "minority": {
+          "type": "boolean"
+        },
+        "abstention": {
+          "type": "boolean"
+        },
+        "unresolved_science": {
+          "type": "boolean"
+        },
+        "owner": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "required_repair": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "summary": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/hashed_reference"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "RESOLVED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "daily_effect": {
+                "const": "NONE"
+              },
+              "submission_effect": {
+                "const": "NONE"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "open_submission_block": {
+      "type": "object",
+      "required": [
+        "status",
+        "submission_effect"
+      ],
+      "properties": {
+        "status": {
+          "const": "OPEN"
+        },
+        "submission_effect": {
+          "const": "BLOCK"
+        }
+      }
+    },
+    "submission_blocker": {
+      "type": "object",
+      "required": [
+        "blocker_id",
+        "finding_id",
+        "source_ref",
+        "source_sha256",
+        "rationale"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "blocker_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "finding_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "rationale": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "evidence_links": {
+      "type": "object",
+      "required": [
+        "overview",
+        "coverage",
+        "authoring_plan",
+        "manuscript",
+        "source_tree",
+        "quality_report",
+        "review",
+        "build_receipt",
+        "reconciliation",
+        "evidence_index"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "overview": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "coverage": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "authoring_plan": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "manuscript": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "source_tree": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "quality_report": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "review": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "build_receipt": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "reconciliation": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "evidence_index": {
+          "$ref": "#/$defs/hashed_reference"
+        },
+        "pdf": {
+          "$ref": "#/$defs/hashed_reference"
+        }
+      }
+    },
+    "director_decision": {
+      "type": "object",
+      "required": [
+        "decision_id",
+        "question",
+        "authority",
+        "status",
+        "evidence_refs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "decision_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "question": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "authority": {
+          "const": "DIRECTOR_HUMAN"
+        },
+        "status": {
+          "const": "REQUIRED"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/hashed_reference"
+          }
+        }
+      }
+    }
+  }
+}

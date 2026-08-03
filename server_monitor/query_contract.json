@@ -1,0 +1,285 @@
+{
+  "contract_version": "server-query-contract/v1",
+  "purpose": "Fail-closed, read-only status-query checklist for the director's registered GPU resources.",
+  "resource_registry": [
+    {
+      "alias": "primary_gpu",
+      "resource_id": "server.honor.gpu",
+      "registered_hardware": {
+        "gpus": [
+          {
+            "model": "NVIDIA RTX A6000",
+            "count": 2,
+            "memory_gib_each": 48
+          }
+        ]
+      },
+      "hardware_fact_scope": "registration_only_not_live_availability",
+      "status": {
+        "statement": "live re-verification required for current state",
+        "provenance": "resource registration plus future live snapshot"
+      },
+      "current_task": "UNKNOWN"
+    },
+    {
+      "alias": "secondary_gpu",
+      "resource_id": "server.usyd.bdav_z390_3090",
+      "registered_hardware": {
+        "gpus": [
+          {
+            "model": "NVIDIA GeForce RTX 3090",
+            "count": 1
+          },
+          {
+            "model": "NVIDIA GeForce GTX 1080 Ti",
+            "count": 1
+          }
+        ]
+      },
+      "hardware_fact_scope": "registration_only_not_live_availability",
+      "status": {
+        "statement": "director reported resolved; live re-verification pending",
+        "provenance": "director_report_only"
+      },
+      "current_task": "UNKNOWN"
+    }
+  ],
+  "freshness_policy": {
+    "current_task_allowed_sources": [
+      "live_snapshot",
+      "validated_job_or_scheduler_receipt"
+    ],
+    "historical_snapshot_may_populate_current_task": false,
+    "inherit_previous_state": false,
+    "unknown_on_missing_failed_or_stale_probe": true,
+    "query_timestamp_required": true,
+    "live_snapshot_required_for_idle_busy_or_execution_ready_claim": true
+  },
+  "state_values": [
+    "PASS",
+    "FAIL",
+    "UNKNOWN",
+    "NOT_APPLICABLE"
+  ],
+  "operations": {
+    "query_status": {
+      "classification": "read_only",
+      "live_connection_gate": "RAT_SERVER_QUERY_AUTHORIZED must already be set by the director",
+      "may_self_authorize": false,
+      "allowed_actions": [
+        "resolve_registered_resource",
+        "read_identity",
+        "read_gpu_inventory_and_compute_processes",
+        "read_tmux_and_process_state",
+        "read_project_run_campaign_state",
+        "read_and_hash_receipts_and_gate_markers",
+        "read_storage_bytes_and_inodes",
+        "read_runtime_and_environment_markers",
+        "detect_failure_and_duplicate_risk"
+      ],
+      "forbidden_actions": [
+        "submit_job",
+        "cancel_job",
+        "kill_or_signal_process",
+        "write_or_delete_remote_file",
+        "install_or_modify_environment",
+        "change_permissions",
+        "transfer_files"
+      ],
+      "grants_submit_job": false
+    },
+    "submit_job": {
+      "classification": "state_mutating",
+      "implemented_by_server_query": false,
+      "query_status_is_authorization": false,
+      "authorization": "separate execute path with director-approved run, resource and campaign binding, durable recovery record, and submit_job gate"
+    }
+  },
+  "required_checks": [
+    {
+      "id": "identity",
+      "required": true,
+      "what": [
+        "resource alias and resource ID",
+        "hostname",
+        "UTC observation time",
+        "remote user",
+        "OS and kernel identity"
+      ],
+      "how": [
+        "resolve the project resource binding",
+        "hostname",
+        "date -u +%Y-%m-%dT%H:%M:%SZ",
+        "id -un",
+        "uname -sr"
+      ],
+      "required_output_fields": [
+        "resource_alias",
+        "resource_id",
+        "hostname",
+        "observed_at_utc",
+        "user",
+        "kernel",
+        "status"
+      ]
+    },
+    {
+      "id": "gpu",
+      "required": true,
+      "what": [
+        "GPU index, UUID, exact model and memory",
+        "utilization, used memory and temperature",
+        "visible compute-process PID, owner, elapsed time and executable name"
+      ],
+      "how": [
+        "bounded nvidia-smi GPU inventory query",
+        "bounded nvidia-smi compute-app query",
+        "ps -o user=,pid=,etime=,comm= for each visible GPU PID; never request full arguments"
+      ],
+      "required_output_fields": [
+        "inventory_status",
+        "gpus",
+        "process_visibility",
+        "gpu_processes",
+        "status"
+      ]
+    },
+    {
+      "id": "tmux_process",
+      "required": true,
+      "what": [
+        "tmux sessions and scheduler session",
+        "pane and child process IDs",
+        "bounded training, inference, evaluation or watcher progress",
+        "attribution of monitored and unattributed host workloads"
+      ],
+      "how": [
+        "tmux ls",
+        "bounded tmux list-panes and read-only child-process inspection",
+        "bounded project-owned log summary reads",
+        "join monitored process IDs to the GPU compute-process snapshot"
+      ],
+      "required_output_fields": [
+        "session_visibility",
+        "sessions",
+        "process_visibility",
+        "workload_state",
+        "status"
+      ]
+    },
+    {
+      "id": "project_run_campaign",
+      "required": true,
+      "what": [
+        "requested project, run and campaign identifiers",
+        "canonical project and remote run roots",
+        "current stage and task only when supported by live evidence",
+        "live watcher, training, inference and evaluation membership"
+      ],
+      "how": [
+        "bind the query to explicit project and run IDs",
+        "inspect canonical project-owned status roots read-only",
+        "cross-check live process and session evidence against run and campaign identifiers",
+        "emit UNKNOWN instead of copying a task from an earlier report"
+      ],
+      "required_output_fields": [
+        "project",
+        "run_id",
+        "campaign_id",
+        "current_stage",
+        "current_task",
+        "evidence_refs",
+        "status"
+      ]
+    },
+    {
+      "id": "receipts_gates",
+      "required": true,
+      "what": [
+        "canonical ready, execution and completion receipts",
+        "gate decisions and FAILED markers",
+        "receipt identity, timestamp and SHA-256",
+        "whether a receipt is current for the requested run and campaign"
+      ],
+      "how": [
+        "discover only canonical project-owned receipt and gate paths",
+        "exclude temporary files and test fixtures",
+        "read and SHA-256 hash matching receipts without transferring or modifying them",
+        "cross-check receipt run and campaign identity"
+      ],
+      "required_output_fields": [
+        "receipt_visibility",
+        "receipts",
+        "gate_states",
+        "failed_markers",
+        "status"
+      ]
+    },
+    {
+      "id": "storage",
+      "required": true,
+      "what": [
+        "work-volume byte capacity and free bytes",
+        "work-volume inode capacity and free inodes",
+        "project workdir existence and identity"
+      ],
+      "how": [
+        "df -B1 -P on the configured workdir",
+        "df -Pi -P on the configured workdir",
+        "read-only project workdir metadata inspection"
+      ],
+      "required_output_fields": [
+        "bytes",
+        "inodes",
+        "workdir",
+        "status"
+      ]
+    },
+    {
+      "id": "env_marker",
+      "required": true,
+      "what": [
+        "system Python availability",
+        "configured execution Python availability",
+        "Conda availability and configured environment membership",
+        "project environment or bundle marker identity"
+      ],
+      "how": [
+        "bounded python3 --version",
+        "bounded configured-execution-python --version",
+        "bounded conda --version and conda env list --json when available",
+        "read and hash the configured project environment marker when defined"
+      ],
+      "required_output_fields": [
+        "python3",
+        "configured_python",
+        "conda",
+        "project_env_marker",
+        "status"
+      ]
+    },
+    {
+      "id": "failure_duplicate_risk",
+      "required": true,
+      "what": [
+        "FAILED, interrupted or stale state markers",
+        "existing live or receipted task with the same project, run or campaign identity",
+        "already completed prerequisite that must not be rerun",
+        "duplicate watcher, training, inference or evaluation risk"
+      ],
+      "how": [
+        "cross-check canonical failure and completion markers",
+        "compare live tmux and process membership with validated receipts",
+        "compare requested project, run and campaign IDs with active and completed identities",
+        "report conflicts and UNKNOWN evidence instead of inferring safety"
+      ],
+      "required_output_fields": [
+        "failure_markers",
+        "duplicate_candidates",
+        "protected_completed_prerequisites",
+        "risk_state",
+        "status"
+      ]
+    }
+  ]
+}

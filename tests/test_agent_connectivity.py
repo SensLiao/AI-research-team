@@ -46,7 +46,7 @@ MANUSCRIPT_ROLE_CONNECTIVITY = {
     ),
     "manuscript-figure-table-reviewer": ("verify", "VERIFY", ("manuscript_review",)),
     "manuscript-submission-packager": (
-        "report", "REPORT", ("manuscript_authoring", "manuscript_review")
+        "report", "REPORT", ("manuscript_review",)
     ),
 }
 
@@ -58,11 +58,11 @@ def test_agent_connectivity_contract_is_clean():
 def test_every_non_control_agent_has_graph_and_mode_entry():
     report = build_agent_connectivity()
     summary = report["summary"]
-    assert summary["roster_agents"] == 157
+    assert summary["roster_agents"] == 163
     assert summary["control_agents"] == 6
-    assert summary["non_control_agents"] == 151
-    assert summary["graph_connected_non_control"] == 151
-    assert summary["mode_connected_non_control"] == 151
+    assert summary["non_control_agents"] == 157
+    assert summary["graph_connected_non_control"] == 157
+    assert summary["mode_connected_non_control"] == 157
 
     for agent, spec in report["agents"].items():
         if spec["status"] == "control":

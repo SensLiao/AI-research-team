@@ -32,6 +32,18 @@
         "decided_at": {"type": "string", "minLength": 1}
       }
     },
+    "failure": {
+      "type": ["object", "null"],
+      "default": null,
+      "description": "Set when a deterministic hard gate blocks a run. Terminal: prepare_resume refuses a failed run. The block is also recorded in the hash-chained ledger.",
+      "additionalProperties": false,
+      "required": ["stage", "reason", "failed_at"],
+      "properties": {
+        "stage": {"type": "string", "enum": ["DISCOVER", "IDEATE", "DESIGN", "EXECUTE", "ANALYZE", "VERIFY", "REPORT"]},
+        "reason": {"type": "string", "minLength": 1},
+        "failed_at": {"type": "string", "minLength": 1}
+      }
+    },
     "created_at": {"type": "string", "minLength": 1},
     "updated_at": {"type": "string", "minLength": 1},
     "mode": {"type": "string", "minLength": 1},

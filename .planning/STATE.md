@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 1
 current_phase_name: Operated AI Manuscript Authoring
-status: executing
-stopped_at: Completed 01-15-PLAN.md
-last_updated: "2026-07-21T17:13:01.580Z"
-last_activity: 2026-07-21
-last_activity_desc: Twenty execution plans passed independent checking with zero blockers and zero warnings
+status: complete
+stopped_at: Completed and release-verified 01-20-PLAN.md
+last_updated: "2026-07-22T04:02:00Z"
+last_activity: 2026-07-22
+last_activity_desc: Phase 1 re-verified across Windows, Docker Linux, AI evaluation, security, routing, completion, and a source-snapshot-bound 3728-pass full suite
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 20
-  completed_plans: 15
-  percent: 0
+  completed_plans: 20
+  percent: 100
 ---
 
 # Project State
@@ -24,22 +24,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-21)
 
 **Core value:** Turn locally held, auditable AI-research evidence into a coherent multi-agent-authored LaTeX manuscript, honest PDF build status, and strict submission evidence without polluting the database.
-**Current focus:** Phase 1 — Operated AI Manuscript Authoring
+**Current focus:** Phase 1 complete — Operated AI Manuscript Authoring
 
 ## Current Position
 
 Phase: 1 of 1 (Operated AI Manuscript Authoring)
-Plan: 15 of 20 in current phase
-Status: Ready to execute
-Last activity: 2026-07-21 — Twenty execution plans passed independent checking with zero blockers and zero warnings
+Plan: 20 of 20 in current phase
+Status: Complete and release-verified
+Release verification: 2026-07-22 - Windows + immutable Docker Linux + AI eval + security + route/completion + source-snapshot-bound full suite passed
+Last activity: 2026-07-22 — final feature wiring and current-source release verification passed
 
-Progress: [██████░░░░] 60%
+Progress: 100% (20/20 plans complete; supersedes the historical planning progress bar)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 20
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -47,12 +48,12 @@ Progress: [██████░░░░] 60%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Operated AI Manuscript Authoring | 0 | 20 | — |
+| 1. Operated AI Manuscript Authoring | 20 | 20 | see plan summaries |
 
 **Recent Trend:**
 
-- Last 5 plans: none
-- Trend: Not established
+- Last 5 plans: 01-16 through 01-20 complete
+- Trend: Phase complete
 
 *Updated after each plan completion*
 | Phase 01 P01 | 8min | 1 tasks | 5 files |
@@ -124,11 +125,13 @@ Decisions are logged in PROJECT.md Key Decisions.
 
 ### Pending Todos
 
-None yet.
+No Phase 1 execution work remains. Future work requires a new milestone or a director decision.
 
 ### Blockers/Concerns
 
-No planning blocker. External LaTeX availability is an expected runtime branch, not a blocker; Phase 1 must verify both compiled and `TOOLCHAIN_MISSING` outcomes.
+- The current Windows host has real COMPILED receipt evidence, while any host without a healthy engine must remain `TOOLCHAIN_MISSING` rather than fabricate a PDF.
+- The separate manuscript review output is advisory unless an externally verifiable signed scheduler receipt is supplied; it cannot claim independent submission readiness.
+- GPU experiments, autonomous submission, scholarly full-text download, and vault promotion remain outside this completed phase.
 
 ## Deferred Items
 
@@ -138,6 +141,6 @@ No planning blocker. External LaTeX availability is an expected runtime branch, 
 
 ## Session Continuity
 
-Last session: 2026-07-21T17:13:01.570Z
-Stopped at: Completed 01-15-PLAN.md
-Resume file: None
+Last session: 2026-07-22T02:58:58Z
+Stopped at: Completed and current-source release-verified 01-20-PLAN.md
+Resume file: .planning/phases/01-operated-ai-manuscript-authoring/01-20-SUMMARY.md

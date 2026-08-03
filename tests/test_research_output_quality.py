@@ -29,6 +29,8 @@ def test_all_operated_modes_have_business_output_contracts():
         "full_rigor_minimal",
         "ingest_paper",
         "read_paper_deep",
+        "manuscript_authoring",
+        "manuscript_review",
     }
     assert all(len(contract.concepts) >= 6 for contract in MODE_OUTPUT_CONTRACTS.values())
 

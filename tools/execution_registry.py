@@ -11,6 +11,7 @@ path, independent of the mutable RAT_WORKSPACE_ROOT runtime-state dir, so they a
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -81,6 +82,20 @@ def _manifest_facts(run_dir) -> Tuple[dict, list, Optional[str]]:
     return m, completed, nxt
 
 
+def _frozen_stage_path(run_dir, manifest: dict) -> list[str]:
+    """Return the run's pinned path, with the legacy full-tail fallback."""
+    task_frame = Path(run_dir) / "task_frame.artifact.json"
+    if task_frame.is_file():
+        payload = json.loads(task_frame.read_text(encoding="utf-8")).get("payload") or {}
+        declared = payload.get("stage_path")
+        if isinstance(declared, list) and declared:
+            return list(declared)
+    entry = manifest.get("entry_stage")
+    if entry not in STAGES:
+        raise ValueError(f"run manifest has invalid entry_stage {entry!r}")
+    return STAGES[STAGES.index(entry):]
+
+
 def stage_readiness(run_dir, target_stage: str) -> dict:
     """Is `target_stage` runnable on this run RIGHT NOW? Grounded in the manifest, never fabricated.
 
@@ -94,9 +109,14 @@ def stage_readiness(run_dir, target_stage: str) -> dict:
     if target_stage not in STAGES:
         raise ValueError(f"unknown stage {target_stage!r} (real stages: {STAGES})")
     m, completed, nxt = _manifest_facts(run_dir)
+    path = _frozen_stage_path(run_dir, m)
     if m.get("status") == "rejected":
         return {"ready": False, "status": "rejected", "missing": [],
                 "repair_actions": ["this run was vetoed at the director gate — start a NEW run to proceed"]}
+    if m.get("status") == "awaiting_director" or m.get("pending_gates"):
+        gates = m.get("pending_gates") or []
+        return {"ready": False, "status": "awaiting_director", "missing": [],
+                "repair_actions": [f"director decision required at gate(s) {gates} before later work can run"]}
     if target_stage in completed:
         return {"ready": False, "status": "already_done", "missing": [],
                 "repair_actions": [f"stage {target_stage} is already committed on this run — "
@@ -104,14 +124,20 @@ def stage_readiness(run_dir, target_stage: str) -> dict:
     if nxt is None:
         return {"ready": False, "status": "done", "missing": [],
                 "repair_actions": ["this run is complete (no pending stage) — start a new run"]}
+    if target_stage not in path:
+        return {"ready": False, "status": "not_in_path", "missing": [],
+                "repair_actions": [f"stage {target_stage} is not in this run's frozen path {path}"]}
+    if nxt not in path:
+        return {"ready": False, "status": "invalid_path_state", "missing": [],
+                "repair_actions": [f"manifest next stage {nxt} is outside frozen path {path}; reconcile the run"]}
     if target_stage == nxt:
         return {"ready": True, "status": "ready", "missing": [], "repair_actions": []}
-    i_next, i_target = STAGES.index(nxt), STAGES.index(target_stage)
+    i_next, i_target = path.index(nxt), path.index(target_stage)
     if i_target < i_next:
         return {"ready": False, "status": "not_in_path", "missing": [],
                 "repair_actions": [f"this run's next pending stage is {nxt}; {target_stage} is behind it "
                                    "and was not part of this run's path"]}
-    missing = [s for s in STAGES[i_next:i_target] if s not in completed]
+    missing = [s for s in path[i_next:i_target] if s not in completed]
     return {"ready": False, "status": "needs_prior", "missing": missing,
             "repair_actions": ([f"run stage {missing[0]} first (run-stage --stage {missing[0]})"]
                                if missing else [])}
@@ -129,6 +155,10 @@ def skill_readiness(run_dir, skill_id: str, root: Optional[str] = None) -> dict:
     if m.get("status") == "rejected":
         return {**base, "ready": False, "status": "rejected", "missing": [],
                 "repair_actions": ["this run was vetoed — start a new run"]}
+    if m.get("status") == "awaiting_director" or m.get("pending_gates"):
+        gates = m.get("pending_gates") or []
+        return {**base, "ready": False, "status": "awaiting_director", "missing": [],
+                "repair_actions": [f"director decision required at gate(s) {gates} before later work can run"]}
     if stage in completed or stage == nxt:
         return {**base, "ready": True, "status": ("stage_done" if stage in completed else "ready"),
                 "missing": [], "repair_actions": []}
@@ -146,6 +176,10 @@ def bridge_readiness(run_dir, bridge_id: str, root: Optional[str] = None) -> dic
     if m.get("status") == "rejected":
         return {**base, "ready": False, "status": "rejected", "missing": [],
                 "repair_actions": ["this run was vetoed — start a new run"]}
+    if m.get("status") == "awaiting_director" or m.get("pending_gates"):
+        gates = m.get("pending_gates") or []
+        return {**base, "ready": False, "status": "awaiting_director", "missing": [],
+                "repair_actions": [f"director decision required at gate(s) {gates} before later work can run"]}
     if frm in completed and to == nxt:
         return {**base, "ready": True, "status": "ready", "missing": [], "repair_actions": []}
     missing = [] if frm in completed else [frm]

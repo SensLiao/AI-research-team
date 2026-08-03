@@ -6,14 +6,43 @@
   "type": "object",
   "required": ["agent_name", "task_id", "started_at"],
   "additionalProperties": false,
+  "dependentRequired": {
+    "runtime_observation_status": ["runtime_binding_source", "runtime_observation_reason"],
+    "runtime_binding_source": ["runtime_observation_status", "runtime_observation_reason"],
+    "runtime_observation_reason": ["runtime_observation_status", "runtime_binding_source"]
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"runtime_observation_status": {"const": "not_applicable"}},
+        "required": ["runtime_observation_status"]
+      },
+      "then": {
+        "properties": {"runtime_binding_source": {"const": "none"}}
+      }
+    }
+  ],
   "properties": {
     "agent_name": {"type": "string", "minLength": 1},
     "task_id": {"type": "string", "minLength": 1},
     "stage": {"type": ["string", "null"], "default": null},
     "model": {"type": ["string", "null"], "default": null, "description": "Historical logical workload alias after model_policy was applied; it is not a vendor model request. Null means no reasoning seat was dispatched."},
-    "runtime_model": {"type": "string", "description": "Optional deployment-bound model id. Omitted by default so the runtime can inherit any provider/model satisfying the seat's capability requirements."},
-    "reasoning_effort": {"type": "string", "description": "Optional deployment-specific reasoning setting. Not prescribed by the research architecture."},
-    "service_tier": {"type": "string", "description": "Optional deployment-specific service setting. Not prescribed by the research architecture."},
+    "runtime_model": {"type": "string", "description": "Optional deployment-request binding copied from environment. It is not a provider-observed resolved model and must not be presented as one."},
+    "reasoning_effort": {"type": "string", "description": "Optional deployment-request binding copied from environment. It is not provider-response evidence."},
+    "service_tier": {"type": "string", "description": "Optional deployment-request binding copied from environment. It is not provider-response evidence."},
+    "runtime_observation_status": {
+      "enum": ["not_applicable", "unobserved"],
+      "description": "Current operate boundary cannot claim provider-attested runtime facts. Legacy rows may omit this field; new rows must explicitly state whether a model call was outside observability."
+    },
+    "runtime_binding_source": {
+      "enum": ["none", "deployment_environment"],
+      "description": "Where optional runtime request bindings came from; never a provider usage source."
+    },
+    "runtime_observation_reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why provider-level invocation metadata is unavailable or not applicable."
+    },
     "input_artifact_hashes": {"type": "array", "items": {"type": "string"}, "default": []},
     "output_artifact_hash": {"type": ["string", "null"], "default": null},
     "tool_calls": {"type": "integer", "minimum": 0, "default": 0},
@@ -21,7 +50,7 @@
     "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "default": null},
     "started_at": {"type": "string", "minLength": 1},
     "ended_at": {"type": ["string", "null"], "default": null},
-    "cost_tokens": {"type": ["integer", "null"], "minimum": 0, "default": null},
+    "cost_tokens": {"type": ["integer", "null"], "minimum": 0, "default": null, "description": "Legacy aggregate field. Null or a caller-supplied value is not a provider-attested input/output token receipt."},
     "human_overrides": {"type": "array", "items": {"type": "string"}, "default": []}
   }
 }

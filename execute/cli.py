@@ -5,8 +5,11 @@
   status --run-id <id>                                               -> LIVE (director-gated)
   pull   --run-id <id>                                               -> LIVE (director-gated)
 
-`plan` is the model-safe default. submit/status/pull open a real connection to the shared lab server
-and are REFUSED unless the director set RAT_EXECUTE_AUTHORIZED=<run_id> and is present (CLAUDE.md §6).
+`plan` is the model-safe default. This ordinary CLI deliberately has no flag that can impersonate an
+in-chat director confirmation: submit/status/pull remain REFUSED unless the legacy exact
+RAT_EXECUTE_AUTHORIZED=<run_id> capability is present. Assistant-mediated live operations use the
+library-only explicit-director-command parameter after the primary assistant shows the exact mutation
+plan and receives a fresh top-level confirmation (CLAUDE.md §6).
 """
 from __future__ import annotations
 

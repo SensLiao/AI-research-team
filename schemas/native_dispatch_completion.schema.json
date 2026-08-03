@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-agent-teams.local/schemas/native_dispatch_completion.schema.json",
+  "title": "Native collaboration dispatch completion",
+  "description": "Immutable post-dispatch record that echoes a work order and binds the actual output. Runtime usage remains explicitly unobserved.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "work_order_id",
+    "work_order_sha256",
+    "stage",
+    "role",
+    "applicability",
+    "completion_state",
+    "agent_id",
+    "canonical_agent_task_name",
+    "input_packet_sha256",
+    "authorization_sha256",
+    "nonce_echo",
+    "dependencies",
+    "started_at",
+    "completed_at",
+    "recorded_at",
+    "output",
+    "preexisting_output_guard",
+    "n_a_reason",
+    "runtime_usage"
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "safeRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:|/|\\\\)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+"
+    },
+    "runtimeUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "UNOBSERVED"
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "work_order_id",
+        "role",
+        "output_sha256"
+      ],
+      "properties": {
+        "work_order_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "output_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "native-dispatch-completion/v1"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "work_order_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "work_order_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "stage": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "role": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "applicability": {
+      "enum": [
+        "APPLICABLE",
+        "RESULT_ROLE_NO_EXECUTOR"
+      ]
+    },
+    "completion_state": {
+      "enum": [
+        "COMPLETED",
+        "NOT_APPLICABLE_NO_EXECUTOR"
+      ]
+    },
+    "agent_id": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "canonical_agent_task_name": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/[A-Za-z0-9._/-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "input_packet_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authorization_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "nonce_echo": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{32,256}$"
+    },
+    "dependencies": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/dependency"
+      }
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "output": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "size_bytes",
+            "mtime_ns"
+          ],
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/safeRelativePath"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mtime_ns": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "preexisting_output_guard": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "absent_at_authorization",
+            "mtime_not_before_authorization",
+            "mtime_not_after_completion"
+          ],
+          "properties": {
+            "absent_at_authorization": {
+              "const": true
+            },
+            "mtime_not_before_authorization": {
+              "const": true
+            },
+            "mtime_not_after_completion": {
+              "const": true
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "n_a_reason": {
+      "oneOf": [
+        {
+          "const": "NO_EXECUTOR_RECEIPT"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "runtime_usage": {
+      "$ref": "#/$defs/runtimeUsage"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "completion_state": {
+            "const": "COMPLETED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "applicability": {
+            "const": "APPLICABLE"
+          },
+          "agent_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "canonical_agent_task_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "output": {
+            "type": "object"
+          },
+          "preexisting_output_guard": {
+            "type": "object"
+          },
+          "n_a_reason": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "completion_state": {
+            "const": "NOT_APPLICABLE_NO_EXECUTOR"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "applicability": {
+            "const": "RESULT_ROLE_NO_EXECUTOR"
+          },
+          "agent_id": {
+            "type": "null"
+          },
+          "canonical_agent_task_name": {
+            "type": "null"
+          },
+          "output": {
+            "type": "null"
+          },
+          "preexisting_output_guard": {
+            "type": "null"
+          },
+          "n_a_reason": {
+            "const": "NO_EXECUTOR_RECEIPT"
+          }
+        }
+      }
+    }
+  ]
+}
