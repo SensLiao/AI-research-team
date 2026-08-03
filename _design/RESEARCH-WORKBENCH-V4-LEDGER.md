@@ -97,7 +97,7 @@ session, not pre-existing:
 `tests/test_server_monitor.py` also mentions the old slug (lines 284/288) but passes — it is a
 CLI pass-through string, not a filesystem lookup. Left alone deliberately (minimal diff).
 
-### 4.2 The project root has no working git repo — found 2026-08-04, NOT fixed (director's call)
+### 4.2 The project root had no working git repo — found AND fixed 2026-08-04
 
 Measured, not assumed: the root holds a `.git` **empty directory** (created 2026-07-11, no `HEAD`, no
 objects, no config), so `git rev-parse --show-toplevel` there returns *fatal: not a git repository*.
@@ -109,17 +109,34 @@ Two real repos exist below it — `research_agent_teams/` (machine) and `AI agen
 - `.claude/commands/*.md` — 19 slash commands;
 - `docs/` — the 5-file doc centre; `AGENTS.md`.
 
-Deliberately **not** fixed here. `git init` at root would make a third repo that *contains* the other
-two as nested repos, which is exactly the hazard hard rule §5.1 warns about, and the alternative (a
-fourth repo holding only `.claude/` + `docs/`) is a layout decision. Options for the director:
-① a root repo with the two subrepos gitignored, ② a separate small repo for `.claude/` + `docs/` only,
-③ leave it unversioned and rely on the existing `~/.claude/backups/` + the GitHub config mirror.
+Three options were put to the director (① a root repo with the two subrepos gitignored, ② separate
+small repos for `.claude/` and `docs/`, ③ leave it unversioned). **Answer: ①.** Shipped as root commit
+`e4d77db` — 51 files (`.claude/` manual + settings + 2 skills + 19 commands, `.agents/` 18 mirrors,
+`.Codex/` 3, `docs/` 5, `AGENTS.md`, `.gitignore`), secret-scanned first. The two real repos are in
+`.gitignore`, and `git ls-files | grep -c` for either of them returns **0** — the §5.1 boundary is
+preserved by ignoring them, not broken by nesting. Note option ③ was weaker than it sounded: the
+existing GitHub config mirror covers `~/.claude/`, never this project's `.claude/`.
 
 ---
 
 ## 5. Before mounting the upstream repos (D5) — the decisions being reversed
 
-Must be restated to the director at mount time, then executed per D5:
+**RESTATED AND ANSWERED 2026-08-04.** The five items were read out to the director item by item; the
+decision was **"只挂原文，不跑任何东西"** — vendor the upstream TEXT read-only. That reverses items
+**1 and 5**; items **2 and 3 stay in force**; item 4 is recorded, not a veto. Executed by
+`tools/vendor_upstream_skills.py` into `vendor/upstream-research-skills/`; the same four-line record
+is machine-readable in `orchestrator/external_research_skill_sources.json::text_vendoring` and in the
+vendor `MANIFEST.json::policy`, with a test asserting the two agree word for word.
+
+| # | Item | Outcome 2026-08-04 |
+|---|---|---|
+| 1 | 359 third-party `SKILL.md` files move into the repo tree | **REVERSED** — 358 bundles / 2604 markdown files / 25.9 MB vendored (the 359th belongs to the excluded source) |
+| 2 | Mounting implies running third-party installers / hooks / MCP / auto-update | **KEPT** — the copy allowlist admits markdown + license notices only, so there is nothing runnable in the tree; a test asserts it |
+| 3 | `drawio-scientific-illustrator` rejected on safety grounds | **KEPT** — excluded entirely; still `selectable: false`; overlay-catalog validation still fails if referenced |
+| 4 | License findings (CC BY-NC; one `NOASSERTION`) | **RECORDED, not a veto** — per-source license text vendored where upstream ships one; `agent_research_skills` ships none at all, disclosed rather than papered over |
+| 5 | The verified clean-room "no non-empty exact copy" property | **REVERSED — it has ended, by design** |
+
+Original wording of the five, preserved:
 
 1. **359 third-party `SKILL.md` files move into the repo tree.** They currently live in an
    out-of-repo review root; only clean-room summaries + hashes are in-repo.
@@ -251,17 +268,54 @@ Three defects found and fixed while building it:
    use it because the commands were said in chat; a fresh session would never have found it. Now in
    `docs/03-WORKFLOWS.md` §0.5, `docs/README.md`, `PLATFORM-FACTS.md` §0, the `.claude/CLAUDE.md`
    access map, and the orchestrator SKILL §1.
-| P3.x | Really mount the nine sources (D5) | TODO | restate §5 first |
+| P3.x | Really mount the nine sources (D5) | **DONE** | text-only, per the director's 2026-08-04 answer to the §5 restatement — see below |
+
+### P3 as shipped
+
+`tools/vendor_upstream_skills.py` (`fetch` online / `verify` offline) + `vendor/upstream-research-skills/`
+(README + MANIFEST + 8 source trees) + `tests/test_vendor_upstream_skills.py` (11 tests) + the
+`text_vendoring` block in the source lock.
+
+- **The 2026-07-31 review root was gone.** `<local-workspace>/.tmp/research-agent-skills-review/2026-07-31`
+  no longer exists, so "mounting" could not be a copy — it had to be a **re-fetch at the pinned
+  commits**. Recorded in the lock as `review_root_status`. Only one stray snapshot survived elsewhere
+  on disk, partial; it was not used.
+- **43 of 43 audit receipts re-verified** against what upstream serves today, 0 sources blocked. The
+  rule is deliberate: a source whose bytes drifted under a pinned commit is BLOCKED and not copied,
+  because that is exactly the case where quietly vendoring would be worst.
+- **"Cannot run" is structural.** The allowlist admits markdown + license notices only, scoped to skill
+  bundles, so the tree holds no `.py` / `.js` / `.sh` / plugin manifest / hook / MCP config. A test
+  walks the real tree and asserts it.
+- **815 files / 14.5 MB deliberately skipped** — upstream `docs/`, `CHANGELOG`, `.github/` templates,
+  and in one repo several hundred files of the upstream's own eval run logs. Counted per source in the
+  manifest (`sources[].skipped`), never silently dropped.
+- **The lock's own `copy_policy` said the opposite.** Every source carried a self-imposed
+  `concept_only_no_code_or_(long_)text` policy from 07-31, and `agent_research_skills` literally said
+  `no_code_or_text`. Rather than quietly contradicting the audit record, the lock now carries a
+  `text_vendoring` block stating what the director overrode, what still holds (`copy_policy` governs
+  CODE — none is copied or run), and which ledger items moved. A test pins lock and manifest to the
+  same words.
+- **Not capability, not indexed.** Verified rather than assumed: the workbench indexer's only
+  machine-source sweep is `projects/<slug>/`, so third-party text cannot inflate artifact counts or
+  appear in the director's search. A test asserts the vendor root is outside every swept root.
+- Weakest-standing inclusion, flagged not hidden: `agent_research_skills` is `NOASSERTION` (no license
+  grant at all) with `commercial_use_policy: not_permitted_without_separate_license`. 31 bundles / 66
+  files. Kept under the director's standing Route-A-personal-use position; droppable in one line
+  (`EXCLUDED_SOURCE_IDS`) if that position ever changes.
 | P4.x | Director additions over the existing router | REBUILD | smallest-sufficient-team policy; dynamic dispatch of dormant workers |
 | P5.x | Compiler additions over the existing council | REBUILD | the memo's soft output template |
 | P6.x | Re-run the example project end-to-end | REBUILD | dry-run only; never dress a dry-run as a GPU result |
 | P7.x | Governance slimming | TODO | last, and telemetry-driven |
 
-**Current pointer:** P1 and P2.1 are shipped. Next is **P3** — really mounting the nine upstream
-sources per D5. **Precondition, not optional:** the five reversed safety decisions in §5 must be
-restated to the director item by item and answered BEFORE any mount happens. Nothing about P3 may
-start on the strength of D5 alone; D5 itself says so. After P3: P4/P5/P6 are REBUILD-over-existing
-(label them as such in the report) and P7 comes last, telemetry-driven.
+**Current pointer:** P1, P2.1 and P3 are shipped; the §5 restatement was made and answered (see §5).
+Next is **P4** — director additions over the existing `research_capability_router` (smallest-sufficient-team
+policy; dynamic dispatch of dormant workers). P4/P5/P6 are all **REBUILD-over-existing** per D1: the
+subsystems already exist (§3), so every report must label which part is new and which is a rebuild.
+P7 (governance slimming) stays last and telemetry-driven.
+
+**Still-open premise (unchanged):** the memo's "120 used by operated modes / 37 spec-only" split is
+unverified. Before any P4 policy rests on it, run a real cross-reference of `mode_registry.yaml`
+`agent_subset` × `agents/`.
 
 **Unverified premise still open:** the memo's "157 workers, 120 used by operated modes, 37
 spec-only". The 157 figure is corroborated by the 08-01 round; the **120 / 37 split is not
@@ -276,4 +330,5 @@ verified** and no policy should rest on it until a real cross-reference of
 |---|---|
 | 2026-08-03 | Ledger opened. Delta audit (§3) + baseline measurement (§4) done. Documented `3914 green` claim disproved: 3 regressions found and fixed, entry-doc guard hardened and negative-controlled. Director reaffirmed D1 (all 7 phases) and D5 (really mount) after one objection each. |
 | 2026-08-03 | **P1 shipped** (`c2b876c`): the rebuildable projection — dual-state model, `.workbench/` FTS5 store, read-only indexer, generated home pages, 7 verbs. Found 3 defects: the vault count was blind to 47 pages (~10%), `pending_director_decisions` never reached a report, and search broke on a hyphenated phrase. |
+| 2026-08-04 | **P3 shipped, text-only**, after the §5 five-item restatement was read out and answered. Review root found deleted → re-fetched at the pinned commits; 43/43 receipts re-verified; 8 sources / 358 bundles / 2604 files / 25.9 MB vendored read-only; 815 files / 14.5 MB skipped and counted; drawio excluded. The lock's contradicting `copy_policy` is now reconciled by an explicit `text_vendoring` record instead of a silent override. **Root repo created** (`e4d77db`, director option ①) — the operating manual and doc centre have history for the first time. |
 | 2026-08-04 | **P2.1 shipped** (`6d1b470`): the six outcome recipes + 2 workbench verbs + the brief cross-reference, 35 tests each negative-controlled. Director added **D7** (every role in `agents/` is a sub-agent — verified already true in-tree, now pinned). Found 3 more defects: the size column read "大工程" six times, the menu took 11.6 s (yaml re-parsed hundreds of times → cached, whole suite 456 s → 183 s), and **P1's workbench was in no entry document at all** — now in `docs/03` §0.5, `docs/README`, `PLATFORM-FACTS` §0, the CLAUDE.md access map and the SKILL. Also found, not fixed: §4.2, the project root's `.git` is empty so the operating manual and doc centre are unversioned. |
