@@ -21,21 +21,46 @@ from ..tools import resources as resources_tool
 from ..tools import workspace as workspace_tool
 from ..tools.scope_guard import discover_vault_root
 
-# Vault subdirectories the director thinks of as "knowledge", in reading order.
-_WIKI_KINDS = (
-    ("sources", "论文与外部来源"),
-    ("concepts", "概念定义"),
-    ("methods", "方法"),
-    ("datasets", "数据集"),
-    ("experiments", "实验"),
-    ("results", "结果"),
-    ("ideas", "想法"),
-    ("decisions", "决定"),
-    ("syntheses", "综述与汇总"),
-    ("protocols", "实验规程"),
-    ("entities", "机构与人"),
-    ("risks", "风险"),
+# The order the director likes to read kinds in.  This controls ORDER ONLY — the set of
+# kinds is enumerated from disk (see `scan_vault`), because a hardcoded set silently hides
+# whole folders: this tuple used to BE the set, and it listed a `risks` folder that does not
+# exist while omitting `comparisons` / `meetings` / `models` / `papers` — 47 real pages, about
+# a tenth of the vault, that never reached a briefing.
+_WIKI_READING_ORDER = (
+    "sources", "papers", "concepts", "methods", "datasets", "experiments", "results",
+    "ideas", "decisions", "syntheses", "protocols", "models", "comparisons", "meetings",
+    "entities", "risks",
 )
+
+# Chinese labels where we have one; an unlabelled folder falls back to its own name so that a
+# newly created kind still shows up instead of vanishing.
+_WIKI_LABELS = {
+    "sources": "论文与外部来源",
+    "papers": "论文",
+    "concepts": "概念定义",
+    "methods": "方法",
+    "datasets": "数据集",
+    "experiments": "实验",
+    "results": "结果",
+    "ideas": "想法",
+    "decisions": "决定",
+    "syntheses": "综述与汇总",
+    "protocols": "实验规程",
+    "models": "模型",
+    "comparisons": "对比",
+    "meetings": "会议记录",
+    "entities": "机构与人",
+    "risks": "风险",
+}
+
+
+def wiki_kinds_on_disk(wiki: Path) -> list[str]:
+    """Every kind folder that really exists, known ones first in reading order."""
+    if not wiki.is_dir():
+        return []
+    present = {d.name for d in wiki.iterdir() if d.is_dir()}
+    known = [kind for kind in _WIKI_READING_ORDER if kind in present]
+    return known + sorted(present - set(known))
 
 # Resources that can actually run a job vs. resources that can only be watched.
 _EXECUTION_CAPABILITY = "submit_job"
@@ -58,11 +83,12 @@ def scan_vault(vault_root: Optional[str] = None) -> dict[str, Any]:
                 "note": "没有找到知识库目录，这次任务只能靠现查的资料"}
     counts: list[dict[str, Any]] = []
     total = 0
-    for folder, label in _WIKI_KINDS:
-        n = len(list((wiki / folder).glob("*.md"))) if (wiki / folder).is_dir() else 0
+    for folder in wiki_kinds_on_disk(wiki):
+        n = len(list((wiki / folder).glob("*.md")))
         total += n
         if n:
-            counts.append({"kind": folder, "label": label, "count": n})
+            counts.append({"kind": folder, "label": _WIKI_LABELS.get(folder, folder),
+                           "count": n})
     raw = root / "01-raw"
     inbox = len(list(raw.rglob("*.pdf"))) if raw.is_dir() else 0
     return {"available": True, "root": str(root), "total_pages": total,
@@ -173,6 +199,7 @@ def scan_all(request: str, *, project: Optional[str] = None,
 
 
 __all__ = [
+    "wiki_kinds_on_disk",
     "scan_all",
     "scan_capabilities",
     "scan_projects",

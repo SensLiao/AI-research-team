@@ -95,6 +95,33 @@ def test_vault_counts_come_from_real_files(tmp_path):
     assert result["by_kind"] == [{"kind": "sources", "label": "论文与外部来源", "count": 2}]
 
 
+def test_no_vault_kind_can_hide_from_the_count(tmp_path):
+    """A hardcoded kind list once hid `comparisons`/`meetings`/`models`/`papers` — 47 pages,
+    about a tenth of the real vault, invisible to every briefing.  Kinds come from disk now."""
+    wiki = tmp_path / "02-wiki"
+    for kind in ("sources", "papers", "models", "comparisons", "meetings", "brand-new-kind"):
+        (wiki / kind).mkdir(parents=True)
+        (wiki / kind / "a.md").write_text("x", encoding="utf-8")
+    result = scan.scan_vault(str(tmp_path))
+    counted = {row["kind"] for row in result["by_kind"]}
+    assert counted == {"sources", "papers", "models", "comparisons", "meetings",
+                       "brand-new-kind"}
+    assert result["total_pages"] == 6
+    assert sum(row["count"] for row in result["by_kind"]) == result["total_pages"]
+    labels = {row["kind"]: row["label"] for row in result["by_kind"]}
+    assert labels["models"] == "模型", "known kinds keep their Chinese label"
+    assert labels["brand-new-kind"] == "brand-new-kind", "an unlabelled kind shows, unlabelled"
+
+
+def test_known_kinds_keep_their_reading_order_and_extras_come_after(tmp_path):
+    wiki = tmp_path / "02-wiki"
+    for kind in ("zz-extra", "results", "sources"):
+        (wiki / kind).mkdir(parents=True)
+        (wiki / kind / "a.md").write_text("x", encoding="utf-8")
+    order = [row["kind"] for row in scan.scan_vault(str(tmp_path))["by_kind"]]
+    assert order == ["sources", "results", "zz-extra"]
+
+
 def test_capability_scan_mirrors_the_wired_registry():
     from research_agent_teams.operate.modes import REGISTRY
 
