@@ -22,6 +22,7 @@ is a bounded composition over a frozen, human-authored menu — not a free-form 
 from __future__ import annotations
 
 import copy
+import copy
 import hashlib
 import json
 import os
@@ -52,15 +53,37 @@ _BAND_MEDIUM_MAX = 16
 
 # --------------------------------------------------------------------------- catalog / registry I/O
 
+#: path -> ((mtime_ns, size), parsed). The two catalogs are 58 KB and 14 KB of YAML, read on nearly
+#: every control-plane call: parsing one costs ~84 ms, deep-copying the parsed tree ~0.8 ms. Rendering
+#: the outcome menu did it a few hundred times and took 11.6 s of the director's time.
+_YAML_CACHE: dict[str, tuple[tuple[int, int], dict]] = {}
+
+
+def _load_yaml_cached(path: Path) -> dict:
+    """Parse once per (mtime, size), then hand every caller its own independent copy.
+
+    The contract callers already had is preserved exactly — a fresh mutable dict — so a caller that
+    edits the result (`tests/test_graph_spec.py` does) still cannot affect anyone else, and an edit
+    to the yaml on disk still takes effect with no restart because the stamp changes.
+    """
+    stat_result = path.stat()
+    stamp = (stat_result.st_mtime_ns, stat_result.st_size)
+    cached = _YAML_CACHE.get(str(path))
+    if cached is None or cached[0] != stamp:
+        cached = (stamp, yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+        _YAML_CACHE[str(path)] = cached
+    return copy.deepcopy(cached[1])
+
+
 def load_catalog(path: Optional[str] = None) -> dict:
-    """The plan catalog (re-read each call so an edit takes effect with no restart)."""
+    """The plan catalog (an on-disk edit takes effect with no restart — see :func:`_load_yaml_cached`)."""
     p = Path(path) if path else _CATALOG_PATH
-    return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    return _load_yaml_cached(p)
 
 
 def load_mode_registry(path: Optional[str] = None) -> dict:
     p = Path(path) if path else _REGISTRY_PATH
-    return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    return _load_yaml_cached(p)
 
 
 def all_modes() -> set:

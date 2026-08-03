@@ -19,6 +19,8 @@ Every number below is computed from the registries and the file tree, never quot
 | Enforcement hooks | **2** | `hooks/` — artifact-contract-enforcer, permission-scope-guard |
 | Domain profiles | **7** | `profiles/*.yaml` (medical-segmentation is one profile, never a hardcoded domain) |
 | `operate` subcommands | **31** | `operate/cli.py` |
+| `workbench` verbs | **9** | `workbench/cli.py` — read-only navigation; only `reindex` writes, and only inside `.workbench/` + one generated `PROJECT-HOME.md` per workspace |
+| Outcome recipes | **6** | `orchestrator/outcome_recipes.yaml` — the "你想得到什么" menu above the mode table; a test pins that all 12 operated modes stay reachable from it |
 | Slash commands / skills | **19 / 2** | `.claude/commands/`, `.claude/skills/` |
 | Test files | **217** | `tests/` |
 

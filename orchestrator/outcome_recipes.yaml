@@ -1,0 +1,181 @@
+# Outcome recipes — the SINGLE SOURCE OF TRUTH for the director-facing "你想得到什么" menu (v4 P2.1).
+#
+# Why this layer exists. `plan_catalog.yaml` routes a request the director already knows how to phrase
+# (intent aliases -> tiers). It is reactive: a director who does not know that `deep_ideation` exists
+# cannot ask for it. This file is the other direction — a menu of OUTCOMES the director can be SHOWN,
+# named by what they end up holding, not by the activity performed. It sits ON TOP of the plan catalog
+# and the SKILL's routing table; it replaces neither.
+#
+# Flow this drives (see tools/outcome_recipes.py):
+#   1. `workbench outcomes` prints the six outcomes — deliverable, team size, cost band, human gates,
+#      and the honesty ceiling of each.
+#   2. `workbench outcome <id>` compiles ONE outcome into the exact `operate` command chain to run.
+#   3. `operate brief` names the matching outcome id, so the menu and the plan card cannot disagree.
+#
+# Honesty contract (enforced by tests/test_outcome_recipes.py — eight invariants):
+#   - Only WIRED modes (`operated: true` in mode_registry.yaml) may appear in any variant. A recipe can
+#     never present a spec-only mode as one-button.
+#   - COVERAGE: every operated mode must be reachable from at least one recipe. A capability the
+#     director cannot reach is a capability that does not exist to them — the exact defect the
+#     2026-08-01 round fixed at the routing layer, re-pinned here at the menu layer.
+#   - DERIVED, NEVER DECLARED: team size, hop budget, human gates and the deliverable file path are
+#     read from mode_registry.yaml + plan_catalog.yaml at render time. They are deliberately absent
+#     from this file so a stale number here cannot mislead the director. This applies to PROSE too —
+#     writing "20 席深读报告" into a `deliverable` line is the same defect wearing a sentence, and
+#     validate_all rejects a seat count in prose. A number that is NOT derivable (e.g. "3 个互盲
+#     审稿人", a structural property of the mode's own recipe) is allowed and matches plan_catalog.
+#   - Chains are non-decreasing in `plan_catalog.yaml::phase_rank` (no venue before ideate).
+#   - `ceiling` is mandatory and rule-checked: a recipe containing `full_rigor_minimal` MUST state the
+#     no-GPU-receipt limit; a recipe producing draft knowledge MUST state that only /promote-to-vault
+#     admits it to the vault. See `_REQUIRED_CEILINGS` in tools/outcome_recipes.py.
+#   - Every seat is a WORKER SUB-AGENT. The main thread routes, runs deterministic gates and reports;
+#     it never does the research work itself (director rule D7 / .claude/CLAUDE.md §5.6).
+#
+# This file is DATA. Edit a variant here and the menu changes with ZERO code change.
+
+version: 1
+
+recipes:
+  # --------------------------------------------------------------------------------------------------
+  direction-to-bet:
+    want: "我想要一个能下注的研究方向"
+    deliverable: "一张方向卡：每个候选点子 + 有没有人做过（带证据）+ 可行性排名 + 建议押哪个"
+    for_you_when: "手里没有明确课题，或者想换一条更有戏的路。"
+    covers_intents: [find_direction, scan_gaps]
+    variants:
+      - id: quick
+        label: "快 · 直接产点子"
+        modes: [new_direction]
+        why: "对你关心的领域直接接地 + 查重 + 可行性打分，最省时间。"
+      - id: default
+        label: "标准 · 推荐"
+        recommended: true
+        modes: [gap_breadth, new_direction]
+        why: "先并行扫一遍还没人做的空白，再深挖点子——方向更有把握。"
+      - id: deep
+        label: "最深 · 跨域挖"
+        modes: [gap_breadth, deep_research, deep_ideation]
+        why: "扫空白 → 深读证据 → 跨域类比产点子，深度和广度都拉满。"
+    ceiling:
+      - "「有没有人做过」是**查重**结论，不是「没人做过」的证明。断网时所有点子标成未核实，绝不假装查过。"
+      - "机器不下注。押哪个方向永远是 `/idea-bet` 你自己点，它只把依据摆齐。"
+
+  # --------------------------------------------------------------------------------------------------
+  paper-understood:
+    want: "我想把一篇论文彻底读懂"
+    deliverable: "一页论文卡，或一份逐项深读报告：核心主张在第几页、方法怎么拆、数值能不能复现、审稿人会打哪里"
+    for_you_when: "有一篇必须吃透的论文，或者要判断它的方法能不能搬到我们项目。"
+    covers_intents: [read_paper]
+    variants:
+      - id: quick
+        label: "快 · 一页卡"
+        modes: [ingest_paper]
+        why: "来源、要点、主张、方法与指标、跟我们项目的关系、下一步该读什么。"
+      - id: default
+        label: "标准 · 推荐"
+        recommended: true
+        modes: [read_paper_deep]
+        why: "20 席分工深读：主张、证据位置、方法拆解、结果复核、图表与数学、可复现材料。"
+      - id: deep
+        label: "最深 · 读完再放回文献里"
+        modes: [read_paper_deep, evidence_deep]
+        why: "深读这一篇 → 再做深度证据评估：它跟别人矛盾吗、结论今天还站得住吗。"
+    ceiling:
+      - "读出来的是**草稿知识**。进永久知识库的唯一通道是 `/promote-to-vault`，读完不等于进库。"
+      - "论文里的数字照抄自原文，不做二次核算；要核算得走实验设计那条路。"
+
+  # --------------------------------------------------------------------------------------------------
+  evidence-verdict:
+    want: "我想知道这个说法到底站不站得住"
+    deliverable: "一份证据判断：逐条主张 → 支持它的原文在哪 → 反面证据 → 还剩哪些没被回答"
+    for_you_when: "要引用一个结论、或者怀疑某个共识，动手前先把证据摸清。"
+    covers_intents: [assess_evidence]
+    variants:
+      - id: quick
+        label: "快 · 一次证据画像"
+        modes: [evidence_review]
+        why: "把来源查清、把引用真伪查掉，出一张证据画像。"
+      - id: default
+        label: "标准 · 推荐"
+        recommended: true
+        modes: [deep_research, evidence_deep]
+        why: "先深读文献铺底，再做深度评估——专门找矛盾和失效点，不是找支持。"
+      - id: deep
+        label: "最深 · 顺带扫出剩下的空白"
+        modes: [deep_research, evidence_deep, gap_breadth]
+        why: "深读 → 深评 → 把这个领域还没人做的地方一并扫出来。"
+    ceiling:
+      - "这是**证据强度**判断，不是实验证明。「文献都这么说」和「我们跑出来了」是两回事。"
+      - "引用存在性会联网核。断网时降级成警告并写进报告，绝不因为查不到就误判成编造。"
+
+  # --------------------------------------------------------------------------------------------------
+  runnable-experiment:
+    want: "我想要一个能真跑的实验方案"
+    deliverable: "预注册冻结的实验方案 + 可直接运行的脚本 + 统计口径 + 止损条件"
+    for_you_when: "已经决定验证哪个想法，要一份别人挑不出统计毛病的方案。"
+    covers_intents: [design_experiment, validate_idea]
+    variants:
+      - id: quick
+        label: "快 · 直接出方案"
+        modes: [full_rigor_minimal]
+        why: "研究问题 → 变量与对照 → 数据划分 → 指标与统计 → 预注册冻结 → 可运行脚本。"
+      - id: default
+        label: "标准 · 推荐"
+        recommended: true
+        modes: [evidence_deep, full_rigor_minimal]
+        why: "先把已有基线和相关证据查扎实，避免设计出一个别人已经回答过的实验。"
+      - id: deep
+        label: "最深 · 基线公平性拉满"
+        modes: [deep_research, evidence_deep, full_rigor_minimal]
+        why: "深读文献 → 深度证据评估 → 实验设计，把基线公平性和统计严谨度都做到顶。"
+    ceiling:
+      - "**没有 GPU 回执，这条路只出脚本和预注册，一个指标都不会出。** 运行记录结构上停在「只做了计划」、指标为空——不会给你编数字。真跑要服务器，而且每次提交任务都要你授权。"
+      - "预注册一冻结就不许事后改读数口径。要改得重新走一遍，改动留痕。"
+
+  # --------------------------------------------------------------------------------------------------
+  manuscript-and-review:
+    want: "我想要一份稿子，外加一份专门挑毛病的独立审稿意见"
+    deliverable: "稿件（分节草稿）+ 一份完全独立的审稿报告：主张、统计、图表、引用逐项挑问题"
+    for_you_when: "结果已经成立，要把它写成能投的东西，并且先自己被审一遍。"
+    covers_intents: [write_manuscript]
+    variants:
+      - id: quick
+        label: "快 · 只审不写"
+        modes: [manuscript_review]
+        why: "对你已经写好的稿子出一份独立审稿报告。"
+      - id: default
+        label: "标准 · 推荐"
+        recommended: true
+        modes: [manuscript_authoring, manuscript_review]
+        why: "先写稿，再由一个看不到写稿过程的评审去挑毛病——作者不能给自己打分。"
+      - id: deep
+        label: "最深 · 一路到投稿就绪"
+        modes: [manuscript_authoring, manuscript_review, venue_readiness]
+        why: "写稿 → 独立审稿 → 投稿就绪度（模拟盲审 + 目标会议匹配）。"
+    ceiling:
+      - "只用**已冻结、有回执**的结果写。没有结果的地方留空并标出来，不许拿占位数字凑。"
+      - "写稿模式不投稿、不发表、不进库——它只生产稿件。"
+
+  # --------------------------------------------------------------------------------------------------
+  submit-or-not:
+    want: "我想知道这个结果够不够投、该投哪里"
+    deliverable: "冻结的就绪度评分表 + 3 个互盲模拟审稿人的意见 + 元评审结论 + 目标会议候选"
+    for_you_when: "手上有结果，在纠结现在投、还是再补一轮实验。"
+    covers_intents: [prep_submission]
+    variants:
+      - id: quick
+        label: "快 · 只做就绪度"
+        modes: [venue_readiness]
+        why: "模拟盲审给一个就绪度判断，直接进 `/venue-pick`、`/venue-decide`。"
+      - id: default
+        label: "标准 · 推荐"
+        recommended: true
+        modes: [full_rigor_minimal, venue_readiness]
+        why: "先把实验设计和统计补严，再评就绪度——降低「因为方法被质疑」被拒。"
+      - id: deep
+        label: "最深 · 证据也复核一遍"
+        modes: [evidence_deep, full_rigor_minimal, venue_readiness]
+        why: "深度证据复核 → 实验严谨化 → 就绪度，把可预见的拒稿理由尽量拆掉。"
+    ceiling:
+      - "**没有 GPU 回执，实验那一环只出脚本和预注册，不出指标。** 就绪度评的是「方案 + 已有证据」的成色，不是一个还没跑出来的结果。"
+      - "模拟盲审是内部预演，不代表真实审稿结果。投或不投、投哪里，是 `/venue-pick` 和 `/venue-decide` 你自己定。"

@@ -10,10 +10,13 @@ means a navigation command can never start a run by accident.
     search    full-text over machine + vault + runs
     next      what is worth doing now, and what is waiting on the director
     open      resolve an artifact id to its real path
+    outcomes  the six-choice "你想得到什么" menu — outcomes, not mode names
+    outcome   ONE outcome compiled into its exact command chain + what it cannot claim
 
 `reindex` is the only verb that writes, and it only ever writes inside `.workbench/` plus
 one generated `PROJECT-HOME.md` per existing workspace.  Nothing here writes the vault,
-starts a run, or resolves a credential.
+starts a run, or resolves a credential.  `outcomes` / `outcome` PRINT the commands for a
+research route; executing one stays exclusively `operate`'s job.
 """
 from __future__ import annotations
 
@@ -24,6 +27,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from ..reporting.outcomes import render_menu, render_recipe
+from ..tools import outcome_recipes
 from .indexer import build_projection
 from .model import EVIDENCE_STATE_WORDS, WORK_STATE_WORDS, coerce_evidence_state, coerce_work_state
 from .projectors import render_research_home, write_home_pages
@@ -209,6 +214,33 @@ def cmd_open(args: argparse.Namespace) -> None:
     print(path.read_text(encoding="utf-8", errors="replace"))
 
 
+def cmd_outcomes(args: argparse.Namespace) -> None:
+    """The six-choice menu. Needs no index — it reads the registries, not the projection."""
+    verdict = outcome_recipes.validate_all()
+    if args.json:
+        _emit({"menu": outcome_recipes.resolve_all(), "validation": verdict})
+    else:
+        print(render_menu())
+    if not verdict["ok"]:
+        sys.exit(2)
+
+
+def cmd_outcome(args: argparse.Namespace) -> None:
+    """ONE outcome, compiled into the exact commands. Prints them; never runs them."""
+    try:
+        if args.json:
+            _emit({"outcome": outcome_recipes.resolve(args.outcome_id, variant=args.variant),
+                   "steps": outcome_recipes.command_chain(
+                       args.outcome_id, variant=args.variant, project=args.project,
+                       request=args.request)})
+        else:
+            print(render_recipe(args.outcome_id, variant=args.variant, project=args.project,
+                                request=args.request))
+    except KeyError as exc:
+        _emit({"error": str(exc), "known": outcome_recipes.recipe_ids()})
+        sys.exit(2)
+
+
 def cmd_destroy(args: argparse.Namespace) -> None:
     """Prove the rebuildable claim: this is safe, because the store holds no source of truth."""
     _emit({**destroy(args.workbench_root),
@@ -258,6 +290,18 @@ def build_parser() -> argparse.ArgumentParser:
     op.add_argument("artifact_id")
     op.add_argument("--print-body", action="store_true", help="直接打印文件内容")
     op.set_defaults(func=cmd_open)
+
+    oc = sub.add_parser("outcomes", parents=[common], help="你想得到什么：六选一菜单")
+    oc.set_defaults(func=cmd_outcomes)
+
+    on = sub.add_parser("outcome", parents=[common],
+                        help="看某一条路的完整命令 + 深浅三档 + 它不能声称什么")
+    on.add_argument("outcome_id", help="菜单里的 id，例如 direction-to-bet")
+    on.add_argument("--variant", default=None, help="深浅档：quick / default / deep（默认走推荐档）")
+    on.add_argument("--project", default=None, help="填进命令里的项目 slug")
+    on.add_argument("--request", default=None,
+                    help="你的原话（会被钉成运行的北极星）；不给就在命令里留占位提示")
+    on.set_defaults(func=cmd_outcome)
 
     de = sub.add_parser("destroy", parents=[common], help="删掉投影（安全 —— reindex 可完整恢复）")
     de.set_defaults(func=cmd_destroy)
