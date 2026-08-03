@@ -816,3 +816,38 @@ def test_cli_plan_propose_forced_intent(capsys):
     main(["plan-propose", "--request", "x", "--intent", "scan_gaps"])
     out = json.loads(capsys.readouterr().out)
     assert [i["intent"] for i in out["intents"]] == ["scan_gaps"]
+
+
+# --------------------------------------------------------------------------- catalog load caching
+
+def test_a_catalog_is_parsed_once_but_an_on_disk_edit_still_takes_effect(tmp_path, monkeypatch):
+    """Parsing these two files cost ~84 ms each and the outcome menu did it hundreds of times.
+
+    Caching is only safe if a hand-edit is still picked up with no restart, so pin both halves.
+    """
+    path = tmp_path / "catalog.yaml"
+    path.write_text("version: 1\nintents: {}\n", encoding="utf-8")
+    parses = []
+    real_load = rp.yaml.safe_load
+    monkeypatch.setattr(rp.yaml, "safe_load",
+                        lambda text: (parses.append(1), real_load(text))[1])
+
+    assert rp.load_catalog(str(path))["version"] == 1
+    assert rp.load_catalog(str(path))["version"] == 1
+    assert len(parses) == 1, "the second read re-parsed the file"
+
+    path.write_text("version: 2\nintents: {}\n", encoding="utf-8")
+    assert rp.load_catalog(str(path))["version"] == 2
+    assert len(parses) == 2
+
+
+def test_a_caller_that_edits_a_loaded_catalog_cannot_poison_the_next_caller(tmp_path):
+    """Existing callers deep-copy before mutating; the cache must not turn that habit into a trap."""
+    path = tmp_path / "registry.yaml"
+    path.write_text("modes:\n  demo:\n    operated: true\n", encoding="utf-8")
+    first = rp.load_mode_registry(str(path))
+    first["modes"]["demo"]["operated"] = False
+    first["modes"]["injected"] = {"operated": True}
+    second = rp.load_mode_registry(str(path))
+    assert second["modes"]["demo"]["operated"] is True
+    assert "injected" not in second["modes"]

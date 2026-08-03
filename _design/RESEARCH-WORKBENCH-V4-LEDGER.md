@@ -32,6 +32,7 @@ authorized, but every rebuilt-over-existing item must be **labelled as such** in
 | D4 | Git baseline = **commit the pre-existing working tree first**, then build | 2026-08-03 | 145 modified + ~80 untracked files predate this engagement. |
 | D5 | Upstream repos = **really mount them** (reverses the concept-only stance) | 2026-08-03 | Reaffirmed after one objection. Before mounting, the reversed safety decisions must be listed to the director item by item. See §5. |
 | D6 | No subagent fan-out / no Workflow unless asked | session rule | Work is done serially by the main thread. GSD-format artifacts are still written so the repo stays GSD-manageable. |
+| D7 | **Every role in `agents/` is a SUB-agent.** There is exactly ONE main thread. | 2026-08-03 | Director's standing rule. The sole main-thread role is the `research-orchestrator` skill; the other 162 files are `worker` / `hook` / `producer` / `single-writer`. No new capability may create a second main-thread role, and a worker never dispatches a worker. **Verified, not assumed:** `grep -l "main-thread\|kind: skill" agents/*.md` returns exactly `agents/research-orchestrator.md`, whose `never:` list already contains "allow sub-agents to spawn sub-agents". D7 promotes an implicit property to a pinned one (see the subagent invariant in `tests/test_outcome_recipes.py`). Note D7 constrains **the machine at run time**; D6 constrains **this build session** — they do not conflict. |
 
 Standing rules that also bind this work: two-repo boundary (machine vs vault); only
 `/promote-to-vault` writes the vault; secrets live only in the gitignored `.env`; a dry-run is never
@@ -172,7 +173,60 @@ Three defects found and fixed while building it (two in pre-existing code, one m
 3. Search handed raw input to FTS5, so `state-relative intent` failed with `no such column:
    relative`. Terms are now quoted; a CJK query is routed to substring search because FTS5's
    default tokenizer cannot segment CJK; the answer reports which engine ran.
-| P2.1 | Six Outcome Recipes as the user-facing layer | TODO | on top of the existing plain-language routing table |
+| P2.1 | Six Outcome Recipes as the user-facing layer | **DONE** | see below |
+
+### P2.1 as shipped
+
+Files: `orchestrator/outcome_recipes.yaml` (data SSOT — edit it and the menu changes with zero code
+change) · `tools/outcome_recipes.py` (load / validate / derive / compile) · `reporting/outcomes.py`
+(the two plain-Chinese cards) · 2 `workbench` verbs (`outcomes`, `outcome`) · 1 cross-reference in
+`operate brief` · `tests/test_outcome_recipes.py` (35 tests).
+
+**What it adds that `plan_catalog.yaml` did not.** The plan catalog is reactive: it routes a request
+the director already knows how to phrase. A director who does not know `deep_ideation` exists cannot
+ask for it. The six recipes are the inverse — a menu of OUTCOMES that can be SHOWN, named by what
+ends up in the director's hands. It sits ABOVE the 2026-08-01 routing table and replaces nothing.
+
+Honesty properties, each test-pinned **with a negative control** (a deliberately-broken copy of the
+catalog must fail, so no check passes vacuously):
+
+- **Coverage.** All 12 operated modes are reachable from some outcome; all 8 plan-catalog intents have
+  an outcome. Both sets are derived from the registries, not written down. This is the same defect
+  class the 08-01 round fixed at the routing layer, re-pinned at the menu layer.
+- **Derived, never declared.** Seats / hop budget / human gates / deliverable file are read from
+  `mode_registry.yaml` + `plan_catalog.yaml` at render time, and `validate_all` REJECTS a recipe that
+  restates any of them — **including in prose**: `_SEAT_COUNT_IN_PROSE` caught "一份 20 席深读报告",
+  which I had written into the data myself.
+- **A roster is not a dispatch promise.** `docs/03-WORKFLOWS.md` §1 already stated the discipline
+  (`agent_subset` = roster, `max_agent_hops` = ceiling, real dispatch in between, neither is
+  concurrency). The first draft of the card said "一共 23 席 sub-agent", which reads as a promise; it
+  now says "23 席可上场" plus the two-numbers note, and a test asserts the promise wording is absent.
+- **No seat is the main thread** (D7): every mode's `agent_subset` is non-empty and never contains
+  `research-orchestrator`; the card states outright that the main thread only routes / gates / reports.
+- **Forced ceilings.** A route containing `full_rigor_minimal` must state the no-GPU-receipt limit; a
+  paper route must state that only `/promote-to-vault` admits it to the vault.
+- **The north star is never defaulted to the generic want.** "我想要一个能下注的研究方向" bounds
+  nothing, so pinning it would make every downstream drift check vacuous; the compiled command carries
+  an explicit placeholder until `--request` is given.
+- Only WIRED modes may appear; chains stay non-decreasing in `phase_rank`; every claimed gate has a
+  spec file in `gates/`.
+
+Three defects found and fixed while building it:
+
+1. **Every route rendered as "大工程，全队上".** `estimate_cost`'s bands (heavy above 16 hops) were
+   calibrated for single tiers, and all six outcomes exceed them, so the size column carried zero
+   information. Fixed in the card with the derived numbers plus a marker relative to the other five.
+   The shared thresholds were deliberately **not** touched — they still serve the tier menu.
+2. **The menu took 11.6 s to render.** `research_plan` re-parsed 58 KB + 14 KB of YAML on *every*
+   call (~84 ms each), a few hundred times per render. Added an `(mtime, size)`-keyed parse cache that
+   deep-copies on return (0.76 ms), so the caller contract is unchanged — existing callers already
+   `copy.deepcopy` before mutating — and an on-disk edit still takes effect with no restart. Both
+   halves are test-pinned (`tests/test_research_plan.py`). **11.6 s → 0.17 s**, and it speeds up the
+   whole control plane (briefing / router / `operate begin`), not just the menu.
+3. **P1's workbench was in NO entry document.** It shipped on 2026-08-03 and the director could only
+   use it because the commands were said in chat; a fresh session would never have found it. Now in
+   `docs/03-WORKFLOWS.md` §0.5, `docs/README.md`, `PLATFORM-FACTS.md` §0, the `.claude/CLAUDE.md`
+   access map, and the orchestrator SKILL §1.
 | P3.x | Really mount the nine sources (D5) | TODO | restate §5 first |
 | P4.x | Director additions over the existing router | REBUILD | smallest-sufficient-team policy; dynamic dispatch of dormant workers |
 | P5.x | Compiler additions over the existing council | REBUILD | the memo's soft output template |

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from ..tools import research_plan
+from ..tools import outcome_recipes, research_plan
 from ..tools.research_capability_router import resolve_operated_mode
 from . import plain_words as words
 from .scan import scan_all
@@ -73,12 +73,22 @@ def _route_options(request: str, intent: Optional[str] = None) -> dict[str, Any]
     }
 
 
+def _matched_outcome(request: str) -> Optional[dict[str, Any]]:
+    """Which of the six outcomes this request lands on — so the plan card and the
+    `workbench outcomes` menu can never name different things for the same request."""
+    try:
+        return outcome_recipes.match_recipe(request)
+    except Exception:  # noqa: BLE001 — a briefing still renders without an outcome match
+        return None
+
+
 def build_briefing(request: str, *, project: Optional[str] = None,
                    intent: Optional[str] = None, **scan_kwargs: Any) -> dict[str, Any]:
     """Scan the world, then assemble the structured pre-task briefing."""
     facts = scan_all(request, project=project, **scan_kwargs)
     return {"contract": "director-briefing/v1", "request": request, "project": project,
-            "facts": facts, "routes": _route_options(request, intent)}
+            "facts": facts, "routes": _route_options(request, intent),
+            "outcome": _matched_outcome(request)}
 
 
 # --------------------------------------------------------------------------- rendering
@@ -126,6 +136,11 @@ def _section_how(briefing: dict[str, Any]) -> list[str]:
     auto_mode = routes.get("auto_mode")
     if auto_mode:
         out += [f"- **自动开工入口**：{words.say(str(auto_mode))}", ""]
+    outcome = briefing.get("outcome")
+    if outcome:
+        out += [f"- **说人话，你要的是**「{outcome.get('want') or outcome['id']}」"
+                f"—— `python -m research_agent_teams.workbench outcome {outcome['id']}` "
+                "能看到这条路的完整命令、深浅三档，以及它**不能**声称什么", ""]
     out += ["| 方案 | 做什么 | 规模 | 需要手动驱动的环节 |",
             "|---|---|---|---|"]
     for route in routes.get("routes") or []:
