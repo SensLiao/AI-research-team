@@ -193,7 +193,13 @@ Three defects found and fixed while building it (two in pre-existing code, one m
    default tokenizer cannot segment CJK; the answer reports which engine ran.
 | P2.1 | Six Outcome Recipes as the user-facing layer | **DONE** | `6d1b470` |
 
-### P2.1 as shipped (commit `6d1b470`, suite `4020 passed, 5 skipped, exit 0` in 183 s)
+### P2.1 as shipped (commits `6d1b470` + `a5f8e2c`, suite `4022 passed, 5 skipped, exit 0` in 179 s)
+
+> Verification note, kept deliberately: the first full-suite run reported **4020**, because it was
+> launched *before* the last card-wording fix and its test. The arithmetic did not reconcile
+> (3986 + 34 + 2 = 4022), which is how the gap surfaced — and the missing test was in fact **failing**:
+> it asserted a sentence ("不是一定全派") that was never written into `_SEAT_NOTE`. Re-run after the
+> fix: 4022. A suite number is only worth quoting for the tree it actually ran on.
 
 Files: `orchestrator/outcome_recipes.yaml` (data SSOT — edit it and the menu changes with zero code
 change) · `tools/outcome_recipes.py` (load / validate / derive / compile) · `reporting/outcomes.py`
