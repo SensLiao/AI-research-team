@@ -3,6 +3,15 @@
   "review_date": "2026-07-31",
   "review_root": "C:/Users/廖神/Desktop/Honor degree/.tmp/research-agent-skills-review/2026-07-31",
   "path_semantics": "source_artifacts paths are POSIX-style repository-relative paths at the pinned commit",
+  "review_root_status": "DELETED — the 2026-07-31 out-of-repo review root no longer exists on disk (checked 2026-08-04). The pinned commits below remain the authority; tools/vendor_upstream_skills.py re-fetches from them and re-checks every source_artifacts receipt.",
+  "text_vendoring": {
+    "decision": "Director, 2026-08-04: mount the upstream skill TEXT read-only. Vendored by tools/vendor_upstream_skills.py.",
+    "vendor_root": "vendor/upstream-research-skills",
+    "excluded_source_ids": ["drawio_scientific_illustrator"],
+    "relationship_to_copy_policy": "The per-source copy_policy values below were SELF-IMPOSED on 2026-07-31 (concept-only, no code or long text) and are deliberately left unedited as the audit record. This decision overrides them for TEXT of the admitted sources only: their markdown now lives in the vendor root. copy_policy still governs CODE, and no upstream code is copied, imported, executed, or auto-updated — the vendoring allowlist admits markdown and license notices only, so there is nothing runnable in the tree.",
+    "reverses_ledger_items": ["§5.1 third-party files enter the repo tree", "§5.5 the clean-room no-exact-copy property ends"],
+    "keeps_ledger_items": ["§5.2 no installer / hook / MCP server / auto-update is fetched or run", "§5.3 drawio-scientific-illustrator stays excluded on safety grounds"]
+  },
   "source_count": 9,
   "skill_count_total": 359,
   "sources": [

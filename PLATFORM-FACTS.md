@@ -13,16 +13,17 @@ Every number below is computed from the registries and the file tree, never quot
 | Rostered agents | **163** (6 control + 157 workers) | `orchestrator/roster.yaml` == `agents/*.md` |
 | Modes | **26** (12 operated / 14 spec-only) | `orchestrator/mode_registry.yaml`; operated mirrored by `operate/modes/__init__.py::REGISTRY` |
 | Stage graph | **7** stages | `orchestrator/graph.yaml`: DISCOVER IDEATE DESIGN EXECUTE ANALYZE VERIFY REPORT |
-| Deterministic tools | **137** modules | `tools/*.py` |
+| Deterministic tools | **139** modules | `tools/*.py` (137 + `outcome_recipes.py` + `vendor_upstream_skills.py`, 2026-08-04) |
 | Artifact schemas | **167** JSON (167/167 parse) | `schemas/*.json` |
 | Human gates | **5** | `gates/` — idea-bet, promote-to-vault, venue-pick, venue-decide, aers-reference-approve |
 | Enforcement hooks | **2** | `hooks/` — artifact-contract-enforcer, permission-scope-guard |
 | Domain profiles | **7** | `profiles/*.yaml` (medical-segmentation is one profile, never a hardcoded domain) |
-| `operate` subcommands | **31** | `operate/cli.py` |
+| `operate` subcommands | **32** | `operate/cli.py` — counted from the built argparse, not by hand; the previous **31** here was stale |
 | `workbench` verbs | **9** | `workbench/cli.py` — read-only navigation; only `reindex` writes, and only inside `.workbench/` + one generated `PROJECT-HOME.md` per workspace |
 | Outcome recipes | **6** | `orchestrator/outcome_recipes.yaml` — the "你想得到什么" menu above the mode table; a test pins that all 12 operated modes stay reachable from it |
+| Vendored upstream text | **8** sources / **358** skill bundles | `vendor/upstream-research-skills/MANIFEST.json` — third-party markdown, READ-ONLY reference. Not capability, not indexed, structurally unrunnable (markdown + license notices only). `drawio-scientific-illustrator` excluded on safety grounds |
 | Slash commands / skills | **19 / 2** | `.claude/commands/`, `.claude/skills/` |
-| Test files | **217** | `tests/` |
+| Test files | **223** | `tests/` (217 + 4 workbench + outcome-recipes + vendor, 2026-08-04) |
 
 Worker roster by stage group: discover 38 · gap_hunting 10 · ideate 7 · design 24 · execute 20 ·
 analyze 24 · verify 29 · report 5.
