@@ -302,20 +302,58 @@ Three defects found and fixed while building it:
   grant at all) with `commercial_use_policy: not_permitted_without_separate_license`. 31 bundles / 66
   files. Kept under the director's standing Route-A-personal-use position; droppable in one line
   (`EXCLUDED_SOURCE_IDS`) if that position ever changes.
-| P4.x | Director additions over the existing router | REBUILD | smallest-sufficient-team policy; dynamic dispatch of dormant workers |
+| P4.x | Director additions over the existing router | **DONE (one half REFUTED by measurement)** | `tools/worker_census.py` + `workbench team` + 17 tests — see below |
+
+### P4 as shipped — and the half that was refuted
+
+P4 was specified from a memo claim and a memo assumption. Measuring first turned one into a verified
+fact and killed the other, so P4 shipped as **seat accounting**, not as a pruning policy.
+
+**The claim: VERIFIED.** "157 workers, 120 used by operated modes, 37 spec-only" — never checked
+before this ledger flagged it as an open premise. Measured: 163 rostered = 6 control + 157 workers;
+120 declared by an operated mode, 37 only by spec-only modes, 0 in no subset at all. `roster.yaml`
+and `agents/*.md` agree in both directions. Now asserted in code, so the number cannot rot.
+
+**The assumption: REFUTED.** "Dynamic dispatch of dormant workers" presumes dormant workers exist.
+**Zero of the 163 are unreachable** — every one is named by a recipe, the mechanism-council config, a
+tool, or the engine. There is nothing to wake up, so that half was not built; a test now fails if an
+orphan seat ever appears (which is the useful version of the same concern).
+
+**What was actually wrong, and is now measurable:**
+
+- **The roster is a ceiling, not a plan.** 168 declared seat-slots across the 12 operated modes, of
+  which **153 are dispatched by the mode's own recipe and 15 fire only on the mechanism-council
+  path** — `full_rigor_minimal` 7, `manuscript_review` 5, `venue_readiness` 3. The outcome cards now
+  say "35 席可上场（其中 7 席只在 council 路径上场）" instead of a bare ceiling, and a test asserts
+  the card's numbers come from the census rather than being typed in.
+- **Only 1 of 12 modes can actually be run cheaper.** `deep_research` is the only operated mode with
+  a budget knob in `plan_catalog.yaml`. So a "smallest-sufficient-team policy" would have been
+  claiming a control that does not exist for the other eleven; `team_plan()` reports what is scalable
+  and says plainly that the rest are fixed.
+- **`research-orchestrator` is the only name a recipe dispatches without a subset declaring it** —
+  correct (it is the main thread, D7) and now pinned, so a genuinely undeclared worker dispatch would
+  fail the suite. `agent_subset` is what bounds a mode's permission scope; escaping it silently was
+  possible before and is not now.
+
+**Deliberately NOT built: automatic seat pruning.** The seats that look redundant are the independence
+machinery — mutually blind hunters, independent auditors, the collision checker that must not be the
+idea's own author. Dropping those to save budget removes the reason an output can be trusted.
+Narrowing belongs in a recipe's own depth knob, where the author decides what is safe to skip. The
+honest follow-up is therefore *adding depth knobs to recipes that can support one*, not a policy layer
+that prunes from outside.
 | P5.x | Compiler additions over the existing council | REBUILD | the memo's soft output template |
 | P6.x | Re-run the example project end-to-end | REBUILD | dry-run only; never dress a dry-run as a GPU result |
 | P7.x | Governance slimming | TODO | last, and telemetry-driven |
 
-**Current pointer:** P1, P2.1 and P3 are shipped; the §5 restatement was made and answered (see §5).
-Next is **P4** — director additions over the existing `research_capability_router` (smallest-sufficient-team
-policy; dynamic dispatch of dormant workers). P4/P5/P6 are all **REBUILD-over-existing** per D1: the
-subsystems already exist (§3), so every report must label which part is new and which is a rebuild.
-P7 (governance slimming) stays last and telemetry-driven.
+**Current pointer:** P1, P2.1, P3 and P4 are shipped. Next is **P5** — the memo's soft output template
+over the existing 7-role mechanism council (`orchestrator/mechanism_council.json`,
+`tools/mechanism_council.py`), a **REBUILD-over-existing** per D1: label which part is new. Then **P6**
+(re-run the example project end-to-end, dry-run only — never dress a dry-run as a GPU result), then
+**P7** (governance slimming) last and telemetry-driven.
 
-**Still-open premise (unchanged):** the memo's "120 used by operated modes / 37 spec-only" split is
-unverified. Before any P4 policy rests on it, run a real cross-reference of `mode_registry.yaml`
-`agent_subset` × `agents/`.
+P4 closed the ledger's last open premise: the 120/37 split is **verified**, and the dormant-worker
+assumption behind half of P4 is **refuted** (0 unreachable seats). Both are now test-pinned, so P5
+inherits measured ground rather than memo claims.
 
 **Unverified premise still open:** the memo's "157 workers, 120 used by operated modes, 37
 spec-only". The 157 figure is corroborated by the 08-01 round; the **120 / 37 split is not
@@ -330,5 +368,6 @@ verified** and no policy should rest on it until a real cross-reference of
 |---|---|
 | 2026-08-03 | Ledger opened. Delta audit (§3) + baseline measurement (§4) done. Documented `3914 green` claim disproved: 3 regressions found and fixed, entry-doc guard hardened and negative-controlled. Director reaffirmed D1 (all 7 phases) and D5 (really mount) after one objection each. |
 | 2026-08-03 | **P1 shipped** (`c2b876c`): the rebuildable projection — dual-state model, `.workbench/` FTS5 store, read-only indexer, generated home pages, 7 verbs. Found 3 defects: the vault count was blind to 47 pages (~10%), `pending_director_decisions` never reached a report, and search broke on a hyphenated phrase. |
+| 2026-08-04 | **P4 shipped as seat accounting** (`tools/worker_census.py` + `workbench team`, 17 tests). The memo's 120/37 split is now VERIFIED in code; its dormant-worker premise is REFUTED (0 of 163 unreachable). Real findings: the roster is a ceiling — 168 declared vs 153 recipe-dispatched, 15 council-only across 3 modes (now disclosed on the outcome cards); only 1 of 12 modes has a real depth knob, so a pruning policy would have claimed a control that does not exist; and `research-orchestrator` is now pinned as the only recipe-dispatched name without a subset, closing a silent way past `agent_subset` permission scope. Automatic seat pruning deliberately NOT built — the "redundant" seats are the independence machinery. |
 | 2026-08-04 | **P3 shipped, text-only**, after the §5 five-item restatement was read out and answered. Review root found deleted → re-fetched at the pinned commits; 43/43 receipts re-verified; 8 sources / 358 bundles / 2604 files / 25.9 MB vendored read-only; 815 files / 14.5 MB skipped and counted; drawio excluded. The lock's contradicting `copy_policy` is now reconciled by an explicit `text_vendoring` record instead of a silent override. **Root repo created** (`e4d77db`, director option ①) — the operating manual and doc centre have history for the first time. |
 | 2026-08-04 | **P2.1 shipped** (`6d1b470`): the six outcome recipes + 2 workbench verbs + the brief cross-reference, 35 tests each negative-controlled. Director added **D7** (every role in `agents/` is a sub-agent — verified already true in-tree, now pinned). Found 3 more defects: the size column read "大工程" six times, the menu took 11.6 s (yaml re-parsed hundreds of times → cached, whole suite 456 s → 183 s), and **P1's workbench was in no entry document at all** — now in `docs/03` §0.5, `docs/README`, `PLATFORM-FACTS` §0, the CLAUDE.md access map and the SKILL. Also found, not fixed: §4.2, the project root's `.git` is empty so the operating manual and doc centre are unversioned. |

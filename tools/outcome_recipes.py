@@ -25,7 +25,7 @@ from typing import Any, Optional
 
 import yaml
 
-from . import research_plan
+from . import research_plan, worker_census
 
 _PKG = Path(__file__).resolve().parents[1]                        # research_agent_teams/
 _RECIPES_PATH = _PKG / "orchestrator" / "outcome_recipes.yaml"
@@ -85,10 +85,16 @@ def mode_facts(mode: str) -> dict[str, Any]:
     seats = list(spec.get("agent_subset") or [])
     handoff = spec.get("handoff") or {}
     entry = str(spec.get("entry_stage") or "")
+    # Of the declared roster, how many seats the mode's own recipe never names — they fire only on
+    # the mechanism-council path. Measured 2026-08-04: 15 seats across 3 modes. Showing a ceiling
+    # without this split would read as a dispatch promise (see worker_census).
+    council_only = [s for s in seats if not worker_census.dispatched_by_recipe(s)]
     return {
         "mode": mode,
         "operated": bool(spec.get("operated")),
         "seats": len(seats),
+        "recipe_seats": len(seats) - len(council_only),
+        "council_only": len(council_only),
         "seat_names": seats,
         "hops": int((spec.get("budget") or {}).get("max_agent_hops") or 0),
         "entry_stage": entry,
@@ -152,6 +158,8 @@ def resolve(recipe_id: str, *, variant: Optional[str] = None,
         "mode_facts": facts,
         # ---- derived, every one of them ----
         "seats": sum(f["seats"] for f in facts),
+        "recipe_seats": sum(f["recipe_seats"] for f in facts),
+        "council_only": sum(f["council_only"] for f in facts),
         "cost": research_plan.estimate_cost(modes),
         "gates": research_plan.gates_in_chain(modes),
         "deliverables": [{"mode": f["mode"], "path": f["deliverable"]} for f in facts],
