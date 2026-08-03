@@ -1,0 +1,52 @@
+{
+  "schema_version": "native-targeted-re-review/v1",
+  "evaluation_id": "T4-SM0-BLIND-01",
+  "reviewer_id": "completion-auditor-targeted-r2",
+  "agent_id": "/root/t4_completion_auditor",
+  "canonical_agent_task_name": "/root/t4_completion_auditor",
+  "repair_packet_sha256": "880c82d750204be3eae580f041dcb9cca5deecf6c987b9311ef203396fd0ad72",
+  "source_candidate_sha256": "9640891da8f842ed64a57e02f4131f56e1a8e4824c27edc36cfcf136f15c627b",
+  "repaired_candidate_sha256": "3a8711b1d3a726e9920f6edaac48ace49af63e3a5649729bfa6ede61bca41f9e",
+  "reconciliation_sha256": "baa08421d411559d92e2c86870385979673b5102450d85ac93bc1e5d5e1aafc2",
+  "reviewed_repairs": [
+    {
+      "replication_key": "primary_endpoint_not_frozen",
+      "status": "CLOSED",
+      "evidence_locator": "native-eval/candidates/council-repaired-r3.md:54-107; this section is an exact text match to the R2 section that the first targeted reviewer marked CLOSED.",
+      "assessment": "The exact float64 six-legal-joint log loss, replicate-and-episode averaging within patient, equal patient weighting, Delta direction, paired-patient bootstrap, fixed margin, ordered four-state decision rule, missingness rule, and multiplicity boundary remain fully frozen and unchanged from R2."
+    },
+    {
+      "replication_key": "no_m0_neutralization_not_frozen",
+      "status": "CLOSED",
+      "evidence_locator": "native-eval/candidates/council-repaired-r3.md:108-144; this section is an exact text match to the R2 section that the first targeted reviewer marked CLOSED.",
+      "assessment": "The exhaustive transitive M0 provenance closure, path-class-specific normalized-space neutralization or prohibition, shape/capacity/initialization parity, sole arm-difference allowlist, byte parity, and three-way M0 perturbation invariance remain fully frozen and unchanged from R2."
+    },
+    {
+      "replication_key": "ambiguity_strata_not_frozen",
+      "status": "CLOSED",
+      "evidence_locator": "native-eval/candidates/council-repaired-r3.md:146-225, especially canonical stratum bytes and seed at lines 169-183 and replicate/loss/patient estimands and bootstrap at lines 198-222.",
+      "assessment": "R3 explicitly freezes the finite ordered pre-existing replicate tuple; computes binary natural-log loss separately for every eligible replicate-and-episode pair before within-patient averaging; forbids averaging logits or probabilities; gives patients equal weight; and bootstraps patients while carrying all replicate and episode losses. It also freezes the stratum key as a canonical JSON array with exact enum and integer types, ensure_ascii=false compact serialization, UTF-8 bytes, SHA-256 digest interpretation in big-endian uint32 form, and one deterministic PCG64 seed mapping. No numerical or algorithmic choice identified by the first re-review remains open."
+    },
+    {
+      "replication_key": "curriculum_schedule_not_frozen",
+      "status": "CLOSED",
+      "evidence_locator": "native-eval/candidates/council-repaired-r3.md:226-294, especially patient-cycle boundary handling at lines 245-254, per-patient episode seed and reshuffle at lines 256-264, and learning-rate indexing and pre-step application at lines 281-290.",
+      "assessment": "R3 freezes an infinite SHA-seeded patient-permutation cycle with deterministic carry handling for one to three patients, stable partitioning that prevents a duplicate patient within each four-patient batch, and a hard stop when fewer than four eligible patients exist. It freezes canonical per-patient episode-cycle seed derivation, cursor exhaustion, reshuffle, and cycle advancement. It also fixes one-based update indexing, exact linear-warm-up and cosine-decay equations with boundary values, and application of the computed rate immediately before optimizer.step(). The schedule is now uniquely generable before fitting."
+    }
+  ],
+  "regression_checks": {
+    "six_joint_ontology_unchanged": true,
+    "simple_first_primary_unchanged": true,
+    "cross_attention_still_deferred": true,
+    "oof_not_regenerated": true,
+    "existing_experiments_unchanged": true,
+    "truth_boundary_preserved": true
+  },
+  "fatal_defects": [],
+  "overall_verdict": "PASS",
+  "overall_rationale": "All packet-bound hashes and the R3 completion binding match. R1 and R2 remain exact text matches to their previously CLOSED R2 sections; R3 and R4 now close every numerical and algorithmic ambiguity named by the first targeted FAIL; all six regression checks pass; and no fatal defect remains. Formal targeted re-review was performed after work-order authorization; the same independent auditor had done a non-authoring preliminary content check before authorization; this is not a new blind round. The verdict is limited to prospective design-contract closure and does not claim execution, effectiveness, novelty, publication readiness, or scientific citation readiness.",
+  "reviewed_at": "2026-08-01T13:18:43.8334853Z",
+  "runtime_usage": {
+    "status": "UNOBSERVED"
+  }
+}

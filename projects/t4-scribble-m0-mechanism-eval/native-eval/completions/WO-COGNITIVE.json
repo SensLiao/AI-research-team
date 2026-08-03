@@ -1,0 +1,23 @@
+{
+  "schema_version": "native-dispatch-completion/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-COGNITIVE",
+  "work_order_sha256": "5f105c68444cc31fd2fef6d2a3d5d71ef39bee2fd62c2a959951b0cd6e7a034a",
+  "stage": "COUNCIL_WAVE_1",
+  "role": "cognitive_intent_modeler",
+  "applicability": "APPLICABLE",
+  "completion_state": "COMPLETED",
+  "agent_id": "/root/t4_role_cognitive",
+  "canonical_agent_task_name": "/root/t4_role_cognitive",
+  "input_packet_sha256": "2b8e88194456c8277df08bdf3e021854c031ee7f61d67c43961f37c05db56470",
+  "authorization_sha256": "0cba8c897afaf2d4efdf89d8455de97e39761240919d3aaabb05632d82f3080e",
+  "nonce_echo": "SM001_cognitive_intent_modeler_nonce_0001",
+  "dependencies": [],
+  "started_at": "2026-08-01T10:57:00.000Z",
+  "completed_at": "2026-08-01T11:04:03.000Z",
+  "recorded_at": "2026-08-01T11:05:00.000Z",
+  "output": {"path": "native-eval/contributions/cognitive_intent_modeler.json", "sha256": "1f46a1c2809021a96dc0d85cb14a53a316d2e69876b0cf664cbafb14a9724778", "size_bytes": 22077, "mtime_ns": 1785582242063373600},
+  "preexisting_output_guard": {"absent_at_authorization": true, "mtime_not_before_authorization": true, "mtime_not_after_completion": true},
+  "n_a_reason": null,
+  "runtime_usage": {"status": "UNOBSERVED"}
+}

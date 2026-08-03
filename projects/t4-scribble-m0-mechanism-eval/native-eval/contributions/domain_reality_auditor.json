@@ -1,0 +1,254 @@
+{
+  "contract_version": "mechanism-council-contribution/v1",
+  "role": "domain_reality_auditor",
+  "input_sha256": "sha256:2b8e88194456c8277df08bdf3e021854c031ee7f61d67c43961f37c05db56470",
+  "status": "COMPLETE",
+  "perspective_summary": "The domain-valid hypothesis is that, for an otherwise identical signed scribble, the current OOF M0 segmentation state contains information needed to infer the PETCT-INTENT-v2.0 operation/target/scope intent; the strongest alternative is that polarity, scribble geometry, and support alone explain the intent, so removing M0 causes no patient-level loss. This is a design hypothesis, not an effectiveness or novelty claim. The first-paper test must preserve the frozen simple-first 17-channel state/cue model and compare full versus no_M0 while changing only access to M0. Before that test, exact downstream bundle/F0 closure, six-joint FN/FP atlas coverage, signed-scribble invariants, coordinate-frame integrity, and patient-level leakage checks are required. Acquisition, registration, label-provenance, missingness, and patient/exam-identity facts not stated in the frozen brief remain UNVERIFIED. Cross-attention belongs only in a later deferred ablation or future-work study after the simple-first canonical test.",
+  "observations": [
+    {
+      "observation_id": "DOM-OOF-001",
+      "kind": "support",
+      "statement": "The committed M0 input contains 597 eligible cases from 378 patients, with exactly one patient-excluded held-out prediction per eligible case.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-5"
+      ]
+    },
+    {
+      "observation_id": "DOM-OOF-002",
+      "kind": "requirement",
+      "statement": "OOF M0 is an immutable upstream input for this continuation: it must not be rerun, treated as a citable result, or replaced by an in-sample or newly selected prediction.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-5",
+        "frozen-brief.md#Required output"
+      ]
+    },
+    {
+      "observation_id": "DOM-ONTOLOGY-001",
+      "kind": "support",
+      "statement": "PETCT-INTENT-v2.0 has independent operation ADD/REMOVE, target SAME/NEW, and scope LOCAL/COMPLETE slots, but only six legal joints: ADD_SAME_LOCAL, REMOVE_SAME_LOCAL, ADD_SAME_COMPLETE, REMOVE_SAME_COMPLETE, ADD_NEW_COMPLETE, and REMOVE_NEW_COMPLETE. ADD_NEW_LOCAL and REMOVE_NEW_LOCAL are illegal and must never be emitted, trained as valid labels, or included as valid evaluation classes.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-1",
+        "frozen-brief.md#Frozen facts-2",
+        "frozen-brief.md#Frozen facts-3"
+      ]
+    },
+    {
+      "observation_id": "DOM-SCRIBBLE-001",
+      "kind": "requirement",
+      "statement": "Scribble construction must precede intent assignment. FN residuals must yield positive ADD scribbles and FP residuals must yield negative REMOVE scribbles; polarity is semantic supervision and may not be inferred retrospectively from the intended class.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-4"
+      ]
+    },
+    {
+      "observation_id": "DOM-SCRIBBLE-002",
+      "kind": "support",
+      "statement": "The supported scribble geometry families in the frozen brief are centerline, random, and boundary constructions on AutoPET V geometry. No comparative superiority among these families is established.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-4"
+      ]
+    },
+    {
+      "observation_id": "DOM-COVERAGE-001",
+      "kind": "requirement",
+      "statement": "Empirical feasibility of the six legal joints cannot be asserted until an FN/FP atlas reports support at the patient level for every legal joint, separately records FN- and FP-derived episodes, and confirms zero illegal NEW_LOCAL episodes. A numerical minimum-support threshold is not supplied and must be frozen before outcome inspection.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-6",
+        "frozen-brief.md#Forbidden claims"
+      ]
+    },
+    {
+      "observation_id": "DOM-REGISTRATION-001",
+      "kind": "assumption",
+      "statement": "PET, CT, reference segmentation, OOF M0, residual masks, and generated scribbles are assumed to share a verified physical coordinate frame after any resampling. The frozen brief provides no registration, orientation, voxel-spacing, transform, or resampling provenance with which to verify this load-bearing assumption. The smallest disproof is one audited case in which the same lesion or residual maps to different physical coordinates across any two consumed representations.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "UNVERIFIED"
+      ]
+    },
+    {
+      "observation_id": "DOM-ACQUISITION-001",
+      "kind": "assumption",
+      "statement": "Scanner, reconstruction, tracer-uptake timing, field-of-view, and PET/CT acquisition heterogeneity are not described in the frozen brief. Their association with patients, splits, M0 failure patterns, or intent classes is therefore unknown and may confound apparent state dependence.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "UNVERIFIED"
+      ]
+    },
+    {
+      "observation_id": "DOM-LABEL-001",
+      "kind": "assumption",
+      "statement": "Reference-label meaning, annotation protocol, lesion/anatomy inclusion rules, adjudication, and label versioning are not stated. Because FN and FP residuals are defined relative to those labels, label provenance is a load-bearing but currently unverified determinant of ADD/REMOVE scribble semantics.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "UNVERIFIED"
+      ]
+    },
+    {
+      "observation_id": "DOM-IDENTITY-001",
+      "kind": "assumption",
+      "statement": "The brief states patient-excluded OOF predictions and patient-level statistics but does not provide the patient/exam identity derivation, duplicate-exam policy, longitudinal-study handling, or collision audit. One patient appearing under two identifiers across downstream partitions would disprove the isolation assumption.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "UNVERIFIED"
+      ]
+    },
+    {
+      "observation_id": "DOM-MISSINGNESS-001",
+      "kind": "assumption",
+      "statement": "Missing PET, CT, labels, M0 predictions, residuals, scribble geometries, or intent slots and the rules for excluding affected cases are not documented in the frozen brief. Complete-case selection could change class support or patient composition and must be reported before training.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "UNVERIFIED"
+      ]
+    },
+    {
+      "observation_id": "DOM-PATIENT-001",
+      "kind": "requirement",
+      "statement": "The inferential unit must be the patient, not voxels, lesions, scribbles, episodes, or cases. Multiple cases or episodes from one patient must remain in one downstream partition and must be aggregated or otherwise clustered at patient level for uncertainty estimation.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-5",
+        "frozen-brief.md#Required output"
+      ]
+    },
+    {
+      "observation_id": "DOM-LEAKAGE-001",
+      "kind": "confound",
+      "statement": "Downstream leakage remains possible even with patient-excluded M0 if patients cross P2T partitions, if test-patient FN/FP atlases influence class balancing or hyperparameters, if test labels influence scribble/episode selection beyond the frozen evaluation protocol, if multiple M0 candidates are selected using downstream outcomes, or if checkpoint/threshold selection observes test patients. Each path requires a zero-tolerance provenance audit.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "UNVERIFIED"
+      ]
+    },
+    {
+      "observation_id": "DOM-PRIMARY-001",
+      "kind": "requirement",
+      "statement": "The first-paper P2T primary remains the simple 17-channel state/cue model using state/cue-support pooling, a geometry MLP, and joint/operation/target/scope heads. The primary contrast is full versus no_M0; polarity-blind and geometry-only are diagnostic arms rather than replacements for that contrast.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-7",
+        "frozen-brief.md#Frozen facts-8"
+      ]
+    },
+    {
+      "observation_id": "DOM-ALTERNATIVE-001",
+      "kind": "assumption",
+      "statement": "The strongest alternative is that signed polarity, cue support, and geometry already determine the constructed intent distribution, so M0 provides no additional patient-level predictive information. This alternative is not resolved by the frozen brief and is the explanation the no_M0 contrast must challenge.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "UNVERIFIED"
+      ]
+    },
+    {
+      "observation_id": "DOM-METRIC-001",
+      "kind": "risk",
+      "statement": "The exact primary endpoint, patient aggregation rule, uncertainty procedure, missing-data rule, multiplicity handling, and minimally meaningful full-minus-no_M0 effect are not supplied. They must be precommitted before inspecting P2T outcomes; otherwise the state-dependence claim is vulnerable to endpoint selection.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "UNVERIFIED"
+      ]
+    },
+    {
+      "observation_id": "DOM-RESULT-001",
+      "kind": "risk",
+      "statement": "There is currently no v2 six-class P2T/editor training, inference, metric, effect estimate, external-comparator result, or publication-level conclusion. OOF readiness, scripts, checkpoints, this design contribution, and any unchecked atlas must not be represented as a scientific result.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-10",
+        "frozen-brief.md#Forbidden claims"
+      ]
+    },
+    {
+      "observation_id": "DOM-OPS-001",
+      "kind": "requirement",
+      "statement": "The first operational blocker is exact downstream software-bundle/F0 closure after the stale deployed bundle failure. Closure must be demonstrated before M0 evaluation, and resolving it must not trigger an OOF M0 rerun.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-6",
+        "frozen-brief.md#Required output"
+      ]
+    },
+    {
+      "observation_id": "DOM-DEFERRED-001",
+      "kind": "requirement",
+      "statement": "Cross-attention, FiLM, gated fusion, and PET-to-CT modality fusion belong only in deferred ablations or future work after the simple-first primary is executed and interpreted. They may not silently replace the canonical primary or repair an unfavorable full-versus-no_M0 result.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "frozen-brief.md#Frozen facts-9",
+        "frozen-brief.md#Forbidden claims"
+      ]
+    }
+  ],
+  "proposed_mechanisms": [
+    {
+      "mechanism_id": "MECH-DOM-SIMPLE-STATE-CUE-001",
+      "description": "Canonical simple-first state-relative P2T interface. Hypothesis H1: the current OOF M0 state changes the meaning of an otherwise matched signed scribble and improves patient-level inference of the legal PETCT-INTENT-v2.0 joint/slots. Strongest alternative H0: polarity, cue support, and geometry are sufficient, so M0 removal causes no improvement loss.",
+      "inputs": [
+        "the frozen per-case patient-excluded OOF M0 segmentation state",
+        "a signed cue constructed before intent assignment: positive from an FN for ADD or negative from an FP for REMOVE",
+        "the frozen simple-first 17-channel state/cue representation without redefining its canonical channel contract",
+        "geometry features from the frozen centerline, random, or boundary scribble construction"
+      ],
+      "transformation": "Encode the frozen 17-channel state/cue input with the unchanged simple-first backbone, pool representations over state support and cue support, encode geometry with the frozen geometry MLP, combine them using the already frozen simple-first interface, and apply the frozen joint, operation, target, and scope heads. Enforce the six-joint legality mask or equivalent output constraint without admitting either NEW_LOCAL joint. The no_M0 arm must remove only access to M0 while preserving input shape, parameter opportunity, optimizer, and compute as closely as the frozen ablation contract permits; the exact masking operation is not specified in the brief and must be frozen before training.",
+      "expected_signal": "If H1 is correct, full has a positive patient-level paired difference over no_M0 on the precommitted primary endpoint, with coherent improvement in the relevant legal joint and slot outputs rather than gains produced by illegal-class suppression alone. Polarity-blind and geometry-only arms may localize the signal but do not define the primary claim.",
+      "failure_mode": "H1 is not supported if no_M0 matches or exceeds full at patient level, if any apparent gain disappears under patient-level aggregation, if the arms differ in scribbles/splits/backbone/optimizer/budget or outcome selection, if illegal NEW_LOCAL outputs occur, or if registration, identity, leakage, class-coverage, sign, or bundle/F0 checks fail. No such failure may be repaired by substituting cross-attention into the primary analysis."
+    }
+  ],
+  "experiments": [
+    {
+      "experiment_id": "EXP-DOM-ATLAS-GATE-001",
+      "comparison": "Observed FN/FP-derived episode support across exactly the six legal PETCT-INTENT-v2.0 joints versus a patient-level coverage gate frozen before P2T outcome inspection; report both controlled and natural episode availability separately rather than pooling away absent classes.",
+      "held_constant": [
+        "the committed 597-case/378-patient OOF M0 predictions, with no rerun or candidate substitution",
+        "PETCT-INTENT-v2.0 slot definitions and six-joint legality",
+        "FN-positive-ADD and FP-negative-REMOVE sign semantics",
+        "the frozen centerline/random/boundary geometry construction families",
+        "patient identity and downstream partition assignment"
+      ],
+      "observable": "For every legal joint, count eligible episodes, cases, and distinct patients; stratify by FN versus FP origin, controlled versus natural episode type, and geometry family; record missing inputs, exclusions, duplicate M0 mappings, polarity violations, and any NEW_LOCAL episode. The numerical adequacy threshold is UNVERIFIED by the frozen brief and must be precommitted.",
+      "falsifier": "Stop before six-class P2T/editor training if any legal joint has zero distinct-patient support, if any precommitted minimum-support threshold is missed, if either NEW_LOCAL joint appears as legal data, if an FN/FP-to-sign mapping is violated, or if a case lacks exactly one traceable frozen OOF M0 prediction. Do not rerun OOF M0 to repair coverage."
+    },
+    {
+      "experiment_id": "EXP-DOM-STATE-DEPENDENCE-001",
+      "comparison": "Primary minimum comparison: frozen simple-first full versus no_M0, where no_M0 removes only the current M0 state signal and preserves all other information and training opportunity. Polarity-blind and geometry-only remain secondary diagnostic arms.",
+      "held_constant": [
+        "patient-level train/validation/test split and all exams/episodes belonging to each patient",
+        "the exact signed scribble instances, episode eligibility, geometry family, random seeds, and episode ordering presented to both primary arms",
+        "the simple-first P2T backbone, state/cue-support pooling interface, geometry MLP, and joint/operation/target/scope heads apart from the necessary M0 masking",
+        "optimizer, schedule, initialization policy, training budget, stopping rule, checkpoint-selection rule, preprocessing, and data availability",
+        "primary endpoint, patient aggregation, missing-data rule, legality handling, and statistical analysis plan",
+        "frozen OOF M0 artifacts and downstream bundle/F0 version"
+      ],
+      "observable": "Compute the paired full-minus-no_M0 difference on the precommitted primary endpoint after reducing or clustering all case/episode observations to the patient unit; report uncertainty and legal-joint plus operation/target/scope diagnostics. The exact endpoint and meaningful-effect threshold are UNVERIFIED in the frozen brief and must be frozen before outcomes are opened.",
+      "falsifier": "The state-dependence hypothesis is falsified for the precommitted test if the patient-level full-minus-no_M0 primary difference is less than or equal to zero. It is also uninterpretable, requiring a stop rather than a positive claim, if the only apparent advantage is case/episode-level, comes from illegal-class handling, or if any held-constant item differs between arms."
+    },
+    {
+      "experiment_id": "EXP-DOM-LEAKAGE-AUDIT-001",
+      "comparison": "Compare a precommitted patient/provenance ledger against actual lineage through M0 generation, FN/FP atlas construction, scribble generation, controlled/natural episode sampling, P2T training, checkpoint selection, and final evaluation.",
+      "held_constant": [
+        "the frozen OOF M0 manifest",
+        "patient identifier normalization and duplicate-resolution rules fixed before outcome inspection",
+        "the downstream patient split",
+        "the frozen full-versus-no_M0 data instances",
+        "the prohibition on using final test outcomes for atlas thresholds, sampling, hyperparameters, or checkpoint selection"
+      ],
+      "observable": "Count patient overlaps across downstream partitions, cross-partition duplicate identities, cases with zero or multiple M0 mappings, M0 predictions whose generating fold contains the same patient, test-derived tuning decisions, and test-label use outside the frozen evaluation episode protocol. Also audit that all representations for a sampled residual share physical coordinates.",
+      "falsifier": "Any nonzero cross-partition patient overlap, any M0 prediction trained with the same patient's data, any outcome-informed test selection, any unresolved duplicate identity, or one physically misregistered audited representation triggers a stop and invalidates scientific interpretation until corrected without changing the frozen OOF M0 set."
+    }
+  ],
+  "blockers": [
+    "FIRST: demonstrate exact downstream software-bundle/F0 closure after the stale-bundle failure; do not rerun or replace the committed OOF M0 set.",
+    "Complete the FN/FP atlas and freeze a patient-level minimum-support rule for all six legal joints before claiming class feasibility or starting v2 six-class P2T/editor training.",
+    "Verify PET/CT/reference/M0/residual/scribble physical-coordinate alignment and record transform/resampling provenance; this is UNVERIFIED from the frozen brief.",
+    "Verify patient/exam identity, duplicate and longitudinal-study handling, label provenance, acquisition/missingness patterns, and zero downstream leakage; these are UNVERIFIED from the frozen brief.",
+    "Precommit the exact patient-level primary endpoint, patient aggregation or clustering method, uncertainty procedure, missing-data rule, checkpoint rule, and meaningful-effect threshold before inspecting full-versus-no_M0 outcomes.",
+    "Do not elevate cross-attention, FiLM, gated fusion, or PET-to-CT fusion into the first-paper primary; reserve them for explicitly labeled deferred ablations or future work after the canonical simple-first comparison."
+  ]
+}

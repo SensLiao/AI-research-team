@@ -1,0 +1,26 @@
+{
+  "schema_version": "native-dispatch-work-order/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-JUDGE-EVIDENCE-PRECOMMIT",
+  "stage": "BLIND_REVIEW_PRECOMMIT",
+  "role": "judge_evidence_integrity_precommit",
+  "applicability": "APPLICABLE",
+  "agent_id": "/root/t4_judge_evidence",
+  "canonical_agent_task_name": "/root/t4_judge_evidence",
+  "input_packet_path": "native-eval/sealed/review-precommit-brief.json",
+  "input_packet_sha256": "9efeab826376f16970fcddd48fed476aa2bb8cb71e907efaff9ff6516b2b57db",
+  "authorization_path": "native-eval/sealed/review-authorization.json",
+  "authorization_sha256": "7fac5451384d68991db3748ac2c1c6c24f6f7d4dff0917b3ed8a9678011926ff",
+  "nonce": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "dependencies": [],
+  "expected_output_path": "native-eval/reviews/commitments/evidence_integrity.json",
+  "authorized_at": "2026-08-01T12:04:35.670473Z",
+  "recorded_at": "2026-08-01T12:04:35.670473Z",
+  "output_precondition": {
+    "exists_at_authorization": false,
+    "checked_at": "2026-08-01T12:04:35.670473Z"
+  },
+  "runtime_usage": {
+    "status": "UNOBSERVED"
+  }
+}

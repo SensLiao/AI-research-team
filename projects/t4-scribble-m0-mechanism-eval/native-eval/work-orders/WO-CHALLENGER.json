@@ -1,0 +1,26 @@
+{
+  "schema_version": "native-dispatch-work-order/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-CHALLENGER",
+  "stage": "INDEPENDENT_CHALLENGE",
+  "role": "independent_challenger",
+  "applicability": "APPLICABLE",
+  "agent_id": "/root/t4_independent_challenger",
+  "canonical_agent_task_name": "/root/t4_independent_challenger",
+  "input_packet_path": "inputs/frozen-brief.md",
+  "input_packet_sha256": "2b8e88194456c8277df08bdf3e021854c031ee7f61d67c43961f37c05db56470",
+  "authorization_path": "native-eval/authorization.json",
+  "authorization_sha256": "0cba8c897afaf2d4efdf89d8455de97e39761240919d3aaabb05632d82f3080e",
+  "nonce": "SM001_independent_challenger_0591746e7e86daab",
+  "dependencies": [],
+  "expected_output_path": "native-eval/candidates/challenger.md",
+  "authorized_at": "2026-08-01T11:26:32.741Z",
+  "recorded_at": "2026-08-01T11:26:32.741Z",
+  "output_precondition": {
+    "exists_at_authorization": false,
+    "checked_at": "2026-08-01T11:26:32.741Z"
+  },
+  "runtime_usage": {
+    "status": "UNOBSERVED"
+  }
+}

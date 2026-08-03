@@ -341,24 +341,169 @@ idea's own author. Dropping those to save budget removes the reason an output ca
 Narrowing belongs in a recipe's own depth knob, where the author decides what is safe to skip. The
 honest follow-up is therefore *adding depth knobs to recipes that can support one*, not a policy layer
 that prunes from outside.
-| P5.x | Compiler additions over the existing council | REBUILD | the memo's soft output template |
-| P6.x | Re-run the example project end-to-end | REBUILD | dry-run only; never dress a dry-run as a GPU result |
-| P7.x | Governance slimming | TODO | last, and telemetry-driven |
+| P5.x | Compiler additions over the existing council | **DONE** | `tools/council_template.py` + 4 CLI verbs + 17 tests — see below |
+| P6.x | Re-run the example project end-to-end | **DONE, as a REPLAY** | `tools/example_replay.py` + 15 tests; the example is now tracked at last — see below |
+| P7.x | Governance slimming | **DONE, as measurement only** | `tools/governance_census.py` + `workbench governance` + 16 tests — see below |
 
-**Current pointer:** P1, P2.1, P3 and P4 are shipped. Next is **P5** — the memo's soft output template
-over the existing 7-role mechanism council (`orchestrator/mechanism_council.json`,
-`tools/mechanism_council.py`), a **REBUILD-over-existing** per D1: label which part is new. Then **P6**
-(re-run the example project end-to-end, dry-run only — never dress a dry-run as a GPU result), then
-**P7** (governance slimming) last and telemetry-driven.
+### P5 as shipped — three real gaps, and the one thing that was already right
 
-P4 closed the ledger's last open premise: the 120/37 split is **verified**, and the dormant-worker
-assumption behind half of P4 is **refuted** (0 unreachable seats). Both are now test-pinned, so P5
-inherits measured ground rather than memo claims.
+The memo asked for a "soft output template" over the compiler. The 7-role council already existed
+(`orchestrator/mechanism_council.json`, `tools/mechanism_council.py`), so per D1 this is
+**REBUILD-over-existing and labelled as such**: nothing in the council contract was rewritten. What
+was genuinely missing, measured before building:
 
-**Unverified premise still open:** the memo's "157 workers, 120 used by operated modes, 37
-spec-only". The 157 figure is corroborated by the 08-01 round; the **120 / 37 split is not
-verified** and no policy should rest on it until a real cross-reference of
-`mode_registry.yaml` × `agents/` is run.
+1. **No authoring template.** A contributor had prose in its agent spec plus a JSON Schema, and
+   nothing that showed the required shape. NEW: `role_template()` / `render_role_template()` derive
+   the sheet from the schema + contract at call time.
+2. **No director-facing rendering.** The only renderer, `render_anonymous_candidate`, strips producer
+   identity and receipts *because it feeds a blind review* — which makes it exactly the wrong
+   artifact for the person who has to decide. NEW: `render_council_report()` is its deliberate
+   opposite (attribution, OPEN conflicts first, the ceiling read off the bundle).
+3. **The output side had no CLI at all.** `mechanism_council` exposed only `plan`; `compile` and
+   `render` were Python-API-only, which is why the T4 run had to hand-write JSON. NEW: `template`,
+   `check`, `compile`, `render --audience director|blind`.
+
+Honesty properties, test-pinned with negative controls:
+
+- **The template cannot drift from the schema.** A monkeypatched schema with an extra required field
+  must appear in the template, or the test fails — so a hand-typed template is caught.
+- **The label table's coverage is asserted**, so a new schema field cannot render as a bare English
+  key at the director. (Non-vacuous: ≥40 derived paths, and a fabricated path must be absent.)
+- **A blank template is not a submission.** Every human decision is a `<TODO：…>` placeholder and
+  `check_contribution` fails on any survivor. Better still: filling it naively with each enum's FIRST
+  option yields `evidence_status: VERIFIED`, which the schema binds to a source locator — so the lazy
+  path still cannot skip the evidence requirement.
+- **The compiler seat gets the BUNDLE shape**, not the contribution shape; `blank_contribution()`
+  refuses that role outright.
+- **The two renderings stay opposite**: one test asserts the director card names roles and the
+  compiler id, the blind card names neither, and both carry `DESIGN_ONLY`.
+
+Found and fixed on the way: **`--out` had never worked.** `Path.write_text(newline=…)` is Python
+3.10+, this host runs 3.9, and no test ever passed `--out` — so `plan --out` raised `TypeError` for
+every caller since it was written. Now uses the repo's existing LF-safe `open()` pattern, with a
+regression test.
+
+Found and NOT fixed, deliberately: the contribution schema puts no `minItems` on
+`proposed_mechanisms` or `experiments`, so a `COMPLETE` contribution can legally contain neither a
+mechanism nor a falsifier. Tightening it would retro-invalidate already-recorded contributions (and
+break the P6 replay), so `check_contribution` **discloses it as a warning** instead of silently
+changing a live contract. All six recorded T4 contributions fill both fields, so the hole is latent,
+not manifested.
+
+### P6 as shipped — a REPLAY, and the reason it is not a re-run
+
+A live re-run means ~14 sub-agent dispatches (blocked by D6/session rule) and would still be
+`DESIGN_ONLY` — no GPU. So P6 shipped as the strongest honest version: `tools/example_replay.py`
+re-derives the recorded example from its own receipts and stamps the result
+`REPLAY_OF_RECORDED_RUN`, never `EXECUTED`. **22 checks, all green**, over 6 stages: recorded
+path→digest bindings · dispatch and failure records · council recompile · blind review · repair and
+independent re-review · truth boundary.
+
+Why it is worth more than the tests that already existed: `tests/test_t4_*` pin *this* example's
+specific ids and verdicts, so they answer "did anyone edit it?". The replay answers "is it still
+internally consistent, and does the current code still produce it?" — it discovers the chain from
+disk, recomputes 36 digests from bytes, recompiles the bundle from the 6 recorded contributions and
+requires the result to be **byte-identical**, and recomputes the three-judge aggregation.
+
+**The finding that mattered most: the example was not in version control.** `projects/` is
+gitignored, so all 87 files — including the ONLY copy of the three §3.1 honesty records — lived on
+exactly one disk, while **8 tests in `tests/test_t4_*.py` hard-required them**. On a fresh clone
+those tests error. Fixed by narrowing the ignore to `projects/*` and re-including this one project
+(secret-scanned first: the only "token"/"secret" hits are scientific prose — "arm token",
+"missingness token" — and there are no hosts, IPs or credentials). **86 of the 87 are tracked**; the
+87th is `PROJECT-HOME.md`, which `workbench reindex` regenerates, so tracking it would churn on every
+reindex. Verified that the other two projects stay ignored and nothing leaked in.
+
+Two replay-design decisions worth keeping:
+
+- **A recorded mismatch gets the INVERSE assertion.** One honesty record is a worker that aborted
+  because its target file no longer matched its packet, so a stale digest is preserved on purpose. A
+  naive replay reported that *finding* as a defect (the first run did exactly this). Now those pairs
+  are derived from the failure record itself and must **still fail to match** — "fixing" the example
+  breaks the replay, which is the point.
+- **Independence is derived, not trusted.** One round's packet declares a 14-name forbidden list and
+  the other declares none, so the reviewer-is-not-the-repair-author check reads the author out of the
+  repair completion the packet names. Otherwise that round's check would have passed vacuously
+  against an empty list. Also: reviews are ordered by their own `reviewed_at`, because a filename
+  sort put `-r2` first and reported the rounds backwards (`PASS → FAIL`).
+
+Negative-controlled: 8 tamper tests. Edit a referenced artifact, edit a contribution, heal the
+recorded mismatch, invent a completion for the abandoned order, break a dependency digest, reveal the
+mapping early, flip a judge vote, or drop the design-only boundary → the replay goes FAIL, each for
+its own reason.
+
+### P7 as shipped — measurement, and a refusal to slim anything
+
+The memo said governance slimming must be telemetry-driven and come last. The telemetry turned out to
+be real and thicker than expected: **32 recorded runs** (31 `done`, 1 `awaiting_director`). So P7 is
+`tools/governance_census.py` + `workbench governance`: it measures, buckets, and reports. It removes
+nothing, and `does_not_authorize` is part of its output. Same discipline as P4's refusal to auto-prune
+seats — the surfaces that look redundant are usually the independence machinery — and a test asserts
+the module contains no mutating call at all.
+
+Measured, over the real history:
+
+| Axis | Built | Ever exercised | Never |
+|---|---:|---:|---:|
+| One-button modes | 12 | 8 | 4 (`ingest_paper`, `manuscript_authoring`, `manuscript_review`, `new_direction`) |
+| Seats | 163 | **50** | 113 |
+| Named human gates | 5 | 0 recorded firings | 5 |
+| checker / guard tools | 22 | **unmeasurable** | unmeasurable |
+
+**Reachable ≠ exercised, and this does not contradict P4.** P4 proved all 163 seats are wired to
+something (0 orphans). P7 measures whether they have ever actually run. Different axes; stating both
+is the honest picture.
+
+Four findings, each earned by a number:
+
+1. **`obs.jsonl` looks like a dispatch log and is not one.** It records ONE per-stage *lead* label
+   (`agent_name: lead or "operate"`), so reading it as "which seats ran" gives **7** where the answer
+   is **50**. The real record is `inbox/<STAGE>.<seat>.bundle.json`, one per worker. I made this exact
+   mistake mid-session before checking who writes the file.
+2. **`run_completed` is under-written**: 31 runs are `done` per manifest, 2 wrote the ledger event.
+   Counting completions from the ledger undercounts 15×; the manifest `status` is the reliable field.
+3. **The vault-write path has never been exercised.** 0 promotion targets and 0 `promote` events in
+   32 runs. `/promote-to-vault` is not redundant — it is *untested in practice*.
+4. **Nothing records an individual check firing.** The 22 guard tools are therefore `unmeasurable`,
+   never "unused"; the honest first step toward slimming is to record a firing, not to cut on
+   instinct.
+
+With no run history at all, everything reports `telemetry: ABSENT` and **nothing** is bucketed as
+unused — you cannot call a surface unused with no usage data (test-pinned).
+
+Also corrected here: a hand-count earlier in this session said **54** seats had been dispatched. It
+was wrong — it counted four non-seat bundle kinds (`profile`, `review.<lens>`) as seats. The census
+splits inbox bundles three ways (seat / stage-level / other) and reports **50**.
+
+Found while syncing docs: **`PLATFORM-FACTS.md` §0 had no numeric guard** and had already rotted — it
+claimed **225** test files while 222 existed. Only its wording was pinned. Five counts that rot every
+round (tools, test files, workbench verbs, gates, operated modes) are now re-derived from disk and
+asserted row-by-row, with an off-by-one control so the guard cannot pass vacuously.
+
+**Current pointer: all seven memo phases are shipped.** P1 · P2.1 · P3 · P4 · P5 · P6 · P7 are DONE,
+and the ledger carries **no open premise** — every number in it is now derived by code and asserted by
+a test, so it cannot rot silently.
+
+Two of the seven landed as something narrower than the memo asked, both because measuring first
+refuted the ask rather than because the work was skipped. Both are labelled at the point of use, never
+presented as the full thing:
+
+| Memo asked for | Shipped | Why the difference |
+|---|---|---|
+| P4 dynamic dispatch of **dormant** workers | seat accounting | 0 of 163 seats are dormant — nothing to wake |
+| P6 **re-run** the example end-to-end | replay from its own receipts | a live re-run needs ~14 dispatches and would still be `DESIGN_ONLY`; the replay re-derives instead, and says so in its own status field |
+| P7 governance **slimming** | governance measurement | slimming needs a director decision; and per-check firing is recorded nowhere, so cutting now would be cutting on instinct |
+
+**What the director may reasonably ask for next** (not started, not planned without a decision):
+
+1. **Record a check firing.** P7's biggest blind spot: 22 guard tools with zero observability. One
+   line per check turns the `unmeasurable` bucket into a real one, and only then is slimming
+   evidence-based.
+2. **Exercise the 4 never-run modes and the promote path.** `ingest_paper`, `manuscript_authoring`,
+   `manuscript_review`, `new_direction` have never run, and `/promote-to-vault` has never fired in 32
+   runs — the only route into the vault is untested in practice.
+3. **Depth knobs where a recipe can support one** (P4's honest follow-up): 11 of 12 modes have no way
+   to run cheaper, so today "smaller team" is not a control the director actually has.
 
 ---
 
@@ -370,4 +515,5 @@ verified** and no policy should rest on it until a real cross-reference of
 | 2026-08-03 | **P1 shipped** (`c2b876c`): the rebuildable projection — dual-state model, `.workbench/` FTS5 store, read-only indexer, generated home pages, 7 verbs. Found 3 defects: the vault count was blind to 47 pages (~10%), `pending_director_decisions` never reached a report, and search broke on a hyphenated phrase. |
 | 2026-08-04 | **P4 shipped as seat accounting** (`tools/worker_census.py` + `workbench team`, 17 tests). The memo's 120/37 split is now VERIFIED in code; its dormant-worker premise is REFUTED (0 of 163 unreachable). Real findings: the roster is a ceiling — 168 declared vs 153 recipe-dispatched, 15 council-only across 3 modes (now disclosed on the outcome cards); only 1 of 12 modes has a real depth knob, so a pruning policy would have claimed a control that does not exist; and `research-orchestrator` is now pinned as the only recipe-dispatched name without a subset, closing a silent way past `agent_subset` permission scope. Automatic seat pruning deliberately NOT built — the "redundant" seats are the independence machinery. |
 | 2026-08-04 | **P3 shipped, text-only**, after the §5 five-item restatement was read out and answered. Review root found deleted → re-fetched at the pinned commits; 43/43 receipts re-verified; 8 sources / 358 bundles / 2604 files / 25.9 MB vendored read-only; 815 files / 14.5 MB skipped and counted; drawio excluded. The lock's contradicting `copy_policy` is now reconciled by an explicit `text_vendoring` record instead of a silent override. **Root repo created** (`e4d77db`, director option ①) — the operating manual and doc centre have history for the first time. |
+| 2026-08-04 | **P5 + P6 + P7 shipped — the 7-phase scope is closed.** P5: the council's authoring template (derived from schema + contract, so it cannot drift), a director-facing rendering that is the deliberate opposite of the blind one, and the 4 CLI verbs its output side never had. P6: a REPLAY of the recorded example — 22 checks, 0 executions — plus the finding that **the example was never in version control** while 8 tests required it (87 files now tracked, secret-scanned). P7: governance measured over 32 real runs — 8/12 modes, **50/163 seats**, 0 recorded gate firings, 22 guard tools `unmeasurable` — and a refusal to slim anything, since that is the director's call. Four defects found: `--out` in the council CLI had **never worked** (`write_text(newline=)` is 3.10+, host is 3.9, no test ever passed it); `obs.jsonl` reads like a dispatch log but undercounts 50→7; `run_completed` is written for 2 of 31 finished runs; and `PLATFORM-FACTS.md` §0 had no numeric guard and already claimed 225 test files when 222 existed. My own earlier hand-count of "54 seats" was wrong (it counted 4 non-seat bundle kinds) — the census says **50**. |
 | 2026-08-04 | **P2.1 shipped** (`6d1b470`): the six outcome recipes + 2 workbench verbs + the brief cross-reference, 35 tests each negative-controlled. Director added **D7** (every role in `agents/` is a sub-agent — verified already true in-tree, now pinned). Found 3 more defects: the size column read "大工程" six times, the menu took 11.6 s (yaml re-parsed hundreds of times → cached, whole suite 456 s → 183 s), and **P1's workbench was in no entry document at all** — now in `docs/03` §0.5, `docs/README`, `PLATFORM-FACTS` §0, the CLAUDE.md access map and the SKILL. Also found, not fixed: §4.2, the project root's `.git` is empty so the operating manual and doc centre are unversioned. |

@@ -1,0 +1,40 @@
+{
+  "schema_version": "native-dispatch-completion/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-JUDGE-EVIDENCE-REVIEW",
+  "work_order_sha256": "6b0565e270a931cf00934dad549183522c23296c3c574ae9e36c4e70a00ebf90",
+  "stage": "BLIND_REVIEW",
+  "role": "judge_evidence_integrity_review",
+  "applicability": "APPLICABLE",
+  "completion_state": "COMPLETED",
+  "agent_id": "/root/t4_judge_evidence",
+  "canonical_agent_task_name": "/root/t4_judge_evidence",
+  "input_packet_sha256": "50739d331c6aa047ac6cda1639db4e14b675e800ef900e7daf473ef3fb3004ac",
+  "authorization_sha256": "7fac5451384d68991db3748ac2c1c6c24f6f7d4dff0917b3ed8a9678011926ff",
+  "nonce_echo": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+  "dependencies": [
+    {
+      "work_order_id": "WO-JUDGE-EVIDENCE-PRECOMMIT",
+      "role": "judge_evidence_integrity_precommit",
+      "output_sha256": "c4729961639adf9e71d18d6568a7e9d64825cc576fc1bb859d08b0905e106d5c"
+    }
+  ],
+  "started_at": "2026-08-01T12:14:12.450739Z",
+  "completed_at": "2026-08-01T12:15:12.450740Z",
+  "recorded_at": "2026-08-01T12:16:07.403916Z",
+  "output": {
+    "path": "native-eval/reviews/sheets/evidence_integrity.json",
+    "sha256": "2365df586026c388ff8e78f98d3525f1eb5f2507f0543ac3c15ae1ebd6d244a5",
+    "size_bytes": 8321,
+    "mtime_ns": 1785586512450739100
+  },
+  "preexisting_output_guard": {
+    "absent_at_authorization": true,
+    "mtime_not_before_authorization": true,
+    "mtime_not_after_completion": true
+  },
+  "n_a_reason": null,
+  "runtime_usage": {
+    "status": "UNOBSERVED"
+  }
+}

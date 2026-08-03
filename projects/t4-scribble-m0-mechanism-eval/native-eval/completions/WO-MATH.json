@@ -1,0 +1,24 @@
+{
+  "schema_version": "native-dispatch-completion/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-MATH",
+  "work_order_sha256": "553416abf5da38b7e1ecc2d8a1d184ad67d05b87a7e34fae0b17c8974ef6c935",
+  "stage": "COUNCIL_WAVE_1",
+  "role": "mathematical_formalizer",
+  "applicability": "APPLICABLE",
+  "completion_state": "COMPLETED",
+  "agent_id": "/root/t4_role_math",
+  "canonical_agent_task_name": "/root/t4_role_math",
+  "input_packet_sha256": "2b8e88194456c8277df08bdf3e021854c031ee7f61d67c43961f37c05db56470",
+  "authorization_sha256": "0cba8c897afaf2d4efdf89d8455de97e39761240919d3aaabb05632d82f3080e",
+  "nonce_echo": "SM001_mathematical_formalizer_nonce_0001",
+  "dependencies": [],
+  "started_at": "2026-08-01T10:57:00.000Z",
+  "completed_at": "2026-08-01T11:04:21.000Z",
+  "recorded_at": "2026-08-01T11:05:00.000Z",
+  "output": {"path": "native-eval/contributions/mathematical_formalizer.json", "sha256": "9c5e4997e8c08451d798e3aae60d50dadb282fcf57c06981be3533ce34d39b96", "size_bytes": 14356, "mtime_ns": 1785582260708999900},
+  "preexisting_output_guard": {"absent_at_authorization": true, "mtime_not_before_authorization": true, "mtime_not_after_completion": true},
+  "n_a_reason": null,
+  "runtime_usage": {"status": "UNOBSERVED"}
+}
+

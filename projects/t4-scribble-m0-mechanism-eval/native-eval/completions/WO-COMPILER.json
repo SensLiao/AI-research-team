@@ -1,0 +1,39 @@
+{
+  "schema_version": "native-dispatch-completion/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "work_order_id": "WO-COMPILER",
+  "work_order_sha256": "cfdcdd8a8ea736557ba69125d73c1df9122751da5adf50cc25563e2562ff364e",
+  "stage": "COUNCIL_COMPILE",
+  "role": "hypothesis_compiler",
+  "applicability": "APPLICABLE",
+  "completion_state": "COMPLETED",
+  "agent_id": "/root/t4_role_compiler",
+  "canonical_agent_task_name": "/root/t4_role_compiler",
+  "input_packet_sha256": "042bab31632452d8f4d3d52ebdf874fb5c6815b90e5c15c73fdb33f7f068a8b2",
+  "authorization_sha256": "0cba8c897afaf2d4efdf89d8455de97e39761240919d3aaabb05632d82f3080e",
+  "nonce_echo": "SM001_hypothesis_compiler_c0c5fa7a624e945b",
+  "dependencies": [
+    {"work_order_id": "WO-MATH", "role": "mathematical_formalizer", "output_sha256": "9c5e4997e8c08451d798e3aae60d50dadb282fcf57c06981be3533ce34d39b96"},
+    {"work_order_id": "WO-DOMAIN", "role": "domain_reality_auditor", "output_sha256": "b4f617edd3ed60c8d7e643a97b035c8a6f0b6f18d00967ff85c12fef2c02fe92"},
+    {"work_order_id": "WO-COGNITIVE", "role": "cognitive_intent_modeler", "output_sha256": "1f46a1c2809021a96dc0d85cb14a53a316d2e69876b0cf664cbafb14a9724778"},
+    {"work_order_id": "WO-CURRICULUM", "role": "curriculum_design_specialist", "output_sha256": "22627f97e4fe758998ec45295a40d200814498976ba6481109138a38f19c2dbd"},
+    {"work_order_id": "WO-ENGINEERING", "role": "research_engineering_planner", "output_sha256": "2a1e9b6b6578ea4dd5ea8644dfc0a010b1e03f0a0ffe6f6c50df52c4559bd233"},
+    {"work_order_id": "WO-CAUSAL-R2", "role": "causal_mechanism_critic", "output_sha256": "6f5852456611a6adc06d5d50e618b9b51629b6984d560f2324f6698581e8ccf0"}
+  ],
+  "started_at": "2026-08-01T11:44:58.519Z",
+  "completed_at": "2026-08-01T11:51:25.652Z",
+  "recorded_at": "2026-08-01T11:51:25.653Z",
+  "output": {
+    "path": "native-eval/candidates/council-bundle.json",
+    "sha256": "612d0423654383b9cd6a83f142e61fa28bb058113578f333ea7b1d4c21d2948c",
+    "size_bytes": 18640,
+    "mtime_ns": 1785585027124545900
+  },
+  "preexisting_output_guard": {
+    "absent_at_authorization": true,
+    "mtime_not_before_authorization": true,
+    "mtime_not_after_completion": true
+  },
+  "n_a_reason": null,
+  "runtime_usage": {"status": "UNOBSERVED"}
+}

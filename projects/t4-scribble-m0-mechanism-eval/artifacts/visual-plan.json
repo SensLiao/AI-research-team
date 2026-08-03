@@ -1,0 +1,69 @@
+{
+  "schema_version": "t4-example-visual-plan/v1",
+  "project_id": "t4-scribble-m0-mechanism-eval",
+  "truth_state": "DESIGN_ONLY_NO_RESULTS",
+  "routes": [
+    {
+      "contract_version": "research-visual-route/v1",
+      "artifact_kind": "result_table",
+      "lane": "quantitative_plot",
+      "selection_source": "automatic_kind_router",
+      "data_status": "NOT_APPLICABLE",
+      "source_contract": "frozen numeric table + analysis unit + uncertainty + metric direction",
+      "outputs": ["SVG", "PDF", "PNG", "plot-spec.json"],
+      "implementation_status": "OPERATED_SPEC_AND_QA_RENDERER_OUT_OF_SCOPE",
+      "qa": [
+        "data-to-mark traceability",
+        "analysis-unit and uncertainty visibility",
+        "axis, scale, legend, palette, font, and DPI checks",
+        "caption-to-claim consistency"
+      ],
+      "delivery_status": "BLOCKED_MISSING_FROZEN_DATA",
+      "may_render_now": false,
+      "watermark": null,
+      "safety": {"invent_data": false, "network": false, "live_mcp": false, "browser_automation": false, "external_skill_execution": false}
+    },
+    {
+      "contract_version": "research-visual-route/v1",
+      "artifact_kind": "mechanism_graph",
+      "lane": "scientific_diagram",
+      "selection_source": "automatic_kind_router",
+      "data_status": "NOT_APPLICABLE",
+      "source_contract": "reviewed declarative graph + node/edge semantics + claim boundary",
+      "outputs": ["SVG", "PDF", "PNG", "diagram-spec.json"],
+      "implementation_status": "PLANNED_ADAPTER",
+      "qa": [
+        "semantic node and edge coverage",
+        "reading order and visual hierarchy",
+        "method-to-caption consistency",
+        "no quantitative claim encoded without data"
+      ],
+      "delivery_status": "DESIGN_ONLY_NON_RESULT",
+      "may_render_now": false,
+      "watermark": null,
+      "safety": {"invent_data": false, "network": false, "live_mcp": false, "browser_automation": false, "external_skill_execution": false}
+    },
+    {
+      "contract_version": "research-visual-route/v1",
+      "artifact_kind": "drawio",
+      "lane": "editable_canvas",
+      "selection_source": "automatic_kind_router",
+      "data_status": "NOT_APPLICABLE",
+      "source_contract": "reviewed declarative graph + pinned offline adapter arguments",
+      "outputs": ["DRAWIO", "SVG", "PDF", "adapter-receipt.json"],
+      "implementation_status": "PLANNED_ADAPTER",
+      "qa": [
+        "source graph hash and adapter version receipt",
+        "round-trip editable node identity",
+        "offline allowlisted invocation only",
+        "export readability and clipping checks"
+      ],
+      "delivery_status": "DESIGN_ONLY_NON_RESULT",
+      "may_render_now": false,
+      "watermark": null,
+      "safety": {"invent_data": false, "network": false, "live_mcp": false, "browser_automation": false, "external_skill_execution": false}
+    }
+  ],
+  "selected_now": "scientific_diagram_spec_only",
+  "reason": "No frozen scientific result table exists, so a quantitative result figure is blocked. Diagram and editable adapters remain planned and are not executed."
+}

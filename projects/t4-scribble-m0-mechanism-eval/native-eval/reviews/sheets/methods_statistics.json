@@ -1,0 +1,126 @@
+{
+  "schema_version": "native-content-quality-judge/v1",
+  "rubric_version": "native-content-quality-rubric/v1",
+  "analysis_mode": "SINGLE_PROJECT_DESCRIPTIVE_ONLY",
+  "inferential_statistics_claimed": false,
+  "evaluation_id": "T4-SM0-BLIND-01",
+  "project_id": "t4-scribble-m0-mechanism-eval",
+  "case_id": "T4-SM0-001",
+  "judge_id": "judge-methods",
+  "judge_role": "methods_statistics",
+  "agent_id": "/root/t4_judge_methods",
+  "canonical_agent_task_name": "/root/t4_judge_methods",
+  "packet_sha256": "50739d331c6aa047ac6cda1639db4e14b675e800ef900e7daf473ef3fb3004ac",
+  "blindness_attestation": {
+    "condition_mapping_not_seen": true,
+    "runtime_data_not_seen": true,
+    "sibling_review_data_not_seen": true
+  },
+  "runtime_usage": {
+    "status": "UNOBSERVED"
+  },
+  "candidates": {
+    "X": {
+      "scores": {
+        "Q1": 4,
+        "Q2": 4,
+        "Q3": 4,
+        "Q4": 4,
+        "Q5": 4,
+        "Q6": 4,
+        "Q7": 4,
+        "Q8": 4
+      },
+      "fatal_defects": [],
+      "rationale": "X states a narrow protocol-bounded hypothesis, strongest alternative, patient-level estimand and directional falsifier; preserves the six-joint ontology; specifies a simple tensor/interface mechanism; freezes a paired full-versus-no_M0 intervention with an exhaustive M0 allowlist and metamorphic closure checks; defines controlled and natural panels; fixes patient-level NLL, uncertainty, multiplicity, comparator parity, leakage gates, artifact binding and stop rules; and maintains a strict DESIGN_ONLY truth boundary."
+    },
+    "Y": {
+      "scores": {
+        "Q1": 3,
+        "Q2": 4,
+        "Q3": 2,
+        "Q4": 3,
+        "Q5": 4,
+        "Q6": 2,
+        "Q7": 3,
+        "Q8": 4
+      },
+      "fatal_defects": [
+        {
+          "code": "PRIMARY_ENDPOINT_CONTRACT_OPEN",
+          "severity": "FATAL",
+          "summary": "The submission leaves the exact proper six-joint primary loss, possible macro co-primary, uncertainty procedure and nonzero decision or equivalence margin unresolved, so the primary analysis and decision rule are not yet frozen.",
+          "locator": "Candidate Y, 'Primary outcome' and 'Open and resolved conflicts > OPEN-PRIMARY-ENDPOINT-AND-DECISION-RULE'."
+        },
+        {
+          "code": "NO_M0_NEUTRALIZATION_CONTRACT_OPEN",
+          "severity": "FATAL",
+          "summary": "The defining intervention is incomplete because the path-wise no_M0 replacement, masking or removal rule and its scale, normalization and parameter-opportunity treatment remain open.",
+          "locator": "Candidate Y, 'Transformation' and 'Open and resolved conflicts > OPEN-NO-M0-NEUTRALIZATION-CONTRACT'."
+        },
+        {
+          "code": "AMBIGUITY_STRATA_CONTRACT_OPEN",
+          "severity": "FATAL",
+          "summary": "The ambiguity strata used to distinguish state-relative signal from cue and geometry shortcuts lack frozen definitions, support thresholds, covariates and analysis-versus-sampling roles.",
+          "locator": "Candidate Y, 'Observable prediction', 'Falsifier', and 'Open and resolved conflicts > OPEN-AMBIGUITY-STRATA-DEFINITION'."
+        },
+        {
+          "code": "SHARED_TRAINING_SCHEDULE_OPEN",
+          "severity": "FATAL",
+          "summary": "The common staged-versus-flat training schedule is unresolved even though paired arm exposure and optimization parity are required for the primary contrast.",
+          "locator": "Candidate Y, 'Held constant' and 'Open and resolved conflicts > OPEN-SHARED-TRAINING-SCHEDULE'."
+        }
+      ],
+      "rationale": "Y is scientifically bounded and strong on domain realism, ontology fidelity, patient grouping, leakage audits and execution-truth discipline. Its hypothesis and patient-level contrast are clear, but four explicitly OPEN contracts are load-bearing: the primary endpoint and decision rule, exact no_M0 neutralization, ambiguity strata, and shared training schedule. Those unresolved contracts materially reduce current implementability, causal discrimination, statistical validity and reproducibility readiness."
+    }
+  },
+  "winner": "X",
+  "winner_rationale": "Round 1 totals are X=32 and Y=25 across the frozen Q1-Q8 rubric. Because X has the strictly higher total, X is the winner; no condition identity, runtime information, result claim or external execution claim informed this descriptive judgment.",
+  "findings": [
+    {
+      "finding_id": "MS-Y-PRIMARY-001",
+      "replication_key": "primary_endpoint_not_frozen",
+      "candidate": "Y",
+      "kind": "SUBSTANTIVE_DESIGN",
+      "substantive": true,
+      "severity": "HIGH",
+      "summary": "Y names a patient-level Delta but explicitly leaves the exact primary proper scoring rule, possible macro co-primary, uncertainty procedure and meaningful-effect or equivalence margin open, allowing the endpoint and success criterion to change before outcome access.",
+      "locator": "Candidate Y, 'Primary outcome' and 'Open and resolved conflicts > OPEN-PRIMARY-ENDPOINT-AND-DECISION-RULE'.",
+      "repair": "Before any fitting or held-out access, freeze one exact primary loss and direction, the patient-level aggregation and analysis population, bootstrap or randomization procedure with confidence level and replicate count, missing-data rule, multiplicity treatment, and a single continuation, falsification or equivalence decision rule with any margin justified from development-only information."
+    },
+    {
+      "finding_id": "MS-Y-ABLATION-002",
+      "replication_key": "no_m0_neutralization_not_frozen",
+      "candidate": "Y",
+      "kind": "SUBSTANTIVE_DESIGN",
+      "substantive": true,
+      "severity": "HIGH",
+      "summary": "Y requires exhaustive no_M0 removal but leaves each direct and derived M0 path's neutralization, state-support behavior, normalized scale and parameter-opportunity treatment unresolved, so the defining intervention is not reproducible or demonstrably isolated.",
+      "locator": "Candidate Y, 'Transformation' and 'Open and resolved conflicts > OPEN-NO-M0-NEUTRALIZATION-CONTRACT'.",
+      "repair": "Close an F0-signed exhaustive M0-path allowlist and specify the exact normalized-space neutral value or masking operation for every channel, support, pooled feature, geometry field, cache and metadata path; preserve shapes and non-M0 bytes, then require byte-level tensor-diff and M0-perturbation invariance tests before training."
+    },
+    {
+      "finding_id": "MS-Y-STRATA-003",
+      "replication_key": "ambiguity_strata_not_frozen",
+      "candidate": "Y",
+      "kind": "SUBSTANTIVE_DESIGN",
+      "substantive": true,
+      "severity": "HIGH",
+      "summary": "Y makes adequately supported cue-matched ambiguity strata central to mechanistic interpretation while explicitly leaving their definitions, covariates, support thresholds and sampling-versus-analysis role open.",
+      "locator": "Candidate Y, 'Observable prediction', 'Falsifier', and 'Open and resolved conflicts > OPEN-AMBIGUITY-STRATA-DEFINITION'.",
+      "repair": "Using development-only data, prospectively define the cue-visible covariates, deterministic bins or matching rule, per-stratum distinct-patient support threshold, handling of unsupported and missing strata, whether strata affect sampling or analysis, and their multiplicity status; hash this contract before held-out access."
+    },
+    {
+      "finding_id": "MS-Y-SCHEDULE-004",
+      "replication_key": "curriculum_schedule_not_frozen",
+      "candidate": "Y",
+      "kind": "REPRODUCIBILITY",
+      "substantive": true,
+      "severity": "MEDIUM",
+      "summary": "Y does not choose between staged and flat training even though a shared schedule and identical exposure are necessary to prevent optimization differences from confounding the full-versus-no_M0 contrast.",
+      "locator": "Candidate Y, 'Held constant' and 'Open and resolved conflicts > OPEN-SHARED-TRAINING-SCHEDULE'.",
+      "repair": "Choose the schedule using development-only evidence, then freeze and hash the same patient sampler, stage or flat policy, minibatch order, update count, optimizer, stopping rule, seed list and checkpoint-selection procedure for both arms; keep any schedule comparison separately registered and non-rescuing."
+    }
+  ],
+  "overall_notes": "Round 1 scores and fatal defects were fixed before the Round 2 methods/statistics defect audit. This is a single-project descriptive blind review only: no inferential statistics are claimed, runtime remains unobserved, and no model, cost, result, novelty, readiness or external-execution inference was made."
+}

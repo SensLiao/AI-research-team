@@ -1,0 +1,237 @@
+{
+  "contract_version": "mechanism-council-contribution/v1",
+  "role": "cognitive_intent_modeler",
+  "input_sha256": "sha256:2b8e88194456c8277df08bdf3e021854c031ee7f61d67c43961f37c05db56470",
+  "status": "COMPLETE",
+  "perspective_summary": "Hypothesis H1 (state-relative intent): conditional on identical signed scribble polarity and geometry, image/cue evidence, split, and training procedure, the current patient-excluded OOF M0 segmentation contains information about the intended target and scope, so the frozen simple full model should outperform no_M0 chiefly on target, scope, and the six-way joint at the patient level; operation should gain less because the synthetic protocol already exposes ADD versus REMOVE through polarity. Strongest alternative H0 (cue sufficiency): polarity, geometry, and non-M0 evidence already determine the synthetic label, or the generator encodes it through shortcuts, so M0 is redundant and full is equivalent to no_M0 once all non-state variables are matched. This experiment can test whether the model uses state information under the synthetic interaction protocol; it cannot establish the latent cognition of real human annotators without a separate human study.",
+  "observations": [
+    {
+      "observation_id": "CIM-O01-FOUR-LAYERS",
+      "kind": "requirement",
+      "statement": "Keep four layers distinct at every interface: scribble geometry is the spatial trace (centerline, random, or boundary and its measured morphology); polarity is the signed cue produced from FN versus FP residuals; M0 is the segmentation state that existed before the action; operation, target, and scope are the latent task labels to infer. None of geometry, polarity, or M0 is itself the complete intent label.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-facts-2-4",
+        "research_agent_teams/agents/cognitive-intent-modeler.md"
+      ]
+    },
+    {
+      "observation_id": "CIM-O02-ONTOLOGY-CONSTRAINT",
+      "kind": "requirement",
+      "statement": "The output must preserve the PETCT-INTENT-v2.0 factorization operation = ADD|REMOVE, target = SAME|NEW, and scope = LOCAL|COMPLETE while assigning probability only to the six legal joints. NEW_LOCAL is structurally illegal, so an unconstrained eight-cell interpretation would test a different ontology.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-facts-1-3"
+      ]
+    },
+    {
+      "observation_id": "CIM-O03-POLARITY-OPERATION",
+      "kind": "confound",
+      "statement": "In the synthetic construction, positive FN-derived scribbles map to ADD and negative FP-derived scribbles map to REMOVE. Operation can therefore be highly identifiable from polarity before M0 is consulted. A full-model advantage that appears only on operation would be weak evidence for state-relative intent and should trigger a shortcut audit rather than a mechanistic conclusion.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-fact-4",
+        "inputs/frozen-brief.md#frozen-fact-8"
+      ]
+    },
+    {
+      "observation_id": "CIM-O04-GEOMETRY-AMBIGUITY",
+      "kind": "risk",
+      "statement": "The same centerline, random, or boundary geometry can support competing explanations: a positive mark may request completion of an already represented target or addition of a previously unrepresented target; a negative mark may request a local trimming or complete removal. Scribble length, shape, and placement can correlate with those labels under a generator, but such correlations are construction cues, not proof that geometry semantically identifies target or scope.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-facts-2-4",
+        "research_agent_teams/agents/cognitive-intent-modeler.md"
+      ]
+    },
+    {
+      "observation_id": "CIM-O05-TARGET-IDENTIFIABILITY",
+      "kind": "assumption",
+      "statement": "SAME versus NEW becomes identifiable only to the extent that the signed mark can be related to the preceding M0 state and compatible image/cue support: the question is whether the requested anatomical target is already represented by the current segmentation, not merely whether the mark looks like a particular shape. If the episode builder makes target recoverable from geometry alone, the experiment measures generator regularity rather than state dependence.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#decision-request",
+        "research_agent_teams/agents/cognitive-intent-modeler.md"
+      ]
+    },
+    {
+      "observation_id": "CIM-O06-SCOPE-IDENTIFIABILITY",
+      "kind": "assumption",
+      "statement": "LOCAL versus COMPLETE concerns the requested extent of correction, not the raw extent of the observed stroke. It is identifiable only when the representation permits comparison among the mark, the M0-supported object or residual context, and image/cue support. Short-stroke = LOCAL or long-stroke = COMPLETE is a possible synthetic shortcut that must be measured and stratified, not assumed to be cognition.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#decision-request",
+        "research_agent_teams/agents/cognitive-intent-modeler.md"
+      ]
+    },
+    {
+      "observation_id": "CIM-O07-M0-STATUS",
+      "kind": "requirement",
+      "statement": "M0 is an upstream, exactly-one-per-eligible-case, patient-excluded held-out prediction set (597 cases, 378 patients). It must be consumed as frozen state input, not rerun, relabelled as a result, or allowed to cross patient boundaries during episode construction or evaluation.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-fact-5"
+      ]
+    },
+    {
+      "observation_id": "CIM-O08-FULL-PREDICTION",
+      "kind": "assumption",
+      "statement": "If H1 is correct, full-minus-no_M0 should be positive primarily for patient-level joint, target, and scope discrimination and calibration, with the largest separation among episodes matched on polarity and geometry where non-state cues admit multiple legal intents. The prediction is directional and unverified; no effect estimate presently exists.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-facts-7-10"
+      ]
+    },
+    {
+      "observation_id": "CIM-O09-ALTERNATIVE-PREDICTION",
+      "kind": "assumption",
+      "statement": "If H0 is correct, full and no_M0 will be equivalent within a predeclared patient-level equivalence margin, their target/scope error patterns will remain aligned after geometry-and-polarity matching, and the geometry-only arm may retain substantial performance. If the polarity-blind arm changes operation much more than target or scope, that supports cue decoding but does not support M0 dependence.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-fact-8"
+      ]
+    },
+    {
+      "observation_id": "CIM-O10-LEAKAGE-CHECKS",
+      "kind": "requirement",
+      "statement": "Before interpreting any contrast, verify: patient-disjoint training/validation/test partitions; each case is paired only with its own frozen patient-excluded OOF M0; all episodes and derived scribbles from one patient remain in one partition; no ground-truth mask, FN/FP residual, intent label, filename, cache key, padding convention, or generation-order artifact is exposed as an unintended model feature; full and no_M0 use identical episode IDs; and metric aggregation and resampling use patient, not scribble, as the independent unit.",
+      "evidence_status": "UNVERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#required-output",
+        "inputs/frozen-brief.md#frozen-fact-5"
+      ]
+    },
+    {
+      "observation_id": "CIM-O11-COVERAGE-GATE",
+      "kind": "risk",
+      "statement": "The six-class problem is not empirically testable until the FN/FP atlas and episode audit demonstrate usable patient-level support for every legal joint. Class counts, patient counts, geometry/polarity distributions, and target/scope coverage must be reported before model training; sparse or deterministic cells would make slot and joint effects non-identifiable.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-fact-6",
+        "inputs/frozen-brief.md#forbidden-claims"
+      ]
+    },
+    {
+      "observation_id": "CIM-O12-SYNTHETIC-BOUNDARY",
+      "kind": "requirement",
+      "statement": "A successful synthetic full-versus-no_M0 contrast would show that state is useful for predicting labels generated by this protocol. It would not establish how clinicians or other humans conceptualize SAME, NEW, LOCAL, or COMPLETE, nor validate latent human cognition. That claim requires separately designed human interaction data with an explicit consent, annotation, and inter-rater protocol.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "research_agent_teams/agents/cognitive-intent-modeler.md",
+        "inputs/frozen-brief.md#forbidden-claims"
+      ]
+    },
+    {
+      "observation_id": "CIM-O13-CANONICAL-MODEL",
+      "kind": "requirement",
+      "statement": "The current primary must remain the frozen simple 17-channel state/cue model with state/cue-support pooling, a geometry MLP, and joint/operation/target/scope heads. Cross-attention belongs only in a deferred, separately authorized ablation or future-work comparison after the simple primary has been implemented and evaluated; it cannot replace the present full arm.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-facts-7-9"
+      ]
+    },
+    {
+      "observation_id": "CIM-O14-TRUTH-BOUNDARY",
+      "kind": "requirement",
+      "statement": "At present there is no v2 six-class training, inference, metric, effect estimate, external-comparator result, or publication-level conclusion. Every mechanism and prediction in this contribution is design-only until the exact downstream bundle is closed and receipt-backed evaluation is performed.",
+      "evidence_status": "VERIFIED",
+      "source_refs": [
+        "inputs/frozen-brief.md#frozen-facts-6-10",
+        "inputs/frozen-brief.md#forbidden-claims"
+      ]
+    }
+  ],
+  "proposed_mechanisms": [
+    {
+      "mechanism_id": "CIM-M01-STATE-CONDITIONAL-SIMPLE-FUSION",
+      "description": "Canonical H1 mechanism. Inputs are the frozen model's 17-channel state/cue representation including the case-matched OOF M0, the signed scribble cue, compatible image/cue support, and scribble geometry descriptors. M0 is represented as preceding segmentation state; polarity and geometry remain separately observable action features. The output is a distribution over six legal joints plus operation, target, and scope heads.",
+      "inputs": [
+        "case-matched frozen patient-excluded OOF M0 state",
+        "signed scribble cue with polarity kept explicit",
+        "frozen 17-channel state/cue tensor and support inputs",
+        "centerline/random/boundary geometry descriptors",
+        "six-legal-joint output constraint"
+      ],
+      "transformation": "Apply the already frozen simple state/cue-support pooling to the state/cue tensor, apply the geometry MLP to geometry descriptors, fuse only through the canonical simple-first interface, and produce joint/operation/target/scope logits. The representation must not collapse geometry, polarity, and M0 into a single undocumented feature, because their separate diagnostic contributions are the object of the comparison.",
+      "expected_signal": "Against the otherwise identical no_M0 arm, M0 should add conditional information mainly for SAME versus NEW and LOCAL versus COMPLETE, yielding a positive patient-level full-minus-no_M0 difference on target, scope, and legal-joint metrics after polarity/geometry matching. A result confined to ADD versus REMOVE is not the distinguishing signal because polarity already carries that distinction in the generator.",
+      "failure_mode": "The mechanism is not supported if full is equivalent to no_M0 on patient-level target/scope/joint behavior, if its apparent gain disappears after patient-level leakage and generator-shortcut checks, if M0 is mismatched or stale, if one or more joints lacks coverage, or if implementation drift makes the arms differ by anything beyond M0 state availability."
+    },
+    {
+      "mechanism_id": "CIM-M02-CUE-SUFFICIENCY-ALTERNATIVE",
+      "description": "Strongest H0 mechanism. The synthetic label is decoded from scribble polarity, geometry, and non-M0 image/cue support; M0 contributes no unique information. This is implemented by the frozen no_M0 arm with the same backbone and output heads, not by inventing a new architecture.",
+      "inputs": [
+        "signed scribble polarity",
+        "centerline/random/boundary geometry descriptors",
+        "all non-M0 inputs shared with full",
+        "same six-legal-joint output constraint"
+      ],
+      "transformation": "Use the identical canonical network, training schedule, and heads while removing only the M0 state input according to the frozen no_M0 definition. Preserve input dimensions and masking in a way that cannot reveal the arm or label through padding, missingness, or normalization artifacts.",
+      "expected_signal": "Full and no_M0 remain equivalent at the patient level within a margin frozen before evaluation; their errors agree in polarity-and-geometry-matched ambiguity strata. Polarity-blind primarily harms operation, while geometry-only retains any label information encoded by generator morphology. This pattern favors cue sufficiency or generator shortcut over state-relative intent.",
+      "failure_mode": "A broken or undertrained full implementation, poor M0 quality, unequal optimization, or an invalid ablation token can falsely make H0 appear correct. Equivalence is interpretable only after arm parity, coverage, and leakage checks pass."
+    }
+  ],
+  "experiments": [
+    {
+      "experiment_id": "CIM-E01-PRIMARY-FULL-VS-NO-M0",
+      "comparison": "Run only the frozen primary contrast full versus no_M0 on the same eligible patient-level partitions and the exact same episode manifest. The only causal design difference is availability of the case-matched OOF M0 state; this is a test of incremental state information, not a test of a new fusion architecture.",
+      "held_constant": [
+        "patient-disjoint split and patient-excluded OOF M0 provenance",
+        "episode IDs, labels, and signed scribbles",
+        "scribble polarity, geometry type, and geometry descriptors",
+        "image/cue inputs other than the ablated M0 state",
+        "simple-first backbone, state/cue-support pooling, geometry MLP, and output heads",
+        "optimizer, scheduler, initialization policy, seed set, epochs, early-stopping rule, and total training budget",
+        "model-selection criterion and checkpoint-selection rule",
+        "patient-level metric and resampling code"
+      ],
+      "observable": "Predeclare one patient-level primary legal-joint metric (prefer macro-F1 or balanced accuracy when joint support is unequal), compute each patient's contribution before aggregation, and estimate the paired full-minus-no_M0 difference with a patient-clustered bootstrap or patient-level permutation procedure. Report secondary operation, target, and scope macro metrics plus calibration and per-joint confusion. H1 predicts the clearest positive difference on target/scope/joint, not operation. Also report an equivalence analysis using a clinically/scientifically justified margin frozen before predictions are opened.",
+      "falsifier": "H1 is falsified for this design if the upper bound of the predeclared paired patient-level 95% interval is at or below zero for the primary joint difference and neither target nor scope shows a positive directional difference, after arm-parity, coverage, and leakage checks pass. If intervals straddle zero, label the result inconclusive rather than effective; if a predeclared equivalence test accepts equivalence, prefer H0 for this protocol."
+    },
+    {
+      "experiment_id": "CIM-E02-AMBIGUITY-STRATIFIED-ANALYSIS",
+      "comparison": "Without adding a training arm, reuse E01 predictions and compare full versus no_M0 inside patient-level strata matched on polarity, geometry family, and predeclared measurable stroke morphology. Separate strata where multiple legal target/scope explanations remain plausible from strata where generator cues nearly determine a label.",
+      "held_constant": [
+        "trained checkpoints from E01",
+        "patient-level grouping",
+        "polarity and geometry-family distribution",
+        "stroke morphology bins frozen before outcome inspection",
+        "same metric definitions and legal-joint mapping"
+      ],
+      "observable": "For each sufficiently supported stratum, report patient-level full-minus-no_M0 target, scope, and joint differences and errors. A state-dependent mechanism predicts a larger gap in ambiguity strata than in cue-determined strata. Publish the support table so low-count cells cannot be mistaken for evidence.",
+      "falsifier": "If no_M0 matches full specifically in the ambiguity strata while any apparent aggregate gain occurs only in polarity or geometry-separated strata, the claimed state-relative interpretation is falsified and the aggregate effect is treated as cue or construction confounding."
+    },
+    {
+      "experiment_id": "CIM-E03-FROZEN-DIAGNOSTIC-ARMS",
+      "comparison": "Interpret the already frozen polarity-blind and geometry-only arms as diagnostics alongside full and no_M0; do not promote either diagnostic to the primary and do not add cross-attention, FiLM, gated fusion, or modality-fusion arms.",
+      "held_constant": [
+        "same patient split and episode manifest",
+        "same backbone and training budget",
+        "same output ontology and metrics",
+        "same seed and checkpoint-selection policy",
+        "only the named diagnostic information removal"
+      ],
+      "observable": "Measure patient-level slot and joint changes. Polarity-blind should reveal how much ADD/REMOVE decoding depends on the signed cue; geometry-only estimates how much the generator's spatial trace alone predicts labels. These are shortcut probes, not evidence of human cognition. Relate their error patterns to the full-versus-no_M0 gap rather than ranking them as replacement models.",
+      "falsifier": "If geometry-only reproduces full target/scope/joint behavior and no_M0 also matches full after patient-level controls, state dependence is falsified for the protocol. If polarity-blind performs identically on operation, first audit whether polarity was actually delivered and ablated before drawing a cognitive interpretation."
+    },
+    {
+      "experiment_id": "CIM-E04-PRETRAIN-IDENTIFIABILITY-AND-LEAKAGE-GATE",
+      "comparison": "Before any v2 training, audit the FN/FP atlas and generated episode manifest at patient level: six legal-joint coverage, per-slot support, polarity-by-operation table, geometry/morphology-by-target/scope tables, M0-case binding, and split provenance. Compare label predictability from administrative/generator fields against the intended model inputs only as a leakage audit.",
+      "held_constant": [
+        "frozen OOF M0 set without rerun",
+        "ontology and six legal joints",
+        "episode-generation code and versioned bundle",
+        "patient as the independent unit",
+        "predeclared audit thresholds before model outcomes"
+      ],
+      "observable": "Produce patient counts and episode counts for every legal joint; cross-tabs for polarity, geometry family, and morphology against operation/target/scope; duplicate and cross-split hashes; and a case-to-M0 provenance check. Confirm that no forbidden ground-truth residual or label-bearing metadata reaches inference tensors. This gate determines whether E01 can identify an M0 contribution.",
+      "falsifier": "Stop before training if any legal joint lacks the predeclared patient-level support, any patient or episode derivative crosses partitions, any case is paired with another case's M0, the arm manifests are not identical, or an unintended generator/administrative field deterministically exposes target or scope. Do not repair these failures by rerunning the committed OOF M0 set."
+    }
+  ],
+  "blockers": [
+    "FIRST OPERATIONAL BLOCKER: close, hash, and verify the exact downstream software bundle/F0 environment that previously failed stale-bundle validation. Only after exact bundle closure may the existing frozen OOF M0 set proceed to M0 evaluation, FN/FP atlas construction, and signed-episode generation; no OOF rerun is proposed.",
+    "STOP CONDITION BEFORE TRAINING: halt if the FN/FP atlas and patient-level episode table do not provide predeclared usable support for all six legal joints, or if target/scope is deterministically encoded by generator geometry. Report non-identifiability instead of claiming six-class feasibility.",
+    "STOP CONDITION BEFORE INTERPRETATION: halt scientific interpretation on any patient leakage, M0-to-case mismatch, arm-manifest mismatch, ground-truth residual exposure, or implementation difference beyond the M0 ablation. Repair and rerun the affected downstream stage only.",
+    "HUMAN-COGNITION BOUNDARY: synthetic protocol outcomes cannot validate real human intent. A human-cognition claim remains blocked until a separately approved human study exists; this mechanism council contribution must stay phrased as synthetic state-conditioned label prediction.",
+    "ARCHITECTURE BOUNDARY: cross-attention is deferred to a later ablation or future-work study after the frozen simple-first primary is complete. It is not permitted to replace full in the current canonical experiment matrix."
+  ]
+}

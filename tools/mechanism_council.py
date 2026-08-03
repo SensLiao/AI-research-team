@@ -345,25 +345,107 @@ def render_anonymous_candidate(bundle: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _read_json(path: str) -> Any:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _emit(rendered: str, out: Optional[str]) -> None:
+    if out:
+        target = Path(out)
+        assert_not_vault_path(target)
+        # `Path.write_text(newline=...)` is Python 3.10+; this host runs 3.9, so the previous
+        # `plan --out` path raised TypeError for every caller. No test ever passed `--out`, which is
+        # why it stayed invisible. Uses the repo's established LF-safe open() pattern instead.
+        with target.open("w", encoding="utf-8", newline="\n") as handle:
+            handle.write(rendered)
+    else:
+        print(rendered, end="")
+
+
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Plan or validate the optional mechanism council.")
+    # Local import: council_template imports this module for `load_contract`, so importing it at
+    # module scope would close an import cycle. Only the CLI needs it.
+    from research_agent_teams.tools import council_template as tpl
+
+    parser = argparse.ArgumentParser(description="Plan, author, compile or render the mechanism council.")
     sub = parser.add_subparsers(dest="command", required=True)
-    plan = sub.add_parser("plan")
+
+    plan = sub.add_parser("plan", help="decide whether the panel is worth its cost, and in what waves")
     plan.add_argument("request")
     plan.add_argument("--role", action="append", dest="roles")
     plan.add_argument("--force", choices=("on", "off"))
     plan.add_argument("--out")
+
+    template = sub.add_parser("template", help="the authoring sheet one seat gets handed")
+    template.add_argument("role")
+    template.add_argument("--input-sha256", dest="input_sha256")
+    template.add_argument("--json", action="store_true", help="emit only the blank skeleton")
+    template.add_argument("--out")
+
+    check = sub.add_parser("check", help="plain-Chinese field-level verdict on one filled contribution")
+    check.add_argument("contribution")
+
+    compile_cmd = sub.add_parser("compile", help="bind six contributions to one design-only chain")
+    compile_cmd.add_argument("--work-order", required=True)
+    compile_cmd.add_argument("--contribution", action="append", required=True, dest="contributions")
+    compile_cmd.add_argument("--chain", required=True)
+    compile_cmd.add_argument("--conflicts")
+    compile_cmd.add_argument("--compiler-agent-id", required=True, dest="compiler_agent_id")
+    compile_cmd.add_argument("--out")
+
+    render = sub.add_parser("render", help="render a compiled bundle for the director or for a blind review")
+    render.add_argument("bundle")
+    render.add_argument("--audience", choices=("director", "blind"), default="director")
+    render.add_argument("--contribution", action="append", dest="contributions")
+    render.add_argument("--out")
+
     args = parser.parse_args(argv)
 
-    forced = None if args.force is None else args.force == "on"
-    result = plan_council(args.request, manual_roles=args.roles, force=forced)
-    rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
-    if args.out:
-        target = Path(args.out)
-        assert_not_vault_path(target)
-        target.write_text(rendered, encoding="utf-8", newline="\n")
+    if args.command == "plan":
+        forced = None if args.force is None else args.force == "on"
+        result = plan_council(args.request, manual_roles=args.roles, force=forced)
+        _emit(json.dumps(result, ensure_ascii=False, indent=2) + "\n", args.out)
+        return 0
+
+    if args.command == "template":
+        if args.json:
+            if not args.input_sha256:
+                raise MechanismCouncilError("--json needs --input-sha256 (the frozen work order hash)")
+            blank = tpl.blank_contribution(args.role, input_sha256=args.input_sha256)
+            _emit(json.dumps(blank, ensure_ascii=False, indent=2) + "\n", args.out)
+        else:
+            _emit(tpl.render_role_template(args.role, input_sha256=args.input_sha256), args.out)
+        return 0
+
+    if args.command == "check":
+        verdict = tpl.check_contribution(_read_json(args.contribution))
+        for line in verdict["errors"]:
+            print(f"✗ {line}")
+        for line in verdict["warnings"]:
+            print(f"⚠ {line}")
+        if verdict["ok"] and not verdict["warnings"]:
+            print("✓ 这份贡献符合契约，没有可疑之处。")
+        elif verdict["ok"]:
+            print("✓ 符合契约（上面的提醒不拦你，但值得看一眼）。")
+        return 0 if verdict["ok"] else 1
+
+    if args.command == "compile":
+        bundle = compile_bundle(
+            work_order=_read_json(args.work_order),
+            contributions=[_read_json(p) for p in args.contributions],
+            compiled_chain=_read_json(args.chain),
+            conflicts=_read_json(args.conflicts) if args.conflicts else [],
+            compiler_agent_id=args.compiler_agent_id,
+        )
+        _emit(json.dumps(bundle, ensure_ascii=False, indent=2) + "\n", args.out)
+        return 0
+
+    bundle = _read_json(args.bundle)
+    if args.audience == "blind":
+        _emit(render_anonymous_candidate(bundle), args.out)
     else:
-        print(rendered, end="")
+        rows = [_read_json(p) for p in (args.contributions or [])]
+        _emit(tpl.render_council_report(bundle, contributions=rows), args.out)
     return 0
 
 

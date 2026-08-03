@@ -1,0 +1,10 @@
+{
+  "schema_version": "native-review-authorization/v1",
+  "run_id": "t4-sm0-native-20260801",
+  "evaluation_id": "T4-SM0-BLIND-01",
+  "scope": "Local design-only blind review; no server, GPU, download, vault or scientific-result claim.",
+  "authorized_by": "director-active-goal",
+  "authorized_at": "2026-08-01T12:02:16.628Z",
+  "submit_job": false,
+  "server_query": false
+}
