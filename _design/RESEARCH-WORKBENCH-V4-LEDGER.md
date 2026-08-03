@@ -131,11 +131,47 @@ Status: `TODO` / `WIP` / `DONE` / `REBUILD` (re-doing something that already exi
 | 0.3 | Fix the 3 regressions | **DONE** | §4.1; targeted 27 passed; guard negative-controlled |
 | 0.4 | Full suite green | **DONE** | measured `3913 passed, 5 skipped, exit 0` in 353 s. (The doc's `3914 passed / 4 skipped` is the same 3918 total — one test skips on this host. Benign.) |
 | 0.5 | Baseline commit (D4) | **DONE** | `2297503` — 250 files, +39967/−1241. Secret-scanned: the 4 hits are all test fixtures, incl. a redaction canary (`TEST-SENTINEL-DO-NOT-LEAK`, asserted absent from output) and an env-var *name* reference. `.gitignore` gained `.workbench/`, `.harness/`, `workspace/*.jsonl`. |
-| P1.1 | `workbench/` package: dual-state model + rebuildable store | **WIP** | `model.py` done — the two states plus the rule that **an evidence state above SIMULATED cannot be self-claimed** (19 tests, incl. negative controls: claiming `observed`/`frozen` without a receipt is downgraded and the downgrade is recorded). `store.py` done — `.workbench/` FTS5 index + jsonl views, degrades to `LIKE` instead of crashing when FTS5 is absent, and reports which engine answered. Remaining: indexer, projectors, search, CLI. |
-| P1.2 | Unified Machine + Vault full-text search | TODO | reuse `reporting/scan.py`; do not write a second scanner |
-| P1.3 | Generated `PROJECT-HOME.md` + global research home | TODO | generated, never hand-maintained |
-| P1.4 | `status` / `search` / `next` / `open` verbs + JSON views | TODO | **not** in `operate/cli.py` — it is already 1172 lines, over the 800-line rule |
-| P1.5 | Dual work-state × evidence-state task model | TODO | the memo's §3.5 |
+| P1.1 | `workbench/` package: dual-state model + rebuildable store | **DONE** | `c2b876c` |
+| P1.2 | Unified Machine + Vault full-text search | **DONE** | `c2b876c` |
+| P1.3 | Generated `PROJECT-HOME.md` + global research home | **DONE** | `c2b876c` |
+| P1.4 | `status` / `search` / `next` / `open` verbs + JSON views | **DONE** | `c2b876c` — put in `workbench/cli.py`, deliberately not in `operate/cli.py` (already 1172 lines, over the 800-line rule; and a navigation verb must never be able to start a run) |
+| P1.5 | Dual work-state × evidence-state task model | **DONE** | `c2b876c` |
+
+### P1 as shipped (commit `c2b876c`, suite `3986 passed, 5 skipped, exit 0`)
+
+Files: `workbench/{model,store,indexer,projectors,cli}.py` + 4 test modules (71 tests).
+`python -m research_agent_teams.workbench <verb>`; `reindex` is the only verb that writes,
+and only inside `.workbench/` plus one generated `PROJECT-HOME.md` per existing workspace.
+
+Real numbers from the first live index: **3 projects · 1211 artifacts · 15 tasks · 26 modes**;
+artifacts split machine 705 / vault 471 / run 32; FTS5 available on this host.
+
+Honesty properties, each test-pinned:
+
+- **An evidence state above SIMULATED cannot be self-claimed.** OBSERVED needs an executor
+  receipt bound to raw result bytes; FROZEN additionally needs a human freeze. An over-claim
+  is downgraded *and* the downgrade is recorded in the row.
+- **The vault's own two fields are read, never recomputed.** `status` = lifecycle,
+  `result-status` = evidence, `can-cite-thesis` stays the vault's derived field
+  (`05-registry/status-registry.md` says outright the two axes "measure different things").
+  Cross-checked against independent greps: 48 frozen / 62 provisional / 42 deprecated of 471.
+- **Tasks are graded by the ledger's own stated rule** — receipt path + checkable number or
+  hash — not by the word in their `status` field.
+- **A project's own vocabulary survives.** `TaskRow.source_status` / `ArtifactRow.lifecycle`
+  keep the source word, and the curated mapping table outranks the pending-regex so
+  `UNBLOCKED_PENDING_RERUN` reads as ready rather than blocked.
+- **Vault kinds are enumerated from disk**, never hardcoded.
+
+Three defects found and fixed while building it (two in pre-existing code, one mine):
+
+1. `reporting/scan.py` counted the vault from a hardcoded kind list — it named a `risks`
+   folder that does not exist and omitted `comparisons` / `meetings` / `models` / `papers`,
+   so **47 pages (~10% of the vault) never reached a briefing**. 424 → 471, sum reconciles.
+2. `pending_director_decisions` lives in its own array in the task ledger, so reading only
+   `tasks` reported "nothing is waiting on you" while **two decisions sat unmade**.
+3. Search handed raw input to FTS5, so `state-relative intent` failed with `no such column:
+   relative`. Terms are now quoted; a CJK query is routed to substring search because FTS5's
+   default tokenizer cannot segment CJK; the answer reports which engine ran.
 | P2.1 | Six Outcome Recipes as the user-facing layer | TODO | on top of the existing plain-language routing table |
 | P3.x | Really mount the nine sources (D5) | TODO | restate §5 first |
 | P4.x | Director additions over the existing router | REBUILD | smallest-sufficient-team policy; dynamic dispatch of dormant workers |
@@ -143,7 +179,10 @@ Status: `TODO` / `WIP` / `DONE` / `REBUILD` (re-doing something that already exi
 | P6.x | Re-run the example project end-to-end | REBUILD | dry-run only; never dress a dry-run as a GPU result |
 | P7.x | Governance slimming | TODO | last, and telemetry-driven |
 
-**Current pointer:** finish 0.4 (full suite green) → 0.5 baseline commit → P1.1.
+**Current pointer:** P1 is shipped. Next is **P2.1** — the six Outcome Recipes as the
+user-facing layer, built on top of the plain-language routing table the 2026-08-01 round
+already added (do not replace that table; the recipes sit above it). After that P3 needs the
+§5 restatement to the director before any mount happens.
 
 **Unverified premise still open:** the memo's "157 workers, 120 used by operated modes, 37
 spec-only". The 157 figure is corroborated by the 08-01 round; the **120 / 37 split is not
