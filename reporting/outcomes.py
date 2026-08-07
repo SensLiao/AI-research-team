@@ -68,7 +68,9 @@ def render_menu(*, path: Optional[str] = None) -> str:
     verdict = recipes.validate_all(path=path)
 
     lines = ["# 你想得到什么", "",
-             "> 六选一。不用知道内部模式叫什么 —— 说你想**最后拿到什么**就行。",
+             # Never hard-code the menu size here: it was "六选一" while the menu had nine
+             # entries. The table below is the count.
+             "> 挑一条。不用知道内部模式叫什么 —— 说你想**最后拿到什么**就行。",
              "> 每条都标了规模、会在哪停下来等你拍板、以及**这条路不能声称什么**。", ""]
     weight = _relative_weight(views)
     lines += ["| # | 你想要的 | 最后拿到什么 | 规模（六条之间比） | 会停下来等你 |",

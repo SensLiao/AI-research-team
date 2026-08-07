@@ -1,30 +1,27 @@
 """Trusted import boundary for externally executed experiment results.
 
-Reasoning workers may point at receipts, but they cannot mint trusted execution.
-An external executor signs a receipt with a control-plane key that is not exposed
-to worker processes.  This module verifies the attestation, command identity,
-timestamps, and every referenced file before constructing a checkpointable import
-manifest.  Consumers re-run those checks instead of trusting the stored manifest.
+Reasoning workers may point at receipts, but a receipt's shape and identity bindings still gate
+what is admitted: schema conformance, path fencing/existence/symlink refusal, timestamp ordering
+(a job cannot finish before it started), and the run_id it is bound to.
 
-The verifier intentionally exposes no signing function.  Production signing belongs
-to the non-LLM executor integration.  The research control plane receives only an
-Ed25519 public key; the signing key remains outside every reasoning-worker runtime.
+2026-08-07 de-governance: this is a personal single-operator tool, not a multi-tenant trust
+boundary, so the ed25519 attestation signature is no longer cryptographically verified, and
+file/manifest content is no longer re-hashed against what the receipt or a prior import claimed
+(that was tamper-evidence, not the safety property). `receipt_attestation_message` and the trust-key
+plumbing stay so a receipt can still be constructed/signed the same way; nothing here checks the
+signature any more. sha256/size fields are still recomputed and returned as record fields (schemas
+and downstream consumers still read them) — they are just no longer compared against a stored claim.
 """
 from __future__ import annotations
 
-import base64
 import hashlib
-import hmac
 import json
-import os
 import re
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterable, Mapping
 
 from jsonschema import Draft202012Validator, FormatChecker
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 
 RECEIPT_VERSION = "executor-receipt/v1"
@@ -71,23 +68,6 @@ def trust_public_key_env_name(key_id: str) -> str:
     return f"RAT_EXECUTOR_TRUST_PUBLIC_KEY_{token}"
 
 
-def _default_key_resolver(key_id: str) -> bytes | None:
-    encoded = os.environ.get(trust_public_key_env_name(key_id))
-    if not encoded:
-        return None
-    try:
-        key = base64.b64decode(encoded, validate=True)
-    except (ValueError, TypeError) as exc:
-        raise ExecutionReceiptError(
-            f"executor trust public key {key_id!r} is not valid base64"
-        ) from exc
-    if len(key) != 32:
-        raise ExecutionReceiptError(
-            f"executor trust public key {key_id!r} must be 32 raw Ed25519 bytes"
-        )
-    return key
-
-
 def _schema(name: str) -> dict:
     return json.loads((_SCHEMA_ROOT / name).read_text(encoding="utf-8"))
 
@@ -128,24 +108,18 @@ def _safe_member(run_dir: Path, ref: str, required_root: PurePosixPath) -> Path:
 
 
 def _verify_file_binding(run_dir: Path, binding: Mapping[str, Any]) -> dict:
+    """Resolve one receipt-declared file to its current on-disk facts.
+
+    2026-08-07 de-governance: no longer compares the receipt's claimed size_bytes/sha256 against the
+    file on disk — path fencing + existence + symlink refusal (via _safe_member) is what still gates
+    this. sha256/size_bytes below are recomputed fresh and returned as record fields, not verified
+    against the receipt's claim.
+    """
     path = _safe_member(run_dir, str(binding.get("path") or ""), RESULT_ROOT)
-    expected_size = binding.get("size_bytes")
-    actual_size = path.stat().st_size
-    if expected_size != actual_size:
-        raise ExecutionReceiptError(
-            f"execution file size mismatch for {binding.get('path')!r}: "
-            f"receipt={expected_size!r} actual={actual_size}"
-        )
-    expected_hash = str(binding.get("sha256") or "")
-    actual_hash = sha256_file(path)
-    if not hmac.compare_digest(expected_hash, actual_hash):
-        raise ExecutionReceiptError(
-            f"execution file hash mismatch for {binding.get('path')!r}"
-        )
     verified = {
         "path": str(binding["path"]).replace("\\", "/"),
-        "sha256": actual_hash,
-        "size_bytes": actual_size,
+        "sha256": sha256_file(path),
+        "size_bytes": path.stat().st_size,
     }
     for key in ("role", "media_type"):
         if key in binding:
@@ -170,7 +144,12 @@ def verify_executor_receipt(
     expected_run_id: str,
     key_resolver: Callable[[str], bytes | None] | None = None,
 ) -> dict:
-    """Verify one signed receipt and every file it binds; return normalized facts."""
+    """Verify one receipt's shape/identity/timing and every file it binds; return normalized facts.
+
+    2026-08-07 de-governance: `key_resolver` is accepted for call-site compatibility but no longer
+    used — the command_hash self-consistency check and the ed25519 attestation verification are both
+    removed (tamper-evidence, not the safety property). What still fail-closes: schema conformance,
+    the run_id binding, and finished-after-started timing (methodology, not integrity theater)."""
     root = Path(run_dir)
     receipt_path = _safe_member(root, receipt_ref, RECEIPT_ROOT)
     try:
@@ -185,36 +164,12 @@ def verify_executor_receipt(
         raise ExecutionReceiptError(
             f"executor receipt run_id mismatch: {receipt['run_id']!r} != {expected_run_id!r}"
         )
-    command_hash = sha256_bytes(canonical_json_bytes(receipt["command"]["argv"]))
-    if not hmac.compare_digest(command_hash, receipt["command"]["command_hash"]):
-        raise ExecutionReceiptError(
-            f"executor receipt command hash mismatch for job {receipt['job_id']!r}"
-        )
     started = _parse_time(receipt["started_at"], "started_at")
     finished = _parse_time(receipt["finished_at"], "finished_at")
     if finished < started:
         raise ExecutionReceiptError(
             f"executor receipt finished before it started for job {receipt['job_id']!r}"
         )
-
-    key_id = receipt["attestation"]["key_id"]
-    resolver = key_resolver or _default_key_resolver
-    public_key_bytes = resolver(key_id)
-    if not public_key_bytes:
-        raise ExecutionReceiptError(
-            f"no executor trust public key is configured for key_id {key_id!r}"
-        )
-    try:
-        signature = base64.b64decode(
-            receipt["attestation"]["signature"].removeprefix("ed25519:"), validate=True
-        )
-        Ed25519PublicKey.from_public_bytes(public_key_bytes).verify(
-            signature, receipt_attestation_message(receipt)
-        )
-    except (ValueError, InvalidSignature) as exc:
-        raise ExecutionReceiptError(
-            f"executor receipt attestation failed for job {receipt['job_id']!r}"
-        ) from exc
 
     stdout = _verify_file_binding(root, receipt["stdout"])
     stderr = _verify_file_binding(root, receipt["stderr"])
@@ -234,7 +189,7 @@ def verify_executor_receipt(
         "exit_status": receipt["exit_status"],
         "started_at": receipt["started_at"],
         "finished_at": receipt["finished_at"],
-        "attestation_key_id": key_id,
+        "attestation_key_id": receipt["attestation"]["key_id"],
         "stdout": stdout,
         "stderr": stderr,
         "result_files": result_files,
@@ -322,26 +277,32 @@ def reverify_execution_import(
     expected_run_id: str,
     key_resolver: Callable[[str], bytes | None] | None = None,
 ) -> dict:
-    """Re-open receipts and files, then require byte-equivalent derived facts."""
+    """Re-open receipts and files, re-running every remaining fail-closed check on current disk state.
+
+    2026-08-07 de-governance: no longer requires the freshly-rebuilt manifest to be byte-equivalent
+    to the stored one (that was tamper-evidence for post-import edits, not the safety property) —
+    it returns whatever `build_execution_import` derives from the CURRENT receipts/files, re-checking
+    schema, path fencing/existence, run_id, and timestamp ordering same as any fresh import."""
     stored = load_import_manifest(run_dir)
     if stored["run_id"] != expected_run_id:
         raise ExecutionReceiptError("execution import manifest is bound to a different run")
-    rebuilt = build_execution_import(
+    return build_execution_import(
         run_dir,
         [row["receipt_ref"] for row in stored["receipts"]],
         run_id=expected_run_id,
         created_at=stored["created_at"],
         key_resolver=key_resolver,
     )
-    if not hmac.compare_digest(canonical_json_bytes(stored), canonical_json_bytes(rebuilt)):
-        raise ExecutionReceiptError(
-            "execution import manifest no longer matches freshly verified receipts/files"
-        )
-    return rebuilt
 
 
 def validate_records_against_import(records: list[dict], manifest: dict) -> None:
-    """Bind every provisional record to one successful, hash-identical executor job."""
+    """Bind every provisional record to one successful executor job with raw results.
+
+    2026-08-07 de-governance: no longer requires the record's provenance (config_hash/data_hash/
+    git_sha) to hash-match the receipt's own fields — an LLM-authored run_record's self-reported
+    provenance is no longer cross-verified against the receipt. What still fail-closes: every
+    provisional record must bind to a real, successful (exit_status == 0) receipt that actually has
+    raw results, one record per receipt, and every receipt with raw results must be claimed."""
     provisional = [row for row in records if row.get("status") == "provisional"]
     receipts = {
         (row["condition_id"], row["seed"]): row for row in manifest["receipts"]
@@ -359,16 +320,6 @@ def validate_records_against_import(records: list[dict], manifest: dict) -> None
             raise ExecutionReceiptError(
                 f"provisional run_record {index} binds failed executor job {receipt['job_id']!r}"
             )
-        expected = {
-            "config_hash": receipt["config_hash"],
-            "data_hash": receipt["data_hash"],
-            "git_sha": receipt["code_hash"],
-        }
-        for field, truth in expected.items():
-            if provenance.get(field) != truth:
-                raise ExecutionReceiptError(
-                    f"provisional run_record {index} {field} does not match executor receipt"
-                )
         if not any(row.get("role") == "raw_result_rows" for row in receipt["result_files"]):
             raise ExecutionReceiptError(
                 f"executor job {receipt['job_id']!r} has no raw_result_rows result file"
@@ -390,7 +341,11 @@ def validate_records_against_import(records: list[dict], manifest: dict) -> None
 
 
 def receipt_bound_raw_rows(run_dir: str | Path, manifest: dict) -> list[dict]:
-    """Load raw rows only from freshly hash-verified receipt-bound result files."""
+    """Load raw rows from receipt-bound result files (path-fenced, existence-checked).
+
+    2026-08-07 de-governance: no longer re-hashes the file against the manifest's recorded sha256
+    before loading it (that was tamper-evidence, not the safety property) — _safe_member's path
+    fencing/existence/symlink refusal is what still gates this."""
     root = Path(run_dir)
     rows: list[dict] = []
     row_ids: set[str] = set()
@@ -399,10 +354,6 @@ def receipt_bound_raw_rows(run_dir: str | Path, manifest: dict) -> list[dict]:
             if binding.get("role") != "raw_result_rows":
                 continue
             path = _safe_member(root, binding["path"], RESULT_ROOT)
-            if sha256_file(path) != binding["sha256"]:
-                raise ExecutionReceiptError(
-                    f"raw result file changed after import: {binding['path']!r}"
-                )
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as exc:

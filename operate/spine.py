@@ -34,13 +34,12 @@ from ..orchestrator.model_policy import (
 from ..orchestrator.router import resolve_task, validate_routing
 from ..tools.budget_tracker import assert_within
 from ..tools.obslog import append_log
-from ..tools.ledger import read_events, verify_chain
+from ..tools.ledger import read_events
 from ..tools.director_packet import packet_path, write_packet
 from ..tools.runstore import (
     checkpoint_stage,
     classify_status,
     create_run,
-    hash_file,
     mark_gate_pending,
     pin_task_frame,
     read_manifest,
@@ -230,15 +229,10 @@ def reconcile_director_gate(run_dir, stage, ts) -> dict:
     only a pristine latest boundary for the configured gate, derives the true
     successor from the frozen task frame, and appends the correction.
     """
+    # 2026-08-07 de-governance: this migration no longer verifies the ledger chain or the task-frame
+    # pin hash (both were tamper-evidence, not correctness checks) — it still requires every committed
+    # artifact this stage recorded to actually exist on disk (below), which is what reconciliation reads.
     events = read_events(Path(run_dir) / "ledger.jsonl")
-    if verify_chain(events):
-        raise ValueError("cannot reconcile a tampered ledger")
-    task_frame_path = Path(run_dir) / "task_frame.artifact.json"
-    task_frame_pins = [event for event in events if event.get("event_type") == "task_frame_pinned"]
-    pinned_hash = ((task_frame_pins[-1].get("payload") or {}).get("task_frame_sha256")
-                   if task_frame_pins else None)
-    if not pinned_hash or pinned_hash != hash_file(task_frame_path):
-        raise ValueError("cannot reconcile: task-frame hash no longer matches its pinned ledger record")
     tf = _task_frame(run_dir)
     payload = tf["payload"]
     if not director_gate_required(payload, stage):
@@ -252,8 +246,8 @@ def reconcile_director_gate(run_dir, stage, ts) -> dict:
     for record in completed:
         for artifact in record.get("artifacts") or []:
             path = Path(artifact.get("path") or "")
-            if not path.is_file() or hash_file(path) != artifact.get("sha256"):
-                raise ValueError(f"cannot reconcile: committed artifact hash mismatch at {path}")
+            if not path.is_file():
+                raise ValueError(f"cannot reconcile: committed artifact missing at {path}")
     if not events or events[-1].get("event_type") != "boundary":
         raise ValueError("gate reconciliation requires a clean latest boundary")
     boundary_payload = events[-1].get("payload") or {}

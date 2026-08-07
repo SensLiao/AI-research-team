@@ -25,7 +25,6 @@ Markdown is a director review product, while JSON bundles remain machine evidenc
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from pathlib import Path
@@ -107,6 +106,15 @@ in `search-results.json`; never fabricate an external reference. Ground every si
 vault page or frozen search record actually states. Stay \
 inside YOUR lens — the other four hunters cover the rest; overlap wastes the panel's diversity.
 
+WORDING-SHELL ADVISORY (flag, never block)
+Before emitting a gap, read your own sentence back. If it uses a generic research-question shell — \
+"exploring the impact of X on Y", "investigating the effect of A on B", "a study of X in the context \
+of Y", "improving X for Y" — flag it in `wording_advisory` on that signal. This is NOT a judgment that \
+the gap is bad or generic; it flags only the wording shell. Then answer one question in the same \
+field: what term, mechanism, site, or tension would a specialist in this field use instead? Rewriting \
+into domain-native terms is encouraged; keeping the original phrasing is also legitimate if it matches \
+how the target literature frames it. Never drop a gap because of its wording.
+
 If this prompt carries a REPAIR ATTEMPT block: fix EXACTLY what the gate feedback names and re-emit \
 the COMPLETE bundle.
 
@@ -114,9 +122,11 @@ Write ONLY this JSON to `{out}` (ends in .bundle.json):
 {{
   "signals": [{{"gap_id":"{prefix}-1","statement":"<the gap, one sharp sentence>",
      "source_ref":"[[<slug>]]","evidence_ref":["[[<slug>]]"],
+     "wording_advisory":"<the shell you spotted + the domain-native term a specialist would use, or omit>",
      {type_fields_hint}}}]
 }}
-Quantities: 2-4 signals, ids {prefix}-1.. ; field discipline: {type_fields}. \
+Quantities: >=10 signals — a FLOOR with NO upper bound, emit every gap that clears the bar rather than \
+a shortlist — ids {prefix}-1.. ; field discipline: {type_fields}. \
 After writing, verify valid JSON. Return one line: pages read + your sharpest gap."""
 
 _TYPE_FIELDS_HINT = '"derived_from":["<your lens tag>"], "...type-setting fields per your lens..."'
@@ -223,6 +233,15 @@ science. Name the strongest objection and missing evidence. PASS means dossier-c
 review, not approval; REVISE means repairable; BLOCK means currently untestable, unsupported, or
 materially contradicted. Never bet, select, approve, or write a director decision.
 
+COVERAGE-DISTRIBUTION ADVISORY (signal, never a defect)
+Report the distribution of the evidence the panel actually used across three dimensions — publication
+year, method family, and venue/community — as `distribution_advisory`. Where one bucket holds >=80% of
+the sources, name the concentration with its fraction and state the SEARCH RESPONSE that would balance
+it (e.g. backward citation chaining to the foundational work, adding a qualitative/mechanistic query,
+querying a different community's vocabulary). This is a coverage-distribution signal, not a defect:
+the evidence base stays valid and nothing is blocked. The question it asks is only whether the corpus
+distribution matches the question being asked.
+
 Write ONLY JSON to `{out}`:
 {{"audits":[{{
   "gap_id":"FW-1","verdict":"PASS|REVISE|BLOCK",
@@ -236,12 +255,25 @@ Write ONLY JSON to `{out}`:
   }},
   "strongest_objection":"<best reason not to spend research budget>",
   "required_repairs":["<repair or missing evidence>"],
+  "distribution_advisory":{{"publication_year":"<the concentration + its fraction, or 'balanced'>",
+    "method_family":"<...>","venue_community":"<...>",
+    "search_response":"<the query that would balance the corpus, when one bucket holds >=80%>"}},
   "evidence_ref":["<real predecessor/source ref>"]
 }}]}}"""
 
 
-def _worker_model(model_policy: str) -> str:
-    return "opus" if model_policy == "max_quality" else "sonnet"
+#: Seats whose output is a fixed-shape restatement of what an upstream seat already decided.
+#: Everything else in this mode is gap-finding, prosecution or synthesis — i.e. 想法 and 质量,
+#: which the director's routing rule keeps on the frontier tier even under the default policy.
+#: A blanket `sonnet` here was the bug: it would have quietly cheapened all five blind hunters
+#: and the prosecutor, which are the only reason this mode produces anything defensible.
+_SCOPED_EXECUTION_SEATS = frozenset({"gap-classifier"})
+
+
+def _worker_model(model_policy: str, agent: str = "") -> str:
+    if model_policy == "max_quality":
+        return "opus"
+    return "sonnet" if agent in _SCOPED_EXECUTION_SEATS else "opus"
 
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
@@ -261,7 +293,7 @@ def _input_list(run_dir: str, agents) -> str:
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     """Return a four-wave panel: five blind hunters, then prosecution, synthesis, and audit."""
     if stage != "DISCOVER":
         return None
@@ -270,7 +302,7 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
     for hunter, (prefix, lens, type_fields) in HUNTERS.items():
         out = str(_bundle_path(run_dir, hunter)).replace("\\", "/")
         workers.append({
-            "label": hunter, "model": _worker_model(model_policy), "output": out,
+            "label": hunter, "model": _worker_model(model_policy, hunter), "output": out,
             "depends_on": [], "execution_group": "blind-hunters",
             "prompt": HUNTER_PROMPT.format(hunter=hunter, lens=lens, request=request,
                                            north_star=ns_block, vault=vault, run_dir=run_dir,
@@ -304,7 +336,7 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
     for agent in POST_HUNTER_AGENTS:
         workers.append({
             "label": agent,
-            "model": _worker_model(model_policy),
+            "model": _worker_model(model_policy, agent),
             "output": _bundle_path(run_dir, agent).as_posix(),
             "depends_on": list(POST_HUNTER_DEPENDENCIES[agent]),
             "execution_group": agent,
@@ -535,23 +567,16 @@ def _validate_closure_scope(run_dir: str, gap_id: str, paper: dict, field: str) 
         )
     snapshot_ref = _text(
         verification.get("snapshot_ref"), f"{field}.scope_verification.snapshot_ref")
-    document_hash = _text(
-        verification.get("document_hash"), f"{field}.scope_verification.document_hash")
     _text(verification.get("parser_version"), f"{field}.scope_verification.parser_version")
     _text(verification.get("scope_match_rationale"),
           f"{field}.scope_verification.scope_match_rationale")
     _text(verification.get("result_match_rationale"),
           f"{field}.scope_verification.result_match_rationale")
-    if not re.fullmatch(r"sha256:[0-9a-f]{64}", document_hash):
-        raise GateBlock(
-            f"gap_breadth closure scope BLOCK: {gap_id} document_hash must be lowercase sha256"
-        )
-    _snapshot, raw, text = _closure_snapshot(run_dir, snapshot_ref, gap_id)
-    actual_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
-    if actual_hash != document_hash:
-        raise GateBlock(
-            f"gap_breadth closure scope BLOCK: {gap_id} full-text snapshot hash mismatch"
-        )
+    # Snapshot hash format + comparison removed 2026-08-07 (director lock: no hash gating). What
+    # actually keeps a closure honest survives untouched below: the snapshot must exist, the quoted
+    # scope/result spans must be EXACT substrings of it, and both must lexically overlap the prose
+    # the hunter wrote. Those read the real bytes; they never needed a digest to do it.
+    _snapshot, _raw, text = _closure_snapshot(run_dir, snapshot_ref, gap_id)
     scope_quote = _validate_exact_span(
         verification.get("scope_span"), text, f"{field}.scope_verification.scope_span", gap_id)
     result_quote = _validate_exact_span(

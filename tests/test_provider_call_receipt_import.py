@@ -1,3 +1,22 @@
+"""Tests for the provider-call receipt import boundary.
+
+R3 §B①: ed25519 signature verification and file-content hash comparison are torn down (same
+rationale as test_execution_receipt_import.py — a personal single-operator tool, not a
+multi-tenant trust boundary). Deleted: test_unsigned_tampering_and_wrong_signer_are_rejected, and
+test_missing_trust_key_blocks_instead_of_accepting_self_report (its whole point — "reject an
+unattested self-report" — stops being true once nothing verifies attestation any more). The
+"artifact_binding" case is dropped from the parametrized fail-closed test for the same reason
+(receipt-declared vs. recomputed file SHA-256).
+
+What is KEPT and still fail-closed: schema validation (estimated_source/missing_usage), the
+token-total arithmetic coherence check (not a hash), timeline ordering (finished >= started), and
+challenge-binding identity checks (dispatch/nonce/cross_run) — these compare a receipt's claimed
+identity against the frozen challenge it was issued against, which is a binding property (like
+run_id in test_execution_receipt_import.py), not file-tamper detection, even though one of the
+compared fields happens to be a sha256 string. The replay guard is likewise kept: it is dedup
+bookkeeping (the same provider_request_id must not resolve to two different receipts), not a
+trust mechanism.
+"""
 from __future__ import annotations
 
 import base64
@@ -18,7 +37,6 @@ PUBLIC_KEY = PRIVATE_KEY.public_key().public_bytes(
     encoding=serialization.Encoding.Raw,
     format=serialization.PublicFormat.Raw,
 )
-ATTACKER_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(33, 65)))
 NONCE = "a" * 64
 
 
@@ -176,7 +194,10 @@ def test_verified_receipt_returns_only_normalized_provider_attested_usage(tmp_pa
         for key in normalized["observation_sources"]
         if key != "elapsed_ms"
     )
-    assert normalized["attestation"]["signature_verified"] is True
+    # 2026-08-07 de-governance: nothing here cryptographically verifies the ed25519 attestation any
+    # more (see module docstring) — signature_verified is now honestly False, not a claim it can't
+    # back up.
+    assert normalized["attestation"]["signature_verified"] is False
     # Exact re-import is idempotent; a different receipt cannot occupy the same keys.
     again = receipts.verify_provider_call_receipt(
         tmp_path,
@@ -188,18 +209,6 @@ def test_verified_receipt_returns_only_normalized_provider_attested_usage(tmp_pa
     assert again["receipt_sha256"] == normalized["receipt_sha256"]
 
 
-def test_missing_trust_key_blocks_instead_of_accepting_self_report(tmp_path):
-    challenge = _challenge()
-    _receipt, ref, _artifact = _install(tmp_path, challenge)
-    with pytest.raises(receipts.ProviderCallReceiptError, match="no trusted.*public key"):
-        receipts.verify_provider_call_receipt(
-            tmp_path,
-            ref,
-            expected_challenge=challenge,
-            key_resolver=lambda _key_id: None,
-        )
-
-
 @pytest.mark.parametrize(
     ("mutation", "match"),
     [
@@ -209,11 +218,10 @@ def test_missing_trust_key_blocks_instead_of_accepting_self_report(tmp_path):
         ("dispatch", "dispatch_spec_sha256"),
         ("nonce", "nonce"),
         ("cross_run", "run_id"),
-        ("artifact_binding", "artifact SHA-256"),
         ("finished_before_started", "precedes"),
     ],
 )
-def test_fail_closed_for_unobserved_tampered_or_cross_bound_receipts(
+def test_fail_closed_for_unobserved_or_cross_bound_receipts(
     tmp_path, mutation, match
 ):
     challenge = _challenge()
@@ -231,29 +239,10 @@ def test_fail_closed_for_unobserved_tampered_or_cross_bound_receipts(
         receipt["nonce"] = "b" * 64
     elif mutation == "cross_run":
         receipt["run_id"] = "other-run"
-    elif mutation == "artifact_binding":
-        receipt["artifact"]["sha256"] = "sha256:" + "0" * 64
     else:
         receipt["finished_at"] = "2026-07-30T23:59:59Z"
     _rewrite(path, _sign(receipt))
     with pytest.raises(receipts.ProviderCallReceiptError, match=match):
-        receipts.verify_provider_call_receipt(
-            tmp_path, ref, expected_challenge=challenge, key_resolver=_resolver
-        )
-
-
-def test_unsigned_tampering_and_wrong_signer_are_rejected(tmp_path):
-    challenge = _challenge()
-    receipt, ref, _artifact = _install(tmp_path, challenge)
-    path = tmp_path / ref
-    receipt["requested"]["runtime_policy_id"] = "tampered-after-signing"
-    _rewrite(path, receipt)
-    with pytest.raises(receipts.ProviderCallReceiptError, match="attestation failed"):
-        receipts.verify_provider_call_receipt(
-            tmp_path, ref, expected_challenge=challenge, key_resolver=_resolver
-        )
-    _receipt, ref, _artifact = _install(tmp_path, challenge, key=ATTACKER_KEY)
-    with pytest.raises(receipts.ProviderCallReceiptError, match="attestation failed"):
         receipts.verify_provider_call_receipt(
             tmp_path, ref, expected_challenge=challenge, key_resolver=_resolver
         )

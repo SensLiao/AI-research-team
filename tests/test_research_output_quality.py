@@ -18,22 +18,19 @@ def _good_markdown(mode: str) -> str:
 
 
 def test_all_operated_modes_have_business_output_contracts():
-    assert set(MODE_OUTPUT_CONTRACTS) == {
-        "new_direction",
-        "deep_ideation",
-        "evidence_review",
-        "evidence_deep",
-        "deep_research",
-        "gap_breadth",
-        "venue_readiness",
-        "full_rigor_minimal",
-        "ingest_paper",
-        "read_paper_deep",
-        "manuscript_authoring",
-        "manuscript_review",
-    }
-    assert all(len(contract.concepts) >= 6 for contract in MODE_OUTPUT_CONTRACTS.values())
+    """Every pressable mode declares what BUSINESS content its director Markdown must carry.
 
+    Derived from REGISTRY rather than re-typed: this list was a second hand-maintained copy of the
+    operated set, and wave 2 (2026-08-04) made it drift the moment nine modes were wired. The
+    invariant that matters is the correspondence, not the names.
+    """
+    from research_agent_teams.operate.modes import REGISTRY
+
+    assert set(MODE_OUTPUT_CONTRACTS) == set(REGISTRY)
+    for mode, contract in MODE_OUTPUT_CONTRACTS.items():
+        assert contract.primary_globs, mode
+        assert contract.min_chars >= 600, mode
+        assert len(contract.concepts) >= 6, mode
 
 def test_good_director_markdown_passes_every_mode_contract():
     for mode in MODE_OUTPUT_CONTRACTS:

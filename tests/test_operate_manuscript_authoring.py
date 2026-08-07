@@ -165,7 +165,6 @@ def _prepare_design_slice_run(
     run_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
     *,
-    tamper_receipt: bool = False,
     omit_evidence_slice: bool = False,
 ) -> dict:
     frozen = valid_manuscript_contract()
@@ -188,8 +187,6 @@ def _prepare_design_slice_run(
     evidence_receipt_rel = f"{authoring.WORKER_ROOT_REL}/receipts/evidence-steward.json"
     venue_receipt_sha = _write_json(receipts_root / "venue-scout.json", {"scope": "DISCOVER"})
     evidence_receipt_sha = _write_json(receipts_root / "evidence-steward.json", {"scope": "DESIGN"})
-    if tamper_receipt:
-        _write_json(receipts_root / "evidence-steward.json", {"scope": "TAMPERED"})
     venue_seed = {
         "authorization_receipt": {
             "ref": venue_receipt_rel,
@@ -409,24 +406,19 @@ def test_design_stage_writes_hash_bound_venue_and_evidence_slices(tmp_path, monk
     )
 
 
-@pytest.mark.parametrize(
-    ("tamper_receipt", "omit_evidence_slice", "match"),
-    [
-        (True, False, "REFERENCE_HASH_MISMATCH"),
-        (False, True, "WORKER_BUNDLE_MISSING"),
-    ],
-)
-def test_design_slices_fail_closed_on_missing_or_tampered_provenance(
-    tmp_path, monkeypatch, tamper_receipt, omit_evidence_slice, match
-):
+def test_design_slices_fail_closed_on_missing_worker_bundle(tmp_path, monkeypatch):
+    """R3 §B① (2026-08-07): REFERENCE_HASH_MISMATCH is gone from manuscript_authoring.py — a
+    tampered-after-declaration receipt file is no longer independently re-verified against its
+    declared sha256, so that half of this test (tamper_receipt=True) no longer raises. Retired
+    with it: the tamper_receipt path through _prepare_design_slice_run, now always False.
+    WORKER_BUNDLE_MISSING is unaffected (an absent slice, not a content mismatch)."""
     _prepare_design_slice_run(
         tmp_path,
         monkeypatch,
-        tamper_receipt=tamper_receipt,
-        omit_evidence_slice=omit_evidence_slice,
+        omit_evidence_slice=True,
     )
 
-    with pytest.raises(authoring.ManuscriptAuthoringError, match=match):
+    with pytest.raises(authoring.ManuscriptAuthoringError, match="WORKER_BUNDLE_MISSING"):
         authoring.run_dets(str(tmp_path), "DESIGN", "2026-07-22T00:00:00Z")
 
 

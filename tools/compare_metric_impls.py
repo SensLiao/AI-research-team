@@ -15,6 +15,17 @@ structural checks (dict shape) still run.
 
 The agent gathers the per-condition metric_impls; this checker — not the LLM —
 decides PASS/BLOCK.
+
+=== Declared treatment variation (R3 A3, 2026-08-07) ===
+Check 2's cross-condition implementation mismatch is not always a defect: an experiment
+that studies e.g. postprocessing threshold AS A VARIABLE will legitimately have a
+different ``postprocess`` per condition. When every condition's
+``metric_impls[metric]`` entry names the SAME kind of variation via a ``varies_by``
+list, and every named variable is one the caller declares as actually studied
+(``studied_variables``, case-insensitive), the mismatch is recorded on
+``treatment_variation`` instead of ``violations`` — advisory, never a BLOCK reason.
+Omitting ``studied_variables`` (the default) reproduces the old behaviour exactly:
+every Check-2 mismatch is a violation, because nothing can ever be "declared".
 """
 from __future__ import annotations
 
@@ -42,8 +53,11 @@ def _profile_metric_index(profile: Optional[dict]) -> Dict[str, Optional[str]]:
 def check_metric_impls(
     conditions: List[dict],
     profile: Optional[dict] = None,
+    *,
+    studied_variables: Optional[set] = None,
 ) -> List[str]:
-    """Return violations (empty == all metrics implemented consistently).
+    """Return violations (empty == all metrics implemented consistently, or every
+    cross-condition difference is a declared, in-scope treatment variation).
 
     Args:
         conditions: List of condition dicts, each with shape:
@@ -54,21 +68,51 @@ def check_metric_impls(
                   "impl_ref": str | null,
                   "spacing": <any> | null,
                   "postprocess": <any> | null,
+                  "varies_by": [str, ...] | null,   # R3 A3, see module docstring
                 }
               }
             }
         profile: Optional domain profile dict. Used to:
             - enumerate which metrics must be present in every condition.
             - supply the canonical impl_ref for each metric.
+        studied_variables: Optional set of variable names the experiment actually
+            studies (case-insensitive). See collect_treatment_variation.
 
     Returns:
         List of human-readable violation strings. Empty = PASS.
     """
+    violations, _treatment_variation = _run_metric_impl_checks(conditions, profile, studied_variables)
+    return violations
+
+
+def collect_treatment_variation(
+    conditions: List[dict],
+    profile: Optional[dict] = None,
+    *,
+    studied_variables: Optional[set] = None,
+) -> List[str]:
+    """Return the Check-2 cross-condition implementation differences let through as a
+    declared, in-scope treatment variation rather than flagged as a violation.
+
+    R3 A3 (2026-08-07): non-blocking by construction — this is advisory context for the
+    director, never a reason to BLOCK. See the module docstring for the exact condition.
+    """
+    _violations, treatment_variation = _run_metric_impl_checks(conditions, profile, studied_variables)
+    return treatment_variation
+
+
+def _run_metric_impl_checks(
+    conditions: List[dict],
+    profile: Optional[dict],
+    studied_variables: Optional[set],
+) -> Tuple[List[str], List[str]]:
+    """Shared core for check_metric_impls / collect_treatment_variation — one pass, one truth."""
     violations: List[str] = []
+    treatment_variation: List[str] = []
 
     if not conditions:
         violations.append("no conditions provided — cannot audit metric implementations")
-        return violations
+        return violations, treatment_variation
 
     # Extract per-condition metric_impls maps
     cond_impls: Dict[str, dict] = {}
@@ -80,6 +124,7 @@ def check_metric_impls(
         cond_impls[cid] = impls
 
     profile_idx = _profile_metric_index(profile)
+    studied_casefold = {str(v).strip().casefold() for v in (studied_variables or set()) if str(v).strip()}
 
     # --- Check 1: Missing metrics (profile-driven) ---
     # Every metric declared in the profile must appear in EVERY condition's metric_impls
@@ -133,10 +178,28 @@ def check_metric_impls(
                 diff_str = "; ".join(
                     f"{cid}={v!r}" for cid, v in sorted(values.items())
                 )
-                violations.append(
-                    f"metric={metric_lower!r} has inconsistent {impl_key!r} "
-                    f"across conditions: {diff_str}"
+                # R3 A3: a difference every condition explains via varies_by, fully
+                # covered by variables the experiment actually studies, is a declared
+                # treatment — not an accidental drift.
+                varies_by_sets = [
+                    {str(x).strip().casefold() for x in (entry.get("varies_by") or []) if str(x).strip()}
+                    for entry in per_cond.values()
+                ]
+                declared_treatment = bool(studied_casefold) and all(varies_by_sets) and (
+                    set().union(*varies_by_sets) <= studied_casefold
                 )
+                if declared_treatment:
+                    treatment_variation.append(
+                        f"metric={metric_lower!r} {impl_key!r} varies across conditions as a "
+                        f"declared studied treatment: {diff_str}"
+                    )
+                else:
+                    violations.append(
+                        f"metric={metric_lower!r} has inconsistent {impl_key!r} "
+                        f"across conditions: {diff_str} (if this variation is a studied "
+                        f"treatment, declare metric_impls[{metric_lower!r}].varies_by naming "
+                        f"the studied variable(s))"
+                    )
 
     # --- Check 3: Canonical impl_ref (profile-driven) ---
     # When the profile declares a non-null implementation_ref for a metric,
@@ -160,23 +223,27 @@ def check_metric_impls(
                     f"implementation_ref={canonical_impl!r}"
                 )
 
-    return violations
+    return violations, treatment_variation
 
 
 def build_report(
     conditions: List[dict],
     profile: Optional[dict] = None,
+    *,
+    studied_variables: Optional[set] = None,
 ) -> dict:
     """Build a metric_impl_report payload (verdict derived from violations, never set by hand).
 
     Args:
         conditions: List of condition dicts with metric_impls (see check_metric_impls).
         profile: Optional domain profile dict.
+        studied_variables: Optional set of variable names the experiment actually studies
+            (case-insensitive) — see check_metric_impls / collect_treatment_variation.
 
     Returns:
         dict conforming to metric_impl_report.schema.json.
     """
-    violations = check_metric_impls(conditions, profile)
+    violations, treatment_variation = _run_metric_impl_checks(conditions, profile, studied_variables)
 
     # Collect checked_metrics = all metric names across conditions + profile
     checked: set = set()
@@ -199,4 +266,5 @@ def build_report(
         "checked_metrics": sorted(checked),
         "missing_metrics": missing,
         "impl_mismatches": mismatches,
+        "treatment_variation": treatment_variation,
     }

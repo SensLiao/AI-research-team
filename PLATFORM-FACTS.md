@@ -10,23 +10,23 @@ Every number below is computed from the registries and the file tree, never quot
 
 | Part | Count | Source of truth |
 |---|---:|---|
-| Rostered agents | **163** (6 control + 157 workers) | `orchestrator/roster.yaml` == `agents/*.md` |
-| Modes | **26** (12 operated / 14 spec-only) | `orchestrator/mode_registry.yaml`; operated mirrored by `operate/modes/__init__.py::REGISTRY` |
+| Rostered agents | **166** (6 control + 160 workers) | `orchestrator/roster.yaml` == `agents/*.md` |
+| Modes | **26** (23 operated / 3 spec-only) | `orchestrator/mode_registry.yaml`; operated mirrored by `operate/modes/__init__.py::REGISTRY` |
 | Stage graph | **7** stages | `orchestrator/graph.yaml`: DISCOVER IDEATE DESIGN EXECUTE ANALYZE VERIFY REPORT |
-| Deterministic tools | **143** modules | `tools/*.py` (140 + `council_template` + `example_replay` + `governance_census`, 2026-08-04) |
+| Deterministic tools | **146** modules | `tools/*.py` (140 + `council_template` + `example_replay` + `governance_census` + `research_map` + `upstream_catalog`, 2026-08-04; + `local_data_availability`, 2026-08-07) |
 | Artifact schemas | **167** JSON (167/167 parse) | `schemas/*.json` |
 | Human gates | **5** | `gates/` — idea-bet, promote-to-vault, venue-pick, venue-decide, aers-reference-approve |
 | Enforcement hooks | **2** | `hooks/` — artifact-contract-enforcer, permission-scope-guard |
 | Domain profiles | **7** | `profiles/*.yaml` (medical-segmentation is one profile, never a hardcoded domain) |
 | `operate` subcommands | **32** | `operate/cli.py` — counted from the built argparse, not by hand; the previous **31** here was stale |
-| `workbench` verbs | **11** | `workbench/cli.py` — read-only navigation; only `reindex` writes, and only inside `.workbench/` + one generated `PROJECT-HOME.md` per workspace |
-| Outcome recipes | **6** | `orchestrator/outcome_recipes.yaml` — the "你想得到什么" menu above the mode table; a test pins that all 12 operated modes stay reachable from it |
+| `workbench` verbs | **14** | `workbench/cli.py` — read-only navigation; only `reindex` writes, and only inside `.workbench/` + one generated `PROJECT-HOME.md` per workspace. Three added 2026-08-04, all index-free: **`gates`** 现在该按哪个命令 + 每个人工关卡的触发条件（`/gates` 也可以）· **`map`** 研究链条断在哪一环（哪个点子还没有实验）· **`capabilities`** 8 个来源 358 份上游 skill 原文（只读原文，**不是能力**） |
+| Outcome recipes | **9** | `orchestrator/outcome_recipes.yaml` — the "你想得到什么" menu above the mode table; a test pins that EVERY operated mode stays reachable from it |
 | Vendored upstream text | **8** sources / **358** skill bundles | `vendor/upstream-research-skills/MANIFEST.json` — third-party markdown, READ-ONLY reference. Not capability, not indexed, structurally unrunnable (markdown + license notices only). `drawio-scientific-illustrator` excluded on safety grounds |
 | Seat accounting | **168** seat-slots declared / **153** recipe-dispatched / **15** council-only | `tools/worker_census.py` — `agent_subset` is the roster CEILING, not a dispatch promise; 0 orphan seats, and only `deep_research` has a real depth knob (1/12 modes can be scaled) |
-| Governance usage (measured) | **8/12** modes · **50/163** seats ever dispatched in **32** real runs | `tools/governance_census.py` — REACHABLE (P4, all 163) and EXERCISED (P7, 50) are different axes. Per-check firing is recorded nowhere, so guard tools are `unmeasurable`, never "unused" |
+| Governance usage (measured) | **8/12** modes · **50/166** seats ever dispatched in **32** real runs | `tools/governance_census.py` — REACHABLE (P4, all 166) and EXERCISED (P7, 50) are different axes. Per-check firing is recorded nowhere, so guard tools are `unmeasurable`, never "unused" |
 | Recorded example | **86** files tracked (of 87 on disk), replayable | `projects/t4-scribble-m0-mechanism-eval/` — the only copy of the three honesty records; now tracked (was gitignored while 8 tests required it). The untracked 87th is the generated `PROJECT-HOME.md`. `tools/example_replay.py` re-derives it: 22 checks, 0 executions |
 | Slash commands / skills | **19 / 2** | `.claude/commands/`, `.claude/skills/` |
-| Test files | **225** | `tests/test_*.py` — re-derived, not typed: this row read **225** while only **222** existed until the 2026-08-04 P5–P7 round added three. Now pinned by `tests/test_governance_census.py` |
+| Test files | **245** | `tests/test_*.py` — re-derived every round, never typed from memory (pinned by `tests/test_governance_census.py`; the row has drifted before) |
 
 Worker roster by stage group: discover 38 · gap_hunting 10 · ideate 7 · design 24 · execute 20 ·
 analyze 24 · verify 29 · report 5.
@@ -58,7 +58,15 @@ dispatched LLM workers. Neither is a concurrency number.
 The operated surface is exactly the modes present in `operate/modes/__init__.py::REGISTRY`
 and mirrored by `orchestrator/mode_registry.yaml` with `operated: true`.
 
-There are currently 12 operated modes:
+There are currently 21 operated modes. Wave 2 (2026-08-04) added nine — `gap_scan`,
+`full_new_direction`, `design_experiment`, `power_analysis_review`, `m2_accept`,
+`analysis_audit_panel`, `verify_result`, `check_run`, `repo_code_audit` — all built on
+`operate/modes/_panel_recipe.py`, which compiles each mode's registry-declared worker
+pipeline and director-Markdown contract onto the same spine wave 1 uses. Nothing that was
+manual became automatic: the four human gates, GPU submission and code-patch application
+are unchanged, and the wave-2 recipes stop AT those boundaries.
+
+Wave-1 modes:
 
 | Mode | Shape | Honest use |
 |---|---|---|
@@ -90,8 +98,9 @@ materialized once in `inbox/shared-paper-representation.json` for downstream reu
 reader, independent citation auditor, reconciliation, and scientific truth checks remain mandatory.
 
 Every operated run remains north-star drift-gated, scope-fenced, schema-validated,
-and recorded in the tamper-evident run-store. The database is not written except
-through `/promote-to-vault`.
+and recorded in the append-only run-store (hash-chained fields are still written; chain
+verification is no longer re-checked before every append — 2026-08-07 de-governance).
+The database is not written except through `/promote-to-vault`.
 
 As of 2026-07-10, completed operated runs are also Markdown-first at the director boundary:
 REPORT must expose `director-review/00-REVIEW-PACKET.md` as the primary human entry. Idea-bet
@@ -125,9 +134,11 @@ The evaluation-only Stage-B harness is implemented at
 `tools/research_capability_ab_eval.py`, with a frozen 20-request holdout manifest and strict condition /
 judge/runtime-policy schemas under `_design/review/` and `schemas/`. Fresh prepare requires one explicit
 global author runtime policy and binds its complete model-policy/model/service/reasoning/agent/budget fields
-into all 40 candidate challenge hashes. Seal accepts only hash-bound author outputs whose signed receipts
-match that policy and whose provider-observed model/tier/effort are consistent across the full 40 calls,
-not merely within each X/Y pair. The harness then deterministically reconciles three mutually blind judge
+into all 40 candidate challenge hashes. Seal accepts only author outputs whose receipts bind to that
+policy's challenge (schema, path, and challenge-binding checked; ed25519 attestation and file-content
+hash comparison are no longer cryptographically re-verified — 2026-08-07 de-governance) and whose
+provider-observed model/tier/effort are consistent across the full 40 calls, not merely within each
+X/Y pair. The harness then deterministically reconciles three mutually blind judge
 sheets using the pre-registered paired gate.
 No real Stage-B author or judge run has been performed. The current author runtime exposes optional
 deployment bindings but no independently verifiable per-call input/output token and elapsed-time receipt,
@@ -147,7 +158,9 @@ The optional mechanism council is a seven-role functional superset: five require
 one supplemental engineering contributor, and one compiler. It must not be described as an exact six-role
 council. A design-only Scribble–M0 example produced hash-bound work orders/completions for all seven council
 roles, an independent challenger, three precommitted blind judges, fail-closed repair recovery, and two
-targeted re-reviews. The initial panel replicated four substantive defects 3/3; the first re-review preserved
+targeted re-reviews. (2026-08-07 de-governance: work orders/completions still carry hash fields, but content
+hash comparison is no longer re-verified for this personal single-operator tool — schema conformance, path
+safety, referential integrity, and temporal ordering are what fail-closes now; see native_dispatch_trace.py.) The initial panel replicated four substantive defects 3/3; the first re-review preserved
 a `FAIL` with two partial repairs; the minimal R3 repair then received an independent targeted `PASS` with
 4/4 repairs closed, 6/6 canonical/truth regressions true, and no fatal defects. Platform thread limits meant
 the final independent auditor had performed a non-authoring preliminary check before formal authorization;
@@ -238,12 +251,12 @@ RAT_SERVER_HOST         = canonical SSH identity used for pinned host-key verifi
 The direct endpoint is omitted from normal config summaries. Paramiko still receives the canonical
 hostname and `RejectPolicy`; an unknown/mismatched canonical key remains a hard refusal.
 
-The machine has 163 rostered agents (6 control/infrastructure + 157 scientific workers):
+The machine has 166 rostered agents (6 control/infrastructure + 160 scientific workers):
 
 ```text
-163 total
+166 total
   6 control / infrastructure agents
-  157 non-control research worker agents
+  160 non-control research worker agents
 ```
 
 The current contract is:

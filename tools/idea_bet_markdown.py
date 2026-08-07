@@ -167,6 +167,34 @@ def _resource_line(resources: object, feasibility: dict) -> str:
     return "; ".join(parts)
 
 
+def _local_data_line(feasibility: object, sketch: object) -> Optional[str]:
+    """The honesty line for a declared-but-unchecked local dataset (R3 C6).
+
+    Renders ONLY when a probe was actually run and did not come back LOCAL. Absent probe -> no line:
+    the capability is wired, but nothing is asserted about data nobody declared, and no field is
+    invented to force the claim into existence. The probe never moves a score — it exists so
+    "today runnable" can be told apart from "checked to be runnable today".
+    """
+    probe = None
+    for source in (feasibility, sketch):
+        if not isinstance(source, dict):
+            continue
+        for holder in (source, source.get("resource_feasibility"), source.get("feasibility")):
+            if isinstance(holder, dict) and isinstance(holder.get("local_data_probe"), dict):
+                probe = holder["local_data_probe"]
+                break
+        if probe is not None:
+            break
+    if probe is None or str(probe.get("verdict") or "") == "LOCAL":
+        return None
+    absent = [str(p) for p in (probe.get("absent") or []) if str(p).strip()][:3]
+    detail = _csv(absent, limit=3) if absent else "no path was declared to check"
+    return (
+        f"- **本机数据核对：** 本机没有找到这些输入（{detail}）；"
+        "「今天可跑」是声明，不是核对过的事实。"
+    )
+
+
 def _risk_line(risks: object, caveats: object) -> str:
     out = []
     for risk in risks if isinstance(risks, list) else []:
@@ -319,6 +347,117 @@ def _quality_payload(run_path: Path, ranked_ideas: list[dict]) -> dict:
         return {}
 
 
+_DIVERGENCE_OPERATOR_KEYS = (
+    "constraints", "negations", "reformulations", "cross_product", "enablers", "tensions",
+)
+
+
+def _out_of_north_star_lines(run_path: Path) -> list[str]:
+    """Surface divergence candidates that fell OUTSIDE the run's topic boundary.
+
+    The worker is forbidden from executing these and forbidden from deleting them; the only place
+    they can go is here, in front of the director, who is the only one who may widen a run. A
+    silently-dropped out-of-scope candidate is the failure mode this section exists to prevent.
+    """
+    payload = _stage_payload(run_path, "IDEATE", "divergence-trace.artifact.json")
+    if not payload:
+        return []
+    flagged: list[str] = []
+    for key in _DIVERGENCE_OPERATOR_KEYS:
+        for row in payload.get(key) or []:
+            if isinstance(row, dict) and row.get("out_of_north_star"):
+                text = (row.get("if_dropped") or row.get("negated_system") or row.get("restatement")
+                        or row.get("synthesis") or row.get("newly_permits") or row.get("note")
+                        or row.get("constraint") or row.get("assumption") or "")
+                flagged.append(f"- **{key}:** {_one_line(text, limit=360)}")
+    if not flagged:
+        return []
+    return [
+        "## Candidates Outside The North Star (only you may widen the run)",
+        "",
+        "The divergence operators surfaced these while working the problem. The machine did NOT act on "
+        "them and did NOT delete them — re-scoping is a director decision.",
+        "",
+        *flagged[:12],
+        "",
+    ]
+
+
+def _direction_recommendation_lines(run_path: Path) -> list[str]:
+    """Render the advisory DEEPEN / BROADEN / PIVOT / CONCLUDE read, when the seat produced one.
+
+    Advice, never a decision: all four options are shown with evidence on both sides so the director
+    can disagree cheaply. Absent seat -> no section at all (never an invented recommendation).
+    """
+    payload = _stage_payload(run_path, "REPORT", "direction-recommendation.artifact.json")
+    if not payload.get("recommended"):
+        return []
+    lines = [
+        "## Where To Go Next (advisory — the machine never decides this)",
+        "",
+        f"- **Advisor's read:** {payload['recommended']} "
+        f"(confidence: {_text(payload.get('confidence'), 'low')})",
+        f"- **Why:** {_text(payload.get('rationale'), 'not recorded')}",
+        "",
+        "| Option | Trigger met | Evidence for | Evidence against |",
+        "|---|---|---|---|",
+    ]
+    for row in payload.get("options") or []:
+        if not isinstance(row, dict):
+            continue
+        for_ = "; ".join(_text(e.get("observation"), "") for e in (row.get("supporting_evidence") or [])
+                         if isinstance(e, dict))
+        against = "; ".join(_text(e.get("observation"), "") for e in (row.get("opposing_evidence") or [])
+                            if isinstance(e, dict))
+        trigger = row.get("trigger_met")
+        lines.append(
+            f"| {row.get('option')} | {'yes' if trigger else 'no' if trigger is False else 'unknown'} "
+            f"| {_table_cell(for_ or 'none found', limit=220)} "
+            f"| {_table_cell(against or 'none found', limit=220)} |"
+        )
+    unresolved = _values(payload.get("unresolved"))
+    if unresolved:
+        lines.append("")
+        for item in unresolved[:5]:
+            lines.append(f"- **Could not be assessed this run:** {_one_line(item, limit=360)}")
+    lines.append("")
+    return lines
+
+
+def _killed_by_ranker_lines(assessment_by: dict, proposal_by: dict) -> list[str]:
+    """Show what the ranker's kill filters cut, and why — cut, not hidden.
+
+    A menu where everything survives is not a judgment; a cut the director cannot see is not one
+    either. The director may overrule any row here.
+    """
+    killed = [(iid, row) for iid, row in sorted(assessment_by.items())
+              if isinstance(row, dict) and row.get("killed")]
+    flagged = [(iid, row) for iid, row in sorted(assessment_by.items())
+               if isinstance(row, dict) and row.get("pseudo_innovation_flags")
+               and not row.get("killed")]
+    if not killed and not flagged:
+        return []
+    lines = ["## Cut And Flagged By The Ranker (you may overrule any of this)", ""]
+    for iid, row in killed:
+        summary = _one_line((proposal_by.get(iid) or {}).get("summary"), limit=180)
+        lines.append(
+            f"- **CUT `{iid}`** — {_text(row.get('kill_reason'), 'no reason recorded')}: {summary}"
+        )
+    for iid, row in flagged:
+        summary = _one_line((proposal_by.get(iid) or {}).get("summary"), limit=180)
+        lines.append(
+            f"- **Flagged `{iid}`** (kept on the menu) — pseudo-innovation pattern(s) "
+            f"{_csv(row.get('pseudo_innovation_flags'), limit=5)}: {summary}"
+        )
+    lines.extend([
+        "",
+        "A flag is a signal, not a cut. A novelty score never kills an idea here — only an evidenced "
+        "prior-art collision does, and that is reported separately.",
+        "",
+    ])
+    return lines
+
+
 def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) -> str:
     run_path = Path(run_dir)
     task = _task_payload(run_path)
@@ -365,8 +504,19 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
 
     top = ranked[0]
     top_investment = top.get("scientific_investment") or {}
+    # "grounded" is only sayable when something was actually checked against the outside world. When
+    # the existence gate came back UNVERIFIED — zero external refs, or every lookup errored — the
+    # honest sentence is that NO external check happened, not that retrieval was grounded. Reporting
+    # an absent check as a pass is the exact failure this line exists to prevent.
+    existence = _stage_payload(run_path, "DISCOVER", "citation-existence-verdict.artifact.json")
+    existence_unverified = str(existence.get("verdict") or "") == "UNVERIFIED"
     retrieval_grounded = collision.get("retrieval_grounded")
-    if retrieval_grounded is True:
+    if existence_unverified:
+        novelty_line = (
+            "本次没有做任何外部存在性核对（citation existence gate = UNVERIFIED：没有可查的外部引用，"
+            "或每一次查询都失败）；novelty 只能当作未核实"
+        )
+    elif retrieval_grounded is True:
         novelty_line = "prior-art collision retrieval was grounded for this run"
     elif retrieval_grounded is False:
         novelty_line = "prior-art collision retrieval was NOT grounded; treat novelty as unverified"
@@ -403,13 +553,20 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         "- This page is a decision aid. It does not choose, approve, or promote any idea.",
         "- Standing option: `PIVOT` means bet on none of these and re-scope.",
         "",
+    ]
+
+    lines.extend(_direction_recommendation_lines(run_path))
+    lines.extend(_out_of_north_star_lines(run_path))
+    lines.extend(_killed_by_ranker_lines(assessment_by, proposal_by))
+
+    lines.extend([
         "## Portfolio Execution Map",
         "",
         "This is a scan-first dependency view, not a machine-selected bet.",
         "",
         "| Rank | Research direction | First decisive stage | Primary kill criterion | Recovery / next branch |",
         "|---:|---|---|---|---|",
-    ]
+    ])
 
     for idea in ranked:
         iid = str(idea.get("idea_id") or "")
@@ -563,6 +720,22 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
             )
         lines.extend([
             "",
+            "#### What is being invented, and what it costs",
+            "",
+            f"- **Contribution tier:** {_text(proposal.get('contribution_tier') or idea.get('contribution_tier'), 'not declared')}",
+            f"- **Invention claim:** {_text(proposal.get('invention_claim') or idea.get('invention_claim'), 'none — this is a measurement or audit contribution, which is a different kind of work, not a lesser one')}",
+            f"- **Innovation layers rewritten:** {_csv(proposal.get('innovation_layers') or idea.get('innovation_layers'), limit=6) or 'not declared'}",
+            f"- **Depth target:** {_text(proposal.get('depth_target') or idea.get('depth_target'), 'not declared')}",
+            f"- **Stands on (≈80%):** {_text(proposal.get('conventional_base') or idea.get('conventional_base'), 'not declared')}",
+            f"- **Unusual connection (≈20%):** {_text(proposal.get('unusual_connection') or idea.get('unusual_connection'), 'not declared — an idea with no atypical link is incremental')}",
+            f"- **Intervenes at:** {_text(proposal.get('intervention_point') or idea.get('intervention_point'), 'not declared')}"
+            f" (mechanism-graph refs: {_csv(proposal.get('mechanism_graph_refs') or idea.get('mechanism_graph_refs'), limit=6) or 'none'})",
+            f"- **Origin operator:** {_text(proposal.get('origin_operator') or idea.get('origin_operator'), 'not declared')}",
+            f"- **Contradictions it digests:** {_csv(proposal.get('addresses_conflicts') or idea.get('addresses_conflicts'), limit=6) or 'none — a conflict nobody addressed is a free research question left on the table'}",
+            f"- **Hardware envelope:** {_text(proposal.get('resource_envelope') or idea.get('resource_envelope'), 'unknown')}"
+            " — information only. Exceeding today's hardware is never a mark against an idea; it tells"
+            " you what buying or borrowing would unlock, and the experiment-design stage stages it.",
+            "",
             "#### Minimal experiment sketch and falsification plan",
             "",
             f"- **Minimal falsification experiment:** {_text(sketch.get('experiment'), 'No planner sketch was recorded; do not bet until one exists.')}",
@@ -572,6 +745,7 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
             f"- **Success thresholds:** {_plain_list(success, 'not recorded')}",
             f"- **Failure thresholds:** {_plain_list(failure, 'not recorded')}",
             f"- **Falsifier:** {_text(sketch.get('falsifier'), 'not recorded')}",
+            f"- **Discriminating evidence:** {_text(sketch.get('discriminating_evidence'), 'not recorded — this design may only be able to confirm one story')}",
             f"- **Kill criteria:** {_plain_list(kill, 'not recorded')}",
             "",
             "#### Staged experiment ladder",
@@ -587,6 +761,11 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
             "#### Feasibility, risks, and sequence",
             "",
             f"- **Resource and data feasibility:** {_resource_line(sketch.get('resource_feasibility'), feas)}",
+        ])
+        local_data = _local_data_line(feas, sketch)
+        if local_data:
+            lines.append(local_data)
+        lines.extend([
             f"- **Main risks:** {_risk_line(sketch.get('main_risks'), caveats)}",
             f"- **Execution order:** {_plain_list(execution, 'not recorded')}",
         ])
@@ -642,7 +821,7 @@ def build_idea_bet_menu_markdown(run_dir, generated_at: Optional[str] = None) ->
         if qrow:
             scores = qrow.get("scores") or {}
             signal_bits.extend(f"{key}={scores.get(key)}" for key in (
-                "depth", "breadth", "refutation", "falsifiability", "novelty"
+                "depth", "breadth", "refutation", "falsifiability", "novelty", "mechanism_invention"
             ) if key in scores)
         lineage_text = ""
         if lin:

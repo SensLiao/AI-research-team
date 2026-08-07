@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/sanity_verdict.schema.json",
   "title": "Result Sanity Verdict",
-  "description": "ANALYZE-stage hard-gate artifact (the graph.yaml ANALYZE blocking gate). Output of result-sanity-checker. Mechanically screens a result_summary for NaN/Inf, out-of-range metric values (per domain profile), and leakage-smell (an implausible jump over baseline) BEFORE any reviewer reads the numbers. verdict BLOCK halts. Derived mechanically from sanity_checker.py.",
+  "description": "ANALYZE-stage hard-gate artifact (the graph.yaml ANALYZE blocking gate). Output of result-sanity-checker. Mechanically screens a result_summary for NaN/Inf, out-of-range metric values (per domain profile), and leakage-smell (an implausible jump over baseline) BEFORE any reviewer reads the numbers. verdict BLOCK halts. Derived mechanically from sanity_checker.py. R3 C4 (2026-08-07): notes carries the input result_summary's sources_read, so a worker's honest provenance record is not silently dropped by a screen that otherwise reads only findings[].value/baseline_value.",
   "type": "object",
   "required": ["verdict", "violations"],
   "additionalProperties": false,
@@ -12,7 +12,8 @@
     "nan_or_inf": {"type": "boolean", "default": false},
     "out_of_range": {"type": "array", "items": {"type": "string"}, "default": []},
     "leakage_smell": {"type": "boolean", "default": false},
-    "checked_metrics": {"type": "array", "items": {"type": "string"}, "default": []}
+    "checked_metrics": {"type": "array", "items": {"type": "string"}, "default": []},
+    "notes": {"type": "string", "default": ""}
   },
   "allOf": [
     {

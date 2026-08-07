@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/citation_existence_verdict.schema.json",
   "title": "Citation Existence Verdict",
-  "description": "DISCOVER deterministic gate-helper artifact (absorption wave 1; ARS three-state pattern). Output of tools/citation_existence.build_existence_verdict: every external reference is looked up live and lands in exactly one of verified / not_found / lookup_error / skipped. BLOCK iff any ref is CONFIRMED not_found (fabricated-citation signal); lookup_error is a warning, never a block (offline-safe) and never silently verified. Complements (never replaces) the structural citation_integrity_verdict gate: that gate checks anchoring/contradiction against the claim_evidence_map; this one checks the refs exist in the world.",
+  "description": "DISCOVER deterministic gate-helper artifact (absorption wave 1; ARS three-state pattern). Output of tools/citation_existence.build_existence_verdict: every external reference is looked up live and lands in exactly one of verified / not_found / lookup_error / skipped. R3 C2 (2026-08-07; director-tightened 2026-08-07): the verdict is three states, checked in this order — BLOCK when any ref is CONFIRMED not_found (fabricated-citation signal; checked FIRST and unconditionally, even alongside an unrelated lookup_error or zero verified refs elsewhere in the batch — grounding is never relaxed for a confirmed fabrication); else UNVERIFIED when no refs were given or nothing was genuinely verified while at least one lookup errored (no real check happened); else PASS. lookup_error alone, alongside at least one genuine verified ref and no confirmed not_found, is a warning, never a block (offline-safe) and never silently counted as verified. Complements (never replaces) the structural citation_integrity_verdict gate: that gate checks anchoring/contradiction against the claim_evidence_map; this one checks the refs exist in the world.",
   "type": "object",
   "required": ["checked", "n_verified", "n_not_found", "n_lookup_error", "n_skipped", "verdict", "violations", "warnings"],
   "additionalProperties": false,
@@ -26,15 +26,31 @@
     "n_not_found": {"type": "integer", "minimum": 0},
     "n_lookup_error": {"type": "integer", "minimum": 0},
     "n_skipped": {"type": "integer", "minimum": 0},
-    "verdict": {"type": "string", "enum": ["PASS", "BLOCK"], "description": "BLOCK iff n_not_found > 0."},
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "BLOCK", "UNVERIFIED"],
+      "description": "Checked in this order — BLOCK iff n_not_found > 0 (unconditional, checked first); else UNVERIFIED iff checked is empty or (n_verified==0 and n_lookup_error>0); else PASS."
+    },
     "violations": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "One line per confirmed-missing ref. Non-empty iff verdict is BLOCK."},
     "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "One line per lookup_error ref (could not check; absence unconfirmed)."}
   },
   "allOf": [
     {
-      "if": {"properties": {"n_not_found": {"const": 0}}},
-      "then": {"properties": {"verdict": {"const": "PASS"}}},
-      "else": {"properties": {"verdict": {"const": "BLOCK"}}}
+      "if": {"properties": {"n_not_found": {"minimum": 1}}},
+      "then": {"properties": {"verdict": {"const": "BLOCK"}}},
+      "else": {
+        "if": {
+          "anyOf": [
+            {"properties": {"checked": {"maxItems": 0}}},
+            {"allOf": [
+              {"properties": {"n_verified": {"const": 0}}},
+              {"properties": {"n_lookup_error": {"minimum": 1}}}
+            ]}
+          ]
+        },
+        "then": {"properties": {"verdict": {"const": "UNVERIFIED"}}},
+        "else": {"properties": {"verdict": {"const": "PASS"}}}
+      }
     }
   ]
 }

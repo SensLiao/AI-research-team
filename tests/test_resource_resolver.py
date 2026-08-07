@@ -3,6 +3,7 @@ invariant that a resolved resource NEVER carries a secret value (sentinel check)
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from research_agent_teams.tools.resource_resolver import ResourceDenied, ResourceResolver
 
@@ -97,7 +98,36 @@ def test_petct_dual_gpu_candidates_are_discoverable_but_only_a6000_is_execution_
 ):
     """Discovery separates bound hardware from readiness and never grants submit_job."""
     monkeypatch.delenv("RAT_RESOURCES_ROOT", raising=False)
-    monkeypatch.delenv("RAT_PROJECTS_ROOT", raising=False)
+    # Bindings are project-local, gitignored machine data (projects/*) — fixture them here so
+    # the test exercises candidates()'s resolution logic, not whatever this machine happens to
+    # have on disk under projects/petct-residual-correction/.
+    projects_root = tmp_path / "projects"
+    binding_path = projects_root / "petct-residual-correction" / "resource_bindings.yaml"
+    binding_path.parent.mkdir(parents=True, exist_ok=True)
+    binding_path.write_text(
+        yaml.safe_dump({
+            "schema_version": 1,
+            "project": "petct-residual-correction",
+            "bindings": [
+                {
+                    "alias": "primary_gpu",
+                    "resource_ref": "server.honor.gpu",
+                    "allowed_capabilities": ["query_status", "pull_logs"],
+                    "allowed_skills": ["server-query"],
+                    "requires_human_approval": True,
+                },
+                {
+                    "alias": "secondary_gpu",
+                    "resource_ref": "server.usyd.bdav_z390_3090",
+                    "allowed_capabilities": ["query_status", "pull_logs"],
+                    "allowed_skills": ["server-query"],
+                    "requires_human_approval": True,
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RAT_PROJECTS_ROOT", str(projects_root))
     resolver = ResourceResolver(workspace_root=str(tmp_path / "ws"))
 
     query_candidates = resolver.candidates(

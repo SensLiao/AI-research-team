@@ -1174,21 +1174,18 @@ def test_coherent_llm_journal_and_run_records_without_receipt_are_blocked(tmp_pa
     assert not (Path(run_dir) / "evidence/EXECUTE/execution-import.artifact.json").exists()
 
 
-def test_llm_forged_executor_receipt_with_wrong_attestation_is_blocked(tmp_path):
-    run_dir = _begin(tmp_path / "runs", "fr-forged-receipt")["run_dir"]
-    _drive(run_dir, "DESIGN", _design_bundle())
-    forged = _execute_bundle(executed=True)
-    attacker_key = Ed25519PrivateKey.from_private_bytes(
-        hashlib.sha256(b"llm-attacker-private-key").digest()
-    )
-    _install_executor_receipts(run_dir, forged, signing_key=attacker_key)
-    _write_panel(run_dir, "EXECUTE", forged)
-    spine.open_stage(run_dir, "EXECUTE", TS)
-    with pytest.raises(GateBlock, match="attestation failed"):
-        fr.run_dets(run_dir, "EXECUTE", TS)
+# R3 §B① (2026-08-07): test_llm_forged_executor_receipt_with_wrong_attestation_is_blocked is
+# retired — tools/execution_receipt_import.py no longer verifies the ed25519 attestation at all
+# (see test_execution_receipt_import.py), and a receipt signed by the wrong key is otherwise
+# structurally identical to a real one (same job_id/condition_id/run_id), so nothing else here
+# catches it. There is no kept check to redirect this one to.
 
 
 def test_result_file_tampering_after_execute_invalidates_analysis(tmp_path):
+    """R3 §B① (2026-08-07): the raw-results file is no longer re-hashed against the receipt's
+    declared sha256 — what still gates it is receipt_bound_raw_rows' per-row identity binding
+    (job_id/condition_id/seed must match the receipt that authorized the file). Replacing the row
+    wholesale trips that kept check, not a hash comparison."""
     run_dir = _begin(tmp_path / "runs", "fr-tampered-result")["run_dir"]
     _drive(run_dir, "DESIGN", _design_bundle())
     _drive(run_dir, "EXECUTE", _execute_bundle(executed=True))
@@ -1198,7 +1195,7 @@ def test_result_file_tampering_after_execute_invalidates_analysis(tmp_path):
     )
     _write_panel(run_dir, "ANALYZE", _analyze_bundle())
     spine.open_stage(run_dir, "ANALYZE", TS)
-    with pytest.raises(GateBlock, match="invalid-execution-evidence|hash mismatch|size mismatch"):
+    with pytest.raises(GateBlock, match="does not match its receipt"):
         fr.run_dets(run_dir, "ANALYZE", TS)
 
 

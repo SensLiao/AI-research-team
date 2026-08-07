@@ -202,7 +202,8 @@ def test_an_unknown_mode_is_rejected(tmp_path):
 
 def test_a_spec_only_mode_is_rejected(tmp_path):
     def spec_only(data):
-        _first(data)["variants"][0]["modes"] = ["verify_result"]
+        # exemplar swapped 2026-08-04: verify_result is one-button now.
+        _first(data)["variants"][0]["modes"] = ["tree_explore"]
     assert "spec-only" in _violations(tmp_path, spec_only)
 
 

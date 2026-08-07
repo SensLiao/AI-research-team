@@ -40,6 +40,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from .local_data_availability import probe as _probe_local_data
+
 
 # --------------------------------------------------------------------------- #
 #  Internal signal-mapping helpers                                             #
@@ -131,6 +133,9 @@ def score_feasibility(
     idea: dict,
     budget: Optional[dict] = None,
     profile: Optional[dict] = None,
+    *,
+    declared_data_paths: Optional[List[str]] = None,
+    project_root: Optional[str] = None,
 ) -> dict:
     """Compute a feasibility object for one idea.
 
@@ -145,12 +150,22 @@ def score_feasibility(
     profile:
         Optional domain profile.  Currently unused in the rubric but accepted
         for forward-compatibility — never crashes if provided.
+    declared_data_paths, project_root:
+        R3 C6 (2026-08-07). Optional. When BOTH are supplied, an offline, read-only
+        ``local_data_probe`` (see tools.local_data_availability.probe) is attached to the
+        result under ``local_data_probe`` — Path.exists() against the declared paths, no
+        network, no SSH. It NEVER changes compute/data/time sub-scores or the final score:
+        "today runnable" is a claim, this probe is the checked fact that either backs it or
+        contradicts it. Omitted by default (the common case today, since no caller yet
+        forwards them) so every existing caller and the idea_backlog schema shape are
+        untouched.
 
     Returns
     -------
     dict
         A ``feasibility`` object conforming to the idea_backlog schema:
-        ``{"score": float, "compute": ..., "data": ..., "time": ...}``.
+        ``{"score": float, "compute": ..., "data": ..., "time": ...}``, plus
+        ``local_data_probe`` when the two probe parameters above are both supplied.
     """
     feas = idea.get("feasibility") or {}
     raw_compute = feas.get("compute", None)
@@ -174,12 +189,15 @@ def score_feasibility(
 
     final_score = round((c_score + d_score + t_score) / 3.0, 4)
 
-    return {
+    result = {
         "score": final_score,
         "compute": raw_compute,
         "data": raw_data,
         "time": raw_time,
     }
+    if declared_data_paths is not None and project_root is not None:
+        result["local_data_probe"] = _probe_local_data(declared_data_paths, project_root=project_root)
+    return result
 
 
 def rank_ideas(

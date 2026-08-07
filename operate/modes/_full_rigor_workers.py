@@ -200,7 +200,7 @@ Write ONLY valid JSON to `{out}`.
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: Optional[str] = None,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     del vault
     spec = PANEL_SPECS.get(stage)
     if spec is None:

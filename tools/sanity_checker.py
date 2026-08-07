@@ -99,8 +99,16 @@ def check_sanity(result_summary: dict, run_record: Optional[dict] = None,
 
 def build_report(result_summary: dict, run_record: Optional[dict] = None,
                  profile: Optional[dict] = None) -> dict:
-    """Build a sanity_verdict payload (verdict derived from violations — never set by hand)."""
+    """Build a sanity_verdict payload (verdict derived from violations — never set by hand).
+
+    R3 C4 (2026-08-07): result_summary may carry a top-level sources_read list — the
+    producing worker's own record of which run-relative files it actually read. The
+    deterministic screen below only consumes findings[].value/baseline_value, so without
+    this line that provenance would be silently discarded between the worker's honest
+    report and the persisted verdict; it is carried into notes instead of being thrown away.
+    """
     r = check_sanity(result_summary, run_record, profile)
+    sources_read = [str(x) for x in (result_summary.get("sources_read") or []) if str(x).strip()]
     return {
         "verdict": "BLOCK" if r["violations"] else "PASS",
         "violations": r["violations"],
@@ -108,4 +116,5 @@ def build_report(result_summary: dict, run_record: Optional[dict] = None,
         "out_of_range": r["out_of_range"],
         "leakage_smell": r["leakage_smell"],
         "checked_metrics": r["checked_metrics"],
+        "notes": f"sources read: {', '.join(sources_read)}" if sources_read else "",
     }

@@ -11,6 +11,13 @@ import pytest
 from research_agent_teams.orchestrator.graph_spec import load_mode_registry
 from research_agent_teams.tools import research_capability_router as router
 
+# Derived, never hardcoded. A literal `<= 5` here is what let the external-method channel stay
+# capped at five lenses per run while the catalog grew — the assertion agreed with the cap instead
+# of describing it. Reading the policy means widening the channel needs no test edit.
+_POLICY = json.loads(router.DEFAULT_OVERLAY_CATALOG.read_text(encoding="utf-8"))["policy"]
+_POLICY_MIN = int(_POLICY["selection_min"])
+_POLICY_MAX = int(_POLICY["selection_max"])
+
 
 REQUIRED_OVERLAYS = {
     "hypothesis_prediction_contract",
@@ -59,7 +66,7 @@ def test_chinese_experiment_request_auto_routes_operated_full_rigor_and_dicom_ov
     assert route["routing"]["honesty"]["one_button_operable"] is True
     assert "dicom_data_audit" in _overlay_ids(route)
     assert "power_unit_of_analysis_contract" in _overlay_ids(route)
-    assert 2 <= len(route["capability_overlays"]) <= 5
+    assert _POLICY_MIN <= len(route["capability_overlays"]) <= _POLICY_MAX
 
 
 def test_english_request_auto_routes_existing_evidence_mode():
@@ -147,7 +154,11 @@ def test_unknown_manual_mode_is_rejected_instead_of_invented():
         (
             "quantitative_figure",
             "Create a result plot with uncertainty and a caption.",
-            "manuscript_authoring",
+            # _PUBLICATION_MODE_PREFERENCES has always listed analysis_audit_panel FIRST for this
+            # kind, with manuscript_authoring as the fallback for while it was spec-only. Wave 2
+            # (2026-08-04) wired it, so the declared first preference is finally the live one — the
+            # expected overlays are unchanged, which is what says the routing is still right.
+            "analysis_audit_panel",
             {"figure_contract_qa", "results_to_claim_contract"},
         ),
         (
@@ -180,7 +191,7 @@ def test_publication_kinds_select_bounded_purpose_specific_overlays(
     assert route["publication_kind"] == kind
     assert route["routing"]["mode"] == expected_mode
     assert expected_overlays.issubset(_overlay_ids(route))
-    assert 2 <= len(route["capability_overlays"]) <= 5
+    assert _POLICY_MIN <= len(route["capability_overlays"]) <= _POLICY_MAX
 
 
 def test_every_automatic_suggestion_is_operated_in_live_mode_registry():

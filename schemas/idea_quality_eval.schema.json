@@ -30,16 +30,17 @@
           },
           "scores": {
             "type": "object",
-            "required": ["depth", "breadth", "grounding", "refutation", "falsifiability", "novelty"],
+            "required": ["depth", "breadth", "grounding", "refutation", "falsifiability", "novelty", "mechanism_invention"],
             "additionalProperties": false,
-            "description": "Decomposed quality scores, each in [0,1], DERIVED from artifacts. The 6 required dimensions are always derivable from a single run; stability/cost are optional (telemetry-dependent). A single collapsed total is deliberately ABSENT (no bet-by-total).",
+            "description": "Decomposed quality scores, each in [0,1], DERIVED from artifacts. The 7 required dimensions are always derivable from a single run; stability/cost are optional (telemetry-dependent). A single collapsed total is deliberately ABSENT (no bet-by-total).",
             "properties": {
-              "depth": {"type": "number", "minimum": 0, "maximum": 1, "description": "Mechanism-graph depth & branching (did the idea reach the underlying mechanism, or stay shallow)."},
+              "depth": {"type": "number", "minimum": 0, "maximum": 1, "description": "Mechanism-graph depth & branching (did the idea reach the underlying mechanism, or stay shallow). Log-scaled 2026-08-07: the previous linear ceiling saturated at the mechanism prompt's own floor, so a 31-node graph scored exactly like an 8-node one."},
               "breadth": {"type": "number", "minimum": 0, "maximum": 1, "description": "Cross-domain reach: mechanism_mapping edges / distinct source domains (real transfer, not word-swap)."},
               "grounding": {"type": "number", "minimum": 0, "maximum": 1, "description": "Resolvable-citation rate + evidence diversity (traceable, not single-source)."},
               "refutation": {"type": "number", "minimum": 0, "maximum": 1, "description": "Contradiction/counterexample coverage (did it survive adversarial checking)."},
               "falsifiability": {"type": "number", "minimum": 0, "maximum": 1, "description": "Experiment-sketch completeness + falsifier presence (can it enter a real experiment)."},
               "novelty": {"type": "number", "minimum": 0, "maximum": 1, "description": "Prior-art-collision posture (avoids pseudo-novelty); derived from the collision verdict, never a raw score-cut."},
+              "mechanism_invention": {"type": "number", "minimum": 0, "maximum": 1, "description": "PER-IDEA. How much of a new mechanism this idea actually introduces, derived from contribution_tier, the presence of a non-empty invention_claim, and whether mechanism_graph_refs name real graph nodes. Added 2026-08-07 because the previous six dimensions were three run-level constants plus three per-idea signals that an audit-tier idea could max out — a mechanism invention and a re-labelling scored identically, so every blind pairwise comparison on depth/breadth/refutation was a forced tie."},
               "stability": {"type": "number", "minimum": 0, "maximum": 1, "description": "Optional: run-to-run consistency (blind pairwise win-rate / Elo variance). Present only with multi-run telemetry."},
               "cost": {"type": "number", "minimum": 0, "maximum": 1, "description": "Optional: token / tool-call efficiency per idea. Present only with budget telemetry."}
             }
@@ -69,7 +70,7 @@
           "pair_b": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "Second idea_id. Non-blank."},
           "dimension": {
             "type": "string",
-            "enum": ["depth", "breadth", "grounding", "refutation", "falsifiability", "novelty", "stability", "cost"],
+            "enum": ["depth", "breadth", "grounding", "refutation", "falsifiability", "novelty", "mechanism_invention", "stability", "cost"],
             "description": "Which decomposed dimension this comparison is on."
           },
           "winner": {

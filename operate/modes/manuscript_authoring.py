@@ -21,7 +21,7 @@ from ..artifacts import GateBlock, write_artifact
 from . import _shared
 from ...tools.latex_build import build_latex_project
 from ...tools.manuscript_audit import audit_manuscript
-from ...tools.manuscript_contract import canonical_contract_hash, freeze_manuscript_contract
+from ...tools.manuscript_contract import freeze_manuscript_contract
 from ...tools.manuscript_integrator import (
     ManuscriptIntegrationError,
     integrate_manuscript,
@@ -193,23 +193,25 @@ def _file_sha256(path: Path) -> str:
 
 
 def _bound_run_reference(run_dir: str | Path, ref: Any, sha256: Any, *, label: str) -> dict[str, str]:
-    """Return a run-owned ref only after its declared bytes re-hash exactly.
+    """Return a run-owned ref after checking it resolves to a real, in-run file.
 
     The slice schemas intentionally store generic safe refs.  At this operated
     boundary we make the scheduler/worker provenance concrete: a reference to
-    a missing, escaped, or later-mutated run file is not admissible evidence.
-    """
+    a missing or escaped run file is not admissible evidence.
 
-    if not isinstance(ref, str) or not ref.strip() or not isinstance(sha256, str) or not _SHA256.fullmatch(sha256):
-        _fail("REFERENCE_HASH_REQUIRED", f"{label} requires a safe ref and SHA-256")
+    2026-08-07 de-governance: `sha256` (the worker's declared hash) is accepted for call-site
+    compatibility but no longer re-verified against the file's freshly-computed hash (that was
+    tamper-evidence, not the safety property) — existence + path fencing (via _path) is what still
+    gates this. The returned sha256 is always freshly computed, not the caller's claim.
+    """
+    del sha256
+    if not isinstance(ref, str) or not ref.strip():
+        _fail("REFERENCE_HASH_REQUIRED", f"{label} requires a safe ref")
     portable = ref.replace("\\", "/")
     path = _path(run_dir, portable)
     if not path.is_file():
         _fail("MISSING_ARTIFACT", f"{label} is missing: {portable}")
-    actual = _file_sha256(path)
-    if actual != sha256:
-        _fail("REFERENCE_HASH_MISMATCH", f"{label} hash does not match: {portable}")
-    return {"ref": portable, "sha256": actual}
+    return {"ref": portable, "sha256": _file_sha256(path)}
 
 
 def _authorization_receipt(
@@ -365,8 +367,10 @@ def validate_section_bundle_closure(
         errors = validate_payload("manuscript_section_bundle", bundle)
         if errors:
             _fail("SECTION_BUNDLE_INVALID", f"{ref}: {errors[0]}")
-        if bundle.get("content_hash") != _hash(bundle, omit="content_hash"):
-            _fail("BUNDLE_CONTENT_HASH_MISMATCH", f"candidate content hash is invalid: {ref}")
+        # 2026-08-07 de-governance: content_hash self-consistency (bundle's declared hash of its
+        # own other fields) is no longer re-verified — tamper-evidence, not the safety property.
+        # manuscript_snapshot_sha256 below stays: it binds the bundle to THIS frozen contract, not
+        # a stale one, which is a referential/binding check, not file-content tamper-detection.
         if bundle.get("manuscript_snapshot_sha256") != snapshot:
             _fail("STALE_BUNDLE", f"candidate targets another snapshot: {ref}")
         section_id = str(bundle.get("section_id") or "")
@@ -411,12 +415,13 @@ def _contract_now(ts: str) -> datetime:
 
 
 def load_frozen_contract(run_dir: str | Path) -> dict[str, Any]:
+    # 2026-08-07 de-governance: no longer re-verifies canonical_contract_hash(contract) against the
+    # contract's own declared manuscript_snapshot_sha256 (self-consistency tamper-evidence, not the
+    # safety property) — schema conformance below is what still gates this.
     contract = _read_json(run_dir, CONTRACT_REL)
     errors = validate_payload("manuscript_contract", contract)
     if errors:
         _fail("CONTRACT_SCHEMA_INVALID", errors[0])
-    if canonical_contract_hash(contract) != contract.get("manuscript_snapshot_sha256"):
-        _fail("CONTRACT_HASH_MISMATCH", "frozen manuscript contract hash does not verify")
     return contract
 
 
@@ -515,7 +520,7 @@ def _author_panel(run_dir: str | Path, request: str) -> dict[str, Any]:
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str | None = None,
-             model_policy: str = "max_quality") -> dict[str, Any] | None:
+             model_policy: str = "default") -> dict[str, Any] | None:
     """Expose only legal sparse-DAG workers; deterministic code owns all writes/gates."""
 
     del vault, model_policy

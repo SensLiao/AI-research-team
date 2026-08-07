@@ -129,11 +129,16 @@ def test_empty_loci_blocks():
 
 
 def test_supports_claim_false_blocks():
-    """A locus with supports_claim=False → BLOCK (claim contradicted by locus)."""
+    """A locus with supports_claim=False AND support_relation="contradicts" → BLOCK
+    (claim contradicted by locus). R3 A1 (2026-08-07) narrowed the per-locus hard BLOCK to
+    exactly this combination — supports_claim=False alone is no longer sufficient; see
+    test_unrecognised_support_relation_normalizes_to_undecided_and_warns_never_blocks for
+    what happens without an explicit support_relation="contradicts".
+    """
     cl = _claim_list(("c1", "Method A achieves 0.90 Dice.", "ref-1"))
-    cem = _cem(_mapping("c1", [
-        _locus("l1", "ref-1", "Table 2", "0.72 Dice", supports_claim=False)
-    ]))
+    locus = _locus("l1", "ref-1", "Table 2", "0.72 Dice", supports_claim=False)
+    locus["support_relation"] = "contradicts"
+    cem = _cem(_mapping("c1", [locus]))
     report = build_report(cl, cem)
     assert report["verdict"] == "BLOCK"
     assert "c1" in report["contradicted_claims"]
@@ -175,7 +180,9 @@ def test_locus_reports_opposite_result_blocks():
 
     A paper claims 'Method SAM3 achieves Dice=0.87 on ToothFairy3 dataset'.
     The locus at Table 3 of the same paper reports Dice=0.61 (the actual number).
-    The agent that built the claim_evidence_map correctly set supports_claim=False.
+    The agent that built the claim_evidence_map correctly set supports_claim=False AND
+    support_relation="contradicts" (R3 A1, 2026-08-07: the latter is now what makes it a
+    real refutation rather than an undecided/bounded/unverified non-support).
 
     The citation-integrity-auditor MUST BLOCK on this — it is the primary gate invariant:
     a claim whose only locus contradicts it cannot be cited honestly.
@@ -225,6 +232,7 @@ def test_locus_reports_opposite_result_blocks():
                         # The paper ACTUALLY says 0.61, not 0.87 — opposite of the claim
                         "reported_result": "0.61",
                         "supports_claim": False,  # ← this is what the linker flagged
+                        "support_relation": "contradicts",  # ← R3 A1: the one real refutation
                     }
                 ],
                 "overall_support": "contradicted",
@@ -254,10 +262,11 @@ def test_locus_reports_opposite_result_blocks():
 # ---------------------------------------------------------------------------
 
 def test_locus_missing_supports_claim_blocks():
-    """C3-b: A locus with supports_claim omitted entirely → BLOCK (conservative).
-
-    The linker MUST decide per locus — no default is provided. When supports_claim is
-    absent, citation_checker cannot verify the claim; it BLOCKs conservatively.
+    """C3-b: A locus with supports_claim omitted entirely, and no other locus supporting the
+    claim, still BLOCKs — but (R3 A1, 2026-08-07) via the aggregate "no supporting locus"
+    check now, never as an individually-contradicted claim. A missing decision alone is
+    undecided (see collect_undecided_loci), not a refutation; it simply cannot supply the
+    support the claim needs, and here nothing else does either.
     """
     cl = _claim_list(("c1", "Method A achieves 0.90 Dice.", "ref-1"))
     # Build a locus without supports_claim at all (bypass _locus helper)
@@ -272,9 +281,11 @@ def test_locus_missing_supports_claim_blocks():
     cem = _cem(_mapping("c1", [locus_no_sc]))
     report = build_report(cl, cem)
     assert report["verdict"] == "BLOCK", (
-        "A locus without supports_claim must BLOCK (conservative: linker must decide explicitly)"
+        "A locus without supports_claim, with no other support, must still BLOCK "
+        "(conservative: no genuine support was ever supplied)"
     )
-    assert "c1" in report["contradicted_claims"]
+    assert "c1" not in report["contradicted_claims"], "a missing decision is undecided, not a contradiction"
+    assert report["undecided_loci"] == ["c1:l1"]
     violation_text = " ".join(report["violations"])
     assert "supports_claim" in violation_text.lower(), (
         f"violation should mention supports_claim; got: {report['violations']}"
@@ -446,3 +457,111 @@ def test_check_unresolvable_fires():
     violations = check_unresolvable_refs(cem, {"known-ref"})
     assert len(violations) == 1
     assert "ghost-ref" in violations[0]
+
+
+# ---------------------------------------------------------------------------
+# D9 (2026-08-06): "I could not check this" is not "the evidence says the opposite"
+#
+# Provenance, so this block is never mistaken for a convenience relaxation: the
+# 2026-08-04 deep_research run marked 22 of 146 loci supports_claim=false, and 13 of
+# them were unreachable sources (Zenodo 403, CVF 403, a truncated table). The gate
+# reported all 22 to the director as CONTRADICTIONS. These tests pin the split and,
+# just as importantly, pin everything the split must NOT loosen.
+# ---------------------------------------------------------------------------
+
+def _unverified_locus(locus_id: str, source_ref: str = "r1") -> dict:
+    """A locus the linker could not check: false, but explicitly 'insufficient'."""
+    entry = _locus(locus_id, source_ref, "S1", "source returned HTTP 403",
+                   supports_claim=False)
+    entry["support_relation"] = "insufficient"
+    return entry
+
+
+def test_insufficient_locus_does_not_contradict_a_supported_claim():
+    """One unreachable source alongside real support is UNVERIFIED, not a BLOCK."""
+    cl = _claim_list(("c1", "Text.", "r1"))
+    cem = _cem(_mapping("c1", [
+        _locus("l1", "r1", "S1", "supports it", supports_claim=True),
+        _unverified_locus("l2"),
+    ]))
+    assert check_contradicted(cl, cem) == []
+    report = build_report(cl, cem)
+    assert report["verdict"] == "PASS"
+    assert report["contradicted_claims"] == []
+    # ...and the unchecked span is surfaced, never silently dropped.
+    assert report["unverified_loci"] == ["c1:l2"]
+
+
+def test_claim_with_only_insufficient_loci_still_blocks():
+    """Fail-closed: nothing verified the claim, so it is unsupported and blocks."""
+    cl = _claim_list(("c1", "Text.", "r1"))
+    cem = _cem(_mapping("c1", [_unverified_locus("l1"), _unverified_locus("l2")]))
+    violations = check_contradicted(cl, cem)
+    assert len(violations) == 1
+    assert "no supporting locus" in violations[0]
+    # The message must NOT call it contradicted — that was the whole defect.
+    assert "contradicted" not in violations[0]
+    assert build_report(cl, cem)["verdict"] == "BLOCK"
+
+
+def test_real_contradiction_still_blocks_even_beside_support():
+    """The gate D9 must not touch: an actual refutation blocks regardless of support."""
+    cl = _claim_list(("c1", "Text.", "r1"))
+    contradicting = _locus("l2", "r1", "S1", "reports the opposite", supports_claim=False)
+    contradicting["support_relation"] = "contradicts"
+    cem = _cem(_mapping("c1", [
+        _locus("l1", "r1", "S1", "supports it", supports_claim=True),
+        contradicting,
+    ]))
+    violations = check_contradicted(cl, cem)
+    assert len(violations) == 1
+    assert "contradicted by locus" in violations[0]
+    assert build_report(cl, cem)["contradicted_claims"] == ["c1"]
+
+
+def test_unrecognised_support_relation_normalizes_to_undecided_and_warns_never_blocks():
+    """R3 A1 (2026-08-07) semantic reversal of the pre-fix behaviour below: an invented,
+    out-of-enum label used to fail CLOSED as a contradiction. This is the exact shape the
+    2026-08-04 run produced ('contextualizes_and_bounds', 'uncertain', 'refutes_attribution',
+    ... — 21 of 22 labels were outside the enum) — collapsing an un-machine-readable label into
+    a reported refutation told the director claims were being refuted when the linker had only
+    failed to use a recognised word. It now routes to the non-blocking `undecided_loci` channel
+    (Mechanism 5b in check_contradicted's docstring): visible on the verdict, never a BLOCK on
+    its own. `contradicts` is untouched — see test_real_contradiction_still_blocks_even_beside_
+    support right below for that still-hard-BLOCKs proof.
+    """
+    cl = _claim_list(("c1", "Text.", "r1"))
+    invented = _locus("l2", "r1", "S1", "bounds the claim", supports_claim=False)
+    invented["support_relation"] = "contextualizes_and_bounds"
+    cem = _cem(_mapping("c1", [
+        _locus("l1", "r1", "S1", "supports it", supports_claim=True),
+        invented,
+    ]))
+    assert check_contradicted(cl, cem) == []          # does not block — l1 still supports c1
+    report = build_report(cl, cem)
+    assert report["verdict"] == "PASS"
+    assert report["contradicted_claims"] == []
+    assert report["undecided_loci"] == ["c1:l2"]
+    assert report["bounded_loci"] == []
+    assert report["unverified_loci"] == []
+
+
+def test_missing_supports_claim_alone_no_longer_blocks_beside_real_support():
+    """Superseded premise, kept as a regression pin: this D9-era test's docstring claimed
+    "Mechanism 2 is untouched" for a locus with support_relation set but supports_claim
+    absent. R3 A1 (2026-08-07) retired that old Mechanism 2 hard-BLOCK-on-missing — such a
+    locus is now undecided (Mechanism 5a), and like any other non-supporting locus it does
+    not block on its own once another locus genuinely supports the claim.
+    """
+    cl = _claim_list(("c1", "Text.", "r1"))
+    undecided = {"locus_id": "l2", "source_ref": "r1", "location": "S1",
+                 "kind": "text", "reported_result": None,
+                 "support_relation": "insufficient"}  # relation set, decision absent
+    cem = _cem(_mapping("c1", [
+        _locus("l1", "r1", "S1", "supports it", supports_claim=True),
+        undecided,
+    ]))
+    assert check_contradicted(cl, cem) == []
+    report = build_report(cl, cem)
+    assert report["verdict"] == "PASS"
+    assert report["undecided_loci"] == ["c1:l2"]

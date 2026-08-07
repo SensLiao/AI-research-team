@@ -29,6 +29,48 @@ def test_the_tree_verifies_against_its_own_manifest(manifest):
     result = vendor.verify()
     assert result["ok"], result["violations"]
     assert result["totals"]["files"] == manifest["totals"]["files"]
+    assert result["violations"] == []          # nothing outside the manifest, nothing missing
+
+
+def _write_manifest(root: Path, files: dict) -> None:
+    """A minimal synthetic manifest — verify() only reads sources[].snapshot_dir/files[].{path,sha256}."""
+    import hashlib
+    entries = []
+    for rel, text in files.items():
+        target = root / "snap" / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        entries.append({"path": rel, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()})
+    manifest = {"schema_version": "vendored-upstream-skills/v1", "totals": {"files": len(entries)},
+                "blocked": [], "sources": [{"snapshot_dir": "snap", "files": entries}]}
+    (root / "MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_verify_degrades_to_existence_and_no_stray_files_never_a_content_hash(tmp_path):
+    """R3 §B①: verify() no longer re-hashes vendored content against the manifest's recorded
+    digest ("changed since vendoring" is gone) — it only checks that every manifested file is
+    PRESENT and that nothing lives in the tree OUTSIDE the manifest. A byte edit inside an
+    already-vendored file must NOT flip the verdict; a missing or unlisted file still must."""
+    _write_manifest(tmp_path, {"a/SKILL.md": "original text"})
+
+    baseline = vendor.verify(vendor_root=tmp_path)
+    assert baseline["ok"], baseline["violations"]
+
+    (tmp_path / "snap" / "a" / "SKILL.md").write_text("edited text — content hash now differs",
+                                                       encoding="utf-8")
+    edited = vendor.verify(vendor_root=tmp_path)
+    assert edited["ok"], edited["violations"]          # content drift alone is no longer a violation
+
+    (tmp_path / "snap" / "a" / "SKILL.md").unlink()
+    missing = vendor.verify(vendor_root=tmp_path)
+    assert not missing["ok"]
+    assert any("missing" in v for v in missing["violations"])
+
+    _write_manifest(tmp_path, {"a/SKILL.md": "original text"})   # restore, then add a stray file
+    (tmp_path / "snap" / "a" / "extra.md").write_text("not in the manifest", encoding="utf-8")
+    stray = vendor.verify(vendor_root=tmp_path)
+    assert not stray["ok"]
+    assert any("not in the manifest" in v for v in stray["violations"])
 
 
 def test_nothing_in_the_tree_can_execute_or_be_auto_loaded(manifest):

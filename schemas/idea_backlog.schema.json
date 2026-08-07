@@ -65,6 +65,17 @@
                 "type": ["string", "number", "null"],
                 "default": null,
                 "description": "Time-to-result signal used in the rubric"
+              },
+              "local_data_probe": {
+                "type": "object",
+                "description": "Optional (R3 C6, 2026-08-07). Output of tools/local_data_availability.probe: an offline, read-only Path.exists() check of the data paths this idea DECLARES it needs. Present only when a caller supplied declared paths — it is never fabricated and never required. It does NOT change any feasibility sub-score or the composite: 'today runnable' is the worker's claim, this is the checked fact that either backs it or contradicts it, and the director sees both. verdict UNDECLARED means nothing was declared to check.",
+                "additionalProperties": false,
+                "properties": {
+                  "checked": {"type": "array", "items": {"type": "string"}, "default": []},
+                  "present": {"type": "array", "items": {"type": "string"}, "default": []},
+                  "absent": {"type": "array", "items": {"type": "string"}, "default": []},
+                  "verdict": {"type": "string", "enum": ["LOCAL", "REMOTE_OR_ABSENT", "UNDECLARED"]}
+                }
               }
             }
           },
@@ -94,7 +105,12 @@
               "confidence": {"type": "string", "enum": ["high", "provisional"]},
               "policy_version": {"type": "string", "const": "scientific-investment/v1"},
               "assessment_ref": {"type": "string", "minLength": 1, "pattern": "\\S"},
-              "strongest_rejection_case": {"type": "string", "minLength": 1, "pattern": "\\S"}
+              "strongest_rejection_case": {"type": "string", "minLength": 1, "pattern": "\\S"},
+              "feasibility_waived": {
+                "type": "boolean",
+                "default": false,
+                "description": "Audit trail for the invention waiver (director lock 2026-08-07): true when contribution_tier is mechanism_invention or method_invention, in which case the feasibility signal is set to the scientific-merit value instead of the logistics triple. Rationale: cost, schedule and today's hardware are the experiment-design stage's problem, and letting them enter the ideation rank is exactly how an invention loses to an audit. The waiver is RECORDED, never silent."
+              }
             }
           },
           "evidence_ref": {
@@ -120,6 +136,59 @@
             "items": {"type": "string"},
             "default": [],
             "description": "Optional list of known limitations or risks for this idea (free text; never read as a control signal)"
+          },
+          "contribution_tier": {
+            "type": "string",
+            "enum": ["mechanism_invention", "method_invention", "measurement", "audit"],
+            "description": "Optional (2026-08-07 invention block). WHAT KIND of contribution this is. The deterministic ranker reads this for the invention feasibility waiver; measurement and audit tiers keep the ordinary feasibility signal. It is a TYPE, never a rank: an audit-tier idea is not inferior, it is a different kind of work."
+          },
+          "invention_claim": {
+            "type": ["string", "null"],
+            "description": "Optional. For mechanism_invention / method_invention only: the exact new mechanism, architecture, loss, training procedure or computation, stated so a reviewer can tell it apart from every existing method. null for measurement/audit tier. An invention tier with an empty claim is scored DOWN by the quality harness — the claim is what makes the tier checkable."
+          },
+          "mechanism_graph_refs": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Optional. node_ids / edge_ids from the run's mechanism_graph that this idea acts on. This is what stops a menu from being the north star restated N times."
+          },
+          "intervention_point": {
+            "type": "string",
+            "description": "Optional. Which mechanism-graph node the idea intervenes at, and whether it TUNES that node or REPLACES the mechanism there."
+          },
+          "addresses_conflicts": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Optional. conflict_ids from the contradiction_report this idea engages. A contradiction nobody addressed is a free research question left on the table."
+          },
+          "origin_operator": {
+            "type": "string",
+            "enum": ["gap", "constraint", "negation", "reformulation", "cross_product", "enabler", "tension"],
+            "description": "Optional. Which divergence operator produced the idea. 'gap' means it came straight from the gap list, i.e. a recombination — legitimate, but a menu made only of them did not diverge."
+          },
+          "innovation_layers": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["ontology", "mechanism", "method", "evaluation", "feasibility", "ecosystem"]},
+            "default": [],
+            "description": "Optional. Which research coordinate(s) this idea rewrites. A menu that only ever proposes new methods has conceded the problem definition, the evaluation and the feasibility frontier to somebody else."
+          },
+          "depth_target": {
+            "type": "string",
+            "description": "Optional. Target on the D0-D6 depth ladder (D0 demo / D1 effect / D2 phenomenon / D3 mechanism / D4 principle / D5 reusable primitive / D6 paradigm) plus what evidence reaching it would require."
+          },
+          "conventional_base": {
+            "type": "string",
+            "description": "Optional. The ~80%: the solid, well-established ground the idea stands on. An idea with no conventional base is rarely verifiable."
+          },
+          "unusual_connection": {
+            "type": "string",
+            "description": "Optional. The ~20%: the structurally atypical connection that makes it more than routine. An idea with no unusual connection is incremental."
+          },
+          "resource_envelope": {
+            "type": "string",
+            "enum": ["fits_local_cpu", "fits_single_a6000", "fits_dual_a6000", "exceeds_current_hardware", "unknown"],
+            "description": "Optional. Honest tag against the machine's REAL registered hardware. INFORMATION FOR THE DIRECTOR, NOT A FILTER: exceeds_current_hardware is never a penalty and never shrinks an idea — it says what buying or borrowing would unlock. 'unknown' is the required value when the resource registry could not be read; a spec is never invented."
           }
         }
       }

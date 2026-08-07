@@ -1,14 +1,24 @@
 """Real tests for the deterministic router + routing guardrails."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from research_agent_teams.orchestrator.graph_spec import load_mode_registry
 from research_agent_teams.orchestrator.router import resolve_task, validate_routing
-from research_agent_teams.tools.research_capability_router import route_research_capabilities
+from research_agent_teams.tools.research_capability_router import (
+    DEFAULT_OVERLAY_CATALOG,
+    route_research_capabilities,
+)
 from research_agent_teams.tools.validate_artifact import validate_artifact
 
 TS = "2026-06-08T00:00:00Z"
+
+# Policy-derived, not literal — see test_research_capability_router.py for why `<= 5` was a trap.
+_POLICY = json.loads(DEFAULT_OVERLAY_CATALOG.read_text(encoding="utf-8"))["policy"]
+_POLICY_MIN = int(_POLICY["selection_min"])
+_POLICY_MAX = int(_POLICY["selection_max"])
 
 
 def _tf(entry, subset, gate_level="record_only"):
@@ -22,10 +32,11 @@ def test_resolve_design_experiment_is_valid_task_frame():
     assert tf["payload"]["entry_stage"] == "DESIGN"
     assert "train-test-alignment-auditor" in tf["payload"]["agent_subset"]
     overlay_plan = tf["payload"]["capability_overlay_plan"]
-    assert overlay_plan["mode_status"] == "spec_only"
+    # design_experiment became one-button in wave 2 (2026-08-04).
+    assert overlay_plan["mode_status"] == "operated"
     assert overlay_plan["external_skill_execution"] is False
     assert overlay_plan["network_access"] is False
-    assert 2 <= len(overlay_plan["overlays"]) <= 5
+    assert _POLICY_MIN <= len(overlay_plan["overlays"]) <= _POLICY_MAX
     assert validate_routing(tf) == []
 
 

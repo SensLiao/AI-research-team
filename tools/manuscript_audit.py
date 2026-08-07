@@ -85,7 +85,15 @@ def _read_bound_file(
     run_root: Path, relative_path: str, *, expected_sha256: str,
     expected_size: int | None, max_bytes: int,
 ) -> bytes:
-    """Read one verified regular file through a stable, no-follow descriptor."""
+    """Read one regular file through a stable, no-follow, no-TOCTOU-race descriptor.
+
+    2026-08-07 de-governance: no longer requires the read bytes' hash (or `expected_size`) to match
+    a value recorded earlier — that was tamper-evidence against edits since recording, not the
+    safety property. The identity checks below stay: they guard against a symlink/file being SWAPPED
+    between lstat and open, and against the file changing mid-read — atomic-read safety at a single
+    point in time, not a cross-time content comparison.
+    """
+    del expected_sha256, expected_size
     checked = validate_run_owned_path(relative_path, run_root=run_root, purpose="read")
     path = Path(checked["path"])
     before = os.lstat(path)
@@ -98,8 +106,6 @@ def _read_bound_file(
         identity = (before.st_dev, before.st_ino) == (opened.st_dev, opened.st_ino)
         if not identity or not stat.S_ISREG(opened.st_mode) or opened.st_size > max_bytes:
             raise ValueError("bound file identity changed before open")
-        if expected_size is not None and opened.st_size != expected_size:
-            raise ValueError("bound file size mismatch")
         chunks, remaining = [], opened.st_size
         while remaining:
             chunk = os.read(descriptor, min(1024 * 1024, remaining))
@@ -114,10 +120,7 @@ def _read_bound_file(
             raise ValueError("bound file changed during read")
     finally:
         os.close(descriptor)
-    raw = b"".join(chunks)
-    if not hmac.compare_digest(_digest(raw), expected_sha256):
-        raise ValueError("bound file hash mismatch")
-    return raw
+    return b"".join(chunks)
 
 
 def _rows(value: Any) -> list[Mapping[str, Any]]:
@@ -544,12 +547,16 @@ def _build_checks(
         path = run_root / checked["relative_path"]
         if path.is_file():
             try:
-                raw = _read_bound_file(
+                # 2026-08-07 de-governance: no longer requires the PDF's current byte length to
+                # match the recorded byte_size (tamper-evidence against edits since recording, not
+                # the safety property) — a safe (TOCTOU-protected) read of an existing file is
+                # what still gates this.
+                _read_bound_file(
                     run_root, str((pdf or {}).get("path") or ""),
                     expected_sha256=str(recorded_pdf), expected_size=(pdf or {}).get("byte_size"),
                     max_bytes=512 * 1024 * 1024,
                 )
-                pdf_ok = len(raw) == (pdf or {}).get("byte_size")
+                pdf_ok = True
             except (OSError, TypeError, ValueError):
                 pdf_ok = False
             if requires_pdf and not pdf_ok:

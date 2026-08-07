@@ -81,24 +81,80 @@ def test_referential_integrity_rules():
     assert v2 == [] and any("unverified" in x for x in w2)   # no vault -> warning, never a false block
 
 
-def test_existence_gate_offline_is_warnings_never_a_false_block(tmp_path):
+def test_existence_gate_offline_is_unverified_never_a_false_block(tmp_path):
+    """Offline is UNVERIFIED, not PASS (C2, 2026-08-07), and still never a BLOCK.
+
+    Every lookup erroring means NOTHING was checked. Calling that PASS reported the absence of a
+    check as a clean result — the run then carried "existence verified" into the director's menu on
+    the strength of a dead network. UNVERIFIED says the true thing and still lets the run continue;
+    the artifact is written as a draft so the un-checked state is visible downstream.
+    """
     rd = _run(tmp_path)
     path, verdict = _shared.run_existence_gate(rd, "DISCOVER", TS,
                                                ["doi:10.1234/fake", "[[slug-ref]]"])
-    assert verdict["verdict"] == "PASS"                 # offline transport -> lookup_error warnings
+    assert verdict["verdict"] == "UNVERIFIED"
     assert verdict["n_lookup_error"] == 1 and verdict["n_skipped"] == 1
     assert Path(path).exists()
+    written = json.loads(Path(path).read_text(encoding="utf-8"))
+    assert written["status"] == "draft"
 
 
 def test_existence_gate_blocks_on_confirmed_not_found(tmp_path, monkeypatch):
     rd = _run(tmp_path)
     monkeypatch.setattr(_shared, "build_existence_verdict",
                         lambda refs, ts, transport=None, cache=None: {
-                            "checked": [], "n_verified": 0, "n_not_found": 1, "n_lookup_error": 0,
+                            "checked": [{"ref": "doi:10.1/ghost", "kind": "doi",
+                                         "state": "not_found", "detail": "confirmed not found"}],
+                            "n_verified": 0, "n_not_found": 1, "n_lookup_error": 0,
                             "n_skipped": 0, "verdict": "BLOCK",
                             "violations": ["doi:10.1/ghost: confirmed not found"], "warnings": []})
     with pytest.raises(GateBlock, match="citation existence gate BLOCK"):
         _shared.run_existence_gate(rd, "DISCOVER", TS, ["doi:10.1/ghost"])
+
+
+def test_pre_search_refuses_a_raw_non_latin_query(tmp_path):
+    """C1 (2026-08-07): a raw CJK request must never be fired at the English-biased scholar APIs.
+
+    They return wrong-or-empty results, which then read downstream as real literature coverage —
+    worse than no retrieval, because it looks grounded. The refusal is written into the bundle so
+    the operator sees WHY there are no records and what to do instead.
+    """
+    rd = _run(tmp_path)
+    bundle = json.loads(
+        Path(_shared.pre_search(rd, "PET/CT 残差校正的失败区域修复", TS)).read_text(encoding="utf-8"))
+    assert bundle["records"] == []
+    block = bundle["query_language_block"]
+    assert block["detected"] in {"cjk", "mixed"}
+    assert "English" in block["required_action"]
+
+
+def test_explicit_queries_bypass_the_language_guard(tmp_path):
+    """Translating the question is the caller's judgment, not the machine's — supplying `queries`
+    is the sanctioned route and must reach the real search path."""
+    from research_agent_teams.tools.scholar_clients import ScholarLookupError
+
+    def dead(url, headers):
+        raise ScholarLookupError("offline")
+
+    rd = _run(tmp_path)
+    bundle = json.loads(
+        Path(_shared.pre_search(rd, "PET/CT 残差校正", TS, transport=dead,
+                                queries=["PET CT residual correction"])).read_text(encoding="utf-8"))
+    assert "query_language_block" not in bundle
+
+
+def test_a_latin_request_is_never_touched_by_the_guard(tmp_path):
+    from research_agent_teams.tools.scholar_clients import ScholarLookupError
+
+    def dead(url, headers):
+        raise ScholarLookupError("offline")
+
+    rd = _run(tmp_path)
+    bundle = json.loads(
+        Path(_shared.pre_search(rd, "residual correction in PET/CT", TS,
+                                transport=dead)).read_text(encoding="utf-8"))
+    assert "query_language_block" not in bundle
+    assert bundle["source_errors"]          # the ordinary offline degradation still applies
 
 
 def test_pre_search_degrades_honestly_and_records_are_readable(tmp_path):

@@ -393,7 +393,11 @@ def test_pdf_optional_without_build_is_usable_and_submission_ready(tmp_path):
         ("failed", "BUILD_REQUIRED_UNAVAILABLE"),
         ("stale", "BUILD_SOURCE_STALE"),
         ("missing-pdf", "BUILD_PDF_MISSING"),
-        ("hash-mismatch", "BUILD_PDF_HASH_MISMATCH"),
+        # R3 §B① (2026-08-07): _read_bound_file no longer compares the PDF's recorded sha256/size
+        # against its actual bytes (tools/manuscript_audit.py:84-96, `del expected_sha256,
+        # expected_size`) — only TOCTOU/identity safety at read time is left. A declared pdf_sha256
+        # that disagrees with the real file no longer produces BUILD_PDF_HASH_MISMATCH (that code is
+        # now unreachable through content alone), so the "hash-mismatch" variant is retired.
     ],
 )
 def test_required_pdf_build_deficits_are_not_ready_but_remain_readable(
@@ -406,11 +410,10 @@ def test_required_pdf_build_deficits_are_not_ready_but_remain_readable(
         receipt = _build_receipt("TOOLCHAIN_MISSING", source_sha256=HEX["a"])
     elif variant == "failed":
         receipt = _build_receipt("COMPILE_FAILED", source_sha256=HEX["a"])
-    elif variant in {"stale", "missing-pdf", "hash-mismatch"}:
+    elif variant in {"stale", "missing-pdf"}:
         recorded = HEX["b"]
-        if variant in {"stale", "hash-mismatch"}:
-            _write_pdf(run_root, b"actual-pdf")
         if variant == "stale":
+            _write_pdf(run_root, b"actual-pdf")
             recorded = hashlib.sha256(b"actual-pdf").hexdigest()
         receipt = _build_receipt(
             "COMPILED",

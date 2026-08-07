@@ -57,10 +57,17 @@ TELEMETRY_PRESENT = "PRESENT"
 # --------------------------------------------------------------------------- what the machine has
 
 def operated_modes() -> list[str]:
-    return sorted(
-        path.stem for path in OPERATED_MODES_DIR.glob("*.py")
-        if not path.stem.startswith("_")
-    )
+    """The modes a director can actually press — read from REGISTRY, not from the directory.
+
+    Globbing `operate/modes/*.py` over-counts: wave 2 (2026-08-04) left two recipe modules on disk
+    that are deliberately NOT registered, because they have no test coverage yet. A file that exists
+    is not a capability; only REGISTRY membership makes a mode one-button, and this census is the
+    number that reaches PLATFORM-FACTS. Counting files here would have published two capabilities
+    the director cannot press — the exact "claims outrun the code" drift this file exists to catch.
+    """
+    from research_agent_teams.operate.modes import REGISTRY
+
+    return sorted(REGISTRY)
 
 
 def named_gates() -> list[str]:
@@ -141,6 +148,9 @@ def usage(runs_root: Path = RUNS_ROOT) -> dict[str, Any]:
     gate_decisions: Counter = Counter()
     pending_gates: list[dict[str, Any]] = []
     promotion_targets = 0
+    doc_admission_records = 0
+    doc_admissions_admitted = 0
+    admitted_vault_slugs: set[str] = set()
 
     for run_dir in run_dirs:
         manifest = yaml.safe_load((run_dir / "manifest.yaml").read_text(encoding="utf-8")) or {}
@@ -151,6 +161,21 @@ def usage(runs_root: Path = RUNS_ROOT) -> dict[str, Any]:
                                   "gates": list(manifest["pending_gates"])})
         if manifest.get("promotion_targets"):
             promotion_targets += 1
+
+        # Vault writes through the DOCUMENT lane. Counted from the gate's own record files rather than
+        # from a ledger event, because the record file is written by the gate on every decision and works
+        # retroactively for admissions that predate the ledger event being added at all.
+        inbox = run_dir / "inbox"
+        if inbox.is_dir():
+            for record_path in sorted(inbox.rglob("document-promotion-record-*.json")):
+                try:
+                    record = json.loads(record_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                doc_admission_records += 1
+                if record.get("admissible") and record.get("vault_slug"):
+                    doc_admissions_admitted += 1
+                    admitted_vault_slugs.add(str(record["vault_slug"]))
 
         ledger = run_dir / "ledger.jsonl"
         if ledger.is_file():
@@ -199,6 +224,11 @@ def usage(runs_root: Path = RUNS_ROOT) -> dict[str, Any]:
         "gate_decisions": dict(gate_decisions),
         "runs_with_a_pending_gate": pending_gates,
         "runs_with_a_promotion_target": promotion_targets,
+        "document_admissions": {
+            "records": doc_admission_records,
+            "admitted": doc_admissions_admitted,
+            "vault_slugs": sorted(admitted_vault_slugs),
+        },
     }
 
 
@@ -242,12 +272,28 @@ def _findings(inventory: dict[str, Any], used: dict[str, Any]) -> list[dict[str,
                    "账本的终结事件不是每次都写。",
         })
 
-    if used.get("runs_with_a_promotion_target") == 0 and not (used.get("ledger_events") or {}).get("promote"):
+    doc = used.get("document_admissions") or {}
+    vault_writes = int(doc.get("admitted", 0))
+    frozen_promotes = int((used.get("ledger_events") or {}).get("promote", 0))
+    if used.get("runs_with_a_promotion_target") == 0 and not frozen_promotes and not vault_writes:
         out.append({
             "id": "the-vault-write-path-has-never-been-exercised",
-            "what": f"{used.get('runs')} 次真实运行里，promotion_target 为 0，promote 事件为 0。",
+            "what": f"{used.get('runs')} 次真实运行里，promotion_target 为 0，promote 事件为 0，"
+                    f"文档收录 0 次。",
             "why": "唯一能写进库的那条路（`/promote-to-vault`）在真实运行史上从没走过一次。"
                    "它不是多余 —— 是**没被实测过**。要减治理之前，先知道哪条路根本没试过。",
+        })
+    elif vault_writes and not frozen_promotes:
+        rejected = max(0, int(doc.get("records", 0)) - vault_writes)
+        out.append({
+            "id": "only-the-document-lane-has-ever-written-the-vault",
+            "what": f"库真的被写过 {vault_writes} 次，全部走**文档收录**通道"
+                    + (f"（另有 {rejected} 次申请被关卡拒了）" if rejected else "")
+                    + "；**冻结结果**通道仍是 0 次。",
+            "why": "两条通道不是一回事，不能混着报。文档收录只是把导演审过的 Markdown 收进库，"
+                   "结构上不产生 `result-status`、不产生 `can-cite-thesis`、不产生任何我们自己的指标。"
+                   "「能被论文引用的实验结果入库」这条路至今**没被实测过** —— 它要求 reviewer "
+                   "APPROVE-FREEZE + leakage PASS + fairness pass，而那要先有真跑出来的结果。",
         })
 
     tools = inventory.get("guard_tools") or []
@@ -276,10 +322,21 @@ def census(runs_root: Path = RUNS_ROOT) -> dict[str, Any]:
         axes.append(_axis("席位", inventory["rostered_seats"],
                           list(used["seats_dispatched"]),
                           "来自 inbox 的 bundle 文件名（一个 worker 一份）；没有 inbox 的运行无法计入。"))
-        axes.append(_axis("人工关卡（gates/ 里的 5 个）", inventory["named_human_gates"], [],
+        # `/promote-to-vault` is the ONE named gate whose firing leaves a deterministic on-disk trace:
+        # the gate itself writes a record file on every decision, admit or reject. The other four leave
+        # nothing name-bearing, so they stay unclaimed rather than guessed.
+        gates_evidenced = (
+            ["promote-to-vault"]
+            if (used.get("document_admissions") or {}).get("records")
+            or (used.get("ledger_events") or {}).get("promote")
+            else []
+        )
+        axes.append(_axis("人工关卡（gates/ 里的 5 个）", inventory["named_human_gates"], gates_evidenced,
                           "账本里的 gate 事件是**阶段**导演关卡（`configured_director_gate`），"
-                          "不带 gates/ 里的关卡名，所以这一轴的「用过」无法从账本判定 —— "
-                          "这里一律留空，不拿文本里提到过当成触发过。"))
+                          "不带 gates/ 里的关卡名，所以这一轴多数无法从账本判定。唯一例外是 "
+                          "`/promote-to-vault` —— 它每次决定（收录或拒绝）都自己落一份 "
+                          "`*promotion-record-*.json`，那是确定性痕迹，算「用过」。"
+                          "其余四个一律留空，不拿文本里提到过当成触发过。"))
 
     return {
         "telemetry": used["telemetry"],
@@ -347,6 +404,15 @@ def render_census(report: dict[str, Any]) -> str:
               f"- 阶段进入次数：{used['stages_entered']}",
               f"- 导演关卡：{used['ledger_events'].get('gate_pending', 0)} 次挂起 / "
               f"{used['ledger_events'].get('gate_resolved', 0)} 次拍板，决定分布 {used['gate_decisions']}", ]
+    doc = used.get("document_admissions") or {}
+    if doc.get("records"):
+        detail = "、".join(f"`{slug}`" for slug in doc.get("vault_slugs") or [])
+        rejected = max(0, int(doc["records"]) - int(doc["admitted"]))
+        lines.append(f"- 📥 入库：**文档收录**通道成功写进库 {doc['admitted']} 次"
+                     + (f"（另有 {rejected} 次被关卡拒了）" if rejected else "")
+                     + (f"，已入库页：{detail}" if detail else "")
+                     + "；冻结结果通道 "
+                     + f"{used['ledger_events'].get('promote', 0)} 次")
     if used["runs_with_a_pending_gate"]:
         for row in used["runs_with_a_pending_gate"]:
             lines.append(f"- ⏸ 还在等你拍板：`{row['run_id']}`（卡在 {row['gates']}）")

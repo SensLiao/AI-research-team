@@ -85,7 +85,7 @@ def test_explicit_operated_mode_has_priority_without_calling_auto_router(monkeyp
 
 def test_explicit_spec_only_mode_fails_closed_before_run_creation(capsys):
     args = SimpleNamespace(
-        mode="design_experiment",
+        mode="tree_explore",
         request="设计这个实验",
         run_id=None,
         ts="2026-08-01T00:00:00Z",

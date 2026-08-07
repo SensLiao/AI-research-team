@@ -6,11 +6,21 @@ grades the sources (the evidence_table); this checker — not the LLM — decide
 release-grade conclusion can never rest on an unsaturated or too-thin evidence base.
 
 Mechanical floor (domain-general):
-  1. enough sources at all          (n_sources >= min_sources)
-  2. at least some STRONG support   (n_strong  >= min_strong)
-  3. snowball search saturated      (no obvious missed-evidence risk)
+  1. enough sources at all          (n_sources >= min_sources)   -> BLOCK
+  2. at least some STRONG support   (n_strong  >= min_strong)    -> BLOCK
+  3. snowball search saturated      (no obvious missed-evidence risk) -> WARNING (see below)
 Thresholds default conservatively and may be tightened (never silently loosened) by the active
 profile's `evidence_thresholds`; the profile's `evidence_invariants` are recorded for the auditor.
+
+Saturation is a WARNING, not a BLOCK (director lock 2026-08-07). In the legacy contract path the
+worker copied `saturation_reached: true` straight out of its own prompt skeleton and this gate
+accepted it, so for its whole life the check verified nothing while being able to halt a run. The
+honest fix is measurement, not enforcement: `saturation_reached` is now DERIVED by
+`tools/saturation_meter.py` from the worker's recorded retrieval rounds (a single round reports
+INSUFFICIENT_DATA and never SATURATED), and an unsaturated search is reported to the director instead
+of stopping the run. The CURRENT evidence contract (`evidence-table/v2` / source-methodology /
+search-trace) is untouched: its `semantic_complete` path still BLOCKs, because that one is really
+verified.
 """
 from __future__ import annotations
 
@@ -38,7 +48,12 @@ def check_evidence(
     search_trace: Optional[dict] = None,
     strict_current: bool = False,
 ) -> Tuple[List[str], dict]:
-    """Return (reasons, facts). Empty reasons == evidence clears the mechanical floor."""
+    """Return (reasons, facts). Empty reasons == evidence clears the mechanical floor.
+
+    ``facts["warnings"]`` carries advisory findings that are REPORTED but do not block — currently the
+    legacy-contract saturation read. They are facts about the evidence base the director should see,
+    not grounds to halt a run (see the module docstring for why saturation moved here).
+    """
     cfg = _thresholds(profile, thresholds)
     sources = table.get("sources", []) or []
     n = len(sources)
@@ -76,9 +91,16 @@ def check_evidence(
         reasons.append(f"too few sources: {n} < required {cfg['min_sources']}")
     if n_strong < cfg["min_strong"]:
         reasons.append(f"too few strong-support sources: {n_strong} < required {cfg['min_strong']}")
+    warnings: List[str] = []
     if cfg["require_saturation"] and not sat:
-        reasons.append("snowball saturation not reached (search may have missed key counter-evidence)")
-    return reasons, {"n_sources": n, "n_strong": n_strong, "saturation_reached": sat}
+        # ADVISORY, not a block. Under the CURRENT contract this mirrors the search-trace status,
+        # which already blocks above on its own evidence; under the legacy contract the flag used to
+        # be self-declared by the worker, so blocking on it enforced nothing.
+        warnings.append(
+            "snowball saturation not reached (search may have missed key counter-evidence) — "
+            "measured from the recorded retrieval rounds, advisory only")
+    return reasons, {"n_sources": n, "n_strong": n_strong, "saturation_reached": sat,
+                     "warnings": warnings}
 
 
 def build_verdict(
@@ -90,7 +112,12 @@ def build_verdict(
     search_trace: Optional[dict] = None,
     strict_current: bool = False,
 ) -> dict:
-    """Build an evidence_verdict payload (verdict derived from the floor checks, never set by hand)."""
+    """Build an evidence_verdict payload (verdict derived from the floor checks, never set by hand).
+
+    The payload keeps the `evidence_verdict` contract exactly as-is; the advisory saturation finding
+    is visible through the `saturation_reached` field it already carries. A caller that wants the
+    warning text calls `check_evidence` directly and reads `facts["warnings"]`.
+    """
     reasons, facts = check_evidence(
         table,
         profile,

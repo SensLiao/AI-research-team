@@ -28,8 +28,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from ..reporting import status_bar
 from ..reporting.outcomes import render_menu, render_recipe
-from ..tools import governance_census, outcome_recipes, worker_census
+from ..tools import governance_census, outcome_recipes, research_map, upstream_catalog, worker_census
 from .indexer import build_projection
 from .model import EVIDENCE_STATE_WORDS, WORK_STATE_WORDS, coerce_evidence_state, coerce_work_state
 from .projectors import render_research_home, write_home_pages
@@ -266,6 +267,37 @@ def cmd_governance(args: argparse.Namespace) -> None:
     print(governance_census.render_census(report))
 
 
+def cmd_gates(args: argparse.Namespace) -> None:
+    """现在该按哪个按钮，以及每个按钮要走到哪一步才需要按。Index-free on purpose: this is the verb
+    a lost director runs first, so it must not depend on a reindex having happened."""
+    state = status_bar.build_state(args.project, runs_root=args.runs_dir)
+    if args.json:
+        _emit(state)
+        return
+    print(status_bar.render_gates(state))
+
+
+def cmd_map(args: argparse.Namespace) -> None:
+    """哪个点子还没有对应实验 —— chain coverage, the one view `search` cannot give you.
+    Index-free like `gates`: it scans the vault, so it never needs a reindex to be truthful."""
+    data = research_map.build_map(args.project, vault_root=args.vault)
+    if args.json:
+        _emit(data)
+        return
+    print(research_map.render_map(data))
+
+
+def cmd_capabilities(args: argparse.Namespace) -> None:
+    """The vendored upstream skill TEXT, findable at last. Read-only: listing a bundle never mounts,
+    fetches or runs it — the machine's own capabilities stay `mode_registry.yaml` + `agents/`."""
+    if args.query:
+        result = upstream_catalog.find(args.query, limit=args.limit)
+        _emit(result) if args.json else print(upstream_catalog.render_hits(result))
+        return
+    data = upstream_catalog.catalog()
+    _emit(data) if args.json else print(upstream_catalog.render_catalog(data))
+
+
 def cmd_destroy(args: argparse.Namespace) -> None:
     """Prove the rebuildable claim: this is safe, because the store holds no source of truth."""
     _emit({**destroy(args.workbench_root),
@@ -316,7 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
     op.add_argument("--print-body", action="store_true", help="直接打印文件内容")
     op.set_defaults(func=cmd_open)
 
-    oc = sub.add_parser("outcomes", parents=[common], help="你想得到什么：六选一菜单")
+    oc = sub.add_parser("outcomes", parents=[common], help="你想得到什么：产出菜单")
     oc.set_defaults(func=cmd_outcomes)
 
     on = sub.add_parser("outcome", parents=[common],
@@ -335,6 +367,22 @@ def build_parser() -> argparse.ArgumentParser:
     gv = sub.add_parser("governance", parents=[common],
                         help="治理用量盘点：造了多少关卡 vs 真实运行用过多少（只报数，不动任何关卡）")
     gv.set_defaults(func=cmd_governance)
+
+    ga = sub.add_parser("gates", parents=[common],
+                        help="现在该你按哪个命令 / 每个人工关卡要走到哪一步才需要按（最常用的一条）")
+    ga.add_argument("--project", default=None)
+    ga.set_defaults(func=cmd_gates)
+
+    mp = sub.add_parser("map", parents=[common],
+                        help="研究链条：哪个点子还没有对应实验、哪个实验还没有结果、哪个结果还不能引用")
+    mp.add_argument("--project", default=None)
+    mp.set_defaults(func=cmd_map)
+
+    cp = sub.add_parser("capabilities", parents=[common],
+                        help="上游 8 个来源 358 份 skill 原文：列表 / 按名字搜（只读原文，不是能力，跑不起来）")
+    cp.add_argument("query", nargs="?", default=None, help="关键词；不给就列全部来源")
+    cp.add_argument("--limit", type=int, default=25)
+    cp.set_defaults(func=cmd_capabilities)
 
     de = sub.add_parser("destroy", parents=[common], help="删掉投影（安全 —— reindex 可完整恢复）")
     de.set_defaults(func=cmd_destroy)

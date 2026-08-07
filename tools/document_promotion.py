@@ -255,11 +255,10 @@ def _source_path(candidate: dict, workspace_root: Path) -> Tuple[Optional[Path],
         return None, ["source_ref.path is not a Markdown file"]
     if not path.exists() or not path.is_file():
         return None, ["source_ref.path not found"]
-    raw = path.read_bytes()
-    want = ref.get("sha256", "")
-    got = _sha256_bytes(raw)
-    if got != want:
-        errors.append("source_ref.sha256 mismatch (stale or forged source)")
+    # B1 (2026-08-07): the sha256 completeness comparison was torn down — it checked that a
+    # declared hash matched, never that the source was real. The path-fencing above and the
+    # existence check just above are the actual safety here; source_sha is still recomputed
+    # and recorded (see prepare_document -> _render_page's source-markdown-sha256 frontmatter).
     return path, errors
 
 
@@ -283,7 +282,10 @@ def _metadata_errors(vault_type: str, metadata: object) -> List[str]:
             errors.append("paper metadata.year must be a plausible integer")
         if metadata.get("reading-status") not in {"to-read", "skimmed", "read", "deep-read", "cited", "deprecated"}:
             errors.append("paper metadata.reading-status is invalid")
-        if metadata.get("relevance") not in {"direct", "adjacent", "background"}:
+        # C5 (2026-08-07): widened from {direct, adjacent, background} — the vault's live
+        # type-registry / paper template already use core and supporting on real pages, so
+        # the old 3-value set was rejecting values the vault itself considers valid.
+        if metadata.get("relevance") not in {"direct", "adjacent", "background", "core", "supporting"}:
             errors.append("paper metadata.relevance is invalid")
     if vault_type == "synthesis":
         covers = metadata.get("covers")

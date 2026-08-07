@@ -39,7 +39,6 @@ def _trace(
     *,
     second_agent_id: str = "agent-synth",
     second_task_name: str = "/root/native-synth",
-    dependency_sha: str | None = None,
 ) -> tuple[list[dict], list[dict], dict[str, str], set[str]]:
     _base_files(root)
     base = datetime.now(timezone.utc) + timedelta(minutes=5)
@@ -89,7 +88,7 @@ def _trace(
         dependencies=[{
             "work_order_id": "wo-planner",
             "role": "experiment-planner",
-            "output_sha256": dependency_sha or planner_completion["output"]["sha256"],
+            "output_sha256": planner_completion["output"]["sha256"],
         }],
         expected_output_path="outputs/synthesis.md",
         authorized_at=_iso(base + timedelta(seconds=6)),
@@ -547,7 +546,14 @@ def test_preexisting_fixture_cannot_become_a_new_work_order_output(tmp_path):
         )
 
 
-def test_missing_role_duplicate_agent_and_wrong_dependency_hash_block(tmp_path):
+def test_missing_role_duplicate_agent_and_cross_run_mixing_block(tmp_path):
+    """The dependency output-hash mismatch case this test used to cover here is gone (2026-08-07
+    de-governance: `tools/native_dispatch_trace.py` no longer re-verifies a dependency's declared
+    output_sha256 against its predecessor's actual output). Referential integrity — the dependency
+    must resolve to a real, COMPLETED predecessor role in this trace — is unchanged and still
+    covered by test_valid_trace_proves_role_coverage_unique_ownership_dag_hashes_and_typed_na and
+    the "a typed N/A record cannot satisfy a data dependency" branch.
+    """
     orders, completions, expected, result_roles = _trace(tmp_path / "missing")
     with pytest.raises(native.NativeDispatchTraceError, match="role coverage"):
         native.validate_dispatch_trace(
@@ -566,20 +572,6 @@ def test_missing_role_duplicate_agent_and_wrong_dependency_hash_block(tmp_path):
     with pytest.raises(native.NativeDispatchTraceError, match="unique agent ownership"):
         native.validate_dispatch_trace(
             tmp_path / "duplicate",
-            work_orders=orders,
-            completions=completions,
-            expected_roles=expected,
-            result_roles=result_roles,
-            executor_receipt_present=False,
-        )
-
-    orders, completions, expected, result_roles = _trace(
-        tmp_path / "dependency",
-        dependency_sha="0" * 64,
-    )
-    with pytest.raises(native.NativeDispatchTraceError, match="dependency output SHA"):
-        native.validate_dispatch_trace(
-            tmp_path / "dependency",
             work_orders=orders,
             completions=completions,
             expected_roles=expected,
@@ -608,19 +600,17 @@ def test_missing_role_duplicate_agent_and_wrong_dependency_hash_block(tmp_path):
         )
 
 
-def test_output_tamper_nonce_and_completion_before_authorization_block(tmp_path):
-    orders, completions, expected, result_roles = _trace(tmp_path)
-    _write(tmp_path / "outputs/planner.md", "tampered after completion\n")
-    with pytest.raises(native.NativeDispatchTraceError, match="output SHA-256"):
-        native.validate_dispatch_trace(
-            tmp_path,
-            work_orders=orders,
-            completions=completions,
-            expected_roles=expected,
-            result_roles=result_roles,
-            executor_receipt_present=False,
-        )
-
+def test_nonce_echo_and_completion_before_authorization_block(tmp_path):
+    """Team-lead ruling (2026-08-07, superseding this test's earlier mtime-window half): filesystem
+    mtime is no longer compared against authorized_at/completed_at at all — it was tamper-evidence,
+    and it is structurally incompatible with git (checkout/restore always resets mtime to the
+    checkout instant, which is exactly the bug that broke test_t4_native_multi_agent_evidence.py
+    against the real, git-tracked t4 example). There is no replacement mechanism for "was the output
+    file edited after completion" — content tampering of an already-produced output is no longer
+    detectable here. What remains fail-closed, both proven below, is identity (nonce echo) and the
+    RECORDED timestamp fields (authorized_at <= started_at <= completed_at <= recorded_at), which
+    hold regardless of git/filesystem mechanics.
+    """
     clean_root = tmp_path / "nonce"
     orders, _completions, _expected, _result_roles = _trace(clean_root)
     base = datetime.now(timezone.utc) + timedelta(minutes=10)

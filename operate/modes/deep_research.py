@@ -93,13 +93,20 @@ DEEP_RESEARCH_PARALLEL_GROUPS = [
 ]
 
 
+#: Declared as the CHEAP set rather than the expensive one, so a seat added later defaults to the
+#: frontier tier instead of silently inheriting sonnet. These four gather and restate: they pull
+#: records, extract fields, and link a claim to the span that supports it — 书写 / 固定死了的那种.
+#: Every other seat in this mode either judges evidence quality, verifies a citation, hunts a gap,
+#: or synthesises the landscape, and the director's rule keeps 质量 and 想法 on the frontier tier.
+_SCOPED_EXECUTION_SEATS = frozenset({
+    "lit-scout", "model-dataset-scout", "claim-extractor", "claim-evidence-linker",
+})
+
+
 def _worker_model(model_policy: str, agent: str) -> str:
     if model_policy == "max_quality":
         return "opus"
-    if agent in {"source-quality-ranker", "citation-coverage-auditor", "contradiction-miner",
-                 "landscape-mapper"}:
-        return "opus"
-    return "sonnet"
+    return "sonnet" if agent in _SCOPED_EXECUTION_SEATS else "opus"
 
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
@@ -164,7 +171,8 @@ Output exactly: {"evidence_table": {"evidence_contract_version":"evidence-table/
 "source_quality_report_ref":"evidence/DISCOVER/source-quality-report.artifact.json",
 "search_trace_ref":"evidence/DISCOVER/evidence-search-trace.artifact.json",
 query, sources, "saturation_reached":false}}.
-Use 5-10 sources when available, including negative and boundary evidence. For novelty questions,
+Use >=30 sources when available — a FLOOR with no upper bound, so use every relevant record the
+retrieval bundle holds rather than a sample — including negative and boundary evidence. For novelty questions,
 retrieve candidates across the central claim, mechanism, input/output contract, causal assay, and
 strongest falsifying alternative; do not stop at topical similarity. The saturation field is a
 fixed compatibility placeholder; only the deterministic search-trace evaluator derives completion.
@@ -186,13 +194,25 @@ and never proves strength.
         pid, angle = perspective[agent]
         return common + f"""
 Task: independently research perspective `{pid}`: {angle}.
-Output exactly: {{"research_perspective_note": {{perspective_id, angle, questions,
+Output exactly: {{"research_perspective_note": {{perspective_id, angle, specialized_angle, questions,
 finding_summary, source_refs, coverage_limits, actionable_opportunities, kill_criteria,
-confidence}}}}.
+expected_disagreement, blind_spot, confidence}}}}.
 Use perspective_id `{pid}`. Include at least two concrete questions. The finding_summary must
 answer "what changed in belief, what should the project/idea/experiment do next, and what remains
 uncertain from this angle?" Put the highest-value action in actionable_opportunities and a real
 decision-reversing result in kill_criteria.
+
+Your assigned angle is the STARTING POINT, not the whole brief. First specialize it to THIS topic:
+state, in one sentence, what a real specialist holding this angle on this specific topic would care
+about that a generalist would not — the term they would use, the failure they would expect, the
+evidence they would demand. Write that as `specialized_angle` and research THAT, not the generic label.
+
+You are one of four independent perspectives that will be synthesized. Agreement between perspectives
+is cheap; productive tension is what makes the synthesis worth reading. Before finishing, name at
+least one point on which you expect another perspective on this panel to DISAGREE with you
+substantively, and say why you hold your position anyway — write it as `expected_disagreement`. Also
+name your own `blind_spot`: what your angle structurally cannot see, so the synthesizer can compensate
+rather than inherit it.
 """
     if agent == "claim-extractor":
         return common + """
@@ -223,7 +243,7 @@ Every locus must include source_ref, location, kind, reported_result, supports_c
 directness, span_id, snapshot_ref, document_hash, parser_version, exact_quote, and either char_start/char_end,
 table_cell_ref, or figure_region_ref. Perspective summaries may guide retrieval but are never citable evidence.
 For `source_ref`, copy the evidence-table row's resolvable `ref` value, never its local `id` such as `s1`.
-"""
+""" + _shared.SUPPORT_RELATION_CONTRACT
     if agent == "citation-coverage-auditor":
         return common + """
 Task: independently audit claim support after the linker freezes locators. You did not extract or link
@@ -264,7 +284,7 @@ falsifiable delta survives. Never convert missing full text into a novelty concl
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     if stage != "DISCOVER":
         return None
     north_star = _shared.north_star_block(run_dir)

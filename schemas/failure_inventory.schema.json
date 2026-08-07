@@ -53,6 +53,12 @@
       "type": "string",
       "default": "",
       "description": "Optional overall summary of failure patterns"
+    },
+    "sources_read": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "R3 C4 (2026-08-07). OPTIONAL. Run-relative paths the failure-case-miner actually read while mining this inventory. Preserves grounding the worker prompt already asks for but the producer previously dropped before this field existed."
     }
   }
 }

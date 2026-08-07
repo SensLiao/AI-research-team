@@ -83,9 +83,11 @@ def test_quality_scoreboard_schema_and_status(tmp_path):
     assert scoreboard["summary"]["business_output_advisories"] == 0
     assert scoreboard["summary"]["vault_write"] is False
     assert scoreboard["summary"]["external_skill_execution"] is False
-    # The catalog is registry-derived.  Keep this expected count aligned with the
-    # twelve concrete operated recipes, including the two manuscript modes.
-    assert scoreboard["capability"]["operated_modes"] == 12
+    # The catalog is registry-derived. Wave 2 (2026-08-04) took the operated surface from twelve
+    # to twenty-one; the 2026-08-07 backlog close (ideate_ring, aers_enhanced_research_pack) took
+    # it to twenty-three. This stays a hard number on purpose, so wiring a mode without wiring the
+    # rest of its panel (menu, intent, drill-down, output contract) cannot pass unnoticed.
+    assert scoreboard["capability"]["operated_modes"] == 23
     assert scoreboard["runs"]["run_count"] == 1
     assert scoreboard["business_outputs"]["completed_run_count"] == 0
 

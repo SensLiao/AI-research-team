@@ -321,7 +321,10 @@ def test_reconcile_legacy_idea_boundary_append_only_and_holds_report(tmp_path):
     assert manifest["next_step"]["stage"] == "REPORT"
 
 
-def test_reconcile_director_gate_refuses_a_changed_task_frame(tmp_path):
+def test_reconcile_director_gate_tolerates_a_rewritten_task_frame(tmp_path):
+    """De-governance (director order 2026-08-07): the task-frame byte/hash comparison was removed
+    from reconcile — a cosmetic rewrite of the file no longer refuses the gate. The file must still
+    EXIST (that check stayed), which the happy path below exercises."""
     runs = tmp_path / "runs"
     plan = spine.begin(str(runs), "op-gate-tamper", "rank promptable segmentation directions",
                        "new_direction", TS)
@@ -333,8 +336,8 @@ def test_reconcile_director_gate_refuses_a_changed_task_frame(tmp_path):
     task_frame = rd / "task_frame.artifact.json"
     task_frame.write_text(task_frame.read_text(encoding="utf-8") + "\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="task-frame"):
-        spine.reconcile_director_gate(rd, "IDEATE", TS)
+    out = spine.reconcile_director_gate(rd, "IDEATE", TS)
+    assert out is not None
 
 
 def test_operate_ideate_writes_director_idea_bet_markdown(tmp_path):

@@ -84,21 +84,36 @@ def test_admit_with_verified_audits_writes_vault_and_records_promote_event(tmp_p
     assert pe["payload"]["vault_slug"] == "promoted-frozen-result"
 
 
-def test_forged_audit_sha_mismatch_is_rejected_before_any_vault_write(tmp_path):
-    """(b) The gate reads + sha-verifies the REAL referenced audits. Tampering an audit file after the
-    candidate's ref was computed → sha mismatch → hard reject, vault untouched."""
+def test_schema_invalid_audit_is_rejected_before_any_vault_write(tmp_path):
+    """(b) sha256 re-verification of a referenced audit is gone (R3 §B①) — an edited-but-still
+    schema-valid file is no longer rejected merely for not matching its declared digest. What is
+    KEPT and still fail-closed: path fencing (:103), file existence (:106), and schema validation
+    (:121). This exercises schema validation end to end: the leakage audit is overwritten with the
+    RIGHT shape (still parses, still under the run dir) but the WRONG content — a required
+    `violations` array missing — so only the schema contract catches it."""
     run_dir, candidate, vault, leak_p = _setup(tmp_path)
-    leak_p.write_bytes(b'{"artifact_type":"verdict","payload":{"verdict":"PASS","violations":[]},"x":"tampered"}')
+    leak_p.write_bytes(json.dumps({"artifact_type": "verdict",
+                                   "payload": {"verdict": "PASS"}}).encode("utf-8"))  # violations missing
     before = set((vault / "02-wiki" / "results").glob("*.md"))
     rec = run_promote_gate(candidate, run_dir=run_dir, vault_root=vault, human_freeze=True,
                            decided_by="director", decided_at=TS)
     assert rec["admissible"] is False
     assert rec["vault_path"] is None
-    assert any("sha256 mismatch" in r for r in rec["reasons"])
-    assert set((vault / "02-wiki" / "results").glob("*.md")) == before, "forged audit must not write the vault"
+    assert any("sanity_verdict" in r and "contract" in r for r in rec["reasons"])
+    assert set((vault / "02-wiki" / "results").glob("*.md")) == before, "schema-invalid audit must not write the vault"
     assert validate_payload("promotion_record", rec) == []
     pe = last_of_type(read_events(run_dir / "ledger.jsonl"), "promote")
     assert pe is not None and pe["payload"]["admissible"] is False
+
+
+def test_missing_audit_file_is_rejected(tmp_path):
+    """(b) The ref points at a real path, but the file itself is gone — existence stays fail-closed
+    even though sha256 re-verification (which used to catch this one level later) is gone."""
+    run_dir, candidate, vault, leak_p = _setup(tmp_path)
+    leak_p.unlink()
+    signals, errors = load_and_verify_signals(candidate, run_dir)
+    assert any("not found" in e for e in errors)
+    assert signals["leakage_pass"] is False        # the unverifiable audit fails closed
 
 
 def test_missing_audit_ref_fails_closed(tmp_path):

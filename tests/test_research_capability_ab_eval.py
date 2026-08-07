@@ -1,3 +1,14 @@
+"""Tests for the frozen-holdout Stage-B research-capability paired A/B evaluation.
+
+R3 §B①: this module calls into provider_call_receipt_import, so it inherits the same signature/
+file-hash teardown (see test_provider_call_receipt_import.py). Deleted: test_seal_blocks_without_a_
+real_host_trust_binding (the "no trusted key" gate is vestigial once nothing verifies attestation),
+and the "sha" case (receipt-declared vs. recomputed author-artifact SHA-256) from the parametrized
+fail-closed test. Kept: schema validation, path fencing, missing-file existence, and every
+coherence/binding check that is not a file-content hash comparison — global runtime-policy parity
+across all 40 receipts, challenge/artifact-path binding, blind-packet identity binding
+(packet_sha256 on a judge sheet), and paired-statistics/scoring logic.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -346,19 +357,6 @@ def test_seal_validates_schema_hash_bindings_and_runtime_parity(tmp_path):
     assert _sha256(packet) == condition["blind_packet"]["sha256"]
 
 
-def test_seal_blocks_without_a_real_host_trust_binding(tmp_path):
-    plan, plan_path = _prepare(tmp_path)
-    artifact_root = tmp_path / "artifacts"
-    _write_author_artifacts(plan, artifact_root)
-    with pytest.raises(ab.OverlayABEvalError, match="no trusted.*public key"):
-        ab.seal_stage_b(
-            plan_path,
-            artifact_root=artifact_root,
-            out_dir=tmp_path / "sealed",
-            provider_key_resolver=lambda _key_id: None,
-        )
-
-
 @pytest.mark.parametrize(
     ("mutation", "match"),
     [
@@ -366,7 +364,6 @@ def test_seal_blocks_without_a_real_host_trust_binding(tmp_path):
         ("policy", "frozen global author runtime policy"),
         ("usage", "signed provider-attested.*schema BLOCK"),
         ("path", "artifact path does not match"),
-        ("sha", "artifact SHA-256 mismatch"),
     ],
 )
 def test_seal_fails_closed_on_missing_or_noncomparable_receipts(tmp_path, mutation, match):
@@ -375,7 +372,6 @@ def test_seal_fails_closed_on_missing_or_noncomparable_receipts(tmp_path, mutati
     _write_author_artifacts(plan, artifact_root)
     pair = plan["pairs"][0]
     candidate = pair["candidates"]["X"]
-    author_path = artifact_root / candidate["author_output_rel"]
     receipt_path = artifact_root / candidate["runtime_receipt_rel"]
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     if mutation == "missing":
@@ -386,13 +382,9 @@ def test_seal_fails_closed_on_missing_or_noncomparable_receipts(tmp_path, mutati
     elif mutation == "usage":
         receipt["observed"]["input_tokens"]["source"] = "estimated"
         receipt_path.write_text(json.dumps(_sign_provider_receipt(receipt)), encoding="utf-8")
-    elif mutation == "path":
+    else:
         receipt["artifact"]["path"] = "authors/wrong.md"
         receipt_path.write_text(json.dumps(_sign_provider_receipt(receipt)), encoding="utf-8")
-    else:
-        receipt["artifact"]["sha256"] = "sha256:" + "0" * 64
-        receipt_path.write_text(json.dumps(_sign_provider_receipt(receipt)), encoding="utf-8")
-        assert author_path.is_file()
     with pytest.raises(ab.OverlayABEvalError, match=match):
         ab.seal_stage_b(
             plan_path,

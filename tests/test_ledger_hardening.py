@@ -1,9 +1,13 @@
-"""Ledger hardening (audit M4/M13): verify-before-append + the lock sidecar + the new event type."""
+"""Ledger hardening (audit M13 + R3 §B①): the lock sidecar + the new event types.
+
+M4's original "verify-before-append" GATE is gone — append no longer refuses to write onto a
+corrupted chain (resume/reopen must keep working even when history upstream is imperfect).
+`verify_chain` itself is untouched and stays load-bearing as a read-only diagnostic (still what
+`workbench governance` reads); only its power to BLOCK a write was removed.
+"""
 from __future__ import annotations
 
 import json
-
-import pytest
 
 from research_agent_teams.tools.ledger import EVENT_TYPES, append_event, read_events, verify_chain
 from research_agent_teams.tools.validate_artifact import validate_against
@@ -11,16 +15,19 @@ from research_agent_teams.tools.validate_artifact import validate_against
 TS = "2026-06-13T00:00:00Z"
 
 
-def test_append_refuses_a_corrupted_ledger(tmp_path):
+def test_append_tolerates_a_corrupted_ledger_but_verify_chain_still_reports_it(tmp_path):
     lp = tmp_path / "ledger.jsonl"
     append_event(lp, "run_started", {"mode": "x", "entry_stage": "DISCOVER"}, TS)
     append_event(lp, "stage_started", {"stage": "DISCOVER"}, TS)
     events = read_events(lp)
     events[0]["payload"]["mode"] = "tampered"                      # corrupt a non-tip event
     lp.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
-    assert verify_chain(read_events(lp))                           # detectably broken
-    with pytest.raises(ValueError, match="refusing to append to a corrupted ledger"):
-        append_event(lp, "stage_started", {"stage": "IDEATE"}, TS)  # M4: fails at the NEXT write
+    assert verify_chain(read_events(lp))                           # still detectably broken —
+                                                                    # the diagnostic itself is intact
+    new_event = append_event(lp, "stage_started", {"stage": "IDEATE"}, TS)  # no longer refuses
+    assert new_event["seq"] == 2
+    assert read_events(lp)[-1] == new_event
+    assert verify_chain(read_events(lp))                           # the prior corruption still shows
 
 
 def test_lock_sidecar_never_enters_the_chain_and_appends_stay_clean(tmp_path):

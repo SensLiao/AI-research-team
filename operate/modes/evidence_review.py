@@ -83,8 +83,9 @@ Write ONLY this JSON to `{out}` (ends in .bundle.json, NOT .artifact.json):
        "directness":"direct|indirect|proxy|assumed"}}],
      "claim_risk":{{"level":"high|medium|low","note":"<why the claim may be overstated>"}}}}]}}
 }}
-Quantities: sources 4-8 (>=1 "strong"); claims 2-4, including a limitation claim when the sources \
-support one. Each claim must be anchored by >=1 locus with reported_result, explicit supports_claim, \
+Quantities are FLOORS with NO upper bound — volume is wanted: sources >=20 (>=5 "strong"); claims >=10, \
+including a limitation claim when the sources support one. Emit every claim that clears the bar below; \
+never drop a defensible one to keep the list short. Each claim must be anchored by >=1 locus with reported_result, explicit supports_claim, \
 directness, and an honest overclaim risk. Prefer claims that change what the current project, idea, \
 or experiment should do next. After writing, verify valid JSON. Return one line: sources + claims + saturation."""
 
@@ -104,7 +105,7 @@ Write ONLY JSON to `{out}`:
 "query":"<query>","sources":[{{"id":"s1","kind":"paper",
 "ref":"<real ref>","title":"<title>","year":2025,"claim_support":"strong|moderate|weak|none"}}],
 "saturation_reached":false}}}}
-Use 4-8 sources when available and include counterevidence. `saturation_reached` is a compatibility
+Use >=20 sources when available (a floor, not a cap — use every relevant one) and include counterevidence. `saturation_reached` is a compatibility
 placeholder and MUST remain false; only the deterministic search-trace evaluator may derive completion."""
 
 SOURCE_QUALITY_PROMPT = """You are the independent source-methodology reviewer. You did not gather sources.
@@ -206,8 +207,17 @@ to `{out}`:
 One result per claim. Source existence or topical overlap is not entailment."""
 
 
-def _worker_model(model_policy: str) -> str:
-    return "opus" if model_policy == "max_quality" else "sonnet"
+#: The cheap half of this panel: pull the records, pull the claims, link a claim to the span that
+#: supports it. Declared as the cheap set so a seat added later inherits the frontier tier rather
+#: than silently inheriting sonnet. `source-quality-ranker`, `evidence-search-moderator` and
+#: `citation-coverage-auditor` judge evidence and stay on the frontier tier per the director's rule.
+_SCOPED_EXECUTION_SEATS = frozenset({"lit-scout", "claim-extractor", "claim-evidence-linker"})
+
+
+def _worker_model(model_policy: str, agent: str = "") -> str:
+    if model_policy == "max_quality":
+        return "opus"
+    return "sonnet" if agent in _SCOPED_EXECUTION_SEATS else "opus"
 
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
@@ -224,7 +234,7 @@ def fulltext_pre(run_dir: str, question: str, doc_paths, ts: str) -> Optional[st
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     """Return the six-worker lightweight evidence panel."""
     if stage == "DISCOVER":
         north_star = _shared.north_star_block(run_dir)
@@ -235,28 +245,28 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
         linker_out = f"{run_dir}/inbox/DISCOVER.claim-evidence-linker.bundle.json"
         audit_out = f"{run_dir}/inbox/DISCOVER.citation-coverage-auditor.bundle.json"
         workers = [
-            {"label": "lit-scout", "model": _worker_model(model_policy), "output": scout_out,
+            {"label": "lit-scout", "model": _worker_model(model_policy, "lit-scout"), "output": scout_out,
              "prompt": SCOUT_PROMPT.format(request=request, north_star=north_star, vault=vault,
                                             run_dir=run_dir, out=scout_out)},
-            {"label": "source-quality-ranker", "model": _worker_model(model_policy),
+            {"label": "source-quality-ranker", "model": _worker_model(model_policy, "source-quality-ranker"),
              "output": quality_out, "depends_on": ["lit-scout"],
              "prompt": SOURCE_QUALITY_PROMPT.format(north_star=north_star, run_dir=run_dir,
                                                      out=quality_out)},
-            {"label": "claim-extractor", "model": _worker_model(model_policy),
+            {"label": "claim-extractor", "model": _worker_model(model_policy, "claim-extractor"),
              "output": extractor_out, "depends_on": ["lit-scout"],
              "prompt": CLAIM_EXTRACTOR_PROMPT.format(request=request, north_star=north_star,
                                                       run_dir=run_dir, out=extractor_out)},
-            {"label": "evidence-search-moderator", "model": _worker_model(model_policy),
+            {"label": "evidence-search-moderator", "model": _worker_model(model_policy, "evidence-search-moderator"),
              "output": search_out,
              "depends_on": ["lit-scout", "source-quality-ranker", "claim-extractor"],
              "prompt": SEARCH_MODERATOR_PROMPT.format(request=request, north_star=north_star,
                                                         run_dir=run_dir, out=search_out)},
-            {"label": "claim-evidence-linker", "model": _worker_model(model_policy),
+            {"label": "claim-evidence-linker", "model": _worker_model(model_policy, "claim-evidence-linker"),
              "output": linker_out,
              "depends_on": ["lit-scout", "claim-extractor", "evidence-search-moderator"],
              "prompt": CLAIM_LINKER_PROMPT.format(north_star=north_star,
                                                    run_dir=run_dir, out=linker_out)},
-            {"label": "citation-coverage-auditor", "model": _worker_model(model_policy),
+            {"label": "citation-coverage-auditor", "model": _worker_model(model_policy, "citation-coverage-auditor"),
              "output": audit_out, "depends_on": ["claim-evidence-linker"],
              "prompt": CITATION_AUDITOR_PROMPT.format(north_star=north_star,
                                                        run_dir=run_dir, out=audit_out)},

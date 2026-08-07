@@ -7,10 +7,18 @@
   "text_vendoring": {
     "decision": "Director, 2026-08-04: mount the upstream skill TEXT read-only. Vendored by tools/vendor_upstream_skills.py.",
     "vendor_root": "vendor/upstream-research-skills",
-    "excluded_source_ids": ["drawio_scientific_illustrator"],
+    "excluded_source_ids": [
+      "drawio_scientific_illustrator"
+    ],
     "relationship_to_copy_policy": "The per-source copy_policy values below were SELF-IMPOSED on 2026-07-31 (concept-only, no code or long text) and are deliberately left unedited as the audit record. This decision overrides them for TEXT of the admitted sources only: their markdown now lives in the vendor root. copy_policy still governs CODE, and no upstream code is copied, imported, executed, or auto-updated — the vendoring allowlist admits markdown and license notices only, so there is nothing runnable in the tree.",
-    "reverses_ledger_items": ["§5.1 third-party files enter the repo tree", "§5.5 the clean-room no-exact-copy property ends"],
-    "keeps_ledger_items": ["§5.2 no installer / hook / MCP server / auto-update is fetched or run", "§5.3 drawio-scientific-illustrator stays excluded on safety grounds"]
+    "reverses_ledger_items": [
+      "§5.1 third-party files enter the repo tree",
+      "§5.5 the clean-room no-exact-copy property ends"
+    ],
+    "keeps_ledger_items": [
+      "§5.2 no installer / hook / MCP server / auto-update is fetched or run",
+      "§5.3 drawio-scientific-illustrator stays excluded on safety grounds"
+    ]
   },
   "source_count": 9,
   "skill_count_total": 359,
@@ -88,6 +96,16 @@
           "path": "skills/ml-paper-writing/SKILL.md",
           "sha256": "25edf4c880d299d0d31b981167fdc3cf8cda9d4d1c328addd5ee294b8c694b2e",
           "role": "manuscript_writing_contract"
+        },
+        {
+          "path": "skills/research-ideation/SKILL.md",
+          "sha256": "aafb7239340ae838cbbd133e234ce0619688a01623eaf53da03e1703d766754c",
+          "role": "research_question_card_contract"
+        },
+        {
+          "path": "skills/results-report/SKILL.md",
+          "sha256": "aeb58c1111308ba4caf4de93db4777f62e6ebfa0eb1d11f400b80640e69226b0",
+          "role": "decision_oriented_report_contract"
         }
       ]
     },
@@ -174,6 +192,31 @@
           "path": "skills/paper-to-code/SKILL.md",
           "sha256": "ae83667aaa347fdeb689972be807ec38df44deee06be26036bc5107e625c0136",
           "role": "paper_to_code_contract"
+        },
+        {
+          "path": "skills/idea-generation/SKILL.md",
+          "sha256": "a04ee0a7e1206a3ef56522bc2246e535fe296e6b0c7ab0874408472714740eee",
+          "role": "ideation_refinement_contract"
+        },
+        {
+          "path": "skills/novelty-assessment/SKILL.md",
+          "sha256": "78c9cc911a0b32865308850243f68520bff78bf48cc6496cb607d3101149b020",
+          "role": "novelty_search_rounds_contract"
+        },
+        {
+          "path": "skills/atomic-decomposition/SKILL.md",
+          "sha256": "13da03b978eeab2bbbf9fcbdc6d3adf603d4f0ec8404d9d444733af63fa54da6",
+          "role": "atomic_concept_contract"
+        },
+        {
+          "path": "skills/experiment-design/SKILL.md",
+          "sha256": "c35ccd5feacfefda79fe48bf71a236560f822580d0025afedd306fc0573741bc",
+          "role": "progressive_stage_contract"
+        },
+        {
+          "path": "skills/data-analysis/SKILL.md",
+          "sha256": "43a70badeebf4281c9b8ca9bfa5f12df8044a81867566d31dbacca35f6ebbdb2",
+          "role": "analysis_review_rounds_contract"
         }
       ]
     },

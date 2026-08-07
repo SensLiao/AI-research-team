@@ -299,10 +299,11 @@ def _validate_written(paths):
 # ---------------- registry + router ----------------
 
 def test_registry_has_twelve_wired_modes():
-    assert set(REGISTRY) == {"new_direction", "deep_ideation", "evidence_review", "evidence_deep",
-                             "deep_research", "gap_breadth", "venue_readiness", "full_rigor_minimal",
-                             "ingest_paper", "read_paper_deep",
-                             "manuscript_authoring", "manuscript_review"}
+    """Wave 1's twelve are still exactly wired — wave 2 ADDED nine, it replaced nothing."""
+    assert {"new_direction", "deep_ideation", "evidence_review", "evidence_deep",
+            "deep_research", "gap_breadth", "venue_readiness", "full_rigor_minimal",
+            "ingest_paper", "read_paper_deep",
+            "manuscript_authoring", "manuscript_review"} <= set(REGISTRY)
     for mod in REGISTRY.values():
         assert callable(mod.llm_step) and callable(mod.run_dets)
 
@@ -439,7 +440,7 @@ def test_evidence_review_llm_step_shape(tmp_path):
     assert [worker["label"] for worker in spec["workers"]] == [
         "lit-scout", "source-quality-ranker", "claim-extractor", "evidence-search-moderator",
         "claim-evidence-linker", "citation-coverage-auditor"]
-    assert all(worker["model"] == "sonnet" for worker in spec["workers"])
+    # (per-seat model routing is pinned exactly at the end of this test)
     assert "my question" in spec["workers"][0]["prompt"]
     assert "rigor_score" in spec["workers"][1]["prompt"]
     assert "Do not link or" in spec["workers"][2]["prompt"]
@@ -448,8 +449,23 @@ def test_evidence_review_llm_step_shape(tmp_path):
     assert "independent citation auditor" in spec["workers"][5]["prompt"]
     assert all("NORTH STAR" in worker["prompt"] for worker in spec["workers"])
     assert evidence_review.llm_step(run_dir, "REPORT", "q") is None
-    assert all(worker["model"] == "opus" for worker in
-               evidence_review.llm_step(run_dir, "DISCOVER", "q")["workers"])
+    # Model routing under the DEFAULT policy (director's rule, 2026-08-05): the three seats that
+    # gather and restate run on sonnet; the three that JUDGE evidence stay on opus. `max_quality`
+    # remains the 全 OPUS override. Pinned per-seat so a future retier cannot silently cheapen a
+    # judging seat — which is the exact regression this assertion exists to catch.
+    by_label = {w["label"]: w["model"]
+                for w in evidence_review.llm_step(run_dir, "DISCOVER", "q")["workers"]}
+    assert by_label == {
+        "lit-scout": "sonnet",
+        "claim-extractor": "sonnet",
+        "claim-evidence-linker": "sonnet",
+        "source-quality-ranker": "opus",
+        "evidence-search-moderator": "opus",
+        "citation-coverage-auditor": "opus",
+    }
+    assert all(w["model"] == "opus" for w in
+               evidence_review.llm_step(run_dir, "DISCOVER", "q",
+                                        model_policy="max_quality")["workers"])
 
 
 def test_evidence_review_strict_panel_emits_independent_attribution(tmp_path):

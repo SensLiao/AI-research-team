@@ -176,7 +176,9 @@ def test_real_shipped_pool_validates(monkeypatch):
     assert ok2 is False
 
 
-def test_real_bdav_3090_director_resolution_still_requires_live_execution_admission(monkeypatch):
+def test_real_bdav_3090_director_resolution_still_requires_live_execution_admission(
+    tmp_path, monkeypatch
+):
     """A director-reported fix cannot expose values or silently grant execute access."""
     monkeypatch.delenv("RAT_RESOURCES_ROOT", raising=False)
     reg = rp.load_registry()
@@ -209,8 +211,33 @@ def test_real_bdav_3090_director_resolution_still_requires_live_execution_admiss
     )
     assert denied is False
 
-    pkg_root = Path(rp.__file__).resolve().parents[1]
-    bindings = rp.load_bindings(pkg_root / "projects", "petct-residual-correction")
+    # projects/petct-residual-correction/resource_bindings.yaml is gitignored machine-local
+    # data (may or may not exist on any given checkout) — fixture it here so this exercises
+    # binding resolution, not whatever this particular machine happens to have on disk.
+    _write(
+        tmp_path / "projects" / "petct-residual-correction" / "resource_bindings.yaml",
+        yaml.safe_dump({
+            "schema_version": 1,
+            "project": "petct-residual-correction",
+            "bindings": [
+                {
+                    "alias": "primary_gpu",
+                    "resource_ref": "server.honor.gpu",
+                    "allowed_capabilities": ["query_status", "pull_logs"],
+                    "allowed_skills": ["server-query"],
+                    "requires_human_approval": True,
+                },
+                {
+                    "alias": "secondary_gpu",
+                    "resource_ref": "server.usyd.bdav_z390_3090",
+                    "allowed_capabilities": ["query_status", "pull_logs"],
+                    "allowed_skills": ["server-query"],
+                    "requires_human_approval": True,
+                },
+            ],
+        }),
+    )
+    bindings = rp.load_bindings(tmp_path / "projects", "petct-residual-correction")
     primary = rp.binding_for(bindings, "primary_gpu")
     assert primary["resource_ref"] == "server.honor.gpu"
     binding = rp.binding_for(bindings, "secondary_gpu")

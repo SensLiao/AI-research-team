@@ -54,7 +54,7 @@ def _seed_vault(root: Path) -> Path:
     return root
 
 
-def _candidate(workspace: Path, *, slug: str = "final-brief", bad_sha: bool = False,
+def _candidate(workspace: Path, *, slug: str = "final-brief",
                crlf_source: bool = False) -> tuple[dict, Path, str]:
     source = workspace / "research_agent_teams" / "runs" / "petct-residual-correction" / "run-1" / "director-review" / "evidence.md"
     source.parent.mkdir(parents=True, exist_ok=True)
@@ -73,7 +73,7 @@ def _candidate(workspace: Path, *, slug: str = "final-brief", bad_sha: bool = Fa
         "evidence_class": "ASSUMPTION",
         "source_ref": {
             "path": "research_agent_teams/runs/petct-residual-correction/run-1/director-review/evidence.md",
-            "sha256": "sha256:" + "0" * 64 if bad_sha else _sha(raw),
+            "sha256": _sha(raw),
         },
         "metadata": {"covers": ["[[petct-residual-correction-brief]]"]},
         "domain": ["medical-imaging"],
@@ -194,15 +194,23 @@ def test_document_admission_accepts_explicit_director_command_without_env(monkey
     assert (vault / "02-wiki" / "syntheses" / "final-brief.md").exists()
 
 
-def test_stale_source_sha_or_bad_batch_preflight_writes_nothing(monkeypatch, tmp_path):
+def test_bad_batch_preflight_is_all_or_nothing_even_for_an_otherwise_valid_candidate(monkeypatch, tmp_path):
+    """R3 C5 (2026-08-07): source_ref.sha256 re-verification is gone (bad_sha is no longer a
+    preflight failure mode — document_promotion.py:258-262). Path escape (kept — see
+    test_document_source_cannot_escape_project_paths) still poisons preflight, and the batch-wide
+    all-or-nothing gate (document_promotion.py:753-763) still rejects a same-batch candidate that
+    would otherwise have been admissible on its own."""
     workspace = tmp_path / "workspace"
     vault = _seed_vault(tmp_path / "vault")
     good, good_path, good_sha = _candidate(workspace, slug="good-brief")
-    bad, bad_path, bad_sha = _candidate(workspace, slug="bad-brief", bad_sha=True)
+    escaping, escaping_path, escaping_sha = _candidate(workspace, slug="escaping-brief")
+    outside = workspace / "README.md"
+    outside.write_text("# not a project source", encoding="utf-8")
+    escaping["source_ref"] = {"path": "README.md", "sha256": _sha(outside.read_bytes())}
     monkeypatch.setenv("RAT_DOCUMENT_ADMISSION_AUTHORIZED", good["admission_id"])
 
     records = run_document_admission_batch(
-        [(good, good_path, good_sha), (bad, bad_path, bad_sha)],
+        [(good, good_path, good_sha), (escaping, escaping_path, escaping_sha)],
         admission_id=good["admission_id"],
         admission_root=good_path.parent,
         workspace_root=workspace,
@@ -213,8 +221,12 @@ def test_stale_source_sha_or_bad_batch_preflight_writes_nothing(monkeypatch, tmp
     )
 
     assert all(record["admissible"] is False for record in records)
+    assert any(
+        "outside this project's runs/workspace" in reason
+        for record in records for reason in record["reasons"]
+    )
     assert not (vault / "02-wiki" / "syntheses" / "good-brief.md").exists(), "batch must be all-or-nothing"
-    assert not (vault / "02-wiki" / "syntheses" / "bad-brief.md").exists()
+    assert not (vault / "02-wiki" / "syntheses" / "escaping-brief.md").exists()
 
 
 def test_document_source_cannot_escape_project_paths(monkeypatch, tmp_path):

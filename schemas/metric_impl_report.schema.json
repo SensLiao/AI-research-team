@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/metric_impl_report.schema.json",
   "title": "Metric Implementation Report",
-  "description": "DESIGN-stage hard-gate artifact. Output of metric-implementation-auditor. Derived mechanically from compare_metric_impls.py; verdict BLOCK halts the stage. BLOCKs when two conditions use a different metric impl_ref/spacing/postprocess, OR a metric declared in the profile is missing from a condition. Profile-driven: canonical impl_ref comes from the domain profile.",
+  "description": "DESIGN-stage hard-gate artifact. Output of metric-implementation-auditor. Derived mechanically from compare_metric_impls.py; verdict BLOCK halts the stage. BLOCKs when two conditions use a different metric impl_ref/spacing/postprocess, OR a metric declared in the profile is missing from a condition. Profile-driven: canonical impl_ref comes from the domain profile. R3 A3 (2026-08-07): a cross-condition difference every condition explains via metric_impls[metric].varies_by, fully covered by the caller's studied_variables, is recorded in treatment_variation instead of violations — a declared treatment is not a defect.",
   "type": "object",
   "required": ["verdict", "violations"],
   "additionalProperties": false,
@@ -26,6 +26,12 @@
       "items": {"type": "string"},
       "default": [],
       "description": "Conditions or metrics where impl_ref/spacing/postprocess diverged"
+    },
+    "treatment_variation": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "R3 A3 (2026-08-07). Cross-condition impl_ref/spacing/postprocess differences that every condition declared via varies_by and that are fully covered by the caller's studied_variables — a declared, in-scope treatment, not a violation. Never contributes to verdict."
     }
   },
   "allOf": [

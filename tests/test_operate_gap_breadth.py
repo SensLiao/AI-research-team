@@ -417,14 +417,33 @@ def test_source_existence_and_locator_alone_cannot_close_a_gap(tmp_path):
         gap_breadth.run_dets(rd, "DISCOVER", TS)
 
 
-def test_closed_snapshot_hash_mismatch_blocks_false_closure(tmp_path):
+def test_a_wrong_closure_digest_alone_no_longer_blocks(tmp_path):
+    """The digest stopped deciding on 2026-08-07 (director lock: no hash gating).
+
+    What actually keeps a CLOSED verdict honest is unchanged and lives one test below: the quoted
+    scope/result spans must be EXACT substrings of the real snapshot, and both must lexically
+    overlap the prose the hunter wrote. Those read the bytes directly; the digest never added to
+    them, and blocking on it only ever caught a bookkeeping slip.
+    """
     rd = _begin(tmp_path)
     _drop_bundles(rd)
     bad = _with_closure_snapshots(rd, PROSECUTOR_BUNDLE)
     closed = next(row for row in bad["prosecutions"] if row["gap_id"] == "WS-1")
     closed["closure_evidence"][0]["scope_verification"]["document_hash"] = "sha256:" + "0" * 64
     _drop_staged_bundles(rd, prosecutor=bad, bind_closure=False)
-    with pytest.raises(GateBlock, match="snapshot hash mismatch"):
+    gap_breadth.run_dets(rd, "DISCOVER", TS)      # no raise
+
+
+def test_missing_closure_snapshot_still_blocks_a_false_closure(tmp_path):
+    """Removing the digest must not remove the requirement that the full text be THERE."""
+    rd = _begin(tmp_path)
+    _drop_bundles(rd)
+    bad = _with_closure_snapshots(rd, PROSECUTOR_BUNDLE)
+    closed = next(row for row in bad["prosecutions"] if row["gap_id"] == "WS-1")
+    closed["closure_evidence"][0]["scope_verification"]["snapshot_ref"] = (
+        "inbox/fulltext-docs/never-written.txt")
+    _drop_staged_bundles(rd, prosecutor=bad, bind_closure=False)
+    with pytest.raises(GateBlock):
         gap_breadth.run_dets(rd, "DISCOVER", TS)
 
 

@@ -120,7 +120,7 @@
       "properties": {
         "prose_summaries_trusted": {"type": "boolean", "const": false},
         "requires_result_rows": {"type": "boolean", "const": true},
-        "requires_live_hash_manifest": {"type": "boolean", "const": true},
+        "requires_live_hash_manifest": {"type": "boolean", "const": false},
         "requires_run_journal": {"type": "boolean", "const": true},
         "vault_write": {"type": "boolean", "const": false}
       }

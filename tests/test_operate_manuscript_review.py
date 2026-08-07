@@ -350,9 +350,14 @@ def test_review_rejects_reused_or_forged_receipts(tmp_path):
         review.run_dets(str(review_run), "VERIFY", TS)
 
 
-@pytest.mark.parametrize("mutation", ["protected_leak", "cross_run", "source_tamper"])
-def test_review_rejects_leakage_cross_run_and_source_mutation(tmp_path, mutation):
-    authoring, review_run = _source_and_review(tmp_path)
+@pytest.mark.parametrize("mutation", ["protected_leak", "cross_run"])
+def test_review_rejects_leakage_and_cross_run_reuse(tmp_path, mutation):
+    """R3 §B① (2026-08-07): the "source_tamper" case this test used to cover is gone —
+    _safe_source_path no longer re-hashes a source file and compares it against the frozen
+    authoring descriptor's declared sha256 (manuscript_review.py, `del ... _file_hash(candidate)
+    != expected`); path safety + existence is what still gates a source read. Leakage and cross-run
+    reuse are unaffected (bundle-content checks, not file-hash re-verification)."""
+    _authoring, review_run = _source_and_review(tmp_path)
     precommit = review.prepare_review_precommit(review_run, TS)
     _all_bundles(review_run, precommit)
     if mutation == "protected_leak":
@@ -364,14 +369,12 @@ def test_review_rejects_leakage_cross_run_and_source_mutation(tmp_path, mutation
         )
         payload["verdict_sha256"] = _sha({key: value for key, value in payload.items() if key != "verdict_sha256"})
         _write_json(path, payload)
-    elif mutation == "cross_run":
+    else:
         path = review_run / review.capability_bundle_rel("factual")
         payload = json.loads(path.read_text(encoding="utf-8"))
         payload["review_run_id"] = "authoring-001"
         payload["verdict_sha256"] = _sha({key: value for key, value in payload.items() if key != "verdict_sha256"})
         _write_json(path, payload)
-    else:
-        (authoring / "source" / "main.tex").write_text("tampered\n", encoding="utf-8")
 
     with pytest.raises(GateBlock):
         review.run_dets(str(review_run), "VERIFY", TS)
@@ -575,9 +578,12 @@ def test_submission_checklist_fails_closed_on_missing_or_tampered_evidence(tmp_p
         (authoring / "director-review/manuscript/00-OVERVIEW.md").unlink()
         match = "authoring overview"
     else:
+        # R3 §B① (2026-08-07): the old check re-hashed this file and compared it against a
+        # declared value ("quality_report hash ..."); it is now caught earlier, by schema
+        # conformance instead (an emptied {} fails _require_schema_bound_authoring's shape check).
         quality = authoring / "evidence/ANALYZE/manuscript-quality-report.artifact.json"
         quality.write_text("{}", encoding="utf-8")
-        match = "quality_report hash"
+        match = "schema-bound, hash-verified authoring quality_report"
 
     with pytest.raises(GateBlock, match=match):
         review.run_dets(str(review_run), "REPORT", TS)

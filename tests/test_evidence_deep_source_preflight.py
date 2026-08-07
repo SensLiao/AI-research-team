@@ -130,7 +130,12 @@ def test_missing_frozen_sources_fail_before_any_evidence_deep_worker(tmp_path, c
 @pytest.mark.parametrize(
     ("exc", "expected_status"),
     [
-        (GateBlock("citation gate BLOCK"), "failed"),
+        # R3 A4 (2026-08-07): terminal = isinstance(gb, TargetedGateBlock) and gb.verdict == "BLOCK"
+        # (operate/cli.py:445-455) — a PLAIN GateBlock is never targeted, so it is never terminal
+        # any more. It now takes the same "running" (halted, STAGE_HALTED, exit code still 3) path
+        # as a repairable TargetedGateBlock, just for a different reason (untargeted, not
+        # repairable-verdict).
+        (GateBlock("citation gate BLOCK"), "running"),
         (TargetedGateBlock("hard targeted BLOCK", [], verdict="BLOCK"), "failed"),
         (TargetedGateBlock("repairable supplement", [], verdict="NEEDS_SUPPLEMENT"), "running"),
     ],

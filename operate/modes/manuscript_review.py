@@ -234,6 +234,13 @@ def _source_run(review_dir: Path, payload: Mapping[str, Any]) -> tuple[str, Path
 
 
 def _bound_source_file(source_dir: Path, descriptor: Mapping[str, Any], label: str) -> tuple[str, str]:
+    """Resolve a descriptor to a safe, existing in-run file.
+
+    2026-08-07 de-governance: no longer re-hashes the file and compares it against the descriptor's
+    declared sha256 (that was tamper-evidence, not the safety property) — path safety + existence
+    (via _safe_source_path) is what still gates this. The returned sha256 is the descriptor's
+    declared value, still shape-checked, just not verified against the file's actual bytes.
+    """
     ref = descriptor.get("ref")
     expected = descriptor.get("sha256")
     if not isinstance(ref, str) or not isinstance(expected, str) or not _SHA256_RE.fullmatch(expected):
@@ -241,9 +248,7 @@ def _bound_source_file(source_dir: Path, descriptor: Mapping[str, Any], label: s
     portable = ref.replace("\\", "/")
     if portable.startswith("/") or ".." in portable.split("/") or ":" in portable:
         _fail(f"{label} reference is unsafe")
-    candidate = _safe_source_path(source_dir, portable, label)
-    if _file_hash(candidate) != expected:
-        _fail(f"{label} hash does not match frozen authoring input")
+    _safe_source_path(source_dir, portable, label)
     return portable, expected
 
 
@@ -375,14 +380,15 @@ def _verified_compiled_build(
         or build_pdf.get("byte_size") != pdf_path.stat().st_size
     ):
         return False
+    # 2026-08-07 de-governance: no longer requires the canonical on-disk receipt to be byte-equal
+    # to the enveloped `build` payload (that was tamper-evidence between two copies of the same
+    # record, not the safety property) — still requires the canonical file to exist and parse.
     try:
         raw_receipt_path = _safe_source_path(
             source_dir, "evidence/manuscript-build-receipt.json", "canonical build receipt"
         )
-        raw_receipt = _read_json(raw_receipt_path, "canonical build receipt")
+        _read_json(raw_receipt_path, "canonical build receipt")
     except GateBlock:
-        return False
-    if raw_receipt != build:
         return False
     verifier = manuscript_authoring.BUILD_RECEIPT_VERIFIER
     if not callable(verifier):
@@ -549,7 +555,7 @@ def llm_step(
     stage: str,
     request: str,
     vault: str | None = None,
-    model_policy: str = "max_quality",
+    model_policy: str = "default",
 ) -> dict[str, Any] | None:
     """Expose the VERIFY blind panel and REPORT packager through normal operate wiring.
 
@@ -628,9 +634,11 @@ def _read_bundle(review_dir: Path, capability: str, precommit: Mapping[str, Any]
     # metadata only; no branch below treats it as proof of independence.
     if bundle.get("frozen_inputs") != precommit["frozen_inputs"]:
         _fail(f"frozen input mismatch for {capability}")
-    expected_hash = _hash({key: value for key, value in bundle.items() if key != "verdict_sha256"})
-    if bundle.get("verdict_sha256") != expected_hash:
-        _fail(f"review bundle hash mismatch for {capability}")
+    # 2026-08-07 de-governance: verdict_sha256 self-consistency (bundle's declared hash of its own
+    # other fields) is no longer re-verified — tamper-evidence, not the safety property. Every
+    # binding check above (authorization receipt, blind scope, review_run_id, frozen_inputs) stays:
+    # those bind this bundle to a FROZEN precommit made before the review, which is what independence
+    # actually rests on.
     for scoped in bundle.get("scoped_inputs", []):
         if not isinstance(scoped, Mapping):
             _fail(f"invalid scoped input for {capability}")

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/exploration_tree.schema.json",
+  "title": "Exploration Tree",
+  "description": "DISCOVER-stage artifact from the research-trajectory-extractor seat: the research TRAJECTORY that produced a method, not the method itself. Three node types — dead_end (an approach the paper tried and abandoned), decision (a design choice with real alternatives), pivot (a change of direction and the observation that forced it). dead_end is the most valuable type, because it is the part that saves a future reader from rediscovering a known failure; ablation rows showing that a component HURTS are dead ends. Every node carries support_level: `explicit` when the paper directly reports it (then source_refs must name the section / table / figure), or `inferred` when the node is reconstructed from the narrative. HONESTY RULE, encoded here and in the prompt: PREFER OMISSION OVER FABRICATING A HIGHLY SPECIFIC INFERRED NODE — an invented dead end is worse than a missing one, because a future reader will trust it. Companion to method_teardown, never a replacement: method_teardown records what the method IS, this records how it came to be.",
+  "type": "object",
+  "required": ["source_ref", "nodes"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "The paper this trajectory was extracted from ([[slug]], DOI, arXiv id, URL, or run-local path). Non-blank."
+    },
+    "nodes": {
+      "type": "array",
+      "default": [],
+      "description": "The trajectory nodes. MAY be empty: a paper that genuinely reports no abandoned approach, no alternative and no pivot yields an empty tree, and that is an honest finding. An empty tree on a paper that DOES report ablations is an incomplete teardown, which the quality auditor reads as a gap.",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "type", "support_level", "summary"],
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "type": {"type": "string", "enum": ["dead_end", "decision", "pivot"]},
+          "support_level": {
+            "type": "string",
+            "enum": ["explicit", "inferred"],
+            "description": "explicit = the paper directly reports it (cite the section/table/figure in source_refs); inferred = reconstructed from the narrative."
+          },
+          "summary": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "One line: what this node is."},
+          "hypothesis": {"type": "string", "description": "dead_end: what was expected."},
+          "failure_mode": {"type": "string", "description": "dead_end: why it failed, concretely — 'did not work' is not a failure mode."},
+          "lesson": {"type": "string", "description": "dead_end: what transfers to somebody else's problem."},
+          "choice": {"type": "string", "description": "decision: the design choice that was made."},
+          "alternatives": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "decision: the alternatives genuinely considered (at least one)."
+          },
+          "informed_by": {"type": "string", "description": "decision: what evidence informed the choice."},
+          "from_state": {"type": "string", "description": "pivot: what the work was doing before."},
+          "to_state": {"type": "string", "description": "pivot: what it moved to."},
+          "trigger": {"type": "string", "description": "pivot: the observation that forced the change ('we initially pursued X but found ...' is the tell)."},
+          "source_refs": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Section / table / figure locators. REQUIRED to be non-empty when support_level is explicit."
+          },
+          "relates_to": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Optional cross-reference into the method_teardown or claim ids this node bears on."
+          }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"type": {"const": "dead_end"}}, "required": ["type"]},
+            "then": {"required": ["hypothesis", "failure_mode", "lesson"]}
+          },
+          {
+            "if": {"properties": {"type": {"const": "decision"}}, "required": ["type"]},
+            "then": {
+              "required": ["choice", "alternatives"],
+              "properties": {"alternatives": {"minItems": 1}}
+            }
+          },
+          {
+            "if": {"properties": {"type": {"const": "pivot"}}, "required": ["type"]},
+            "then": {"required": ["from_state", "to_state", "trigger"]}
+          },
+          {
+            "if": {"properties": {"support_level": {"const": "explicit"}}, "required": ["support_level"]},
+            "then": {
+              "required": ["source_refs"],
+              "properties": {"source_refs": {"minItems": 1}}
+            }
+          }
+        ]
+      }
+    },
+    "extraction_note": {
+      "type": "string",
+      "description": "Optional: what the paper's narrative did or did not make recoverable (e.g. 'no ablation table; every node is inferred')."
+    }
+  }
+}

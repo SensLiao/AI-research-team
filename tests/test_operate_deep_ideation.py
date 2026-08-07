@@ -15,6 +15,7 @@ COMPOSES new_direction's proven base (zero drift) and ADDS the deep producers fr
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -35,7 +36,14 @@ DISCOVER_BUNDLE = {
                        "sources": [{"id": "s1", "kind": "paper", "ref": "[[a]]", "claim_support": "strong"},
                                    {"id": "s2", "kind": "paper", "ref": "[[b]]", "claim_support": "moderate"},
                                    {"id": "s3", "kind": "paper", "ref": "[[c]]", "claim_support": "moderate"}],
-                       "saturation_reached": True},
+                       "saturation_reached": False},
+    # Saturation is MEASURED from recorded retrieval rounds (2026-08-07), never self-declared. With no
+    # rounds there is no saturation artifact at all — a measurement with no measurements behind it is
+    # worse than a missing one — so the fixture records two real passes.
+    "saturation_rounds": [
+        {"round_index": 1, "queries_run": 3, "new_unique_sources": 3, "cumulative_unique_sources": 3},
+        {"round_index": 2, "queries_run": 3, "new_unique_sources": 0, "cumulative_unique_sources": 3},
+    ],
     "claim_list": {"source_scope": "gap scan",
                    "claims": [{"claim_id": "c1", "text": "Adapter tuning is underexplored for 3D prompts.",
                                "source_ref": "[[a]]"}]},
@@ -304,3 +312,101 @@ def test_unknown_stage_raises(tmp_path):
     rd = _begin(tmp_path)
     with pytest.raises(ValueError):
         deep_ideation.run_dets(rd, "NO_SUCH_STAGE", TS)
+
+
+# ------------------------------------------- 5. a worker packet may never ask for a key its schema bans
+# Found live on 2026-08-04 by the first real `new_direction` run: the CONTRADICTION packet told the
+# worker to emit `detail`, while `contradiction_report.schema.json` sets additionalProperties:false and
+# names the field `description` — and `produce_contradiction` passes conflict dicts through VERBATIM, so
+# a worker that obeyed its own packet produced an artifact the machine's own validator rejected, and the
+# brief rendered a blank blocker line.  The class of bug (packet key vs schema key) is what is pinned
+# here, not the one instance.
+#
+# R3 C4 (2026-08-07) generalizes this into a parametrized guard covering the two sources_read pairs
+# C4 added — result_summary (the sanity worker) and failure_inventory (the failure-case-miner worker)
+# — alongside the original conflicts case, so a future field gets the same protection for free.
+
+def _schema_all_property_keys(schema_name: str) -> set[str]:
+    """Every key declared under ANY 'properties' object anywhere in this schema — a conservative
+    "does this key exist somewhere in the schema" superset. It does not enforce nesting level; it
+    only catches a key invented out of thin air, the class of bug this guard exists for."""
+    schema = json.loads(
+        (Path(__file__).resolve().parents[1] / "schemas" / schema_name).read_text(encoding="utf-8"))
+
+    def _walk(node) -> set[str]:
+        found: set[str] = set()
+        if isinstance(node, dict):
+            props = node.get("properties")
+            if isinstance(props, dict):
+                found |= set(props)
+            for value in node.values():
+                found |= _walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                found |= _walk(item)
+        return found
+
+    return _walk(schema)
+
+
+# (case id, wrapper key the packet's JSON example opens with, end-of-example marker or None to read
+# to the end of the prompt, schema filename)
+_PACKET_KEY_GUARD_CASES = [
+    ("conflicts", '"conflicts"', "]", "contradiction_report.schema.json"),
+    ("sources_read/result_summary", '"result_summary"', None, "result_summary.schema.json"),
+    ("sources_read/failure_inventory", '"failure_inventory"', None, "failure_inventory.schema.json"),
+]
+
+
+def _packet_prompt(case_id: str) -> str:
+    if case_id == "conflicts":
+        return _deep_ideate.CONTRADICTION_WORKER_PROMPT
+    from research_agent_teams.operate.modes import analysis_audit_panel as aap
+    return aap._SANITY_PROMPT if "result_summary" in case_id else aap._FAILURE_PROMPT
+
+
+@pytest.mark.parametrize(("case_id", "wrapper_key", "end_marker", "schema_name"), _PACKET_KEY_GUARD_CASES)
+def test_worker_packet_asks_only_for_keys_its_own_schema_accepts(case_id, wrapper_key, end_marker, schema_name):
+    prompt = _packet_prompt(case_id)
+    allowed = _schema_all_property_keys(schema_name)
+    # The packet embeds a literal JSON example; every quoted key inside it must be a key the
+    # schema will accept, or an obedient worker is set up to fail validation. Slice past the
+    # wrapper key first so the wrapper's OWN name (not itself a schema property) is never asked.
+    example = prompt.split(wrapper_key, 1)[1]
+    if end_marker is not None:
+        example = example.split(end_marker, 1)[0]
+    asked = set(re.findall(r'"([a-z_]+)"\s*:', example))
+    assert asked <= allowed, (
+        f"the {case_id!r} worker packet asks for {sorted(asked - allowed)}, which {schema_name} "
+        f"forbids; allowed anywhere in the schema: {sorted(allowed)}")
+
+
+def test_the_contradiction_conflict_key_survives_into_the_rendered_brief():
+    """The renderer and the packet must name the same field, or the blocker line renders empty."""
+    from research_agent_teams.tools import research_brief_markdown
+
+    allowed = _schema_all_property_keys("contradiction_report.schema.json")
+    source = Path(research_brief_markdown.__file__).read_text(encoding="utf-8")
+    read_keys = set(re.findall(r"conflict\.get\(\"([a-z_]+)\"\)", source)) | \
+        set(re.findall(r"conflict\.get\('([a-z_]+)'\)", source))
+    assert read_keys, "expected the brief renderer to read at least one conflict field"
+    assert read_keys <= allowed, (
+        f"the brief reads conflict keys the schema does not allow: {sorted(read_keys - allowed)}")
+
+
+def test_sources_read_key_survives_from_worker_packet_into_the_persisted_artifact():
+    """R3 C4's other half of the same property: the field a worker's packet asks for must be the
+    SAME field name the consumer actually reads back out, or the grounding the prompt promised is
+    silently dropped — exactly what C4 fixed (sanity_checker.build_report and analysis_audit_panel's
+    failure-inventory carry-through both now read 'sources_read', not something else)."""
+    from research_agent_teams.tools import sanity_checker
+    from research_agent_teams.operate.modes import analysis_audit_panel as aap
+
+    assert "sources_read" in _schema_all_property_keys("result_summary.schema.json")
+    assert "sources_read" in _schema_all_property_keys("failure_inventory.schema.json")
+
+    sanity_source = Path(sanity_checker.__file__).read_text(encoding="utf-8")
+    assert 'result_summary.get("sources_read")' in sanity_source
+
+    panel_source = Path(aap.__file__).read_text(encoding="utf-8")
+    assert 'failure_in.get("sources_read")' in panel_source

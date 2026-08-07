@@ -137,6 +137,8 @@ def rank_scientific_investments(
     Missing Elo for a newly evolved idea is neutral rather than punitive. Novelty
     verification changes confidence, not the scientific score: an unverified idea
     remains visible but cannot masquerade as a high-confidence recommendation.
+    An idea whose ``contribution_tier`` is an invention tier has its feasibility
+    signal waived (see below) and records ``feasibility_waived: true``.
     """
     rows = [deepcopy(row) for row in ideas]
     assessment_by_id = {
@@ -154,10 +156,18 @@ def rank_scientific_investments(
     for row in rows:
         idea_id = str(row.get("idea_id") or "")
         scientific = _scientific_merit(assessment_by_id.get(idea_id, {}))
+        # Invention waiver (director lock 2026-08-07): for a mechanism/method invention the logistics
+        # triple is neutralised — it is set to the idea's own scientific merit so feasibility can
+        # neither reward nor punish it. Cost, schedule and today's hardware are the experiment-design
+        # stage's problem; letting them into the ideation rank is how an invention loses to an audit.
+        # Measurement and audit tiers keep the ordinary feasibility signal. The waiver is recorded.
+        tier = str(row.get("contribution_tier") or "").strip().lower()
+        invention = tier in ("mechanism_invention", "method_invention")
         signals = {
             "scientific_merit": scientific,
             "tournament_signal": tournament_by_id.get(idea_id, 0.5),
-            "feasibility": _bounded((row.get("feasibility") or {}).get("score")),
+            "feasibility": (scientific if invention
+                            else _bounded((row.get("feasibility") or {}).get("score"))),
             "evidence_grounding": grounding_by_id.get(idea_id, 0.0),
             "falsification_readiness": _readiness(sketch_by_id.get(idea_id, {})),
         }
@@ -170,6 +180,7 @@ def rank_scientific_investments(
             "policy_version": POLICY_VERSION,
             "assessment_ref": f"inbox/RANKING.bundle.json#investment_assessments/{idea_id}",
             "strongest_rejection_case": str(assessment.get("strongest_rejection_case") or ""),
+            "feasibility_waived": invention,
         }
         scored.append((-score, idea_id, row))
 

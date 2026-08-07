@@ -13,8 +13,8 @@
       "auto_update",
       "whole_repo_execution"
     ],
-    "selection_min": 2,
-    "selection_max": 5
+    "selection_min": 4,
+    "selection_max": 28
   },
   "sources": [
     {
@@ -90,6 +90,16 @@
           "path": "skills/ml-paper-writing/SKILL.md",
           "sha256": "25edf4c880d299d0d31b981167fdc3cf8cda9d4d1c328addd5ee294b8c694b2e",
           "role": "manuscript_writing_contract"
+        },
+        {
+          "path": "skills/research-ideation/SKILL.md",
+          "sha256": "aafb7239340ae838cbbd133e234ce0619688a01623eaf53da03e1703d766754c",
+          "role": "research_question_card_contract"
+        },
+        {
+          "path": "skills/results-report/SKILL.md",
+          "sha256": "aeb58c1111308ba4caf4de93db4777f62e6ebfa0eb1d11f400b80640e69226b0",
+          "role": "decision_oriented_report_contract"
         }
       ]
     },
@@ -176,6 +186,31 @@
           "path": "skills/paper-to-code/SKILL.md",
           "sha256": "ae83667aaa347fdeb689972be807ec38df44deee06be26036bc5107e625c0136",
           "role": "paper_to_code_contract"
+        },
+        {
+          "path": "skills/idea-generation/SKILL.md",
+          "sha256": "a04ee0a7e1206a3ef56522bc2246e535fe296e6b0c7ab0874408472714740eee",
+          "role": "ideation_refinement_contract"
+        },
+        {
+          "path": "skills/novelty-assessment/SKILL.md",
+          "sha256": "78c9cc911a0b32865308850243f68520bff78bf48cc6496cb607d3101149b020",
+          "role": "novelty_search_rounds_contract"
+        },
+        {
+          "path": "skills/atomic-decomposition/SKILL.md",
+          "sha256": "13da03b978eeab2bbbf9fcbdc6d3adf603d4f0ec8404d9d444733af63fa54da6",
+          "role": "atomic_concept_contract"
+        },
+        {
+          "path": "skills/experiment-design/SKILL.md",
+          "sha256": "c35ccd5feacfefda79fe48bf71a236560f822580d0025afedd306fc0573741bc",
+          "role": "progressive_stage_contract"
+        },
+        {
+          "path": "skills/data-analysis/SKILL.md",
+          "sha256": "43a70badeebf4281c9b8ca9bfa5f12df8044a81867566d31dbacca35f6ebbdb2",
+          "role": "analysis_review_rounds_contract"
         }
       ]
     },
@@ -881,6 +916,664 @@
       "non_goals": [
         "simulate_real_reviewers",
         "make_venue_decision_for_director"
+      ]
+    },
+    {
+      "overlay_id": "iterative_idea_refinement",
+      "title": "Iterative idea refinement with harsh-critic scoring",
+      "summary": "Give every candidate idea its own refine-until-converged loop instead of one pass: critically evaluate quality, feasibility and novelty, rewrite while preserving the core spirit, and stop only on convergence or the round ceiling. Score every survivor on interestingness, feasibility and novelty from a harsh-critic stance, and prefer an idea stemming from one simple falsifiable question over an idea that stacks components. Emit every idea that survives the loop -- the upstream 'generate 3-5' is a CAP, overridden by this machine's floor-only output policy.",
+      "stages": [
+        "IDEATE"
+      ],
+      "modes": [
+        "new_direction",
+        "deep_ideation",
+        "ideate_ring",
+        "gap_breadth",
+        "full_new_direction",
+        "tree_explore"
+      ],
+      "publication_kinds": [],
+      "keywords": [
+        "找方向",
+        "研究方向",
+        "点子",
+        "创新",
+        "ideate",
+        "brainstorm",
+        "idea",
+        "hypothesis",
+        "refine",
+        "direction"
+      ],
+      "priority": 97,
+      "provenance_refs": [
+        "agent_research_skills",
+        "claude_scholar"
+      ],
+      "allowed_use": "internal_ideation_refinement_rubric",
+      "non_goals": [
+        "cap_the_idea_count",
+        "let_a_novelty_score_cut_an_idea",
+        "emit_a_single_unrefined_pass",
+        "treat_a_self_assigned_rating_as_evidence",
+        "overfit_an_idea_to_one_dataset"
+      ]
+    },
+    {
+      "overlay_id": "multi_round_novelty_search",
+      "title": "Multi-round novelty search before any novelty statement",
+      "summary": "Never state novelty from a single search. Run at least three targeted rounds -- build a query, review the top hits with abstracts, assess overlap against the idea's core contribution, then decide whether another round is needed -- and check for concurrent or very recent preprints explicitly. Name the most-similar papers and state exactly how the idea differs from each, so the same evidence can later serve Related Work. Offline, blocked or not-found is UNVERIFIED, never 'nobody did this'.",
+      "stages": [
+        "DISCOVER",
+        "IDEATE",
+        "VERIFY"
+      ],
+      "modes": [
+        "new_direction",
+        "deep_ideation",
+        "gap_breadth",
+        "gap_scan",
+        "deep_research",
+        "evidence_review",
+        "evidence_deep",
+        "ideate_ring",
+        "full_new_direction"
+      ],
+      "publication_kinds": [],
+      "keywords": [
+        "查重",
+        "新颖性",
+        "撞车",
+        "有没有人做过",
+        "novelty",
+        "prior art",
+        "related work",
+        "differentiation",
+        "concurrent work"
+      ],
+      "priority": 99,
+      "provenance_refs": [
+        "agent_research_skills"
+      ],
+      "allowed_use": "internal_novelty_search_rubric",
+      "non_goals": [
+        "emit_a_binary_not_novel_verdict_that_cuts_an_idea",
+        "declare_novel_after_fewer_than_three_rounds",
+        "treat_absence_of_results_as_absence_of_prior_art",
+        "replace_the_evidenced_collision_gate",
+        "cite_a_paper_whose_existence_was_not_verified"
+      ]
+    },
+    {
+      "overlay_id": "research_question_card",
+      "title": "Research question card before any plan",
+      "summary": "Turn each direction into a question card before it becomes a plan: the hypothesis, the evidence that already exists, the evidence that is missing, what would count as support, what would falsify it, and the single smallest next action. Brainstorm the framing across what / why / who / when / where / how so the question is not purely method-driven, and classify each gap it targets (literature, methodological, application, interdisciplinary, temporal). A card only becomes a proposal once its evidence is more than an abstract or a landing page.",
+      "stages": [
+        "DISCOVER",
+        "IDEATE",
+        "DESIGN"
+      ],
+      "modes": [
+        "new_direction",
+        "deep_ideation",
+        "gap_breadth",
+        "gap_scan",
+        "full_new_direction",
+        "design_experiment",
+        "design_experiment_minimal",
+        "full_rigor_minimal",
+        "tree_explore"
+      ],
+      "publication_kinds": [],
+      "keywords": [
+        "研究问题",
+        "假设",
+        "可证伪",
+        "空白点",
+        "5W1H",
+        "research question",
+        "hypothesis",
+        "gap analysis",
+        "falsification",
+        "proposal"
+      ],
+      "priority": 95,
+      "provenance_refs": [
+        "claude_scholar"
+      ],
+      "allowed_use": "internal_question_framing_rubric",
+      "non_goals": [
+        "promote_an_abstract_only_source_into_a_proposal",
+        "state_a_hypothesis_without_a_falsifier",
+        "skip_the_missing_evidence_field",
+        "invent_a_stakeholder_or_deployment_context"
+      ]
+    },
+    {
+      "overlay_id": "atomic_concept_decomposition",
+      "title": "Atomic concept decomposition with formal-and-implementable sides",
+      "summary": "Break a method into atomic, self-contained concepts and give each one both a formal side and an implementable side: the exact formulation, the assumptions and constraints it carries, the reference that states it, and the concrete implementation it maps to. Do not merge or skip concepts -- analyse each separately, and when unsure whether something is atomic, split further. A formulation with no implementation and an implementation with no formal definition are both recorded as GAPS, never smoothed over.",
+      "stages": [
+        "IDEATE",
+        "DESIGN"
+      ],
+      "modes": [
+        "new_direction",
+        "deep_ideation",
+        "design_experiment",
+        "design_experiment_minimal",
+        "full_rigor_minimal",
+        "read_paper_deep",
+        "repo_code_audit",
+        "tree_explore"
+      ],
+      "publication_kinds": [
+        "manuscript_methods"
+      ],
+      "keywords": [
+        "形式化",
+        "机制",
+        "拆解",
+        "概念",
+        "数学",
+        "decompose",
+        "atomic",
+        "formula",
+        "math",
+        "implementation",
+        "mechanism"
+      ],
+      "priority": 93,
+      "provenance_refs": [
+        "agent_research_skills"
+      ],
+      "allowed_use": "internal_decomposition_rubric",
+      "non_goals": [
+        "merge_two_concepts_to_shorten_the_list",
+        "assert_a_formulation_without_naming_its_source",
+        "hide_a_formula_without_implementation",
+        "claim_a_mapping_that_was_not_read"
+      ]
+    },
+    {
+      "overlay_id": "number_provenance_chain",
+      "title": "Every number traces to the record that produced it",
+      "summary": "Every reported number must trace to the artifact that produced it -- never hand-typed, never recalled. A derived number carries the expression it was computed from plus the inputs that expression consumed, so a reader can recompute it independently. Any number whose producing record cannot be named is reported as UNTRACEABLE rather than printed as a result, and a number imported from an external paper is labelled external rather than presented as this project's own measurement.",
+      "stages": [
+        "ANALYZE",
+        "VERIFY",
+        "REPORT"
+      ],
+      "modes": [
+        "full_rigor_minimal",
+        "verify_result",
+        "analysis_audit_panel",
+        "check_run",
+        "m2_accept",
+        "manuscript_authoring",
+        "manuscript_review",
+        "read_paper_deep"
+      ],
+      "publication_kinds": [
+        "manuscript_methods"
+      ],
+      "keywords": [
+        "溯源",
+        "数字",
+        "对不上",
+        "可复现",
+        "traceability",
+        "provenance",
+        "number",
+        "recompute",
+        "reproducib",
+        "source of truth"
+      ],
+      "priority": 96,
+      "provenance_refs": [
+        "agent_research_skills"
+      ],
+      "allowed_use": "internal_number_traceability_rubric",
+      "non_goals": [
+        "type_a_number_by_hand",
+        "present_an_imported_external_number_as_own_measurement",
+        "report_a_derived_value_without_its_formula",
+        "drop_an_untraceable_number_instead_of_flagging_it"
+      ]
+    },
+    {
+      "overlay_id": "unit_of_analysis_before_any_winner",
+      "title": "Validate the comparison before computing a winner",
+      "summary": "Validate the comparison before computing anything: metric direction, the independent unit, the number of runs or seeds, missing or silently-failed cells, and whether the methods are comparable at all. Repeated rows over the same subject, fold, window, trial or seed are a repeated-measure summary, not independent samples -- state that before any winner or significance claim. Check parametric assumptions first and fall back to non-parametric when they fail. A statistics file whose stated interpretation contradicts its own test, unit or p-value is quarantined until its provenance is checked, not reused for wording.",
+      "stages": [
+        "ANALYZE",
+        "VERIFY"
+      ],
+      "modes": [
+        "full_rigor_minimal",
+        "verify_result",
+        "analysis_audit_panel",
+        "power_analysis_review",
+        "m2_accept",
+        "check_run",
+        "debug_failed_run"
+      ],
+      "publication_kinds": [],
+      "keywords": [
+        "统计",
+        "显著",
+        "独立样本",
+        "谁更好",
+        "消融",
+        "statistic",
+        "significance",
+        "unit of analysis",
+        "seed",
+        "winner",
+        "ablation",
+        "repeated measure"
+      ],
+      "priority": 98,
+      "provenance_refs": [
+        "claude_scholar",
+        "nature_skills"
+      ],
+      "allowed_use": "internal_comparison_validity_rubric",
+      "non_goals": [
+        "claim_a_winner_before_the_unit_of_analysis_is_settled",
+        "treat_repeated_measures_as_independent_samples",
+        "report_only_best_scores",
+        "report_only_p_values",
+        "reuse_a_self_contradictory_statistics_file"
+      ]
+    },
+    {
+      "overlay_id": "progressive_experiment_stages",
+      "title": "Stage the experiment programme, do not jump to the headline run",
+      "summary": "Stage the programme instead of jumping to the headline result: first get one correct minimal implementation, then tune the baseline without touching the architecture, then explore the novel change, then ablate components systematically -- each stage with its own completion criterion, each building on the previous stage's best result, and each stage that produces a number running multiple seeds. Broaden the evaluation surface as the stages advance rather than tuning and concluding on a single dataset.",
+      "stages": [
+        "DESIGN",
+        "EXECUTE"
+      ],
+      "modes": [
+        "design_experiment",
+        "design_experiment_minimal",
+        "full_rigor_minimal",
+        "debug_failed_run",
+        "tree_explore"
+      ],
+      "publication_kinds": [
+        "manuscript_methods"
+      ],
+      "keywords": [
+        "实验设计",
+        "训练计划",
+        "消融",
+        "阶段",
+        "超参",
+        "experiment design",
+        "baseline",
+        "ablation",
+        "hyperparameter",
+        "seed",
+        "stage"
+      ],
+      "priority": 94,
+      "provenance_refs": [
+        "agent_research_skills"
+      ],
+      "allowed_use": "internal_experiment_staging_rubric",
+      "non_goals": [
+        "change_the_architecture_during_baseline_tuning",
+        "conclude_from_a_single_seed",
+        "conclude_from_a_single_dataset",
+        "skip_the_minimal_working_implementation",
+        "declare_a_stage_complete_without_its_criterion"
+      ]
+    },
+    {
+      "overlay_id": "statistical_reporting_contract",
+      "title": "Statistical reporting contract: measured, analysed, claimed",
+      "summary": "Separate three questions and answer each explicitly: what was measured, what unit was analysed, and what inference is being claimed. Report the n definition, the test or model with its assumptions, the multiple-comparison strategy, the effect estimate with its uncertainty interval, and the exact p-value policy -- and prefer effect sizes and intervals over significance-only phrasing. Missing design facts (sample size, randomization, blinding, exclusions, software version, correction method) are marked as needing an author answer, never invented. 'Significant' is never used to mean important, large, causal, or meaningful.",
+      "stages": [
+        "DESIGN",
+        "ANALYZE",
+        "VERIFY",
+        "REPORT"
+      ],
+      "modes": [
+        "full_rigor_minimal",
+        "design_experiment",
+        "design_experiment_minimal",
+        "verify_result",
+        "power_analysis_review",
+        "analysis_audit_panel",
+        "manuscript_authoring",
+        "manuscript_review",
+        "venue_readiness",
+        "m2_accept"
+      ],
+      "publication_kinds": [
+        "manuscript_methods",
+        "manuscript_review"
+      ],
+      "keywords": [
+        "统计报告",
+        "p值",
+        "置信区间",
+        "效应量",
+        "样本量",
+        "多重比较",
+        "功效",
+        "p value",
+        "confidence interval",
+        "effect size",
+        "sample size",
+        "power",
+        "blinding",
+        "randomization"
+      ],
+      "priority": 97,
+      "provenance_refs": [
+        "nature_skills",
+        "agent_research_skills"
+      ],
+      "allowed_use": "internal_statistical_reporting_rubric",
+      "non_goals": [
+        "invent_a_p_value_or_sample_size_or_software_version",
+        "recommend_a_final_test_while_the_design_is_unclear",
+        "accept_cells_or_images_as_independent_replication_unchecked",
+        "use_significant_to_mean_important",
+        "rewrite_a_weak_result_into_a_stronger_one"
+      ]
+    },
+    {
+      "overlay_id": "claim_strength_wording_ladder",
+      "title": "Every claim carries its own wording ceiling",
+      "summary": "Each claim travels with its wording ceiling attached: the source evidence, the wording that evidence permits, the stronger wording it forbids, the residual uncertainty, the next check that would settle it, and a keep / weaken / revise / discard decision. A speculative or merely-observed claim is never promoted into a decisive conclusion, statistical association is never upgraded into mechanism or causality, and negative or weak results are reported rather than rewritten. When evidence is insufficient, block the over-strong wording explicitly instead of quietly softening it.",
+      "stages": [
+        "ANALYZE",
+        "VERIFY",
+        "REPORT"
+      ],
+      "modes": [
+        "full_rigor_minimal",
+        "verify_result",
+        "manuscript_authoring",
+        "manuscript_review",
+        "venue_readiness",
+        "analysis_audit_panel",
+        "evidence_review",
+        "evidence_deep",
+        "deep_research",
+        "read_paper_deep",
+        "m2_accept"
+      ],
+      "publication_kinds": [
+        "manuscript_methods",
+        "manuscript_review"
+      ],
+      "keywords": [
+        "结论",
+        "措辞",
+        "夸大",
+        "能不能这么说",
+        "可引用",
+        "审稿人",
+        "claim",
+        "wording",
+        "overclaim",
+        "citable",
+        "causality",
+        "mechanism"
+      ],
+      "priority": 99,
+      "provenance_refs": [
+        "claude_scholar"
+      ],
+      "allowed_use": "internal_claim_strength_rubric",
+      "non_goals": [
+        "promote_a_speculative_claim_into_a_decisive_conclusion",
+        "upgrade_association_into_causality",
+        "omit_the_forbidden_stronger_wording",
+        "hide_a_negative_result",
+        "declare_citable_without_the_derivation"
+      ]
+    },
+    {
+      "overlay_id": "figure_must_change_a_decision",
+      "title": "A figure that changes no decision is decorative",
+      "summary": "Every main figure answers three questions: why it exists, exactly what the reader should notice, and what that observation changes in belief or in the next decision. A figure that cannot answer the third is decorative, not scientific. Each figure declares its plotted variables, what its error bars mean, and its caption requirements, and carries a post-figure interpretation note. Prefer a real figure over a description of the figure that would have existed -- and when the data cannot be read, say that instead of narrating an imagined plot.",
+      "stages": [
+        "ANALYZE",
+        "REPORT"
+      ],
+      "modes": [
+        "full_rigor_minimal",
+        "manuscript_authoring",
+        "manuscript_review",
+        "analysis_audit_panel",
+        "venue_readiness"
+      ],
+      "publication_kinds": [
+        "quantitative_figure"
+      ],
+      "keywords": [
+        "图",
+        "图注",
+        "可视化",
+        "曲线",
+        "figure",
+        "visualization",
+        "caption",
+        "error bar",
+        "plot",
+        "panel"
+      ],
+      "priority": 92,
+      "provenance_refs": [
+        "claude_scholar",
+        "scipilot_figure_skill"
+      ],
+      "allowed_use": "internal_figure_interpretation_rubric",
+      "non_goals": [
+        "ship_a_figure_that_changes_no_decision",
+        "describe_a_figure_instead_of_producing_it",
+        "omit_the_error_bar_definition",
+        "attach_a_figure_without_an_interpretation_note"
+      ]
+    },
+    {
+      "overlay_id": "creative_operator_ladder",
+      "title": "Six-operator divergence ladder before any proposal",
+      "summary": "Proposing straight from a gap list produces recombination, not invention: an idea whose whole origin is \"the gap list said this was open\" has searched exactly the space the field already searched. Before writing any idea, climb six divergence operators and keep a short written trace of each; an operator that yields nothing is RECORDED as yielding nothing (a finding, not a failure). (1) CONSTRAINT CLASSIFICATION - list the constraints the current approach carries and mark each HARD (physically or logically necessary), SOFT (convention or historical accident) or HIDDEN (never stated, only assumed); for every SOFT and HIDDEN one ask what system you would build if it were relaxed, tightened or replaced. Exposing and dropping a hidden constraint is the highest-yield move available; tuning inside the existing constraint set is the lowest. (2) ASSUMPTION NEGATION - name what the surveyed papers treat as settled, negate it, and SKETCH THE RESULTING SYSTEM in one sentence (a negation with no system attached is not usable); classify incoherent / already explored (have the conditions that killed it changed?) / unexplored and coherent. (3) PROBLEM REFORMULATION - restate the problem at least three ways by changing exactly one thing: objective, formalism, granularity, agent, timescale, or direction (forward vs inverse); say for each whether it is easier, harder, or usefully different. (4) MECHANISM CROSS-PRODUCT - this problem's mechanism phrases as rows, a deliberately distant field's as columns, and read the cells; a cell survives only if the MECHANISM transfers, never the vocabulary alone. (5) ENABLER WINDOW - what became newly available in the last 1-3 years (data, model, hardware, cost, tool, regulation, published result) and what does each newly permit? Intersections of two enablers are strongest; needing technology that does not exist yet is PARKED, equally doable five years ago is probably already done, and the target window is the last 6-18 months. (6) TENSION SYNTHESIS - take the conflicts visible in the evidence and do NOT pick a side; ask what a system achieving both at once looks like and whether the opposition is an artifact of how the problem was formalized (splitting the difference is a compromise, not an idea). Then propose, recording which operator produced each idea. An operator output is raw divergence material, never evidence: it still has to be grounded in the DISCOVER material before it becomes an idea. If an operator surfaces a candidate outside the run's north star, FLAG it out_of_north_star and let the director see it - never quietly delete it, and never act on it.",
+      "stages": [
+        "IDEATE"
+      ],
+      "modes": [
+        "new_direction",
+        "deep_ideation",
+        "ideate_ring",
+        "full_new_direction",
+        "gap_breadth",
+        "tree_explore"
+      ],
+      "publication_kinds": [],
+      "keywords": [
+        "创新",
+        "原创",
+        "发散",
+        "找方向",
+        "研究方向",
+        "点子",
+        "ideate",
+        "brainstorm",
+        "novel",
+        "creative",
+        "reformulate",
+        "invert",
+        "adjacent possible"
+      ],
+      "priority": 99,
+      "provenance_refs": [
+        "orchestra_research_skills",
+        "agent_research_skills"
+      ],
+      "allowed_use": "internal_divergence_operator_rubric",
+      "non_goals": [
+        "treat_an_operator_output_as_evidence",
+        "propose_without_grounding_in_the_discover_material",
+        "cap_the_number_of_operator_outputs",
+        "skip_the_operator_trace",
+        "hide_an_out_of_scope_candidate_instead_of_flagging_it"
+      ]
+    },
+    {
+      "overlay_id": "ai_research_failure_modes",
+      "title": "Seven AI-research failure modes, each given a verdict",
+      "summary": "Seven failure modes that make an AI result look better than it is. Walk all seven explicitly and give each a three-way verdict - CLEAR (state the evidence that clears it), SUSPECTED (state the tell), or INSUFFICIENT (state what you would need to look at). Never silently skip one: an unmentioned mode reads as CLEAR to the director and is the whole reason this checklist is a checklist. (1) SILENT CRASH / SILENT FALLBACK - a job that died, truncated, OOM-ed, fell back to a default path or skipped rows, and still wrote a result file; check exit status, row counts and log tails, not just the output. (2) SUSPICIOUSLY ROUND EFFECT SIZE - a headline number that is too clean, too stable across seeds, or identical to a baseline in a way real variance does not produce. (3) A NUMBER WITH NO LOG BEHIND IT - a reported figure that cannot be traced to a run record, a log line or a saved artifact; an untraceable number is UNVERIFIED regardless of how plausible it looks. (4) SHORTCUT WITH NO ABLATION - a gain that could come from leakage, an easier split, a tuned threshold or a preprocessing difference, with no ablation isolating the claimed mechanism. (5) A SURPRISING NARRATIVE THAT MAY BE A BUG - the most interesting result in a run is also the most likely to be an indexing error, a mislabelled axis, or an inverted sign; surprise raises the evidence bar, it does not lower it. (6) METHODS THAT DO NOT MATCH THE RUN CONFIG - compare what the write-up says was done against the config, seeds, data paths and hyper-parameters actually used; drift between them is common and invisible from the prose alone. (7) FRAME-LOCK - an explanation written after the fact and fitted to the result; the tell is \"in hindsight it makes sense that\", and the test is whether the explanation predicts anything that was not already observed. This lens is ADVISORY: it surfaces suspicion for a human, it never blocks a run and never rewrites a result.",
+      "stages": [
+        "ANALYZE",
+        "VERIFY",
+        "REPORT"
+      ],
+      "modes": [
+        "verify_result",
+        "check_run",
+        "m2_accept",
+        "analysis_audit_panel",
+        "full_rigor_minimal",
+        "manuscript_review",
+        "repo_code_audit",
+        "debug_failed_run"
+      ],
+      "publication_kinds": [],
+      "keywords": [
+        "复核",
+        "复现",
+        "查错",
+        "审计",
+        "结果可信",
+        "跑挂了",
+        "调试",
+        "verify",
+        "audit",
+        "reproduce",
+        "sanity",
+        "failure",
+        "debug",
+        "ablation",
+        "effect size"
+      ],
+      "priority": 96,
+      "provenance_refs": [
+        "academic_research_skills"
+      ],
+      "allowed_use": "internal_result_failure_mode_checklist",
+      "non_goals": [
+        "treat_a_clear_verdict_as_evidence_free",
+        "skip_a_failure_mode_silently",
+        "accuse_a_result_without_naming_the_tell",
+        "block_a_run_on_a_suspicion",
+        "rewrite_a_result_instead_of_flagging_it"
+      ]
+    },
+    {
+      "overlay_id": "productive_disagreement_council",
+      "title": "Productive disagreement on a multi-perspective panel",
+      "summary": "A panel whose members agree is a panel that did not actually run. Agreement between perspectives is cheap; productive tension is what makes a synthesis worth reading. Four obligations for every seat on a multi-perspective panel. (1) SPECIALIZE THE ANGLE FIRST - your assigned angle is a starting point, not the brief. State in one sentence what a real specialist holding this angle on THIS specific topic would care about that a generalist would not: the term they would use, the failure they would expect, the evidence they would demand. Then research that, not the generic label. (2) DECLARE YOUR BLIND SPOT - name what your angle structurally cannot see, so the synthesizer can compensate for it instead of inheriting it. (3) NAME AN EXPECTED DISAGREEMENT - before finishing, name at least one point where you expect another perspective on this panel to disagree with you substantively, and say why you hold your position anyway. (4) THE CORE TENSION IS A RESULT - the synthesizer reports the disagreement itself as a finding with both sides and what evidence would settle it; it does not average the panel into a consensus, drop the minority view, or resolve a tension by picking the more confident seat. If the panel genuinely does agree on everything, SAY SO explicitly and say what that unanimity is and is not evidence of - never manufacture a disagreement to look rigorous, and never treat unanimity as validation.",
+      "stages": [
+        "DISCOVER",
+        "IDEATE",
+        "VERIFY"
+      ],
+      "modes": [
+        "deep_research",
+        "gap_breadth",
+        "deep_ideation",
+        "evidence_deep",
+        "venue_readiness",
+        "analysis_audit_panel",
+        "manuscript_review"
+      ],
+      "publication_kinds": [],
+      "keywords": [
+        "分歧",
+        "多视角",
+        "独立评审",
+        "对抗",
+        "争议",
+        "红队",
+        "panel",
+        "council",
+        "perspective",
+        "debate",
+        "critique",
+        "red team",
+        "tension",
+        "disagree"
+      ],
+      "priority": 94,
+      "provenance_refs": [
+        "scientific_agent_skills",
+        "academic_research_skills"
+      ],
+      "allowed_use": "internal_panel_disagreement_rubric",
+      "non_goals": [
+        "manufacture_disagreement_to_look_rigorous",
+        "average_the_panel_into_a_consensus",
+        "let_one_angle_speak_for_the_whole_panel",
+        "drop_a_minority_finding_without_a_reason",
+        "treat_unanimity_as_validation"
+      ]
+    },
+    {
+      "overlay_id": "innovation_cognitive_map",
+      "title": "Innovation coordinate map (six layers, depth ladder, pseudo-innovation flags)",
+      "summary": "(Director doctrine 2026-08-07; the full map is agents/references/innovation-cognitive-map.md - the vendored refs on this card are the nearest upstream rubrics, not the origin of it.) Research innovation is not \"an idea nobody has had\"; it is rewriting one of the coordinate systems - what is worth studying, what exists, what counts as explanation, what counts as evidence, what can be optimized, and what was impossible and is now feasible. SIX LAYERS (24 cells): (1) rewrite the PROBLEM SPACE - new problem definition, new concept/ontology, new task or interface, cross-domain unification; (2) rewrite the LEARNING MACHINE - new representation, architecture, objective, data/supervision signal; (3) rewrite the CAPABILITY-GROWTH ENGINE - new optimization, scaling law, self-play / synthetic feedback / evolution, inference-time search and verification; (4) rewrite the MODEL-WORLD CONNECTION - retrieval and external memory, tools and agents, multimodal and world models, human and collective intelligence; (5) rewrite TRUTH AND CONTROL - new evaluation, interpretability, robustness / red team / model organisms, alignment and governance; (6) rewrite RESEARCH COMPOUNDING - systems-hardware co-design, efficiency and adaptation, open science, AI for science. Every idea declares innovation_layers (at least one cell), and a menu of ideas should span at least three layers - a menu sitting entirely in layer 2 has searched one drawer. USE IT AS FOUR HABITS: (a) ANOMALY FIRST - start from what current theory cannot explain and abduce a mechanism, not from a method you already want to apply; (b) 80/20 - high-impact work is a large conventional, reliable base plus a small structurally atypical connection, so each idea states its conventional_base and its unusual_connection; (c) DEPTH TARGET - declare depth_target on the D0-D6 ladder (D0 demo, D1 beats baseline, D2 reproducible phenomenon, D3 mechanism, D4 principle, D5 reusable primitive, D6 paradigm) together with what evidence reaching it would require; (d) HARDWARE AS ENABLER - read the machine's real registered hardware as enabler material and as constraint-as-signal (a binding constraint usually exposes a wrong abstraction), never as a ranking penalty. NINE QUESTIONS for whether something is really innovative: what problem does it change rather than answer; what concept or variable does it name for the first time; does it show a causal mechanism rather than a correlation; does it predict an experiment not yet run; does it hold in independent settings, models or scales; does it show its failure boundary and counterexamples; does it move a possibility frontier in quality, cost, latency or safety; does it leave behind a reusable primitive, dataset, evaluation, tool or experimental object; does it open a research programme rather than end at one paper. TEN PSEUDO-INNOVATION RED FLAGS, to be named as risks rather than used as a score: acronym innovation; benchmark painting; demo as evidence; architecture superstition; scaling without a law; agent role-play (personas with no different information, tools, environment, reward or verification authority); post-hoc mechanism storytelling; synthetic-data circularity; open weights masquerading as open science; safety measured only by refusal rate.",
+      "stages": [
+        "IDEATE",
+        "VERIFY"
+      ],
+      "modes": [
+        "new_direction",
+        "deep_ideation",
+        "ideate_ring",
+        "full_new_direction",
+        "gap_breadth",
+        "tree_explore",
+        "venue_readiness",
+        "manuscript_review"
+      ],
+      "publication_kinds": [],
+      "keywords": [
+        "创新",
+        "创新层",
+        "深度",
+        "机制",
+        "范式",
+        "原语",
+        "伪创新",
+        "innovation",
+        "depth",
+        "mechanism",
+        "paradigm",
+        "primitive",
+        "contribution",
+        "pseudo-innovation"
+      ],
+      "priority": 98,
+      "provenance_refs": [
+        "orchestra_research_skills",
+        "nature_skills"
+      ],
+      "allowed_use": "internal_innovation_coordinate_rubric",
+      "non_goals": [
+        "treat_a_layer_declaration_as_evidence",
+        "fill_the_grid_for_its_own_sake",
+        "use_depth_target_as_a_promise_of_results",
+        "rank_down_an_idea_for_exceeding_current_hardware"
       ]
     }
   ]

@@ -639,8 +639,11 @@ def build_packet(run_dir, generated_at: Optional[str] = None) -> str:
         "## Technical Appendix Pointers",
         "",
         "- `manifest.yaml` is the run-store state record.",
-        "- `ledger.jsonl` is the tamper-evident event chain.",
+        "- `ledger.jsonl` is the append-only event chain (hash-chained, but no longer re-verified"
+        " before every append — 2026-08-07 de-governance).",
         "- `task_frame.artifact.json` is the pinned direction contract.",
+        "- `os_read_sandbox_enforced: false` for every dispatched worker/assistant — read scope is a"
+        " declaration the scheduler cross-checks, not an OS-level filesystem sandbox.",
     ])
     return "\n".join(lines) + "\n"
 

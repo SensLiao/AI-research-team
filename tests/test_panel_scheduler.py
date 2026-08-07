@@ -441,16 +441,23 @@ def test_plain_repair_routes_source_quality_contract_to_ranker(tmp_path):
     assert targets == {"source-quality-ranker"}
 
 
-def test_preexisting_outputs_cannot_bypass_dispatch_receipt(tmp_path):
+def test_preexisting_outputs_complete_the_stage_with_an_unreceipted_diagnostic(tmp_path):
+    """De-governance (director, 2026-08-07; A5/R3 §A5): a produced output with no in-run
+    authorization receipt no longer halts the stage — it completes, and the missing receipt is
+    surfaced only as a read-only diagnostic on the response, never as a block."""
     run_dir = _run(tmp_path)
     worker = _worker(run_dir, "baseline-fairness-critic", "prewritten.bundle.json")
     _write_output(worker)
     decision = schedule_next_wave(run_dir, "DESIGN", worker, ts=TS)
-    assert decision["status"] == "unverified_unreceipted_outputs"
+    assert decision["status"] == "complete"
     assert decision["dispatch"] is None
+    assert "baseline-fairness-critic" in decision["unreceipted_agents"]
 
 
-def test_stateful_mode_cannot_claim_complete_without_all_worker_receipts(tmp_path):
+def test_stateful_mode_completes_without_all_worker_receipts_but_names_them(tmp_path):
+    """Same de-governance for the no-spec resume path: the stage is complete even though none of
+    these agents were ever authorized in this run — `unreceipted_agents` names every one of them
+    as a diagnostic, but nothing here ever raises or halts."""
     run_dir = _run(tmp_path, mode="venue_readiness")
     payload = json.loads((run_dir / "task_frame.artifact.json").read_text(encoding="utf-8"))
     payload["payload"]["agent_subset"] = [
@@ -463,7 +470,7 @@ def test_stateful_mode_cannot_claim_complete_without_all_worker_receipts(tmp_pat
     ]
     (run_dir / "task_frame.artifact.json").write_text(json.dumps(payload), encoding="utf-8")
     decision = schedule_next_wave(run_dir, "VERIFY", None, ts=TS)
-    assert decision["status"] == "unverified_unreceipted_outputs"
+    assert decision["status"] == "complete"
     assert "area-chair-synthesizer" in decision["unreceipted_agents"]
 
 
@@ -607,3 +614,58 @@ def test_capability_overlay_block_is_stage_filtered_and_advisory(tmp_path):
 def test_legacy_task_frame_has_no_capability_overlay_block(tmp_path):
     run_dir = _run(tmp_path)
     assert capability_overlay_block(run_dir, "DESIGN") == ("", None)
+
+
+# ---------------------------------------------------------------- per-mode agent budget (no shared pool)
+# Director lock 2026-08-04: "agents 预算上限不需要共享，独立按 modes 算." The initial-dispatch ceiling
+# (`max_agent_hops`) was already per-mode and mandatory (`orchestrator/graph_spec.py`), and it never
+# reads an upstream run — but the REPAIR-wave ceiling was a single hardcoded 12 that 25 of the 26 modes
+# silently inherited, which is exactly a shared pool. These tests pin the per-mode rule.
+
+def test_repair_ceiling_is_derived_from_the_mode_s_own_panel_not_a_shared_constant():
+    from research_agent_teams.operate.panel_scheduler import _supplement_limit
+
+    small = [{"id": f"s{i}"} for i in range(2)]
+    large = [{"id": f"l{i}"} for i in range(13)]
+    assert _supplement_limit({}, small) == 2
+    assert _supplement_limit({}, large) == 13
+    assert _supplement_limit({}, small) != _supplement_limit({}, large), (
+        "two modes of different size must not share one repair ceiling")
+
+
+def test_a_mode_s_own_declared_repair_ceiling_wins_over_the_derivation():
+    from research_agent_teams.operate.panel_scheduler import _supplement_limit
+
+    nodes = [{"id": f"n{i}"} for i in range(13)]
+    assert _supplement_limit({"max_supplement_agent_hops": 5}, nodes) == 5, (
+        "an explicit registry value is the mode's own contract and must not be overridden")
+
+
+def test_the_repair_ceiling_is_never_zero_even_for_an_empty_panel():
+    from research_agent_teams.operate.panel_scheduler import _supplement_limit
+
+    assert _supplement_limit({}, []) >= 1
+
+
+def test_no_shared_numeric_default_survives_in_the_scheduler():
+    """A regression guard on the SHAPE of the fix: the shared constant must be gone, not moved."""
+    from research_agent_teams.operate import panel_scheduler
+
+    source = Path(panel_scheduler.__file__).read_text(encoding="utf-8")
+    assert 'setdefault("max_supplement_agent_hops"' not in source, (
+        "a hardcoded shared default for the repair ceiling is back")
+
+
+def test_the_initial_dispatch_ceiling_is_declared_per_mode_by_every_mode():
+    """`max_agent_hops` is the per-mode initial ceiling; no mode may fall back to a shared value."""
+    import yaml
+
+    registry = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "orchestrator" / "mode_registry.yaml")
+        .read_text(encoding="utf-8"))["modes"]
+    missing = [m for m, spec in registry.items()
+               if not isinstance(((spec or {}).get("budget") or {}).get("max_agent_hops"), int)]
+    assert missing == [], f"these modes have no per-mode dispatch ceiling: {missing}"
+    # And the ceilings genuinely differ per mode — a single value across the board would be a pool.
+    ceilings = {((spec or {}).get("budget") or {})["max_agent_hops"] for spec in registry.values()}
+    assert len(ceilings) > 1, "every mode carrying the same ceiling would be a shared budget in disguise"

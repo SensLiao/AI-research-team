@@ -116,7 +116,10 @@ Write ONLY this JSON to `{out}`:
   "intervention_points": [{{"node_ref":"N1","rationale":"<why acting here changes the outcome>"}}],
   "failure_modes": ["<how this mechanism breaks>"]
 }}
-Quantities: >=3 nodes and >=2 edges that form at least one chain of length >=2 (real depth, not a star). \
+Quantities are FLOORS with NO upper bound: >=8 nodes and >=8 edges forming at least one chain of length >=5 (real depth, not a star). Emit every node and edge the mechanism actually has -- a bigger, still-grounded graph is better than a tidy small one; never prune a defensible edge to keep the graph readable. \
+Mark every node where an intervention could introduce a NEW mechanism rather than tune an existing one: \
+that distinction is what the downstream ideation seats act on, and a graph whose intervention_points are \
+all parameter knobs has already decided that nothing new will be proposed. \
 After writing, verify valid JSON. Return one line: node/edge counts + the longest causal chain."""
 
 ANALOGY_WORKER_PROMPT = """You are the ANALOGY-MAPPER worker. From the problem's MECHANISMS, find STRUCTURAL \
@@ -133,6 +136,24 @@ adaptations. ONLY emit a mapping that has >=1 genuinely shared mechanism (a zero
 one — drop it). Provide source_mechanisms + target_mechanisms as plain phrase lists; a deterministic tool \
 computes overlap_score and the verdict from them (you do NOT set the score).
 
+Retrieval is the preferred route but not the only one. When the frozen bundle and the vault yield no \
+usable source-domain paper, do NOT return an empty mapping set: fall back to a MECHANISM CROSS-PRODUCT. \
+Take the target mechanism phrases as rows, pick 2-3 deliberately distant fields as columns, and read \
+each cell for whether the source field's mechanism would transfer. A cell that survives is emitted with \
+`evidence_status: "UNVERIFIED"` and an explicit `retrieval_route: "cross_product_unretrieved"` — it is a \
+hypothesis about a transfer, never a claim that the transfer is documented. Never upgrade it to \
+verified without a real source ref.
+
+Four transfer failure modes to self-check before emitting, each recorded on the mapping in \
+`transfer_self_check`:
+  - SURFACE BORROWING: are you using the source field's vocabulary without its theoretical context?
+  - METHODOLOGICAL MISMATCH: does the borrowed method fit the nature of this question — is the goal
+    to measure or to understand?
+  - DISCIPLINARY NUANCE: does a shared word mean different things in the two fields? "Validity",
+    "model", "significance" and "bias" all do. Say which sense you mean.
+  - OVERSIMPLIFICATION: are you treating the source field as monolithic when it has 2-3 contending
+    schools that would answer differently?
+
 If this prompt carries a REPAIR ATTEMPT block: fix EXACTLY what the gate feedback names; re-emit the FULL bundle.
 
 Write ONLY this JSON to `{out}`:
@@ -144,10 +165,16 @@ Write ONLY this JSON to `{out}`:
     "target_mechanisms": ["<mechanism phrase in THIS problem>"],
     "shared_mechanisms": [{{"mechanism":"<shared phrase>","source_evidence_ref":["arXiv:... or [[slug]]"]}}],
     "blocking_assumptions": [{{"assumption":"<source assumption at risk>","why_blocking":"<why it breaks here>"}}],
-    "required_adaptations": [{{"adaptation":"<how to port it>","addresses":"<which assumption/mechanism>"}}]
+    "required_adaptations": [{{"adaptation":"<how to port it>","addresses":"<which assumption/mechanism>"}}],
+    "retrieval_route": "retrieved|cross_product_unretrieved",
+    "evidence_status": "VERIFIED|UNVERIFIED",
+    "transfer_self_check": {{"surface_borrowing":"<your check>","methodological_mismatch":"<your check>",
+      "disciplinary_nuance":"<which sense of the shared term you mean>",
+      "oversimplification":"<contending schools, or 'field is not monolithic in a way that matters here'>"}}
   }}]
 }}
-Emit 1-3 mappings (the strongest structural analogs). After writing, verify valid JSON. Return one line: \
+Emit >=6 mappings — a FLOOR with no upper bound; emit every structural analog that genuinely maps, \
+strongest first, rather than only the single best. After writing, verify valid JSON. Return one line: \
 count + the strongest analog's source domain."""
 
 CONTRADICTION_WORKER_PROMPT = """You are the CONTRADICTION-MINER worker. Find where the grounded evidence \
@@ -161,11 +188,19 @@ names two real claim ids (from claim_list) and its kind.
 
 If this prompt carries a REPAIR ATTEMPT block: fix EXACTLY what the gate feedback names; re-emit the FULL bundle.
 
+For every conflict you record, also attempt a SYNTHESIS: what would have to be true for both sides to \
+hold at once, and is the opposition an artifact of how the two papers formalized the problem rather \
+than a fact about the world? Write it into `synthesis_attempt` on the conflict. "No synthesis found" \
+is a legitimate and useful answer; a synthesis that merely averages the two numbers is not one. A \
+conflict with a real synthesis attempt is a candidate research direction, not just a data-quality note.
+
 Write ONLY this JSON to `{out}`:
 {{
   "conflicts": [{{"conflict_id":"CF-1","claim_ref_a":"c1","claim_ref_b":"c2",
      "kind":"numerical-disagreement|directional-flip|scope-mismatch|method-conflict|other",
-     "detail":"<what disagrees>"}}],
+     "description":"<what disagrees>",
+     "synthesis_attempt":"<a system/condition under which both sides hold, or 'no synthesis found'>",
+     "opposition_is_formalization_artifact":"true|false|unknown"}}],
   "n_claims_checked": 3
 }}
 n_claims_checked = how many claims you actually compared (>=0). conflicts MAY be empty (a clean evidence \
@@ -183,6 +218,15 @@ For every original and evolved candidate, turn the scientific claim into the che
 Separate baselines from controls; state numeric or otherwise unambiguous success and failure thresholds;
 add hard kill criteria, resource/data feasibility, major risks with mitigations, and an ordered execution
 sequence. This is still a pre-bet falsification plan, not a full preregistered DESIGN protocol.
+
+Beyond the falsifier, every sketch must state its DISCRIMINATING EVIDENCE: which TWO competing
+mechanisms this design tells apart, and what observation separates them. "If mechanism A holds and B
+does not, this experiment produces X; if B holds and A does not, it produces Y." An experiment that
+can only confirm one story is a demonstration, not a test — the whole point of a decisive experiment
+is that the two candidate explanations predict different observations. If the idea genuinely carries
+only ONE candidate mechanism, say so explicitly and write instead what its FAILURE would point to:
+which alternative explanation a negative result would promote. A sketch whose discriminating evidence
+is "the metric goes up" has not named a mechanism at all.
 
 Use `stages` to express the experiment ladder. A direct experiment has one `direct` stage. When an idea
 depends on a capability that may not be learnable, use an oracle-first ladder such as
@@ -204,6 +248,8 @@ Write ONLY this JSON to `{out}`:
     "metrics":["<primary metric with unit/aggregation>"],
     "observable_signals":["<what works versus fails looks like>"],
     "falsifier":"<concrete result that falsifies the mechanism claim>",
+    "discriminating_evidence":"<the two competing mechanisms this design separates and the observation
+      that separates them; or, for a single-mechanism idea, what its failure would point to instead>",
     "success_thresholds":["<go threshold>"],
     "failure_thresholds":["<no-go threshold>"],
     "kill_criteria":["<condition that stops the direction or branch>"],
@@ -448,17 +494,18 @@ def produce_mechanism_mappings(run_dir, ts, *, required: bool = True) -> List[st
 
 
 def produce_evidence_saturation(run_dir, ts) -> Optional[str]:
-    """Advisory measured-saturation report. Uses the DISCOVER bundle's optional `saturation_rounds`; with
-    only one retrieval pass it honestly reports INSUFFICIENT_DATA (real saturation needs iterative rounds)."""
+    """Advisory measured-saturation report over the DISCOVER bundle's `saturation_rounds`.
+
+    No rounds -> NO REPORT (2026-08-07). This used to synthesise a single round out of the final
+    source count, which produced a real-looking saturation artifact from a search history that was
+    never recorded. A measurement with no measurements behind it is worse than a missing one.
+    """
     b = _inbox(run_dir, "DISCOVER", required=False)
     if b is None:
         return None
-    rounds = b.get("saturation_rounds")
+    rounds = [r for r in (b.get("saturation_rounds") or []) if isinstance(r, dict)]
     if not rounds:
-        et = b.get("evidence_table") or {}
-        n = len(et.get("sources") or [])
-        rounds = [{"round_index": 1, "queries_run": 1 if et.get("query") else 0,
-                   "new_unique_sources": n, "cumulative_unique_sources": n}]
+        return None
     rep = measure_saturation(rounds, report_id="SAT-001")
     return _write_or_block(run_dir, "DISCOVER", "evidence-saturation-report.artifact.json",
                            "evidence_saturation_report", "evidence-saturation-judge", rep, ts)
@@ -572,7 +619,7 @@ def produce_experiment_sketches(run_dir, ts, *, required: bool = True) -> List[s
         for k in ("idea_ref", "experiment", "controls", "metrics", "observable_signals", "falsifier"):
             if k in s:
                 payload[k] = s[k]
-        for opt in ("next_branch", "feasibility", "notes"):
+        for opt in ("discriminating_evidence", "next_branch", "feasibility", "notes"):
             if s.get(opt) is not None:
                 payload[opt] = s[opt]
         paths.append(_write_or_block(run_dir, "IDEATE", f"experiment-sketch-{sid}.artifact.json",
@@ -722,7 +769,14 @@ def produce_quality_eval(run_dir, ts) -> Optional[str]:
     from ...tools.idea_quality_eval import build_quality_eval
 
     backlog = _artifact(run_dir, "IDEATE", "idea-backlog.artifact.json") or {}
-    ideas = [{"idea_id": str(i.get("idea_id")), "evidence_ref": i.get("evidence_ref") or []}
+    # The invention block travels with the idea: mechanism_invention and the per-idea refutation
+    # digestion rate are computed from these fields, so projecting only id + evidence_ref would make
+    # both dimensions constant again (the exact defect the 2026-08-07 recalibration fixed).
+    ideas = [{"idea_id": str(i.get("idea_id")), "evidence_ref": i.get("evidence_ref") or [],
+              "contribution_tier": i.get("contribution_tier"),
+              "invention_claim": i.get("invention_claim"),
+              "mechanism_graph_refs": i.get("mechanism_graph_refs") or [],
+              "addresses_conflicts": i.get("addresses_conflicts") or []}
              for i in (backlog.get("ranked_ideas") or []) if i.get("idea_id")]
     if not ideas:
         return None

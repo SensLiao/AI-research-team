@@ -87,8 +87,9 @@ def _make_collision_verdict(entries: list[dict]) -> dict:
 
 
 def _make_contradiction(n_claims: int, n_conflicts: int) -> dict:
-    """Build a minimal contradiction_report payload."""
-    conflicts = [{"claim_a": f"c{i}", "claim_b": f"d{i}", "kind": "direct_negation"}
+    """Build a minimal contradiction_report payload (conflict_ids are CF-1..CF-n)."""
+    conflicts = [{"conflict_id": f"CF-{i + 1}", "claim_a": f"c{i}", "claim_b": f"d{i}",
+                  "kind": "direct_negation"}
                  for i in range(n_conflicts)]
     return {"conflicts": conflicts, "n_claims_checked": n_claims}
 
@@ -127,8 +128,8 @@ def test_happy_path_schema_valid():
     assert errors == [], f"Schema errors: {errors}"
     assert out["eval_id"] == "QE-001"
     assert len(out["per_idea"]) == 3
-    # pairwise: 3 ideas × 6 dims = 18 entries
-    assert len(out["pairwise"]) == 18
+    # pairwise: 3 ideas × 7 dims (mechanism_invention added 2026-08-07) = 21 entries
+    assert len(out["pairwise"]) == 21
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +301,12 @@ def test_degradation_all_optional_none():
         scores = entry["scores"]
         assert scores["depth"] == 0.0,     "depth should be 0.0 with no mechanism_graph"
         assert scores["breadth"] == 0.0,   "breadth should be 0.0 with no mechanism_mappings"
-        assert scores["refutation"] == 0.0, "refutation should be 0.0 with no contradiction"
+        # refutation is NEUTRAL, not zero, when there is nothing to digest: a clean evidence base is
+        # a real finding and must not read as a defect on every idea.
+        assert scores["refutation"] == 0.5, "refutation should be neutral with no contradiction"
+        # mechanism_invention: no contribution_tier declared -> the same neutral as `measurement`,
+        # so a bundle written before the field existed is neither rewarded nor punished.
+        assert scores["mechanism_invention"] == 0.4
         # grounding: IDEA-1/IDEA-2 have no evidence_ref -> 0.0
         assert scores["grounding"] == 0.0, "grounding should be 0.0 with no evidence_ref"
         # falsifiability: no sketch, no prediction -> 0.0
@@ -385,20 +391,118 @@ def test_breadth_increases_with_more_domains():
 # 10. Refutation score
 # ---------------------------------------------------------------------------
 
-def test_refutation_zero_claims_is_zero():
+# Refutation measures DIGESTION (did THIS idea engage the run's conflicts), not how many conflicts
+# the miner found. Recalibrated 2026-08-07: as a conflict COUNT it scored the contradiction-miner and
+# handed every idea the same number, so the dimension could never separate two ideas.
+
+def test_refutation_zero_claims_is_neutral():
     contr = _make_contradiction(n_claims=0, n_conflicts=5)
     out = build_quality_eval("QE-r1", [{"idea_id": "I-1"}], contradiction=contr)
-    assert out["per_idea"][0]["scores"]["refutation"] == 0.0
+    assert out["per_idea"][0]["scores"]["refutation"] == 0.5
 
 
-def test_refutation_saturates_at_three_or_more_conflicts():
-    contr = _make_contradiction(n_claims=10, n_conflicts=3)
-    out = build_quality_eval("QE-r2", [{"idea_id": "I-1"}], contradiction=contr)
+def test_refutation_engaging_conflicts_saturates_at_three():
+    contr = _make_contradiction(n_claims=10, n_conflicts=5)
+    idea = {"idea_id": "I-1", "addresses_conflicts": ["CF-1", "CF-2", "CF-3"]}
+    out = build_quality_eval("QE-r2", [idea], contradiction=contr)
     assert out["per_idea"][0]["scores"]["refutation"] == 1.0
 
 
-def test_refutation_partial():
-    contr = _make_contradiction(n_claims=10, n_conflicts=1)
-    out = build_quality_eval("QE-r3", [{"idea_id": "I-1"}], contradiction=contr)
+def test_refutation_partial_engagement():
+    contr = _make_contradiction(n_claims=10, n_conflicts=5)
+    idea = {"idea_id": "I-1", "addresses_conflicts": ["CF-2"]}
+    out = build_quality_eval("QE-r3", [idea], contradiction=contr)
     score = out["per_idea"][0]["scores"]["refutation"]
     assert 0.0 < score < 1.0
+
+
+def test_refutation_ignoring_live_conflicts_scores_zero():
+    contr = _make_contradiction(n_claims=10, n_conflicts=2)
+    out = build_quality_eval("QE-r4", [{"idea_id": "I-1"}], contradiction=contr)
+    assert out["per_idea"][0]["scores"]["refutation"] == 0.0
+
+
+def test_refutation_ignores_invented_conflict_ids():
+    contr = _make_contradiction(n_claims=10, n_conflicts=2)
+    idea = {"idea_id": "I-1", "addresses_conflicts": ["CF-99", "CF-100"]}
+    out = build_quality_eval("QE-r5", [idea], contradiction=contr)
+    assert out["per_idea"][0]["scores"]["refutation"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# 11. mechanism_invention — the dimension that separates an invention from a rename
+# ---------------------------------------------------------------------------
+
+def _graph_with(node_id: str = "N0") -> dict:
+    graph = _make_mechanism_graph(n_nodes=4, chain_len=4)
+    assert any(n["node_id"] == node_id for n in graph["nodes"])
+    return graph
+
+
+def test_mechanism_invention_tier_ordering():
+    graph = _graph_with()
+    scores = {}
+    for tier in ("mechanism_invention", "method_invention", "measurement", "audit"):
+        idea = {"idea_id": "I-1", "contribution_tier": tier,
+                "invention_claim": "a new gating loss defined over boundary residuals",
+                "mechanism_graph_refs": ["N0"]}
+        out = build_quality_eval(f"QE-t-{tier}", [idea], mechanism_graph=graph)
+        scores[tier] = out["per_idea"][0]["scores"]["mechanism_invention"]
+    assert (scores["mechanism_invention"] > scores["method_invention"]
+            > scores["measurement"] > scores["audit"])
+
+
+def test_invention_tier_without_claim_loses_the_tier():
+    graph = _graph_with()
+    idea = {"idea_id": "I-1", "contribution_tier": "mechanism_invention",
+            "invention_claim": "   ", "mechanism_graph_refs": ["N0"]}
+    out = build_quality_eval("QE-noclaim", [idea], mechanism_graph=graph)
+    assert out["per_idea"][0]["scores"]["mechanism_invention"] == 0.4
+
+
+def test_invention_that_cannot_point_at_a_real_graph_node_is_discounted():
+    graph = _graph_with()
+    grounded = {"idea_id": "I-1", "contribution_tier": "mechanism_invention",
+                "invention_claim": "a new gating loss", "mechanism_graph_refs": ["N0"]}
+    floating = {"idea_id": "I-2", "contribution_tier": "mechanism_invention",
+                "invention_claim": "a new gating loss", "mechanism_graph_refs": ["N-INVENTED"]}
+    out = build_quality_eval("QE-refs", [grounded, floating], mechanism_graph=graph)
+    by_id = {e["idea_id"]: e["scores"]["mechanism_invention"] for e in out["per_idea"]}
+    assert by_id["I-1"] > by_id["I-2"]
+
+
+def test_mechanism_invention_absent_graph_does_not_discount():
+    """With no mechanism graph in the run there is nothing to point at — do not punish the idea."""
+    idea = {"idea_id": "I-1", "contribution_tier": "mechanism_invention",
+            "invention_claim": "a new gating loss", "mechanism_graph_refs": []}
+    out = build_quality_eval("QE-nograph", [idea])
+    assert out["per_idea"][0]["scores"]["mechanism_invention"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# 12. Log scaling — a bigger real graph keeps earning score past the prompt's floor
+# ---------------------------------------------------------------------------
+
+def test_depth_keeps_separating_past_the_prompt_floor():
+    """The mechanism prompt's floor is >=8 nodes / >=8 edges / chain >=3.
+
+    Under the old linear scale every compliant graph scored exactly 1.0, so a 31-node graph and an
+    8-node graph tied on depth. Log scaling must keep them apart.
+    """
+    at_floor = _make_mechanism_graph(n_nodes=8, chain_len=8)
+    far_past = _make_mechanism_graph(n_nodes=31, chain_len=31)
+    idea = [{"idea_id": "X-1"}]
+    d_floor = build_quality_eval("QE-f", idea, mechanism_graph=at_floor)["per_idea"][0]["scores"]["depth"]
+    d_past = build_quality_eval("QE-p", idea, mechanism_graph=far_past)["per_idea"][0]["scores"]["depth"]
+    assert d_floor < 1.0
+    assert d_past > d_floor
+
+
+def test_breadth_keeps_separating_past_the_prompt_floor():
+    at_floor = _make_mechanism_mappings([f"D{i}" for i in range(3)], shared_per=2)
+    far_past = _make_mechanism_mappings([f"D{i}" for i in range(7)], shared_per=3)
+    idea = [{"idea_id": "X-1"}]
+    b_floor = build_quality_eval("QE-bf", idea, mechanism_mappings=at_floor)["per_idea"][0]["scores"]["breadth"]
+    b_past = build_quality_eval("QE-bp", idea, mechanism_mappings=far_past)["per_idea"][0]["scores"]["breadth"]
+    assert b_floor < 1.0
+    assert b_past > b_floor

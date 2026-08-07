@@ -10,8 +10,8 @@ proposals until `/promote-to-vault` admits them.
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Optional
@@ -119,8 +119,10 @@ EVIDENCE_DEEP_PARALLEL_GROUPS = [
 def _worker_model(model_policy: str, agent: str) -> str:
     if model_policy == "max_quality":
         return "opus"
+    # landscape-mapper joined the opus set on 2026-08-07: drawing the map of a field is a judgment
+    # about what the field IS, and every seat reading that map inherits the call.
     if agent in {"source-quality-ranker", "citation-coverage-auditor", "staleness-auditor",
-                 "contradiction-miner"}:
+                 "contradiction-miner", "landscape-mapper"}:
         return "opus"
     return "sonnet"
 
@@ -214,9 +216,11 @@ def register_source_preflight(run_dir: str, source_refs, doc_paths, ts: str) -> 
     snapshot = root / snapshot_ref
     if not snapshot_ref or not snapshot.is_file():
         raise ValueError("citation snapshot manifest points to a missing frozen text snapshot")
+    # The digest is still RECORDED (it goes into the preflight payload below and stays useful for
+    # after-the-fact inspection); the COMPARISON against the manifest was removed 2026-08-07 per the
+    # director's no-hash-gating lock. The snapshot must still exist and be a complete-parser
+    # extraction — that is what makes the downstream quote checks readable.
     digest = hashlib.sha256(snapshot.read_bytes()).hexdigest()
-    if digest != str(manifest.get("document_hash") or ""):
-        raise ValueError("citation snapshot hash mismatch during evidence_deep source preflight")
     context_parsers = {
         _normalise_doc_ref(row.get("doc_ref")): str(row.get("parser_version") or manifest.get("parser_version") or "")
         for row in (manifest.get("contexts") or [])
@@ -287,9 +291,8 @@ def source_preflight(run_dir: str) -> dict:
     snapshot = root / snapshot_ref
     if not snapshot_ref or not snapshot.is_file():
         raise GateBlock("evidence_deep source preflight BLOCK: frozen snapshot is missing")
+    # Recorded, not compared (2026-08-07): existence and parser completeness stay hard gates.
     digest = hashlib.sha256(snapshot.read_bytes()).hexdigest()
-    if digest != str(payload.get("document_hash") or "") or digest != str(manifest.get("document_hash") or ""):
-        raise GateBlock("evidence_deep source preflight BLOCK: frozen snapshot hash no longer matches")
     if payload.get("parser_version") not in _COMPLETE_SOURCE_PARSERS or manifest.get("parser_version") not in _COMPLETE_SOURCE_PARSERS:
         raise GateBlock(
             "evidence_deep source preflight BLOCK: critical sources need complete local PDF, HTML-body, or UTF-8 source extraction"
@@ -369,7 +372,8 @@ Output exactly: {"evidence_table": {"evidence_contract_version":"evidence-table/
 "source_quality_report_ref":"evidence/DISCOVER/source-quality-report.artifact.json",
 "search_trace_ref":"evidence/DISCOVER/evidence-search-trace.artifact.json",
 query, sources, "saturation_reached":false}}.
-Use 5-10 sources when available, including negative/boundary evidence. The saturation field is a
+Use >=30 sources when available — a FLOOR with no upper bound, so use every relevant record rather than
+a sample — including negative/boundary evidence. The saturation field is a
 fixed compatibility placeholder; only the deterministic search-trace evaluator derives completion.
 Every `source_ref` declared in the mandatory source-preflight record is load-bearing and MUST appear
 unchanged in the evidence table. Do not substitute a search snippet, abstract, or derivative page for it.
@@ -413,7 +417,7 @@ Every locus must include source_ref, location, kind, reported_result, supports_c
 directness, span_id, snapshot_ref, document_hash, parser_version, exact_quote, and either char_start/char_end,
 table_cell_ref, or figure_region_ref. Use partial/insufficient instead of inflating support. You only link;
 a different worker reopens every locator and independently judges semantic support.
-""",
+""" + _shared.SUPPORT_RELATION_CONTRACT,
         "citation-coverage-auditor": """
 Task: independently audit claim support. You did not extract or link the claims. Reopen each snapshot
 and exact locator; ignore the linker's supports_claim conclusion until after your own reading. Check
@@ -454,7 +458,7 @@ decision it prevents; make the highest-severity gap specific enough to become th
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     if stage != "DISCOVER":
         return None
     north_star = _shared.north_star_block(run_dir)
