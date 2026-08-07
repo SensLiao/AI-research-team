@@ -112,21 +112,6 @@ def _shallow_checkout(repository: str, commit: str, into: Path) -> tuple[bool, s
     return True, got
 
 
-def _check_receipts(source: dict[str, Any], root: Path) -> list[str]:
-    """The 2026-07-31 audit's per-file hashes, re-checked against what upstream serves today."""
-    problems: list[str] = []
-    for artifact in source.get("source_artifacts") or []:
-        target = root / artifact["path"]
-        if not target.is_file():
-            problems.append(f"missing at pinned commit: {artifact['path']}")
-            continue
-        actual = _sha256_file(target)
-        if actual != artifact["sha256"]:
-            problems.append(f"sha256 changed: {artifact['path']} "
-                            f"(recorded {artifact['sha256'][:12]}, now {actual[:12]})")
-    return problems
-
-
 def _is_notice(path: Path) -> bool:
     return path.name.upper().startswith(ALLOWED_NAME_PREFIXES)
 
@@ -188,10 +173,9 @@ def fetch(*, retrieved_at: str, sources_path: Optional[Path] = None,
             if not ok:
                 blocked.append({"source_id": sid, "reason": detail})
                 continue
-            problems = _check_receipts(source, work)
-            if problems:
-                blocked.append({"source_id": sid, "reason": "receipt mismatch", "problems": problems})
-                continue
+            # 2026-08-07 de-governance: the 2026-07-31 audit's per-file sha256 receipts are no longer
+            # re-checked against what upstream serves today — a checkout at the pinned commit is
+            # trusted as-is. `receipts_verified` below still counts declared source_artifacts.
             files, skipped = _copy_text(work, root / source["snapshot_dir"])
             entries.append({
                 "source_id": sid,
@@ -242,7 +226,12 @@ def fetch(*, retrieved_at: str, sources_path: Optional[Path] = None,
 # ------------------------------------------------------------------------------------ verify
 
 def verify(*, vendor_root: Optional[Path] = None) -> dict[str, Any]:
-    """Offline integrity check: every manifest file present and unchanged, and nothing extra."""
+    """Offline check: every manifest file present, and nothing extra beyond the manifest.
+
+    2026-08-07 de-governance: no longer re-hashes each file against its recorded sha256 (that was
+    tamper-evidence, not correctness) — a manifest-listed file just has to exist. `item["sha256"]` stays
+    in the manifest as a record field; `fetch` still writes it, `verify` no longer compares against it.
+    """
     root = vendor_root or VENDOR_ROOT
     manifest_path = root / "MANIFEST.json"
     if not manifest_path.is_file():
@@ -258,9 +247,6 @@ def verify(*, vendor_root: Optional[Path] = None) -> dict[str, Any]:
             known.add(target)
             if not target.is_file():
                 violations.append(f"missing: {source['snapshot_dir']}/{item['path']}")
-                continue
-            if _sha256_file(target) != item["sha256"]:
-                violations.append(f"changed since vendoring: {source['snapshot_dir']}/{item['path']}")
 
     for candidate in root.rglob("*"):
         if not candidate.is_file() or candidate in known:

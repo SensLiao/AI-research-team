@@ -209,15 +209,23 @@ def test_schema_invalid_string_booleans_never_cut_an_idea(tmp_path):
     assert all(row["verdict"] == "UNVERIFIED" for row in verdict["ideas"])
 
 
-def test_hash_mismatched_fulltext_snapshot_never_cuts_an_idea(tmp_path):
+def test_absent_fulltext_snapshot_never_cuts_an_idea(tmp_path):
+    """A cut must stay bound to a full text that is really present inside this run.
+
+    The digest comparison was removed on 2026-08-07 (director lock: no hash gating), so a wrong
+    SHA-256 no longer means anything. What still has to hold is the part that was never integrity
+    accounting: the declared snapshot must EXIST inside the run directory, so the destructive cut is
+    inspectable afterwards. Point the receipt at a file that is not there and the collision degrades
+    to UNVERIFIED — visible on the menu, and the idea survives.
+    """
     run_dir = _begin_run(tmp_path)
     _seed_discover(run_dir)
     _inject(run_dir, "IDEATE.bundle.json", _IDEATE_BUNDLE)
-    mismatched = json.loads(json.dumps(_COLLISION_BUNDLE))
-    mismatched["findings"][0]["colliding_papers"][0][
-        "fulltext_snapshot_sha256"
-    ] = "0" * 64
-    _inject(run_dir, "COLLISION.bundle.json", mismatched)
+    absent = json.loads(json.dumps(_COLLISION_BUNDLE))
+    absent["findings"][0]["colliding_papers"][0][
+        "fulltext_snapshot_ref"
+    ] = "inbox/fulltext-docs/never-written.pdf"
+    _inject(run_dir, "COLLISION.bundle.json", absent)
 
     _paths, report = new_direction.run_dets(run_dir, "IDEATE", TS)
 
@@ -226,6 +234,23 @@ def test_hash_mismatched_fulltext_snapshot_never_cuts_an_idea(tmp_path):
     row = next(item for item in verdict["ideas"] if item["idea_id"] == "IDEA-1")
     assert row["verdict"] == "UNVERIFIED"
     assert row["colliding_papers"][0]["fulltext_snapshot_verified"] is False
+
+
+def test_a_wrong_digest_alone_no_longer_stops_a_cut(tmp_path):
+    """The removal, stated as a behaviour: only the digest changed, and it no longer decides."""
+    run_dir = _begin_run(tmp_path)
+    _seed_discover(run_dir)
+    _inject(run_dir, "IDEATE.bundle.json", _IDEATE_BUNDLE)
+    wrong_digest = json.loads(json.dumps(_COLLISION_BUNDLE))
+    wrong_digest["findings"][0]["colliding_papers"][0]["fulltext_snapshot_sha256"] = "0" * 64
+    _inject(run_dir, "COLLISION.bundle.json", wrong_digest)
+
+    _paths, report = new_direction.run_dets(run_dir, "IDEATE", TS)
+
+    assert report["collision_cut"] == 1
+    verdict = _payload(run_dir, "IDEATE", "novelty-collision-verdict.artifact.json")
+    row = next(item for item in verdict["ideas"] if item["idea_id"] == "IDEA-1")
+    assert row["colliding_papers"][0]["fulltext_snapshot_verified"] is True
 
 
 def test_collision_verdict_artifact_is_written_and_schema_valid(tmp_path):

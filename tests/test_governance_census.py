@@ -18,10 +18,16 @@ from research_agent_teams.tools import worker_census
 # ------------------------------------------------------------------ the inventory is read from disk
 
 def test_the_inventory_is_enumerated_not_written_down():
+    from research_agent_teams.operate.modes import REGISTRY
+
     inventory = gc.surfaces()
-    assert inventory["operated_modes"] == sorted(
-        p.stem for p in gc.OPERATED_MODES_DIR.glob("*.py") if not p.stem.startswith("_")
-    )
+    # Enumerated from REGISTRY, not from the directory listing. Wave 2 (2026-08-04) proved why:
+    # two recipe modules sit in operate/modes/ WITHOUT being registered (no test coverage yet), and
+    # globbing would have published them to PLATFORM-FACTS as pressable capabilities.
+    assert inventory["operated_modes"] == sorted(REGISTRY)
+    on_disk = {p.stem for p in gc.OPERATED_MODES_DIR.glob("*.py") if not p.stem.startswith("_")}
+    assert set(inventory["operated_modes"]) <= on_disk, (
+        "a registered mode with no module on disk would be a phantom capability")
     assert set(inventory["named_human_gates"]) == {p.stem for p in gc.GATES_DIR.glob("*.md")}
     assert set(inventory["rostered_seats"]) == set(worker_census.roster())
     assert "promote-to-vault" in inventory["named_human_gates"]
@@ -168,14 +174,70 @@ def test_no_code_path_here_can_delete_or_rewrite_a_governance_surface():
     assert 'open(' not in source.replace('.open("rb")', ''), "no file handle is opened for writing"
 
 
-def test_the_named_gate_axis_refuses_to_infer_a_firing_from_a_text_mention():
-    report = gc.census()
-    if report["telemetry"] == gc.TELEMETRY_ABSENT:
-        pytest.skip("no run history on this checkout")
-    gates = next(a for a in report["axes"] if a["axis"].startswith("人工关卡"))
+def _run_with_gate_names_in_its_artifacts(root):
+    """A run whose artifacts MENTION every named gate but where no gate actually fired."""
+    run = root / "p" / "r"
+    (run / "inbox").mkdir(parents=True)
+    (run / "manifest.yaml").write_text(
+        yaml.safe_dump({"run_id": "r", "project": "p", "status": "done", "mode": "gap_breadth"}),
+        encoding="utf-8")
+    mentions = " ".join(f"/{name}" for name in gc.named_gates())
+    (run / "inbox" / "REPORT.report-note.bundle.json").write_text(
+        json.dumps({"note": f"the next steps are {mentions}"}), encoding="utf-8")
+    return run
+
+
+def test_the_named_gate_axis_refuses_to_infer_a_firing_from_a_text_mention(tmp_path):
+    """Negative control for the axis below: naming a gate is not firing it."""
+    _run_with_gate_names_in_its_artifacts(tmp_path)
+    gates = next(a for a in gc.census(tmp_path)["axes"] if a["axis"].startswith("人工关卡"))
     assert gates["exercised"] == [], \
         "a gate name appearing inside an artifact is not a gate firing — this axis must stay empty"
+    assert sorted(gates["never_exercised"]) == sorted(gc.named_gates())
     assert "不拿文本里提到过当成触发过" in gates["measurement_ceiling"]
+
+
+def test_promote_to_vault_counts_as_exercised_only_from_its_own_record_file(tmp_path):
+    """The one gate whose firing IS measurable — because the gate writes a record on every decision.
+
+    Pinned as a pair with the negative control above: the same artifact text that must NOT count becomes
+    a real firing only once the gate's own deterministic record file exists.
+    """
+    run = _run_with_gate_names_in_its_artifacts(tmp_path)
+    (run / "inbox" / "document-promotion-record-some-page.json").write_text(
+        json.dumps({"admissible": True, "vault_slug": "some-page", "document_type": "paper"}),
+        encoding="utf-8")
+
+    report = gc.census(tmp_path)
+    gates = next(a for a in report["axes"] if a["axis"].startswith("人工关卡"))
+    assert gates["exercised"] == ["promote-to-vault"]
+    assert "promote-to-vault" not in gates["never_exercised"], "a fired gate cannot also be never-used"
+    assert len(gates["never_exercised"]) == len(gc.named_gates()) - 1, \
+        "one gate firing must never mark the other four as exercised"
+
+    admissions = report["usage"]["document_admissions"]
+    assert admissions == {"records": 1, "admitted": 1, "vault_slugs": ["some-page"]}
+    ids = {f["id"] for f in report["findings"]}
+    assert "the-vault-write-path-has-never-been-exercised" not in ids
+    assert "only-the-document-lane-has-ever-written-the-vault" in ids
+
+
+def test_a_rejected_admission_is_a_gate_firing_but_not_a_vault_write(tmp_path):
+    """The distinction that keeps the number honest: the gate ran, the vault was NOT written."""
+    run = _run_with_gate_names_in_its_artifacts(tmp_path)
+    (run / "inbox" / "document-promotion-record-refused.json").write_text(
+        json.dumps({"admissible": False, "vault_slug": None,
+                    "reasons": ["paper metadata.relevance is invalid"]}), encoding="utf-8")
+
+    report = gc.census(tmp_path)
+    admissions = report["usage"]["document_admissions"]
+    assert admissions["records"] == 1 and admissions["admitted"] == 0 and admissions["vault_slugs"] == []
+    gates = next(a for a in report["axes"] if a["axis"].startswith("人工关卡"))
+    assert gates["exercised"] == ["promote-to-vault"], "a rejection still proves the gate ran"
+    ids = {f["id"] for f in report["findings"]}
+    assert "the-vault-write-path-has-never-been-exercised" in ids, \
+        "a refused admission must NOT read as the vault having been written"
+    assert "only-the-document-lane-has-ever-written-the-vault" not in ids
 
 
 # ------------------------------------------------------------------ CLI

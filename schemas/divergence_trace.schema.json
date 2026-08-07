@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/divergence_trace.schema.json",
+  "title": "Divergence Trace",
+  "description": "IDEATE-stage artifact recording the six divergence operators run over the frozen DISCOVER material BEFORE any idea was proposed (constraint classification, assumption negation, problem reformulation, mechanism cross-product, enabler window, tension synthesis). Produced by the divergence-operator-runner seat, or by the idea proposer itself in a lighter run that does not dispatch that seat. MEASUREMENT ONLY: this artifact never cuts an idea, never ranks, and never gates a stage — it exists so that 'we diverged before we proposed' is an inspectable object rather than a claim. An operator that yielded nothing is recorded as an empty array, which is a finding, not a failure. An entry whose candidate falls outside the run's north-star topic boundary carries out_of_north_star:true so the director sees it and decides whether to widen the run; the worker never executes such a candidate on its own.",
+  "type": "object",
+  "required": ["trace_id", "produced_by"],
+  "additionalProperties": false,
+  "properties": {
+    "trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Short unique identifier for this trace, e.g. DT-001. Non-blank."
+    },
+    "produced_by": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Which seat authored the trace: divergence-operator-runner (independent seat) or hypothesis-generator (proposer fallback)."
+    },
+    "constraints": {
+      "type": "array",
+      "default": [],
+      "description": "Operator 1 — constraint classification. Every constraint the current approach carries, typed hard / soft / hidden, with the system that dropping it would produce.",
+      "items": {
+        "type": "object",
+        "required": ["constraint", "class"],
+        "additionalProperties": false,
+        "properties": {
+          "constraint": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "class": {"type": "string", "enum": ["hard", "soft", "hidden"]},
+          "if_dropped": {"type": "string", "description": "The system this would produce, or 'nothing coherent'."},
+          "out_of_north_star": {"type": "boolean", "default": false},
+          "evidence_ref": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "negations": {
+      "type": "array",
+      "default": [],
+      "description": "Operator 2 — assumption negation. Each settled assumption negated, WITH the one-sentence system sketch that the negation implies; a negation with no system attached is not usable.",
+      "items": {
+        "type": "object",
+        "required": ["assumption", "verdict"],
+        "additionalProperties": false,
+        "properties": {
+          "assumption": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "negated_system": {"type": "string"},
+          "verdict": {"type": "string", "enum": ["incoherent", "already_explored", "unexplored_coherent"]},
+          "conditions_changed": {"type": "string", "description": "Only meaningful when verdict is already_explored: what has changed since the conditions that killed it."},
+          "out_of_north_star": {"type": "boolean", "default": false},
+          "evidence_ref": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "reformulations": {
+      "type": "array",
+      "default": [],
+      "description": "Operator 3 — problem reformulation. Each restatement changes exactly ONE thing (objective / formalism / granularity / agent / timescale / direction).",
+      "items": {
+        "type": "object",
+        "required": ["changed", "restatement"],
+        "additionalProperties": false,
+        "properties": {
+          "changed": {"type": "string", "enum": ["objective", "formalism", "granularity", "agent", "timescale", "direction"]},
+          "restatement": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "effect": {"type": "string", "enum": ["easier", "harder", "usefully_different"]},
+          "out_of_north_star": {"type": "boolean", "default": false},
+          "evidence_ref": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "cross_product": {
+      "type": "array",
+      "default": [],
+      "description": "Operator 4 — mechanism cross-product against a deliberately distant field. `transfers` distinguishes a real mechanism transfer from vocabulary borrowing; vocabulary_only entries are kept as recorded discards, never promoted.",
+      "items": {
+        "type": "object",
+        "required": ["source_domain", "transfers"],
+        "additionalProperties": false,
+        "properties": {
+          "source_domain": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "source_mechanism": {"type": "string"},
+          "target_mechanism": {"type": "string"},
+          "transfers": {"type": "string", "enum": ["mechanism", "vocabulary_only"]},
+          "note": {"type": "string"},
+          "out_of_north_star": {"type": "boolean", "default": false},
+          "evidence_ref": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "enablers": {
+      "type": "array",
+      "default": [],
+      "description": "Operator 5 — enabler window. What became newly available (data / model / hardware / cost / tool / regulation / published result), including the machine's OWN registered hardware, and what each newly permits. `window` records the timing read: too_early (technology does not exist yet), sweet_spot (feasible in the last 6-18 months), probably_done (equally doable five years ago).",
+      "items": {
+        "type": "object",
+        "required": ["enabler"],
+        "additionalProperties": false,
+        "properties": {
+          "enabler": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "since": {"type": "string"},
+          "newly_permits": {"type": "string"},
+          "window": {"type": "string", "enum": ["too_early", "sweet_spot", "probably_done"]},
+          "out_of_north_star": {"type": "boolean", "default": false},
+          "evidence_ref": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "tensions": {
+      "type": "array",
+      "default": [],
+      "description": "Operator 6 — tension synthesis. Both sides of a real trade-off plus the system that would achieve both at once. is_compromise:true marks an entry that merely splits the difference, which is a compromise rather than an idea.",
+      "items": {
+        "type": "object",
+        "required": ["side_a", "side_b"],
+        "additionalProperties": false,
+        "properties": {
+          "side_a": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "side_b": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "synthesis": {"type": "string", "description": "A system achieving both sides, or 'none found'."},
+          "is_compromise": {"type": "boolean", "default": false},
+          "opposition_is_formalization_artifact": {"type": ["boolean", "string"], "description": "true / false / 'unknown': whether the opposition is an artifact of how the problem was formalized rather than a fact about the world."},
+          "out_of_north_star": {"type": "boolean", "default": false},
+          "evidence_ref": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "anomalies": {
+      "type": "array",
+      "default": [],
+      "description": "The anomaly-first pass that precedes the operators: observations the field's current explanation does not account for, each with COMPETING candidate mechanisms and the discriminating evidence that would separate them. Abduction, not selection among known answers.",
+      "items": {
+        "type": "object",
+        "required": ["anomaly"],
+        "additionalProperties": false,
+        "properties": {
+          "anomaly": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "competing_mechanisms": {"type": "array", "items": {"type": "string"}},
+          "discriminating_evidence": {"type": "string"},
+          "evidence_ref": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "operators_run": {
+      "type": "array",
+      "description": "Which operators were actually run, including any that produced nothing (their array is then empty). Honesty record: a missing operator and an empty operator are different facts.",
+      "items": {"type": "string", "enum": ["constraint", "negation", "reformulation", "cross_product", "enabler", "tension"]}
+    },
+    "notes": {"type": "string", "description": "Optional caveats (e.g. which DISCOVER artifacts were absent this run)."}
+  }
+}

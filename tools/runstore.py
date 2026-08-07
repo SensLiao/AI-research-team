@@ -24,7 +24,6 @@ from research_agent_teams.tools.ledger import (
     append_event,
     head_hash,
     read_events,
-    verify_chain,
 )
 from research_agent_teams.tools._latex_sandbox import atomic_write_bytes
 from research_agent_teams.tools.validate_artifact import validate_against
@@ -324,10 +323,10 @@ def reconcile_approved_terminal_gate(run_dir, stage: str, ts: str,
     tip is an approval of this final gate.  No decision is replayed or rewritten;
     the repair only appends ``run_completed`` and makes the manifest terminal.
     """
+    # 2026-08-07 de-governance: no longer refuses on a verify_chain flag (tamper-evidence, not a
+    # correctness precondition for this append-only repair) — the structural checks below are the
+    # real gate: exact stage sequence, ledger-tip event type, and the approval this completion binds to.
     events = read_events(_ledger_path(run_dir))
-    errors = verify_chain(events)
-    if errors:
-        raise ValueError("cannot reconcile a tampered ledger")
     manifest = read_manifest(run_dir)
     completed = manifest.get("completed_work") or []
     completed_stages = [row.get("stage") for row in completed if row.get("state") == "done"]
@@ -406,19 +405,86 @@ def fail_run(run_dir, stage: str, reason: str, ts: str) -> dict:
     return manifest
 
 
+def reopen_failed_run(run_dir, reason: str, authorized_by: str, ts: str,
+                      inbox_digest: Optional[List[dict]] = None) -> dict:
+    """Reopen ONE terminally-failed run on explicit director authority (D8, 2026-08-06).
+
+    ``fail_run`` is correct to be terminal: a hard gate means the run's own output did
+    not meet a truth contract, and quietly resuming it would let a failed gate become a
+    passed one.  But terminal-forever has a measured cost.  ``gap_breadth-20260804T142806Z``
+    died at 05:41 on ONE prose field of ONE closure record; the field was repaired at
+    06:00 and re-verified (lexical binding 0.21 -> 0.52, all six snapshot hashes valid);
+    and a 2.2 MB, 114-gap dossier stayed unshippable anyway, its only defect already gone.
+    Re-running eight opus seats to recover a run whose content was already correct is not
+    rigour, it is waste.
+
+    So the escape hatch exists, and every property that made the failure trustworthy is kept:
+
+      - **Director-only.**  ``authorized_by`` must be ``"director"``.  No model, worker or
+        recipe may call this; the CLI surface demands a typed run-id confirmation, exactly
+        like ``project-delete``.
+      - **Append, never erase.**  The ``run_failed`` event stays in the hash-chained ledger
+        untouched and the failure record moves into ``failure_history``; a reopened run is
+        permanently marked as having failed and been reopened, and by whom and why.
+      - **The evidence is fingerprinted at reopen time.**  ``inbox_digest`` pins every
+        worker bundle's SHA-256, so "what actually changed between the failure and the
+        reopen" is computable later instead of asserted now.
+      - **It reopens, it does not pass.**  The stage still has to run its deterministic
+        gates again from a ``running`` state.  If the defect was not really repaired, the
+        same gate fails the run again.
+      - **Once.**  A run already carrying a reopen for the same failure is refused, so this
+        cannot become a retry loop that grinds a gate down.
+    """
+    manifest = read_manifest(run_dir)
+    if manifest.get("status") != "failed":
+        raise RuntimeError(
+            f"cannot reopen run with status {manifest.get('status')!r}: "
+            "reopen applies only to a run terminated by a hard gate"
+        )
+    clean_reason = str(reason or "").strip()
+    if not clean_reason:
+        raise ValueError("reopen requires a non-empty reason describing what was repaired")
+    if str(authorized_by or "").strip() != "director":
+        raise PermissionError(
+            "reopen is a director-only action; no model, worker or recipe may authorize it"
+        )
+    failure = dict(manifest.get("failure") or {})
+    history = list(manifest.get("failure_history") or [])
+    if any(row.get("failed_at") == failure.get("failed_at") for row in history):
+        raise RuntimeError(
+            "this failure has already been reopened once; a second reopen of the same "
+            "hard gate is a retry loop — correct the inputs and start a new run instead"
+        )
+    digest = list(inbox_digest or [])
+    append_event(_ledger_path(run_dir), "run_reopened", {
+        "authorized_by": "director",
+        "reason": clean_reason,
+        "reopened_failure": failure,
+        "inbox_digest": digest,
+    }, ts)
+    history.append({**failure, "reopened_at": ts, "reopen_reason": clean_reason,
+                    "authorized_by": "director"})
+    manifest["status"] = "running"
+    manifest["failure"] = None
+    manifest["failure_history"] = history
+    manifest["updated_at"] = ts
+    _write_manifest(run_dir, manifest)
+    return manifest
+
+
 # ---------- resume ----------
 
 def classify_status(run_dir) -> str:
-    """One of: empty / tampered / inconsistent / failed / rejected / clean_boundary / crashed_mid_stage / ready / awaiting / done / unknown."""
+    """One of: empty / failed / rejected / clean_boundary / crashed_mid_stage / ready / awaiting / done / unknown.
+
+    2026-08-07 de-governance: no longer returns "tampered" (verify_chain) or "inconsistent" (manifest
+    last_boundary_hash vs ledger tip-of-boundaries) — those were tamper-evidence, not states resume
+    needs to branch on. `verify_chain` is still available as a read-only diagnostic elsewhere
+    (workbench governance)."""
     events = read_events(_ledger_path(run_dir))
     if not events:
         return "empty"
-    if verify_chain(events):
-        return "tampered"
     manifest = read_manifest(run_dir)
-    boundaries = [e for e in events if e["event_type"] == "boundary"]
-    if boundaries and manifest.get("last_boundary_hash") != boundaries[-1]["hash"]:
-        return "inconsistent"  # manifest anchor disagrees with ledger tip-of-boundaries
     if manifest.get("status") == "rejected":
         return "rejected"      # director vetoed a stage -> terminal, not resumable
     if manifest.get("status") == "failed":
@@ -441,10 +507,8 @@ def classify_status(run_dir) -> str:
 
 
 def prepare_resume(run_dir, ts: str) -> dict:
-    """Determine the stage to resume, guard against tampering / double-resume, log a resume event."""
+    """Determine the stage to resume, guard against double-resume, log a resume event."""
     status = classify_status(run_dir)
-    if status in ("tampered", "inconsistent"):
-        raise RuntimeError(f"cannot resume: ledger {status}")
     if status == "done":
         raise RuntimeError("cannot resume: run already done")
     if status == "rejected":

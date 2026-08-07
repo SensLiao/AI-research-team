@@ -20,14 +20,21 @@ from .briefing import brief, build_briefing, render_briefing
 from .plain_words import explain, gate_label, say
 from .progress import build_progress, render_progress, report
 from .scan import scan_all
+# NOTE: import the NAMES, never a function called `status_bar` — a function of that name would shadow
+# the `reporting.status_bar` MODULE in this package's namespace, and `from ..reporting import status_bar`
+# would then hand a caller the function instead of the module.
+from .status_bar import build_state, render_bar, render_gates
 
 __all__ = [
     "brief",
     "build_briefing",
     "build_progress",
+    "build_state",
     "explain",
     "gate_label",
+    "render_bar",
     "render_briefing",
+    "render_gates",
     "render_progress",
     "report",
     "say",

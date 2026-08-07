@@ -58,11 +58,11 @@ def test_agent_connectivity_contract_is_clean():
 def test_every_non_control_agent_has_graph_and_mode_entry():
     report = build_agent_connectivity()
     summary = report["summary"]
-    assert summary["roster_agents"] == 163
+    assert summary["roster_agents"] == 166
     assert summary["control_agents"] == 6
-    assert summary["non_control_agents"] == 157
-    assert summary["graph_connected_non_control"] == 157
-    assert summary["mode_connected_non_control"] == 157
+    assert summary["non_control_agents"] == 160
+    assert summary["graph_connected_non_control"] == 160
+    assert summary["mode_connected_non_control"] == 160
 
     for agent, spec in report["agents"].items():
         if spec["status"] == "control":
@@ -92,8 +92,50 @@ def test_operated_surface_stays_honest_and_separate_from_routable_surface():
         "read_paper_deep",
         "manuscript_authoring",
         "manuscript_review",
+        # wave 2 (2026-08-04) — the director's call: every mode that is not STRUCTURALLY manual
+        # becomes one-button. Nothing manual moved; these recipes stop AT the human gates, at GPU
+        # submission and at patch application rather than around them.
+        "gap_scan",
+        "full_new_direction",
+        "design_experiment",
+        "power_analysis_review",
+        "m2_accept",
+        "analysis_audit_panel",
+        "verify_result",
+        "check_run",
+        "repo_code_audit",
+        # wave-2 backlog closed (2026-08-07): the last two modules had recipes written but no
+        # tests, so they were deliberately left unregistered until now.
+        "ideate_ring",
+        "aers_enhanced_research_pack",
     }
+    # Still strictly smaller, because three modes remain spec-only. When the last one is wired
+    # this becomes equality — that is the honest end state, not a weakened bar, and the
+    # separation that actually protects the director survives it: see the exercised-vs-reachable
+    # assertion below.
     assert report["summary"]["operated_agent_count"] < report["summary"]["non_control_agents"]
+
+
+def test_reachable_is_never_reported_as_exercised():
+    """Wiring a seat makes it REACHABLE. Only a real run makes it EXERCISED.
+
+    Wave 2 moved 27 seats from hand-driven to one-button in a single day, which is exactly the
+    moment a roster number starts getting quoted as if the work had been done. `workbench team`
+    (reachable) and `workbench governance` (exercised) are deliberately different tools reading
+    different sources — the census reads mode_registry.yaml, the governance count reads the bundles
+    real runs left behind — and this test pins that they can never be collapsed into one number.
+    """
+    from research_agent_teams.tools import worker_census
+
+    totals = worker_census.census()["totals"]
+    # Reachability is a property of the registry, and it is now nearly total.
+    assert totals["declared_by_operated"] + totals["spec_only"] == totals["workers"]
+    assert totals["unreachable"] == 0
+    # It says NOTHING about how many seats ever ran. That number comes from run evidence, is far
+    # smaller, and must stay separately derived.
+    assert "exercised" not in totals, (
+        "the census must not grow an 'exercised' field — reachable and exercised come from "
+        "different sources on purpose (governance census reads real run bundles)")
 
 
 def test_coverage_closure_modes_cover_previous_dark_matter_agents():

@@ -32,9 +32,7 @@ from ...tools.evidence_scout import build_evidence_table
 from ...tools.paper_markdown_quality import audit_paper_markdown
 from ...tools.paper_visual_assets import (
     MANIFEST_REL,
-    file_sha256,
     load_visual_manifest,
-    verify_visual_asset,
     write_visual_manifest,
 )
 from ...tools.validate_artifact import validate_payload
@@ -59,6 +57,8 @@ ARTIFACT_PLAN = (
      "claim-evidence-map.artifact.json", "approved"),
     ("method_teardown", "method_teardown", "method-teardown-extractor",
      "method-teardown.artifact.json", "approved"),
+    ("exploration_tree", "exploration_tree", "research-trajectory-extractor",
+     "exploration-tree.artifact.json", "approved"),
     ("figure_reading", "figure_reading", "figure-reader", "figure-reading.artifact.json", "approved"),
     ("result_table_audit", "result_table_audit", "result-table-auditor",
      "result-table-audit.artifact.json", "approved"),
@@ -97,7 +97,11 @@ READ_PAPER_PARALLEL_GROUPS = [
     ["literature-ingest"],
     ["paper-structure-mapper", "project-context-aligner"],
     ["claim-extractor"],
-    ["claim-evidence-linker", "method-teardown-extractor", "paper-relations-mapper"],
+    # research-trajectory-extractor sits next to method-teardown-extractor deliberately: the two read
+    # the same frozen paper from two angles (what the method IS vs how it came to be) and share
+    # predecessors. Wave order here must mirror ARTIFACT_PLAN, which is what the scheduler walks.
+    ["claim-evidence-linker", "method-teardown-extractor", "research-trajectory-extractor",
+     "paper-relations-mapper"],
     [CITATION_AUDITOR_AGENT, "figure-reader", "math-algorithm-verifier"],
     ["result-table-auditor", "reproducibility-materials-auditor"],
     ["paper-appraiser"],
@@ -130,6 +134,12 @@ WORKER_DEPENDENCIES = {
         "claim-extractor", "claim-evidence-linker", "paper-structure-mapper",
     ),
     "method-teardown-extractor": (
+        "literature-ingest", "paper-structure-mapper", "claim-extractor",
+    ),
+    # Same predecessors as the teardown, deliberately: the two read the same frozen paper from two
+    # different angles (what the method IS vs how it came to be) and neither may inherit the other's
+    # reconstruction. Running them in one wave keeps them independent.
+    "research-trajectory-extractor": (
         "literature-ingest", "paper-structure-mapper", "claim-extractor",
     ),
     "figure-reader": (
@@ -314,7 +324,7 @@ Never invent source refs, figures, tables, claims, or numbers. Leave unknown fie
 Task: create the pre-read question tree and decision contract before anyone summarizes.
 Output shape: {"paper_reading_plan": {source_hint, reading_objective, decision_need,
 key_questions, required_outputs, reread_triggers, not_for, specialist_policy}}.
-Write at least 3 key questions and 3 required outputs. Make the read serve a concrete project
+Write at least 6 key questions and 6 required outputs — FLOORS with no upper bound; ask every question this paper can actually settle for the project. Make the read serve a concrete project
 decision, not a generic paper summary.
 Set each specialist_policy value to required or skip. Skip only when the source makes that seat
 scientifically inapplicable. Uncertainty means required. Blind reading, claim/evidence, independent
@@ -353,7 +363,7 @@ char_start/char_end, machine-readable table_cell_ref, or figure_region_ref. Reop
 snapshot and use the supplied citation manifest; never estimate an offset or hash.
 If `inbox/fulltext-qa.json` has page contexts, add `page`, `locator_confidence`, and `extraction_ref`
 for every core supporting locus. A local-PDF PASS must be page-anchored.
-""",
+""" + _shared.SUPPORT_RELATION_CONTRACT,
         "citation-coverage-auditor": """
 Task: independently judge every claim-locus relation after the linker has frozen the map. Reopen the
 local source/fulltext snapshot and form the semantic judgment yourself. Do not copy the linker's
@@ -371,6 +381,29 @@ Output shape: {"method_teardown": {source_ref, problem_definition, core_assumpti
 representation, loss_terms, training_flow, inference_flow, train_infer_consistency, data,
 cost, baseline_difference}}.
 For non-method papers, adapt the fields honestly and mark not-applicable content.
+Trajectory extraction — the dead ends, design decisions and pivots BEHIND the method — is the
+`research-trajectory-extractor` seat's artifact, not yours. Record what the method IS; cross-reference
+its nodes downstream rather than duplicating them here.
+""",
+        "research-trajectory-extractor": """
+Task: beyond what the method IS, extract the research TRAJECTORY that produced it — the part that
+saves a future reader from rediscovering a known failure.
+Output shape: {"exploration_tree": {source_ref, nodes, extraction_note}}. Emit `nodes`, each typed:
+  - `dead_end`  — an approach the paper tried and abandoned. REQUIRED: `hypothesis` (what was
+    expected), `failure_mode` (why it failed, concretely — not "did not work"), `lesson` (what
+    transfers to someone else's problem). Ablation rows showing a component HURTS are dead ends. This
+    is the most valuable node type; a teardown with zero dead-end nodes on a paper that reports
+    ablations is an incomplete teardown.
+  - `decision`  — a design choice with real alternatives. REQUIRED: `choice`, `alternatives` (at least
+    one genuinely considered), and `informed_by` (what evidence informed it).
+  - `pivot`     — a change of direction. REQUIRED: `from_state`, `to_state`, `trigger` (the
+    observation that forced it). "We initially pursued X but found ..." is the tell.
+Every node carries `support_level`: `explicit` when the paper directly reports it (then cite the
+section/table/figure in `source_refs`), or `inferred` when you are reconstructing a plausible decision
+from the narrative. PREFER OMISSION OVER FABRICATING A HIGHLY SPECIFIC INFERRED NODE — an invented
+dead end is worse than a missing one, because a future reader will trust it. An empty `nodes` list is
+a legitimate answer for a paper that reports no abandoned approach, no alternative and no pivot; say
+so in `extraction_note`.
 """,
         "figure-reader": """
 Task: visually inspect the paper's load-bearing figures and tables, not captions or OCR alone.
@@ -705,7 +738,7 @@ def _worker_input_contract(run_dir: str, agent: str, dependencies: tuple[str, ..
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     if stage != "DISCOVER":
         return None
     _write_shared_paper_representation(run_dir)
@@ -1264,8 +1297,9 @@ def _visual_input_checks(run_dir, b: dict, quality: dict) -> list[str]:
         if doc_path is None or not doc_path.is_file():
             errors.append(f"visual manifest source document is missing or outside run scratch: {doc_ref}")
             continue
-        if file_sha256(doc_path) != str(document.get("document_sha256") or ""):
-            errors.append(f"visual manifest source-document hash mismatch: {doc_ref}")
+        # Source-document hash comparison removed 2026-08-07 (director lock: no hash gating). The
+        # two checks that actually make a visual claim honest survive: the document must EXIST and
+        # must be inside the run's own scratch (path fencing, one line above).
 
     readings = {
         _norm_ref(item.get("figure_ref")): item
@@ -1282,14 +1316,16 @@ def _visual_input_checks(run_dir, b: dict, quality: dict) -> list[str]:
             continue
         page = item.get("page")
         asset_ref = str(item.get("visual_asset_ref") or "")
-        asset_hash = str(item.get("visual_asset_sha256") or "")
-        if not isinstance(page, int) or not asset_ref or not asset_hash:
+        if not isinstance(page, int) or not asset_ref:
             errors.append(f"visual inspection provenance incomplete for {display_ref}")
             continue
-        errors += [
-            f"{display_ref}: {error}"
-            for error in verify_visual_asset(run_dir, asset_ref, page, asset_hash)
-        ]
+        # Asset hash verification removed 2026-08-07 (director lock: no hash gating). The claim
+        # "I actually opened this page image" is still bounded by what remains: a declared page
+        # number, a manifest-named asset ref, and the INSPECTED_VISUAL status checked above.
+        asset_path = _inside_run(run_dir, asset_ref)
+        if asset_path is None or not asset_path.is_file():
+            errors.append(
+                f"{display_ref}: inspected visual asset is missing or outside run scratch: {asset_ref}")
     return errors
 
 
@@ -1725,8 +1761,11 @@ def _classify_quality_defects(problems: list[str]) -> list[dict]:
     for index, problem in enumerate(dict.fromkeys(str(row) for row in problems)):
         text = problem.casefold()
         severity = "material"
+        # "hash mismatch" left this keyword table on 2026-08-07 together with the checks that used
+        # to raise it — nothing emits that phrase any more, and keeping a dead trigger word here
+        # would mis-route a future defect that merely mentions hashing in its prose.
         if any(token in text for token in (
-            "hash mismatch", "source consistency", "blind contamination",
+            "source consistency", "blind contamination",
             "primary analysis was seen", "unsupported/contradicted claims",
             "violates class/path contract",
         )):
@@ -1791,13 +1830,13 @@ def _citation_gap_is_hard(reasons) -> bool:
         "figure asset sha-256 mismatch" in lowered
         or "visual asset hash mismatch" in lowered
     ) and not any(token in lowered for token in (
-        "source-document hash mismatch", "fulltext", "exact quote", "numeric",
+        "fulltext", "exact quote", "numeric",
     )):
         return False
+    # The three hash-mismatch tokens left this table on 2026-08-07 with the checks that produced
+    # them. Exact-quote and numeric conflicts stay: those read the real bytes and are grounding,
+    # not integrity accounting.
     return any(token in lowered for token in (
-        "source-document hash mismatch",
-        "fulltext snapshot hash mismatch",
-        "snapshot sha-256 mismatch",
         "exact quote mismatch",
         "numeric conflict",
         "cross-claim",
@@ -2022,10 +2061,11 @@ def _consistency_checks(run_dir, b: dict) -> list[str]:
         problems.append(f"unknown paper_reading_quality verdict: {verdict!r}")
     if problems:
         _write_repair_packet(run_dir, b, problems)
+        # A MISSING core source still stops the run — you cannot read a paper that is not there.
+        # The hash-mismatch trigger was removed 2026-08-07 with the check that emitted it.
         hard_source_problems = [
             str(row) for row in problems
-            if "visual manifest source-document hash mismatch" in str(row).casefold()
-            or "core source missing" in str(row).casefold()
+            if "core source missing" in str(row).casefold()
             or "core source corrupt" in str(row).casefold()
         ]
         if hard_source_problems:

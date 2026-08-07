@@ -37,13 +37,17 @@ stages:
                      future-work-miner, weakness-spotter, white-space-mapper,
                      cross-domain-transfer-scout, contrarian-angle-generator, gap-classifier, novelty-scorer,
                      gap-prosecutor, mechanism-synthesizer, gap-quality-auditor,
-                     mathematical-formalizer, analogy-mapper, evidence-saturation-judge]   # RAT-2 Wave-3: deep_ideation DISCOVER panel (problem formalization / cross-domain analogy / measured saturation; contradiction-miner already above)
+                     mathematical-formalizer, analogy-mapper, evidence-saturation-judge,
+                     # 2026-08-07 registry HANDOFF: read_paper_deep's B4 exploration-tree seat.
+                     research-trajectory-extractor]   # RAT-2 Wave-3: deep_ideation DISCOVER panel (problem formalization / cross-domain analogy / measured saturation; contradiction-miner already above)
     blocking_gates: [evidence-verifier, citation-integrity-auditor]
     exit_artifacts: [evidence_table]
     next: IDEATE
   IDEATE:
     allowed_agents: [hypothesis-generator, idea-tournament-ranker, idea-evolver, feasibility-reranker,
-                     novelty-collision-checker, experiment-planner]
+                     novelty-collision-checker, experiment-planner,
+                     # 2026-08-07 registry HANDOFF: new_direction/deep_ideation's B1 six-operator seat.
+                     divergence-operator-runner]
     blocking_gates: []
     exit_artifacts: [idea_backlog]
     next: DESIGN
@@ -53,6 +57,10 @@ stages:
                      data-protocol-designer, config-unifier, method-integration-planner, baseline-fairness-planner,
                      variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor,
                      statistics-power-auditor, data-wrangling-auditor, decision-surfacer,
+                     # wave-2 (2026-08-04): power_analysis_review is a DESIGN-stage mode whose declared
+                     # pipeline ends in independent_interpretation — the methodologist must be able to
+                     # challenge a power analysis where that analysis happens, not one stage later.
+                     methodology-reviewer,
                      manuscript-architect, manuscript-evidence-steward,
                      domain-reality-auditor, cognitive-intent-modeler,
                      curriculum-design-specialist, research-engineering-planner]
@@ -65,6 +73,13 @@ stages:
                      preflight-checker, ablation-runner, experiment-journaler, train-test-parity-verifier,
                      sandbox-runner, failure-triager, repro-runner, reproducibility-packager,
                      auto-debugger, experiment-tree-explorer,
+                     # wave-2 backlog closed (2026-08-07): aers_enhanced_research_pack's own
+                     # docstring redistributes its 8 declared seats across the FSM's 5 dispatching
+                     # stages (its registry `minimum_worker_pipeline` names internal GROUPS, not
+                     # 1:1 FSM stages) — benchmark-evidence-auditor runs in ITS EXECUTE
+                     # (packaging/audit half), never in ANALYZE where it was mis-registered before
+                     # any operate recipe actually dispatched it.
+                     benchmark-evidence-auditor,
                      variable-touch-guard, monitor]
     blocking_gates: [preflight-checker, train-test-parity-verifier, variable-touch-guard]
     exit_artifacts: [run_record]
@@ -74,10 +89,19 @@ stages:
                      result-analyzer, result-sanity-checker, baseline-comparison-auditor, variance-analyzer,
                      fairness-auditor, compliance-auditor, goal-alignment-checker, failure-case-miner,
                      figure-generator, visualization-auditor, claim-strength-calibrator, figure-vlm-critic,
-                     benchmark-evidence-auditor, manuscript-introduction-author,
+                     # wave-2 (2026-08-04): analysis_audit_panel is an ANALYZE-only mode whose declared
+                     # pipeline ends in quality_resolution — cross-panel coverage and the integrity
+                     # refusal are part of auditing the analysis, so they run inside ANALYZE.
+                     quality-controller, integrity-refusal-recommender,
+                     manuscript-introduction-author,
                      manuscript-related-work-author, manuscript-methods-author,
                      manuscript-results-author, manuscript-section-author,
-                     manuscript-figure-table-engineer, manuscript-integrator]
+                     manuscript-figure-table-engineer, manuscript-integrator,
+                     # wave-2 backlog closed (2026-08-07): aers_enhanced_research_pack's ANALYZE
+                     # stage (submission/bibliography half of audit_benchmarks_and_submission) is
+                     # where these two actually run, never VERIFY where they were mis-registered
+                     # before any operate recipe actually dispatched them.
+                     submission-guideline-scout, bibliography-validator]
     blocking_gates: [result-sanity-checker]
     exit_artifacts: [result_summary]
     next: VERIFY
@@ -89,6 +113,11 @@ stages:
                      venue-selector, venue-reviewer-persona, venue-reviewer-methodology,
                      venue-reviewer-domain, venue-reviewer-adversarial, area-chair-synthesizer,
                      baseline-scout, sub-domain-historian, submission-guideline-scout,
+                     # wave-2 (2026-08-04): aers_enhanced_research_pack's polish_manuscript step is its
+                     # last non-REPORT stage; REPORT stays deterministic in every operated recipe, so
+                     # the polish editor needs a VERIFY seat. It recommends traceable edits only and
+                     # never silently changes a scientific claim.
+                     manuscript-polish-editor,
                      bibliography-validator, manuscript-factual-auditor,
                      manuscript-citation-auditor, manuscript-style-latex-auditor,
                      manuscript-domain-contribution-reviewer,
@@ -99,7 +128,9 @@ stages:
     next: REPORT
   REPORT:
     allowed_agents: [quality-controller, integrity-refusal-recommender, manuscript-polish-editor,
-                     manuscript-submission-packager, hypothesis-compiler]   # RAT-2 Wave-3: deep_ideation REPORT aggregation 鈥?closes audit A2 (quality-controller scorecard route placed at REPORT) + A3 (integrity-refusal-recommender given a real FSM-stage home; ADVISORY-only, decision stays the director's)
+                     manuscript-submission-packager, hypothesis-compiler,
+                     # 2026-08-07 registry HANDOFF: new_direction/deep_ideation's B5 advisory-recommender seat.
+                     direction-decision-advisor]   # RAT-2 Wave-3: deep_ideation REPORT aggregation 鈥?closes audit A2 (quality-controller scorecard route placed at REPORT) + A3 (integrity-refusal-recommender given a real FSM-stage home; ADVISORY-only, decision stays the director's)
     blocking_gates: []
     exit_artifacts: [report_note]
     next: null

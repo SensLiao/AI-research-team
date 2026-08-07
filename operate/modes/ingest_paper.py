@@ -160,7 +160,7 @@ def _worker_model(model_policy: str, *, verifier: bool = False) -> str:
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     """Return the real ordered two-worker Tier-S ingest panel."""
     if stage != "DISCOVER":
         return None

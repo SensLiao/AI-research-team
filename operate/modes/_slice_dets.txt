@@ -1,0 +1,665 @@
+# --------------------------------------------------------------------------- shared gate plumbing
+
+def _condition_ids(matrix: dict) -> List[str]:
+    return [str(row.get("id")) for row in (matrix.get("conditions") or []) if row.get("id")]
+
+
+def _gates(run_dir, stage: str, ts: str, bundles: dict, *, refs=(), known=()) -> tuple:
+    """The three common gates, with the committed direction anchor folded into the drift input.
+
+    A design/execute panel's own text is code, hashes and condition ids, so the north-star drift
+    gate's "zero anchor coverage" rule would fire on shape rather than on drift. Anchoring on the
+    committed research question is what `full_rigor_minimal` does for the same reason; the
+    out-of-scope half of the gate still reads the panel's real output unmodified.
+    """
+    anchored = {"_committed_direction_anchor": fr._direction_anchor(run_dir), **bundles}
+    return _panel_recipe.common_gates(run_dir, stage, ts, mode=MODE, bundles=anchored,
+                                      downstream_refs=refs, known_ids=known)
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise GateBlock(f"{MODE} {message}")
+
+
+# --------------------------------------------------------------------------- DESIGN
+
+def _freeze_witness(design: dict) -> dict:
+    """The witness every DESIGN auditor must echo — copied content, never model arithmetic."""
+    return {
+        "condition_ids": _condition_ids(design.get("design") or {}),
+        "studied_variables": [str(v) for v in
+                              (((design.get("design") or {}).get("variables") or {}).get("studied") or [])],
+        "primary_metric": str((design.get("prereg") or {}).get("primary_metric") or ""),
+    }
+
+
+def _fingerprint(value) -> str:
+    return "sha256:" + hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def _frozen_design(bundles: dict) -> tuple:
+    """HARD GATE 1: one frozen protocol, provably audited by all three independent auditors."""
+    proposal = bundles["candidate_bundle"]
+    freeze = bundles["protocol_freeze"]
+    _require(isinstance(proposal, dict) and isinstance(freeze, dict),
+             "DESIGN candidate_bundle and protocol_freeze must both be objects")
+    frozen = freeze.get("frozen_design")
+    _require(
+        frozen == proposal,
+        "DESIGN freeze BLOCK: protocol-compiler.frozen_design is not the planner's candidate_bundle "
+        "verbatim. A compiler that re-authors the design has un-frozen it, and the three independent "
+        "audits would then be auditing different objects. Copy the planner's bundle unchanged and put "
+        "any concern in freeze_note.")
+    _shared.require_bundle_keys(
+        frozen, ["design", "train", "test", "shared_config", "metric_impls", "prereg"],
+        stage="DESIGN", mode=MODE)
+
+    truth = _freeze_witness(frozen)
+    _require(freeze.get("freeze_witness") == truth,
+             f"DESIGN freeze BLOCK: protocol-compiler's freeze_witness {freeze.get('freeze_witness')!r} "
+             f"does not describe the design it froze (true witness {truth!r})")
+    for label, key in (("variable-control-auditor", "variable_control_audit"),
+                       ("train-test-alignment-auditor", "train_test_alignment_audit"),
+                       ("metric-implementation-auditor", "metric_implementation_audit")):
+        audit = bundles[key]
+        _require(isinstance(audit, dict), f"DESIGN {label} bundle must be an object")
+        _require(
+            audit.get("audited_freeze_witness") == truth,
+            f"DESIGN independence BLOCK: {label} audited "
+            f"{audit.get('audited_freeze_witness')!r}, not the ONE frozen protocol {truth!r}. Three "
+            f"audits are only independent evidence when they audit the same frozen design; re-run "
+            f"this auditor against protocol_freeze.frozen_design.")
+        verdict = audit.get("verdict")
+        _require(verdict in {"PASS", "REVISE"},
+                 f"DESIGN {label} verdict must be PASS or REVISE, got {verdict!r}")
+        concerns = [str(c) for c in (audit.get("blocking_concerns") or []) if str(c).strip()]
+        _require(verdict == "PASS" or concerns,
+                 f"DESIGN {label} says REVISE without naming a blocking concern")
+        if concerns:
+            raise GateBlock(
+                f"{MODE} DESIGN audit BLOCK: {label} refuses the frozen design: {concerns}. The design "
+                f"is not frozen-acceptable; revise it with the planner and re-freeze.")
+    return frozen, truth
+
+
+def _design_dets(run_dir, ts, bundles) -> tuple:
+    frozen, witness = _frozen_design(bundles)
+    profile = _shared.domain_profile(run_dir)
+    design = frozen["design"]
+    paths: List[str] = []
+
+    try:
+        matrix = build_matrix(design["rq"], design["variables"], design["conditions"],
+                             design["ranked_batch"], design["leakage"])
+    except (KeyError, ValueError) as exc:
+        raise GateBlock(f"{MODE} DESIGN experiment-matrix design-hygiene BLOCK: {exc}") from exc
+
+    variable_control = vc_build(matrix, profile=profile)
+    paths.append(write_artifact(
+        run_dir, "DESIGN", "variable-control-report.artifact.json", "variable_control_report",
+        "variable-control-auditor", variable_control, ts,
+        "blocked" if variable_control["verdict"] == "BLOCK" else "approved"))
+    if variable_control["verdict"] == "BLOCK":
+        raise GateBlock(f"{MODE} variable-control BLOCK: {variable_control['violations']}")
+
+    alignment = alignment_build(frozen["train"], frozen["test"], profile=profile,
+                               train_ref="train-pipeline", test_ref="test-pipeline")
+    paths.append(write_artifact(
+        run_dir, "DESIGN", "alignment-report.artifact.json", "alignment_report",
+        "train-test-alignment-auditor", alignment, ts,
+        "blocked" if alignment["verdict"] == "BLOCK" else "approved"))
+    if alignment["verdict"] == "BLOCK":
+        raise GateBlock(f"{MODE} train-test-alignment BLOCK: {alignment['violations']}")
+
+    metric_report = metric_build(frozen["metric_impls"], profile=profile)
+    paths.append(write_artifact(
+        run_dir, "DESIGN", "metric-impl-report.artifact.json", "metric_impl_report",
+        "metric-implementation-auditor", metric_report, ts,
+        "blocked" if metric_report["verdict"] == "BLOCK" else "approved"))
+    if metric_report["verdict"] == "BLOCK":
+        raise GateBlock(f"{MODE} metric-implementation BLOCK: {metric_report['violations']}")
+
+    protocol = compile_protocol(matrix, from_matrix_ref=MATRIX_REF, shared=frozen["shared_config"],
+                               seed=fr._seed(run_dir))
+    paths.append(write_artifact(run_dir, "DESIGN", "protocol-spec.artifact.json", "protocol_spec",
+                                "protocol-compiler", protocol, ts))
+    try:
+        prereg = prereg_tool.build_prereg(matrix, **frozen["prereg"])
+    except (TypeError, ValueError) as exc:
+        raise GateBlock(f"{MODE} preregistration BLOCK (analysis contract not frozen): {exc}") from exc
+    paths.append(write_artifact(run_dir, "DESIGN", "preregistration.artifact.json", "preregistration",
+                                "experiment-planner", prereg, ts))
+    paths.append(write_artifact(run_dir, "DESIGN", "experiment-matrix.artifact.json",
+                                "experiment_matrix", "experiment-planner", matrix, ts))
+
+    fingerprint = _fingerprint(frozen)
+    paths.append(write_artifact(
+        run_dir, "DESIGN", "design-freeze.artifact.json", "note", "protocol-compiler",
+        {"title": f"{MODE} frozen design {fingerprint}",
+         "body": json.dumps({"design_fingerprint": fingerprint, "freeze_witness": witness,
+                             "audited_by": ["variable-control-auditor",
+                                            "train-test-alignment-auditor",
+                                            "metric-implementation-auditor"],
+                             "freeze_note": str(bundles["protocol_freeze"].get("freeze_note") or ""),
+                             "seed_policy": str(bundles["protocol_freeze"].get("seed_policy") or "")},
+                            ensure_ascii=False, indent=2),
+         "refs": [MATRIX_REF, PROTOCOL_REF, PREREG_REF]}, ts))
+
+    ranked = [str(row.get("condition_id") or "") for row in matrix.get("ranked_batch") or []]
+    gate_paths, frag = _gates(run_dir, "DESIGN", ts, bundles,
+                              refs=ranked, known=set(_condition_ids(matrix)))
+    return paths + gate_paths, {
+        "design_frozen": True, "design_fingerprint": fingerprint,
+        "independent_design_audits": 3,
+        "vc_gate": variable_control["verdict"], "alignment_gate": alignment["verdict"],
+        "metric_gate": metric_report["verdict"], "prereg_frozen": True,
+        "n_conditions": len(matrix["conditions"]), **frag}
+
+
+# --------------------------------------------------------------------------- EXECUTE
+
+def _execute_dets(run_dir, ts, bundles) -> tuple:
+    profile = _shared.domain_profile(run_dir)
+    matrix = fr._read_payload(run_dir, MATRIX_REF)
+    protocol = fr._read_payload(run_dir, PROTOCOL_REF)
+    alignment = fr._read_payload(run_dir, ALIGNMENT_REF)
+    train_script, test_script = bundles["train_script"], bundles["test_script"]
+    evidence, preflight_inputs = bundles["execution_evidence"], bundles["preflight_inputs"]
+    paths: List[str] = []
+
+    paths.append(write_artifact(run_dir, "EXECUTE", "trainset-script.artifact.json",
+                                "dataset_script_record", "trainset-builder", train_script, ts))
+    paths.append(write_artifact(run_dir, "EXECUTE", "testset-script.artifact.json",
+                                "dataset_script_record", "testset-builder", test_script, ts))
+
+    # HARD GATE: a build may move controlled variables only — never a studied or frozen one.
+    touch = bundles["touch_report"]
+    _require(isinstance(touch, dict) and isinstance(touch.get("touched_variables"), list),
+             "EXECUTE variable-touch-guard must emit a touched_variables list")
+    touch_verdict = variable_touch_guard.check_debug_session(
+        {"touched_variables": touch["touched_variables"]}, matrix)
+    touch_verdict["checked_against"] = MATRIX_REF
+    paths.append(write_artifact(
+        run_dir, "EXECUTE", "variable-touch-verdict.artifact.json", "variable_touch_verdict",
+        "variable-touch-guard", touch_verdict, ts,
+        "blocked" if touch_verdict["verdict"] == "BLOCK" else "approved"))
+    if touch_verdict["verdict"] == "BLOCK":
+        raise GateBlock(f"{MODE} variable-touch BLOCK: {touch_verdict['violations']}")
+
+    _require(isinstance(preflight_inputs, dict),
+             "EXECUTE preflight-checker must emit a preflight_inputs object")
+    preflight = preflight_build(
+        train_script, test_script, protocol, alignment, profile=profile,
+        protocol_ref=PROTOCOL_REF, alignment_ref=ALIGNMENT_REF,
+        file_identity_manifests=preflight_inputs.get("file_identity_manifests"))
+    paths.append(write_artifact(
+        run_dir, "EXECUTE", "preflight-report.artifact.json", "preflight_report",
+        "preflight-checker", preflight, ts,
+        "blocked" if preflight["verdict"] == "BLOCK" else "approved"))
+    if preflight["verdict"] == "BLOCK":
+        raise GateBlock(f"{MODE} preflight BLOCK: {preflight['violations']}")
+
+    # HARD GATE: planned vs attempted vs completed. Numbers exist only behind a receipt.
+    _require(isinstance(evidence, dict), "EXECUTE ablation-runner must emit an execution_evidence object")
+    records = evidence.get("run_records") or []
+    receipt_refs = evidence.get("executor_receipt_refs")
+    journal = (bundles["journal_evidence"] or {}).get("journal")
+    _require(isinstance(records, list) and records,
+             "EXECUTE ablation-runner emitted no run_records — every compiled condition needs one")
+    _require(isinstance(receipt_refs, list)
+             and all(isinstance(ref, str) and ref.strip() for ref in receipt_refs),
+             "EXECUTE executor_receipt_refs must be a list of non-empty relative paths")
+    declared = set(_condition_ids(matrix))
+    for index, record in enumerate(records, start=1):
+        status = record.get("status")
+        if status == "planned" and (record.get("metrics") or {}):
+            raise GateBlock(
+                f"{MODE} EXECUTE BLOCK: planned run_record {record.get('condition_id')!r} carries "
+                f"metrics. `planned` means nothing executed; it is never numeric evidence.")
+        if journal is None and status != "planned":
+            raise GateBlock(
+                f"{MODE} EXECUTE BLOCK: run_record {index} is {status!r} with no journal. No journal "
+                f"= no real run: every record must be planned and metric-free.")
+        _require(str(record.get("condition_id") or "") in declared,
+                 f"EXECUTE run_record {index} reports condition "
+                 f"{record.get('condition_id')!r}, which the frozen matrix never declared")
+
+    provisional = any(record.get("status") == "provisional" for record in records)
+    if provisional:
+        try:
+            execution_import = build_execution_import(run_dir, receipt_refs,
+                                                     run_id=fr._run_id(run_dir), created_at=ts)
+            validate_records_against_import(records, execution_import)
+        except ExecutionReceiptError as exc:
+            raise GateBlock(f"{MODE} executor receipt/import BLOCK: {exc}") from exc
+        paths.append(write_artifact(run_dir, "EXECUTE", IMPORT_ARTIFACT_REL.name, "note",
+                                    "execution-receipt-importer",
+                                    import_note_payload(execution_import), ts))
+    elif receipt_refs:
+        raise GateBlock(
+            f"{MODE} EXECUTE BLOCK: executor receipts were listed without any provisional run_record, "
+            f"so the execution state is ambiguous — neither planned nor completed.")
+
+    for index, record in enumerate(records, start=1):
+        paths.append(write_artifact(run_dir, "EXECUTE", f"run-record-{index}.artifact.json",
+                                    "run_record", "ablation-runner", record, ts))
+
+    parity_claim = bundles["parity_claim"]
+    _require(isinstance(parity_claim, dict), "EXECUTE train-test-parity-verifier must emit an object")
+    if journal is None:
+        _require(parity_claim.get("journal_present") is not True,
+                 "EXECUTE train-test-parity-verifier claims a journal is present while the journaler "
+                 "emitted none — parity cannot be verified against a journal that does not exist")
+        parity_label = "SKIPPED(no real run)"
+    else:
+        paths.append(write_artifact(run_dir, "EXECUTE", "journal-entry.artifact.json",
+                                    "journal_entry", "experiment-journaler", journal, ts))
+        parity = parity_build(journal, alignment, profile=profile,
+                              journal_ref="journal_entry", alignment_ref=ALIGNMENT_REF)
+        paths.append(write_artifact(
+            run_dir, "EXECUTE", "parity-verdict.artifact.json", "parity_verdict",
+            "train-test-parity-verifier", parity, ts,
+            "blocked" if parity["verdict"] == "BLOCK" else "approved"))
+        if parity["verdict"] == "BLOCK":
+            raise GateBlock(f"{MODE} parity BLOCK: {parity['violations']}")
+        parity_label = parity["verdict"] if provisional else "PASS(no completed run_records)"
+
+    # Classified by the ONE canonical execution-truth core, only after the evidence is on disk.
+    state = _panel_recipe.execution_truth(run_dir)
+    gate_paths, frag = _gates(run_dir, "EXECUTE", ts, bundles,
+                              refs=[str(r.get("condition_id") or "") for r in records],
+                              known=declared)
+    return paths + gate_paths, {
+        "touch_gate": touch_verdict["verdict"], "preflight_gate": preflight["verdict"],
+        "parity_gate": parity_label, "scripts_emitted": True,
+        "execution_state": state["label"], "executed": bool(state["executed"]),
+        "n_run_records": len(records),
+        "executor_receipts_verified": len(receipt_refs) if state["executed"] else 0, **frag}
+
+
+# --------------------------------------------------------------------------- ANALYZE
+
+_FORBIDDEN_REVIEWER_NUMERICS = ("findings", "candidate_findings", "per_seed", "candidate_per_seed",
+                                "p_value", "effect_size", "metrics")
+
+
+def _independent_reviewer(review: dict, *, seat: str, stage: str) -> None:
+    """HARD GATE 3: a reviewer declares independence and never authors a result number."""
+    _require(isinstance(review, dict), f"{stage} {seat} bundle must be an object")
+    _require(review.get("independent_of_analyzer") is True,
+             f"{stage} independence BLOCK: {seat} did not declare independent_of_analyzer — a seat "
+             f"that produced the analysis may not also certify it")
+    authored = sorted(set(review) & set(_FORBIDDEN_REVIEWER_NUMERICS))
+    _require(not authored,
+             f"{stage} independence BLOCK: {seat} authored result field(s) {authored}; deterministic "
+             f"code owns every number, a reviewer only re-opens the evidence")
+
+
+def _analyze_dets(run_dir, ts, bundles) -> tuple:
+    analysis, review = bundles["analysis"], bundles["sanity_review"]
+    _require(isinstance(analysis, dict), "ANALYZE result-analyzer bundle must be an object")
+    _shared.require_bundle_keys(
+        analysis, ["candidate_findings", "candidate_per_seed", "interpretation", "caveats",
+                   "claim_boundary", "next_experiment"], stage="ANALYZE", mode=MODE)
+    _independent_reviewer(review, seat="result-sanity-checker", stage="ANALYZE")
+    _require(isinstance(review.get("recomputed_from"), list) and review["recomputed_from"],
+             "ANALYZE result-sanity-checker must name the artifact(s) it re-opened in recomputed_from")
+    _require(review.get("verdict") in {"PASS", "REVISE"},
+             f"ANALYZE result-sanity-checker verdict must be PASS or REVISE, got {review.get('verdict')!r}")
+
+    matrix = fr._read_payload(run_dir, MATRIX_REF)
+    prereg = fr._read_payload(run_dir, PREREG_REF)
+    state = _panel_recipe.execution_truth(run_dir)
+    candidates = analysis["candidate_findings"] or []
+    per_seed = analysis["candidate_per_seed"]
+    profile = _shared.domain_profile(run_dir)
+    paths: List[str] = []
+
+    # HARD GATE 2 (the mode's core honesty boundary): no number without an execution receipt.
+    _panel_recipe.refuse_metrics_without_receipt(state, candidates, mode=MODE,
+                                                what="aggregate result findings")
+    _panel_recipe.refuse_metrics_without_receipt(state, per_seed, mode=MODE,
+                                                what="per-seed result vectors")
+
+    blocking = [row for row in (review.get("concerns") or [])
+                if isinstance(row, dict) and row.get("severity") == "blocking"]
+    if review["verdict"] == "REVISE" or blocking:
+        _require(bool(blocking),
+                 "ANALYZE result-sanity-checker says REVISE without a blocking concern")
+        raise GateBlock(
+            f"{MODE} ANALYZE sanity BLOCK: the independent sanity checker refuses this analysis: "
+            f"{[row.get('concern') for row in blocking]}")
+
+    if not state["executed"]:
+        gate_paths, frag = _gates(run_dir, "ANALYZE", ts, bundles)
+        return paths + gate_paths, {
+            "analysis_status": f"PLANNED({state['label']})", "executed": False,
+            "result_summary_emitted": False, "stats_computed": False,
+            "sanity_gate": "NOT_APPLICABLE(no result to check)",
+            "execution_state": state["label"], **frag}
+
+    try:
+        truth = derive_numeric_evidence(run_dir, matrix, prereg)
+    except ExecutionTruthError as exc:
+        raise GateBlock(f"{MODE} ANALYZE execution-evidence BLOCK: {exc}") from exc
+    fr._candidate_findings_match(candidates, truth["findings"])
+    fr._candidate_per_seed_match(per_seed, truth["per_seed"])
+
+    caveats = [str(c) for c in (analysis["caveats"] or [])] + list(truth["caveats"])
+    if truth["per_seed"]:
+        result = build_result_summary_with_stats(truth["findings"], truth["per_seed"],
+                                                seed=fr._seed(run_dir), caveats=caveats)
+        stats_computed = bool(result.get("stats", {}).get("n_findings_tested"))
+    else:
+        if not any("no significance computed" in caveat for caveat in caveats):
+            caveats.append("no significance computed - no paired per-seed execution evidence")
+        result = build_result_summary(truth["findings"], caveats=caveats)
+        stats_computed = False
+    paths.append(write_artifact(run_dir, "ANALYZE", "result-summary.artifact.json", "result_summary",
+                                "result-analyzer", result, ts))
+
+    sanity = sanity_build(result, profile=profile)
+    paths.append(write_artifact(
+        run_dir, "ANALYZE", "sanity-verdict.artifact.json", "sanity_verdict",
+        "result-sanity-checker", sanity, ts,
+        "blocked" if sanity["verdict"] == "BLOCK" else "approved"))
+    if sanity["verdict"] == "BLOCK":
+        raise GateBlock(f"{MODE} sanity BLOCK: {sanity['violations']}")
+
+    deviation = prereg_tool.build_deviation_verdict(prereg, result)
+    paths.append(write_artifact(
+        run_dir, "ANALYZE", "prereg-deviation-verdict.artifact.json", "analysis_check_verdict",
+        "result-sanity-checker", deviation, ts, "approved" if deviation["pass"] else "blocked"))
+    if not deviation["pass"]:
+        raise GateBlock(f"{MODE} prereg-deviation BLOCK: {deviation['violations']}")
+
+    gate_paths, frag = _gates(
+        run_dir, "ANALYZE", ts, bundles,
+        refs=[str(row.get("condition_id") or "") for row in result.get("findings") or []],
+        known=set(_condition_ids(matrix)))
+    return paths + gate_paths, {
+        "analysis_status": "REAL_RUN", "executed": True, "result_summary_emitted": True,
+        "stats_computed": stats_computed, "sanity_gate": sanity["verdict"],
+        "prereg_deviation_gate": "PASS" if deviation["pass"] else "BLOCK",
+        "raw_result_rows": truth["raw_result_row_count"],
+        "executor_receipts": truth["executor_receipt_count"],
+        "execution_state": state["label"], **frag}
+
+
+# --------------------------------------------------------------------------- VERIFY
+
+def _verify_dets(run_dir, ts, bundles) -> tuple:
+    review = bundles["adversarial_review"]
+    _independent_reviewer(review, seat="adversarial-reviewer", stage="VERIFY")
+    checks = review.get("checks")
+    _require(isinstance(checks, dict), "VERIFY adversarial-reviewer must emit a checks object")
+    for name in REVIEW_CHECKS:
+        row = checks.get(name)
+        _require(isinstance(row, dict) and isinstance(row.get("pass"), bool),
+                 f"VERIFY adversarial-reviewer did not investigate {name} with a boolean pass")
+    state = _panel_recipe.execution_truth(run_dir)
+    paths: List[str] = []
+
+    if not state["executed"]:
+        _require(review.get("result_ready") is not True,
+                 f"VERIFY BLOCK: result_ready cannot be true while execution state is "
+                 f"{state['label']!r} — there is no result to be ready")
+        gate_paths, frag = _gates(run_dir, "VERIFY", ts, bundles)
+        return paths + gate_paths, {
+            "review_gate": f"SKIPPED({state['label']})", "executed": False,
+            "execution_state": state["label"], **frag}
+
+    fr._read_payload(run_dir, RESULT_REF)
+    expected_ready = all(bool(checks[name]["pass"]) for name in REVIEW_CHECKS)
+    _require(review.get("result_ready") is expected_ready,
+             f"VERIFY BLOCK: result_ready must be derived from the five independent checks "
+             f"({expected_ready}), never self-declared")
+    verdict = review_build({name: {"pass": bool(checks[name]["pass"]),
+                                   "evidence": str(checks[name].get("evidence") or "")}
+                            for name in REVIEW_CHECKS})
+    paths.append(write_artifact(
+        run_dir, "VERIFY", "review-report.artifact.json", "review_report", "adversarial-reviewer",
+        verdict, ts, "blocked" if verdict["verdict"] == "BLOCK" else "approved"))
+    if verdict["verdict"] == "BLOCK":
+        raise GateBlock(f"{MODE} adversarial-review BLOCK: {verdict['blocking_reasons']}")
+
+    gate_paths, frag = _gates(run_dir, "VERIFY", ts, bundles)
+    return paths + gate_paths, {"review_gate": verdict["verdict"], "executed": True,
+                                "execution_state": state["label"], **frag}
+
+
+# --------------------------------------------------------------------------- REPORT
+
+def _payload_or_none(run_dir, ref: str) -> Optional[dict]:
+    path = Path(run_dir) / ref
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("payload")
+    except (OSError, ValueError):
+        return None
+
+
+def _rows(items) -> str:
+    return "\n".join(f"- {line}" for line in items) if items else "- (none)"
+
+
+def _acceptance_sections(run_dir, state: dict) -> dict:
+    """Every director-facing section, derived from the COMMITTED artifacts rather than stage memory.
+
+    Rendering from disk is what makes the acceptance report deterministic and re-derivable: the same
+    run directory always produces the same report, and a section can only claim what an artifact says.
+    """
+    matrix = _payload_or_none(run_dir, MATRIX_REF) or {}
+    prereg = _payload_or_none(run_dir, PREREG_REF) or {}
+    protocol = _payload_or_none(run_dir, PROTOCOL_REF) or {}
+    freeze = _payload_or_none(run_dir, FREEZE_REF) or {}
+    variables = matrix.get("variables") or {}
+    conditions = matrix.get("conditions") or []
+
+    design = "\n".join([
+        f"**Research question.** {matrix.get('research_question') or '(no committed matrix)'}",
+        "",
+        f"**Freeze.** {freeze.get('title') or 'no design-freeze record committed'} — copied verbatim "
+        f"from the planner and independently audited by variable-control-auditor, "
+        f"train-test-alignment-auditor and metric-implementation-auditor, each of which had to prove "
+        f"it audited this same frozen design.",
+        "",
+        f"**Variables.** studied: {', '.join(variables.get('studied') or []) or '(none)'} · "
+        f"controlled: {', '.join(variables.get('controlled') or []) or '(none)'} · "
+        f"frozen: {', '.join(variables.get('frozen') or []) or '(none)'}",
+        "",
+        "**Conditions.**",
+        _rows([f"`{row.get('id')}`{' (baseline)' if row.get('baseline') else ''}: "
+               f"{json.dumps(row.get('factors') or {}, ensure_ascii=False, sort_keys=True)}"
+               for row in conditions]),
+        "",
+        "**Ranked hypotheses.**",
+        _rows([f"rank {row.get('rank')} · `{row.get('condition_id')}`: {row.get('hypothesis')}"
+               for row in matrix.get("ranked_batch") or []]),
+        "",
+        f"**Preregistered before any data.** primary metric `{prereg.get('primary_metric') or '?'}` · "
+        f"{prereg.get('n_seeds_planned') or '?'} seeds · stopping rule: "
+        f"{prereg.get('stopping_rule') or '(none)'} · analysis plan: "
+        f"{prereg.get('analysis_plan') or '(none)'} · compiled configs: "
+        f"{len(protocol.get('configs') or [])}",
+        "",
+        f"**Leakage declaration.** {matrix.get('leakage_declaration') or '(none recorded)'}",
+    ])
+
+    records = state.get("records") or []
+    journal = _payload_or_none(run_dir, "evidence/EXECUTE/journal-entry.artifact.json")
+    preflight = _payload_or_none(run_dir, "evidence/EXECUTE/preflight-report.artifact.json") or {}
+    raw_rows = ((journal or {}).get("metrics_snapshot") or {}).get("raw_result_rows") or []
+    execution = "\n".join([
+        _panel_recipe.execution_boundary_section(state),
+        "",
+        f"**Run records.** {len(records)} committed — "
+        f"planned: {sum(1 for r in records if r.get('status') == 'planned')} · "
+        f"provisional: {sum(1 for r in records if r.get('status') == 'provisional')}. "
+        f"Journal: {'present' if journal else 'none (nothing ran)'}. "
+        f"Attested raw result rows: {len(raw_rows)}. "
+        f"Executor import verified: {bool(state.get('executor_import_verified'))}.",
+        "",
+        "**Per condition.**",
+        _rows([f"`{row.get('condition_id')}` — {row.get('status')}"
+               + (f", metrics: {json.dumps(row.get('metrics') or {}, sort_keys=True)}"
+                  if row.get("metrics") else ", no metrics (correct for a planned record)")
+               for row in records]),
+        "",
+        f"**Preflight.** {preflight.get('verdict') or 'not run'}"
+        + (f" — {preflight.get('violations')}" if preflight.get("violations") else ""),
+    ])
+
+    result = _payload_or_none(run_dir, RESULT_REF)
+    if result:
+        analysis = "\n".join([
+            f"**Status.** {result.get('status')} · citable in the thesis: "
+            f"{bool(result.get('can_cite_thesis'))} (a run-store result is never citable until "
+            f"/promote-to-vault re-derives it).",
+            "",
+            "**Findings** (rebuilt by deterministic code from receipt-bound raw rows, not authored "
+            "by any worker).",
+            _rows([f"`{row.get('condition_id')}` {row.get('metric')} = {row.get('value')}"
+                   + (f" vs baseline `{row.get('baseline_condition_id')}` "
+                      f"{row.get('baseline_value')}" if row.get("baseline_value") is not None else "")
+                   for row in result.get("findings") or []]),
+            "",
+            "**Caveats.**",
+            _rows(result.get("caveats") or []),
+            "",
+            f"**Statistics.** {json.dumps(result.get('stats') or {}, ensure_ascii=False, sort_keys=True)}",
+        ])
+    else:
+        analysis = (
+            "**No result analysis exists.** Execution state is `"
+            f"{state.get('label')}`, so no result summary was produced and no metric may be read from "
+            "this run. What is committed is a frozen design and runnable scripts; the numbers a reader "
+            "might expect here would have to come from an attested execution that has not happened. "
+            "Any figure appearing elsewhere in this report is a target or a script parameter."
+        )
+
+    sanity = _payload_or_none(run_dir, "evidence/ANALYZE/sanity-verdict.artifact.json") or {}
+    parity = _payload_or_none(run_dir, "evidence/EXECUTE/parity-verdict.artifact.json") or {}
+    touch = _payload_or_none(run_dir, "evidence/EXECUTE/variable-touch-verdict.artifact.json") or {}
+    deviation = _payload_or_none(
+        run_dir, "evidence/ANALYZE/prereg-deviation-verdict.artifact.json") or {}
+    checks = "\n".join([
+        _rows([
+            f"**Variable touch guard** (studied/frozen variables untouched by the build): "
+            f"{touch.get('verdict') or 'not run'}"
+            + (f" — {touch.get('violations')}" if touch.get("violations") else ""),
+            f"**Train/test parity** (designed vs what actually ran): "
+            f"{parity.get('verdict') or 'skipped — no journal, nothing ran'}"
+            + (f" — {parity.get('violations')}" if parity.get("violations") else ""),
+            f"**Result sanity** (ranges, directions, impossible values): "
+            f"{sanity.get('verdict') or 'not applicable — no result to check'}"
+            + (f" — {sanity.get('violations')}" if sanity.get("violations") else ""),
+            f"**Preregistration deviation**: "
+            f"{('PASS' if deviation.get('pass') else 'BLOCK') if deviation else 'not applicable'}"
+            + (f" — {deviation.get('violations')}" if deviation.get("violations") else ""),
+        ]),
+        "",
+        "Each verdict above is derived from violations by deterministic code; no worker set one.",
+    ])
+
+    review = _payload_or_none(run_dir, "evidence/VERIFY/review-report.artifact.json")
+    if review:
+        adversarial = "\n".join([
+            f"**Verdict.** {review.get('verdict')}"
+            + (f" — blocking: {review.get('blocking_reasons')}"
+               if review.get("blocking_reasons") else ""),
+            "",
+            "**Five refutation checks**, run by a seat that did not design, run, or analyze this "
+            "experiment.",
+            _rows([f"`{name}`: {'pass' if (review.get('checks') or {}).get(name, {}).get('pass') else 'FAIL'}"
+                   f" — {((review.get('checks') or {}).get(name) or {}).get('evidence') or 'no evidence'}"
+                   for name in REVIEW_CHECKS]),
+        ])
+    else:
+        adversarial = (
+            "**No adversarial verification of a result was possible.** Execution state is `"
+            f"{state.get('label')}`, so there is no result claim to refute. The reviewer recorded that "
+            "the five refutation checks are not applicable rather than passing them vacuously — a "
+            "design that has not run cannot earn a verification pass."
+        )
+
+    ready = bool(review and review.get("verdict") == "APPROVE-FREEZE")
+    readiness = ("The result passed every independent check and is ready for the director to judge on "
+                 "the science." if ready else
+                 "NOT ready for an acceptance decision on results.")
+    decision = "\n".join([
+        "**What the director is being asked to accept.** Whether this experiment's evidence is strong "
+        "enough to act on. This report is not a promotion: only /promote-to-vault admits anything into "
+        "the knowledge base, and it re-derives every audit itself.",
+        "",
+        "**Gate inputs.**",
+        _rows([
+            f"Design frozen and audited three ways independently: "
+            f"{'yes' if freeze else 'no freeze record'}",
+            f"Execution really happened: {'yes' if state.get('executed') else 'NO'} "
+            f"(`{state.get('label')}`)",
+            f"Result summary exists: {'yes' if result else 'no'}",
+            f"Adversarial verification: {review.get('verdict') if review else 'not applicable'}",
+        ]),
+        "",
+        f"**Acceptance readiness.** {readiness}",
+        "",
+        "**What would change this.** "
+        + ("Run the frozen protocol through the attested external executor, then re-run this mode: "
+           "ANALYZE and VERIFY only become meaningful once receipts, raw result rows and a journal "
+           "exist." if not state.get("executed")
+           else "Independent replication on a second seed set, and an external held-out site, are the "
+                "next things that would move this from provisional to citable."),
+    ])
+
+    return {"Frozen design": design, "Execution journal": execution, "Result analysis": analysis,
+            "Sanity and parity checks": checks, "Adversarial verification": adversarial,
+            "Acceptance decision inputs": decision}
+
+
+def _report(run_dir, ts) -> tuple:
+    state = _panel_recipe.execution_truth(run_dir)
+    sections = _acceptance_sections(run_dir, state)
+    rel = _panel_recipe.render_director_markdown(run_dir, MODE, sections, ts=ts,
+                                                 lead="research-orchestrator")
+    if state["executed"]:
+        summary = (
+            f"{MODE}: the frozen design ran. Findings were rebuilt from receipt-bound raw result rows, "
+            f"every deterministic gate passed, and the result stays provisional and non-citable until "
+            f"/promote-to-vault re-derives it. Acceptance report: {rel}")
+        open_questions = ["Does the surviving claim replicate on an independent seed set and site?"]
+    else:
+        summary = (
+            f"{MODE}: experiment PLAN only — execution state `{state['label']}`. Scripts and a frozen, "
+            f"three-way-audited design exist; no result, no metric and no acceptance-on-results claim "
+            f"does. The report says so in plain words. Acceptance report: {rel}")
+        open_questions = ["Run the frozen protocol through the attested executor, then re-run "
+                          "ANALYZE/VERIFY — until then there is nothing to accept on results."]
+    paths, _frag = _panel_recipe.report_note(run_dir, ts, mode=MODE, summary=summary,
+                                             references=[rel], open_questions=open_questions)
+    gate_paths, frag = _gates(run_dir, "REPORT", ts, {"acceptance_report": sections})
+    return paths + gate_paths, {"director_acceptance_report": rel,
+                                "execution_state": state["label"],
+                                "executed": bool(state["executed"]), **frag}
+
+
+# --------------------------------------------------------------------------- recipe contract
+
+def run_dets(run_dir, stage, ts) -> tuple:
+    """Deterministic producers/gates for one stage -> (artifact_paths, report). Raises GateBlock."""
+    if stage == "DESIGN":
+        return _design_dets(run_dir, ts, _bundles(run_dir, "DESIGN"))
+    if stage == "EXECUTE":
+        return _execute_dets(run_dir, ts, _bundles(run_dir, "EXECUTE"))
+    if stage == "ANALYZE":
+        return _analyze_dets(run_dir, ts, _bundles(run_dir, "ANALYZE"))
+    if stage == "VERIFY":
+        return _verify_dets(run_dir, ts, _bundles(run_dir, "VERIFY"))
+    if stage == "REPORT":
+        return _report(run_dir, ts)
+    raise ValueError(f"{MODE} has no stage {stage!r}")
+
+
+run_dets_with_repair = _panel_recipe.make_repair(MODE, run_dets)

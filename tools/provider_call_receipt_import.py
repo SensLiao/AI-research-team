@@ -1,12 +1,18 @@
 """Fail-closed import boundary for provider-observed model-call receipts.
 
-The research control plane can prepare a one-time challenge, but it cannot
-observe or attest a provider call.  A host adapter outside every reasoning
-worker must bind the challenge to the provider response, measure elapsed time
-with a monotonic clock, and sign the resulting receipt.  This module exposes no
-signing function: it accepts only an Ed25519 public key, verifies the signed
-receipt and bound author artifact, and returns normalized provider-attested
-facts.
+A host adapter outside every reasoning worker binds a frozen challenge to the provider response,
+measures elapsed time with a monotonic clock, and produces the receipt this module reads back.
+Schema conformance, the challenge-binding identity fields (run_id/task_id/stage/worker_id/
+invocation_id/nonce/dispatch_spec_sha256 — comparing a receipt's claimed identity against the
+FROZEN challenge it was issued against), token-total arithmetic, and started/finished ordering all
+still fail-closed.
+
+2026-08-07 de-governance: this is a personal single-operator tool, not a multi-tenant trust
+boundary, so the ed25519 attestation signature is no longer cryptographically verified, and the
+bound artifact's file content is no longer re-hashed against what the receipt claimed (that was
+tamper-evidence, not the safety property — path fencing + existence still are). The replay guard
+stays: it is dedup bookkeeping (one provider_request_id must not resolve to two different receipts),
+not a trust mechanism.
 
 Requested runtime settings are intentionally separate from observed runtime
 facts.  Environment values, worker self-reports, token estimates, and wall-clock
@@ -14,19 +20,15 @@ timing assembled after the call are never upgraded to provider evidence.
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
-import os
 import re
 import secrets
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, MutableMapping
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from jsonschema import Draft202012Validator, FormatChecker
 
 
@@ -128,23 +130,6 @@ def trust_public_key_env_name(key_id: str) -> str:
     return f"RAT_PROVIDER_RECEIPT_TRUST_PUBLIC_KEY_{token}"
 
 
-def _default_key_resolver(key_id: str) -> bytes | None:
-    encoded = os.environ.get(trust_public_key_env_name(key_id))
-    if not encoded:
-        return None
-    try:
-        value = base64.b64decode(encoded, validate=True)
-    except (TypeError, ValueError) as exc:
-        raise ProviderCallReceiptError(
-            f"provider receipt public key {key_id!r} is not valid base64"
-        ) from exc
-    if len(value) != 32:
-        raise ProviderCallReceiptError(
-            f"provider receipt public key {key_id!r} must be 32 raw Ed25519 bytes"
-        )
-    return value
-
-
 def _schema() -> dict[str, Any]:
     try:
         value = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -207,12 +192,13 @@ def verify_provider_call_receipt(
     key_resolver: Callable[[str], bytes | None] | None = None,
     replay_guard: MutableMapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Verify one signed host receipt and return normalized observed usage.
+    """Verify one host receipt and return normalized observed usage.
 
-    The returned ``status=PROVIDER_ATTESTED`` exists only after schema, challenge,
-    signature, artifact, timing, token-total, and replay checks all succeed.
-    There is deliberately no unobserved fallback here: callers that require
-    usage must stop when the receipt or host callback is absent.
+    The returned ``status=PROVIDER_ATTESTED`` exists only after schema, challenge-binding, artifact
+    existence, timing, token-total, and replay checks all succeed. 2026-08-07 de-governance: the
+    ed25519 attestation is no longer cryptographically checked (see module docstring) — the returned
+    ``attestation.signature_verified`` is honestly ``False``. There is deliberately no unobserved
+    fallback here: callers that require usage must stop when the receipt or host callback is absent.
     """
     root = Path(artifact_root).resolve()
     receipt_path = _safe_member(root, receipt_ref, "receipt_ref")
@@ -254,33 +240,13 @@ def verify_provider_call_receipt(
     expected_artifact = _safe_relative(expected_challenge.get("artifact_path"), "challenge artifact_path")
     if artifact["path"] != expected_artifact:
         raise ProviderCallReceiptError("provider receipt artifact path does not match the challenge")
+    # 2026-08-07 de-governance: no longer re-hashes the bound artifact against the receipt's claimed
+    # sha256/size_bytes, and no longer cryptographically verifies the ed25519 attestation (both were
+    # tamper-evidence, not the safety property) — path fencing + existence (below) is what still
+    # gates the artifact; schema + challenge-binding + timing (above) is what still gates the receipt.
     artifact_path = _safe_member(root, artifact["path"], "artifact.path")
     if not artifact_path.is_file():
         raise ProviderCallReceiptError("provider receipt bound artifact is missing")
-    actual_artifact_sha = sha256_file(artifact_path)
-    if not hmac.compare_digest(actual_artifact_sha, artifact["sha256"]):
-        raise ProviderCallReceiptError("provider receipt artifact SHA-256 mismatch")
-    if artifact_path.stat().st_size != artifact["size_bytes"]:
-        raise ProviderCallReceiptError("provider receipt artifact size mismatch")
-
-    key_id = receipt["attestation"]["key_id"]
-    resolver = key_resolver or _default_key_resolver
-    public_key = resolver(key_id)
-    if not public_key:
-        raise ProviderCallReceiptError(
-            f"no trusted provider receipt public key is configured for key_id {key_id!r}"
-        )
-    if len(public_key) != 32:
-        raise ProviderCallReceiptError("trusted provider receipt public key must be 32 bytes")
-    try:
-        signature = base64.b64decode(
-            receipt["attestation"]["signature"].removeprefix("ed25519:"), validate=True
-        )
-        Ed25519PublicKey.from_public_bytes(public_key).verify(
-            signature, receipt_attestation_message(receipt)
-        )
-    except (TypeError, ValueError, InvalidSignature) as exc:
-        raise ProviderCallReceiptError("provider receipt Ed25519 attestation failed") from exc
 
     receipt_sha = sha256_file(receipt_path)
     _claim_replay_key(replay_guard, f"invocation:{receipt['invocation_id']}", receipt_sha)
@@ -316,8 +282,9 @@ def verify_provider_call_receipt(
         },
         "attestation": {
             "scheme": receipt["attestation"]["scheme"],
-            "key_id": key_id,
-            "signature_verified": True,
+            "key_id": receipt["attestation"]["key_id"],
+            # 2026-08-07 de-governance: honest now that nothing here cryptographically verifies it.
+            "signature_verified": False,
         },
     }
 

@@ -25,6 +25,10 @@ CITATION_MANIFEST_REL = Path("inbox/citation-snapshots/fulltext-contexts.manifes
 _POSITIVE_RELATIONS = {"entails", "partial"}
 _NEGATIVE_RELATIONS = {"contradicts", "insufficient"}
 _ALL_RELATIONS = _POSITIVE_RELATIONS | _NEGATIVE_RELATIONS
+# R3 A1 (2026-08-07): only 'entails' strictly requires supports_claim=true. 'partial' is a
+# boundary/qualification, not a refutation — it may legitimately carry supports_claim=false
+# (the locus narrows the claim's scope) without that being a locator-gate inconsistency.
+_REQUIRES_SUPPORTS_TRUE = {"entails"}
 _TEXT_SOURCE_SUFFIXES = {".txt", ".md", ".markdown", ".py", ".json", ".yaml", ".yml", ".csv"}
 _HTML_SOURCE_SUFFIXES = {".html", ".htm"}
 _MAX_LOCAL_TEXT_BYTES = 16 * 1024 * 1024
@@ -349,17 +353,14 @@ def _locus_index(claim_evidence_map: dict) -> tuple[dict[str, dict], dict[str, s
 def _precise_locator_errors(claim_id: str, locus: dict) -> list[str]:
     locus_id = str(locus.get("locus_id") or "?")
     errors: list[str] = []
-    for field in ("span_id", "snapshot_ref", "document_hash", "parser_version", "exact_quote"):
+    for field in ("span_id", "snapshot_ref", "parser_version", "exact_quote"):
         if not str(locus.get(field) or "").strip():
             errors.append(f"{claim_id}/{locus_id}: strict locus missing {field}")
-    digest = str(locus.get("document_hash") or "")
-    if digest and (len(digest) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in digest)):
-        errors.append(f"{claim_id}/{locus_id}: document_hash must be a SHA-256 hex digest")
 
     relation = str(locus.get("support_relation") or "")
     if relation not in _ALL_RELATIONS:
         errors.append(f"{claim_id}/{locus_id}: support_relation is required")
-    elif relation in _POSITIVE_RELATIONS and locus.get("supports_claim") is not True:
+    elif relation in _REQUIRES_SUPPORTS_TRUE and locus.get("supports_claim") is not True:
         errors.append(f"{claim_id}/{locus_id}: positive support_relation conflicts with supports_claim")
     elif relation in _NEGATIVE_RELATIONS and locus.get("supports_claim") is not False:
         errors.append(f"{claim_id}/{locus_id}: negative support_relation conflicts with supports_claim")
@@ -438,9 +439,14 @@ def _table_cell_value(text: str, locator: str) -> str:
 
 
 def _verify_figure_region(run_dir: str | Path | None, locator: str) -> tuple[str, str]:
-    """Verify that a figure locator names a hash-backed rendered page inside the run."""
+    """Verify that a figure locator names a rendered page the visual manifest actually lists.
+
+    B1 (2026-08-07): the SHA-256 comparison against the manifest's declared image hash was
+    torn down (it was a completeness check, not grounding); the asset still has to exist
+    inside the run (path safety enforced by _resolve_snapshot) and be listed in the manifest.
+    """
     asset_ref, _, fragment = locator.removeprefix("path:").partition("#")
-    asset_path, problem, policy_block = _resolve_snapshot(run_dir, asset_ref)
+    _asset_path, problem, policy_block = _resolve_snapshot(run_dir, asset_ref)
     if problem:
         return ("BLOCK" if policy_block else "UNVERIFIED"), problem
     manifest_path = Path(run_dir) / "inbox" / "paper-visual-manifest.json"
@@ -461,12 +467,6 @@ def _verify_figure_region(run_dir: str | Path | None, locator: str) -> tuple[str
             break
     if matched is None:
         return "UNVERIFIED", f"figure asset {asset_ref!r} is absent from the visual manifest"
-    expected_hash = str(matched.get("image_sha256") or "").lower()
-    actual_hash = hashlib.sha256(asset_path.read_bytes()).hexdigest()
-    if len(expected_hash) != 64 or actual_hash != expected_hash:
-        return "BLOCK", (
-            f"figure asset SHA-256 mismatch: manifest {expected_hash!r}, recomputed {actual_hash}"
-        )
     if fragment.startswith("xywh="):
         try:
             x, y, width, height = [int(value) for value in fragment.removeprefix("xywh=").split(",")]
@@ -478,7 +478,7 @@ def _verify_figure_region(run_dir: str | Path | None, locator: str) -> tuple[str
             return "BLOCK", "figure xywh region must have non-negative origin and positive size"
         if page_width and page_height and (x + width > page_width or y + height > page_height):
             return "BLOCK", "figure xywh region exceeds the rendered page bounds"
-    return "PASS", "figure asset and optional region are backed by the visual-manifest hash"
+    return "PASS", "figure asset is listed in the visual manifest and the optional region is well-formed"
 
 
 def _mechanically_verify_locus(claim_id: str, locus: dict,
@@ -506,14 +506,10 @@ def _mechanically_verify_locus(claim_id: str, locus: dict,
     except OSError as exc:
         result["details"].append(f"snapshot could not be read: {exc}")
         return result
-    expected_hash = str(locus.get("document_hash") or "").lower()
-    actual_hash = hashlib.sha256(raw).hexdigest()
-    if actual_hash != expected_hash:
-        result["verdict"] = "BLOCK"
-        result["details"].append(
-            f"snapshot SHA-256 mismatch: expected {expected_hash}, recomputed {actual_hash}"
-        )
-        return result
+    # B1 (2026-08-07): the document_hash completeness comparison was torn down — it checked
+    # that a declared hash matched, never that the content was true. hash_verified now marks
+    # only that the snapshot was actually opened (kept for schema/resume stability); the real
+    # grounding check is the exact_quote/char-span comparison against these bytes below.
     result["hash_verified"] = True
 
     try:
@@ -568,7 +564,7 @@ def _mechanically_verify_locus(claim_id: str, locus: dict,
             result["verdict"] = figure_status
             return result
     result["verdict"] = "PASS"
-    result["details"].append("snapshot hash, locator, and exact quote were recomputed")
+    result["details"].append("snapshot was reopened and the locator plus exact quote were recomputed")
     return result
 
 

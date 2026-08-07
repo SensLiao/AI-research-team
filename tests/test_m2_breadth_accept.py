@@ -116,6 +116,9 @@ def _make_citation_agent(contradicted: bool):
             loci = [{"locus_id": "l1", "source_ref": "arxiv:2401.00001", "location": "Table 3 row 2",
                      "kind": "table",
                      "reported_result": "SAM3 Dice 0.61 vs nnU-Net 0.87" if contradicted else "SAM3 Dice 0.89 vs nnU-Net 0.87",
+                     # A1 (2026-08-07): only an explicit contradicts relation names a contradicted
+                     # claim; a bare supports_claim=False now degrades to a warning class.
+                     "support_relation": "contradicts" if contradicted else "entails",
                      "supports_claim": not contradicted}]
             cem = {"mappings": [{"claim_id": "c1", "loci": loci,
                                  "overall_support": "contradicted" if contradicted else "supported"}]}

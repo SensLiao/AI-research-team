@@ -8,34 +8,32 @@
 modes:
   check_run:
     entry_stage: EXECUTE
+    operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [EXECUTE, REPORT]
-    agent_subset: [monitor]
+    # wave-2 wiring (2026-08-04): failure-triager added because this mode's own
+    # productization_gaps demanded an INDEPENDENT triage worker — the observer must not also be
+    # the one deciding what its alerts mean.
+    agent_subset: [monitor, failure-triager]
     gate_level: auto
     budget: {max_agent_hops: 2}
-    product_maturity:
-      level: engine_tested_spec_only
-      reason: "The monitor contract is engine-tested, but there is no operate recipe, independent triage worker, or director-facing Markdown renderer."
-      evidence_refs: [tests/test_mode_execute_speconly_e2e.py, tests/test_monitor_scan.py]
-      target_markdown:
-        path: director-review/operations/run-health-brief.md
-        purpose: "Give the director an evidence-backed run status and intervention menu without claiming an intervention was executed."
-        required_sections: [Current run status, Evidence-backed alerts, Intervention options, Unresolved decisions]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 3
-        stages:
-          - id: observe
-            workers: [monitor]
-            produces: "Normalized run status and alert evidence."
-          - id: independent_triage
-            workers: [failure-triager]
-            produces: "Likely causes, urgency, and bounded intervention options."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Run health brief with evidence references and explicit unknowns."
-      productization_gaps:
-        - "Add an operated recipe with ordered observe, triage, and render handoffs."
-        - "Wire an independent triage worker and deterministic Markdown assembly."
-        - "Add operate-level packet tests for healthy, stalled, failed, and over-budget runs."
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: run-health/v1
+      primary_markdown: director-review/operations/run-health-brief.md
+      purpose: "Give the director an evidence-backed run status and intervention menu without claiming an intervention was executed."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-04). _panel_recipe.render_director_markdown BLOCKs on a
+      # missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Current run status"
+        - "Evidence-backed alerts"
+        - "Intervention options"
+        - "Unresolved decisions"
+      reusable_artifacts:
+        - monitor-alert.artifact.json
+        - triage-report.artifact.json
+      # reads the health of an executed run
+      accepts: [full-rigor/v2, m2-acceptance/v1]
   ingest_paper:
     entry_stage: DISCOVER
     operated: true   # wired in operate/modes/__init__.py::REGISTRY (paper-reading upgrade 2026-06-26; wiring test enforces the mirror)
@@ -60,7 +58,11 @@ modes:
                    math-algorithm-verifier, paper-appraiser, paper-relations-mapper,
                    trend-card-builder, domain-transfer-critic, reproducibility-materials-auditor,
                    paper-reading-reconciler, paper-reading-quality-auditor,
-                   paper-markdown-writer]   # blind branch joins the primary chain only at reconciler; Markdown writer renders director-facing card
+                   paper-markdown-writer,
+                   # 2026-08-07 registry HANDOFF: B4 exploration-tree seat (dead-end/decision/pivot
+                   # nodes extracted alongside the method teardown; DISCOVER, sonnet via this mode's
+                   # existing routing).
+                   research-trajectory-extractor]   # blind branch joins the primary chain only at reconciler; Markdown writer renders director-facing card
     gate_level: record_only           # reading = draft knowledge; the human gate is /promote-to-vault. LIVE hard gates (north-star drift + citation-integrity + citation-existence) fire as deterministic cores regardless of gate_level; the evidence-verifier SATURATION gate is N/A for a single source and is honestly omitted (never listed-then-skipped)
     budget: {max_agent_hops: 20, max_supplement_agent_hops: 12, max_debug_retries_per_run: 3}  # normal panel and supplements are budgeted independently
     handoff:
@@ -86,70 +88,73 @@ modes:
       accepts: [ingest-paper/v1, paper-reading/v2, paper-reading/v3]
   gap_scan:
     entry_stage: DISCOVER
+    operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [DISCOVER, REPORT]
     agent_subset: [future-work-miner, weakness-spotter, gap-classifier]
     gate_level: record_only
     budget: {max_agent_hops: 6}
-    product_maturity:
-      level: engine_tested_spec_only
-      reason: "The three DISCOVER contracts are engine-tested, but no operate recipe combines their independent findings into a stable director-facing gap product."
-      evidence_refs: [tests/test_mode_discover_speconly_e2e.py, tests/test_m3a_gap_schemas.py]
-      target_markdown:
-        path: director-review/gaps/gap-scan.md
-        purpose: "Present a compact, traceable map of candidate research gaps and the evidence still needed before ideation."
-        required_sections: [Search scope, Candidate gaps, Evidence and source anchors, Gap classification, Unknowns and next searches]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 4
-        stages:
-          - id: parallel_gap_hunt
-            workers: [future-work-miner, weakness-spotter]
-            produces: "Independent future-work and weakness candidate sets."
-          - id: classify_and_deduplicate
-            workers: [gap-classifier]
-            produces: "Deduplicated candidates with gap types and evidence anchors."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Gap scan with provenance and no novelty or bet claim."
-      productization_gaps:
-        - "Add an operated recipe that preserves independent hunter outputs before classification."
-        - "Define deterministic deduplication, evidence coverage, and Markdown rendering checks."
-        - "Add operate-level packet tests and an explicit downstream handoff to ideation."
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: gap-scan/v1
+      primary_markdown: director-review/gaps/gap-scan.md
+      purpose: "Present a compact, traceable map of candidate research gaps and the evidence still needed before ideation."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-04). _panel_recipe.render_director_markdown BLOCKs on a
+      # missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Search scope"
+        - "Candidate gaps"
+        - "Evidence and source anchors"
+        - "Gap classification"
+        - "Unknowns and next searches"
+      reusable_artifacts:
+        - future-work-items.artifact.json
+        - weakness-report.artifact.json
+        - gap-classification.artifact.json
+      # same intake as gap_breadth, narrower panel
+      accepts: [paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2, research-brief/v2]
   design_experiment:
     entry_stage: DESIGN
+    operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [DESIGN, REPORT]
     agent_subset: [rq-architect, experiment-planner, dataset-split-planner, data-protocol-designer,
                    config-unifier, method-integration-planner, baseline-fairness-planner,
                    variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor,
                    decision-surfacer]
     gate_level: director_signoff
-    budget: {max_agent_hops: 4}
-    product_maturity:
-      level: engine_tested_spec_only
-      reason: "The DESIGN agent contracts and hard gates are engine-tested, but there is no staged operate recipe or deterministic assembly of the many design artifacts into one reviewable experiment plan."
-      evidence_refs: [tests/test_mode_ideate_design_verify_e2e.py, tests/test_design_depth_schemas.py]
-      target_markdown:
-        path: director-review/experiments/experiment-design.md
-        purpose: "Deliver a decision-ready, runnable experiment design while clearly separating planned work from executed work."
-        required_sections: [Research question and hypotheses, Variables and conditions, Data and split protocol, Method and baseline fairness, Metrics and analysis plan, Risks and director decisions]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 12
-        stages:
-          - id: frame_decisions
-            workers: [rq-architect, decision-surfacer]
-            produces: "Falsifiable research question, decision points, and acceptance criteria."
-          - id: design_protocol
-            workers: [experiment-planner, dataset-split-planner, data-protocol-designer, config-unifier, method-integration-planner, baseline-fairness-planner]
-            produces: "Experiment matrix, data protocol, unified configs, integration plan, and fair baselines."
-          - id: independent_design_audits
-            workers: [variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor]
-            produces: "Independent control, alignment, and metric implementation verdicts."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Experiment design with unresolved decisions and artifact references."
-      productization_gaps:
-        - "Add an operated recipe with explicit artifact handoffs and all DESIGN gates."
-        - "Add deterministic cross-artifact consistency checks and Markdown assembly."
-        - "Add operate-level happy-path, blocked-gate, and director-reject packet tests."
+    # 11 = the seat count `design_experiment._seat_specs()` really builds; +4 for bounded repair.
+    # It was 4, which is fewer hops than the recipe has seats, so the mode budget-stopped at
+    # `dataset-split-planner` every time and could never reach its three independent auditors —
+    # a mode that cannot finish its own panel is a spec bug, not a cost cap doing its job.
+    budget: {max_agent_hops: 15}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: experiment-design/v1
+      primary_markdown: director-review/experiments/experiment-design.md
+      purpose: "Deliver a decision-ready, runnable experiment design while clearly separating planned work from executed work."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-04). _panel_recipe.render_director_markdown BLOCKs on a
+      # missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Research question and hypotheses"
+        - "Variables and conditions"
+        - "Data and split protocol"
+        - "Method and baseline fairness"
+        - "Metrics and analysis plan"
+        - "Risks and director decisions"
+      reusable_artifacts:
+        - rq-hypothesis-chain.artifact.json
+        - experiment-matrix.artifact.json
+        - split-manifest.artifact.json
+        - data-protocol.artifact.json
+        - unified-config.artifact.json
+        - integration-plan.artifact.json
+        - baseline-fairness-plan.artifact.json
+        - variable-control-report.artifact.json
+        - alignment-report.artifact.json
+        - metric-impl-report.artifact.json
+      # designs the experiment a bet / gap / evidence review argues for; a code audit bounds what is runnable
+      accepts: [idea-investment-memo/v2, gap-dossier/v1, gap-scan/v1, research-brief/v2, evidence-deep/v2, evidence-brief/v2, repo-code-audit/v1, power-analysis-review/v1]
   design_experiment_minimal:
     entry_stage: DESIGN
     stage_path: [DESIGN, REPORT]     # V1 minimal: plan + both DESIGN hard gates, then reply (no execute/analyze yet)
@@ -183,101 +188,106 @@ modes:
         - "Add operate-level tests for pass, each audit block, and director rejection."
   power_analysis_review:
     entry_stage: DESIGN
+    operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [DESIGN, REPORT]     # focused statistical-power/design adequacy check; no execution claim
-    agent_subset: [statistics-power-auditor]
+    # wave-2 wiring (2026-08-04): expanded from one seat to the staged input -> computation ->
+    # independent-interpretation panel this mode's own productization_gaps asked for. A power
+    # auditor that validates its own assumptions and then interprets its own result is a
+    # self-approval, which is exactly what the gap text called out.
+    agent_subset: [statistics-power-auditor, data-protocol-designer, methodology-reviewer]
     gate_level: record_only
-    budget: {max_agent_hops: 3}
-    product_maturity:
-      level: registry_routable_spec_only
-      reason: "Only the statistics-power auditor is currently routed; its schema is tested, but there is no multi-worker interpretation, mode-level workflow, or Markdown product."
-      evidence_refs: [tests/test_agent_connectivity.py, tests/test_design_depth_schemas.py]
-      target_markdown:
-        path: director-review/experiments/power-analysis-review.md
-        purpose: "Explain whether the proposed design can answer its question, what assumptions drive power, and what design changes are defensible."
-        required_sections: [Decision question, Inputs and assumptions, Power or precision analysis, Sensitivity scenarios, Recommended design changes, Remaining uncertainty]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 4
-        stages:
-          - id: validate_inputs
-            workers: [data-protocol-designer]
-            produces: "Auditable sample, endpoint, grouping, and missingness assumptions."
-          - id: compute_power
-            workers: [statistics-power-auditor]
-            produces: "Power or precision analysis with sensitivity scenarios."
-          - id: independent_interpretation
-            workers: [methodology-reviewer]
-            produces: "Methodological interpretation and assumption challenges."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Power review with decision options rather than a binary self-approval."
-      productization_gaps:
-        - "Expand the mode from one worker to a staged input, computation, and independent-review panel."
-        - "Define the accepted upstream design inputs and deterministic sensitivity checks."
-        - "Add an operated recipe, Markdown renderer, and mode-level end-to-end tests."
+    # 3 seats + 3 for bounded repair. At exactly 3 the base panel fitted but a repair had zero
+    # headroom, so when the deterministic power re-check caught a mismatched `reported_power` the
+    # targeted repair could not be dispatched — the gate found the defect and then could not have
+    # it fixed. Repair capacity is part of the budget, not an extra.
+    budget: {max_agent_hops: 6}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: power-analysis-review/v1
+      primary_markdown: director-review/experiments/power-analysis-review.md
+      purpose: "Explain whether the proposed design can answer its question, what assumptions drive power, and what design changes are defensible."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-04). _panel_recipe.render_director_markdown BLOCKs on a
+      # missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Decision question"
+        - "Inputs and assumptions"
+        - "Power or precision analysis"
+        - "Sensitivity scenarios"
+        - "Recommended design changes"
+        - "Remaining uncertainty"
+      reusable_artifacts:
+        - data-protocol.artifact.json
+        - power-audit-report.artifact.json
+        - panel-review.artifact.json
+      # reviews the power of a design or of an executed campaign
+      accepts: [experiment-design/v1, full-rigor/v2, m2-acceptance/v1]
   verify_result:
     entry_stage: VERIFY
+    operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [VERIFY, REPORT]
     agent_subset: [review-configurator, methodology-reviewer, domain-reviewer, adversarial-reviewer,
                    scientific-critic, review-synthesizer, baseline-scout, sub-domain-historian]
     gate_level: director_signoff    # wave 1: +ScholarPeer seats (baseline-completeness + historical-context lenses)
     budget: {max_agent_hops: 3}
-    product_maturity:
-      level: engine_tested_spec_only
-      reason: "The independent VERIFY panel is engine-tested, but it has no operated recipe that enforces reviewer separation and compiles a calibrated result-verification brief."
-      evidence_refs: [tests/test_mode_ideate_design_verify_e2e.py, tests/test_verify_panel_schemas.py]
-      target_markdown:
-        path: director-review/verification/result-verification.md
-        purpose: "Give the director a traceable panel judgment on what the result supports, contradicts, and still cannot claim."
-        required_sections: [Result under review, Review configuration, Independent panel findings, Baseline and historical context, Claim calibration, Required next actions]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 8
-        stages:
-          - id: configure_review
-            workers: [review-configurator]
-            produces: "Review lenses, evidence scope, and independence requirements."
-          - id: independent_panel
-            workers: [methodology-reviewer, domain-reviewer, adversarial-reviewer, scientific-critic, baseline-scout, sub-domain-historian]
-            produces: "Separate methodological, domain, adversarial, scientific, baseline, and historical findings."
-          - id: synthesize_verdict
-            workers: [review-synthesizer]
-            produces: "Coverage-checked synthesis with calibrated claims and disagreements."
-      productization_gaps:
-        - "Add an operated recipe that writes and validates separate reviewer bundles."
-        - "Add deterministic independence, evidence-coverage, and Markdown synthesis checks."
-        - "Add operate-level panel disagreement, blocked evidence, and director-signoff tests."
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: result-verification/v1
+      primary_markdown: director-review/verification/result-verification.md
+      purpose: "Give the director a traceable panel judgment on what the result supports, contradicts, and still cannot claim."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-04). _panel_recipe.render_director_markdown BLOCKs on a
+      # missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Result under review"
+        - "Review configuration"
+        - "Independent panel findings"
+        - "Baseline and historical context"
+        - "Claim calibration"
+        - "Required next actions"
+      reusable_artifacts:
+        - review-config.artifact.json
+        - methodology-review.artifact.json
+        - domain-review.artifact.json
+        - critic-memo.artifact.json
+        - baseline-scout-review.artifact.json
+        - sub-domain-historian-review.artifact.json
+        - review-report.artifact.json
+        - panel-synthesis.artifact.json
+        - calibrated-claims.artifact.json
+      # verifies a result and may re-check an analysis audit
+      accepts: [full-rigor/v2, m2-acceptance/v1, analysis-audit/v1]
   full_new_direction:
     entry_stage: DISCOVER
+    operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [DISCOVER, REPORT]
     agent_subset: [lit-scout, model-dataset-scout, evidence-verifier, citation-integrity-auditor, gap-classifier]
     gate_level: director_signoff
     budget: {max_agent_hops: 6}
-    product_maturity:
-      level: engine_tested_spec_only
-      reason: "The grounded DISCOVER panel and both evidence gates are engine-tested, but no operated recipe turns them into a complete direction thesis or defines the handoff to human betting."
-      evidence_refs: [tests/test_mode_discover_speconly_e2e.py, tests/test_hardening.py]
-      target_markdown:
-        path: director-review/ideas/full-new-direction-brief.md
-        purpose: "Present a grounded shortlist of research-direction theses and the evidence gaps that must be resolved before an idea bet."
-        required_sections: [Problem landscape, Model and dataset opportunities, Evidence quality, Candidate direction theses, Collision and uncertainty notes, Recommended handoff]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 6
-        stages:
-          - id: gather_landscape
-            workers: [lit-scout, model-dataset-scout]
-            produces: "Shared literature, model, and dataset opportunity set."
-          - id: independent_grounding_gates
-            workers: [evidence-verifier, citation-integrity-auditor]
-            produces: "Evidence sufficiency and claim-reference integrity verdicts."
-          - id: classify_directions
-            workers: [gap-classifier]
-            produces: "Grounded candidate direction theses with gap classes."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Direction brief that stops before any model-selected bet."
-      productization_gaps:
-        - "Add an operated recipe with a frozen shared source set and both grounding gates."
-        - "Define the product boundary and handoff relative to new_direction and /idea-bet."
-        - "Add deterministic Markdown coverage and operate-level director packet tests."
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: full-new-direction/v1
+      primary_markdown: director-review/ideas/full-new-direction-brief.md
+      purpose: "Present a grounded shortlist of research-direction theses and the evidence gaps that must be resolved before an idea bet."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-04). _panel_recipe.render_director_markdown BLOCKs on a
+      # missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Problem landscape"
+        - "Model and dataset opportunities"
+        - "Evidence quality"
+        - "Candidate direction theses"
+        - "Collision and uncertainty notes"
+        - "Recommended handoff"
+      reusable_artifacts:
+        - evidence-table.artifact.json
+        - model-dataset-candidates.artifact.json
+        - evidence-verdict.artifact.json
+        - citation-verdict.artifact.json
+        - gap-classification.artifact.json
+        - landscape-map.artifact.json
+      # same intake as new_direction, plus gap dossiers
+      accepts: [paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2, research-brief/v2, gap-dossier/v1, gap-scan/v1]
   full_rigor_minimal:
     entry_stage: DESIGN
     operated: true   # wired in operate/modes/__init__.py::REGISTRY (audit B1/B3; wiring test enforces the mirror)
@@ -319,39 +329,48 @@ modes:
       accepts: [ingest-paper/v1, paper-reading/v2, paper-reading/v3, evidence-brief/v2]
   m2_accept:
     entry_stage: DESIGN
+    operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [DESIGN, EXECUTE, ANALYZE, VERIFY, REPORT]   # M2 breadth acceptance: spine tail + the new DESIGN gate live
     agent_subset: [experiment-planner, protocol-compiler, variable-control-auditor, train-test-alignment-auditor,
                    metric-implementation-auditor, trainset-builder, testset-builder, variable-touch-guard, preflight-checker, ablation-runner,
                    experiment-journaler, train-test-parity-verifier, result-analyzer, result-sanity-checker, adversarial-reviewer]
     gate_level: director_signoff     # every DESIGN hard gate (incl. metric-implementation-auditor) mandatory
     budget: {max_agent_hops: 8}
-    product_maturity:
-      level: engine_tested_spec_only
-      reason: "The full tail and hard gates are engine-tested over fixtures, but there is no operated recipe, live execution adapter, or Markdown acceptance report backed by real run evidence."
-      evidence_refs: [tests/test_m2_breadth_accept.py, tests/test_m2_spine_slice.py]
-      target_markdown:
-        path: director-review/experiments/m2-acceptance-report.md
-        purpose: "Report whether a rigorously designed experiment actually ran, what it found, and which acceptance conditions passed or failed."
-        required_sections: [Frozen design, Execution journal, Result analysis, Sanity and parity checks, Adversarial verification, Acceptance decision inputs]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 16
-        stages:
-          - id: freeze_design
-            workers: [experiment-planner, protocol-compiler, variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor]
-            produces: "Frozen design and three independent DESIGN gate verdicts."
-          - id: execute_and_journal
-            workers: [trainset-builder, testset-builder, variable-touch-guard, preflight-checker, ablation-runner, experiment-journaler, train-test-parity-verifier]
-            produces: "Runnable scripts or real execution journal, with the boundary stated explicitly."
-          - id: analyze_and_verify
-            workers: [result-analyzer, result-sanity-checker, adversarial-reviewer]
-            produces: "Result summary, sanity verdict, and independent adversarial review."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Acceptance report that distinguishes planned, attempted, and completed execution."
-      productization_gaps:
-        - "Add an operated recipe spanning DESIGN through REPORT with resumable stage handoffs."
-        - "Integrate real server execution and journal evidence before any result or acceptance claim."
-        - "Add deterministic planned-versus-ran Markdown rendering and operate-level end-to-end tests."
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: m2-acceptance/v1
+      primary_markdown: director-review/experiments/m2-acceptance-report.md
+      purpose: "Report whether a rigorously designed experiment actually ran, what it found, and which acceptance conditions passed or failed."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-04). _panel_recipe.render_director_markdown BLOCKs on a
+      # missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Frozen design"
+        - "Execution journal"
+        - "Result analysis"
+        - "Sanity and parity checks"
+        - "Adversarial verification"
+        - "Acceptance decision inputs"
+      reusable_artifacts:
+        - design-freeze.artifact.json
+        - experiment-matrix.artifact.json
+        - protocol-spec.artifact.json
+        - preregistration.artifact.json
+        - variable-control-report.artifact.json
+        - alignment-report.artifact.json
+        - metric-impl-report.artifact.json
+        - trainset-script.artifact.json
+        - testset-script.artifact.json
+        - preflight-report.artifact.json
+        - variable-touch-verdict.artifact.json
+        - journal-entry.artifact.json
+        - parity-verdict.artifact.json
+        - result-summary.artifact.json
+        - sanity-verdict.artifact.json
+        - review-report.artifact.json
+        - prereg-deviation-verdict.artifact.json
+      # runs acceptance for a frozen design or a bet
+      accepts: [experiment-design/v1, idea-investment-memo/v2, full-rigor/v2]
   # --- M3-a (new-direction / freedom-layer spine) ---
   new_direction:
     entry_stage: DISCOVER
@@ -371,7 +390,11 @@ modes:
                    evidence-verifier, citation-integrity-auditor,
                    mathematical-formalizer, contradiction-miner,
                    hypothesis-generator, idea-tournament-ranker, feasibility-reranker,
-                   novelty-collision-checker, experiment-planner]
+                   novelty-collision-checker, experiment-planner,
+                   # 2026-08-07 registry HANDOFF: B1 six-operator seat (IDEATE, opus via this mode's
+                   # own _worker_model routing) + B5 advisory-recommender (REPORT, opus, same routing;
+                   # advisory only — DEEPEN/BROADEN/PIVOT/CONCLUDE is never self-decided).
+                   divergence-operator-runner, direction-decision-advisor]
     gate_level: director_signoff     # DISCOVER hard gates ground the menu; the only human decision point is /idea-bet after IDEATE has rendered it.
     director_gate_stages: [IDEATE]
     budget: {max_agent_hops: 10}
@@ -401,7 +424,11 @@ modes:
                    evidence-verifier, citation-integrity-auditor,
                    mathematical-formalizer, analogy-mapper, evidence-saturation-judge, contradiction-miner,
                    hypothesis-generator, idea-tournament-ranker, idea-evolver, feasibility-reranker,
-                   novelty-collision-checker, experiment-planner, quality-controller, integrity-refusal-recommender]
+                   novelty-collision-checker, experiment-planner, quality-controller, integrity-refusal-recommender,
+                   # 2026-08-07 registry HANDOFF: IDEATE dispatches B1 directly (new_direction.divergence_worker,
+                   # reused); REPORT delegates to new_direction.llm_step verbatim, which dispatches B5 —
+                   # so both must be in THIS mode's own agent_subset too, not just new_direction's.
+                   divergence-operator-runner, direction-decision-advisor]
     gate_level: director_signoff
     director_gate_stages: [IDEATE]
     budget: {max_agent_hops: 9}
@@ -432,36 +459,36 @@ modes:
   # --- M3-f (IDEATE-ring completion) — the full ring as a focused mode ---
   ideate_ring:
     entry_stage: IDEATE
+    operated: true   # wave-2 backlog closed 2026-08-07: wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [IDEATE, REPORT]     # the ring replies after IDEATE; experiment stages forward-skipped
     agent_subset: [hypothesis-generator, idea-tournament-ranker, idea-evolver, feasibility-reranker,
                    novelty-collision-checker]
-    product_maturity:
-      level: engine_tested_spec_only
-      reason: "The IDEATE ring is engine-tested, but no operated recipe guarantees staged tournament provenance, collision handling, or the final /idea-bet Markdown menu."
-      evidence_refs: [tests/test_mode_ideate_design_verify_e2e.py, tests/test_m3_integration.py]
-      target_markdown:
-        path: director-review/ideas/idea-bet-menu.md
-        purpose: "Give the director a ranked, evidence-linked menu of surviving ideas without allowing the model to choose the bet."
-        required_sections: [Input opportunity set, Falsifiable hypotheses, Tournament results, Evolved ideas and lineage, Prior-art collisions, Director bet menu]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 6
-        stages:
-          - id: generate_hypotheses
-            workers: [hypothesis-generator]
-            produces: "Evidence-linked falsifiable hypotheses."
-          - id: tournament_and_evolution
-            workers: [idea-tournament-ranker, idea-evolver]
-            produces: "Pairwise tournament record and parent-traceable evolved ideas."
-          - id: feasibility_and_collision
-            workers: [feasibility-reranker, novelty-collision-checker]
-            produces: "Feasibility ordering and evidenced prior-art collision findings."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Idea-bet menu with no self-selected winner."
-      productization_gaps:
-        - "Add an operated recipe with immutable artifacts between hypothesis, tournament, evolution, and collision stages."
-        - "Define the required grounded input contract and offline collision behavior."
-        - "Add deterministic menu rendering and /idea-bet integration tests."
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: ideate-ring/v1
+      primary_markdown: director-review/ideas/idea-bet-menu.md
+      purpose: "Give the director a ranked, evidence-linked menu of surviving ideas without allowing the model to choose the bet."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-07, closing the two-mode wave-2 backlog). _panel_recipe.render_director_markdown
+      # BLOCKs on a missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Input opportunity set"
+        - "Falsifiable hypotheses"
+        - "Tournament results"
+        - "Evolved ideas and lineage"
+        - "Prior-art collisions"
+        - "Director bet menu"
+      reusable_artifacts:
+        - hypothesis-set.artifact.json
+        - idea-tournament.artifact.json
+        - evolved-ideas.artifact.json
+        - idea-backlog.artifact.json
+        - novelty-collision-verdict.artifact.json
+        - idea-lineage.artifact.json
+      # standalone ring: the grounded input is the director's own opportunity-set text
+      # (task_frame.payload.request_text), never a prior run's artifact — see the module
+      # docstring. An empty accepts means this mode is an entry point, never a downstream link.
+      accepts: []
     gate_level: record_only          # the full ring hypothesis_set -> idea_tournament (pairwise, not score-mean) -> evolved_ideas (parent-provenance) -> idea_backlog (the ranked MENU). Still no self-bet; the bet is the human /idea-bet.
     budget: {max_agent_hops: 4}
   # --- M3-b (EXECUTE menus) — variable-touch ⛔ fires behind each menu ---
@@ -535,80 +562,81 @@ modes:
   # Coverage closure modes (2026-07-01): make every non-control agent routable.
   repo_code_audit:
     entry_stage: DISCOVER
+    operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [DISCOVER, EXECUTE, REPORT]   # inspect a repo, plan/implement/test/repro in scratch, then report; no GPU claim
     agent_subset: [repo-code-verifier, patch-planner, code-implementer, unit-test-writer,
                    sandbox-runner, repro-runner, variable-touch-guard, preflight-checker,
                    train-test-parity-verifier]
-    product_maturity:
-      level: registry_routable_spec_only
-      reason: "The code-audit workers are registry-connected as coverage closure, but there is no mode-level staged collaboration, patch-authorization boundary, or final Markdown audit product."
-      evidence_refs: [tests/test_agent_connectivity.py, tests/test_repo_verifier.py]
-      target_markdown:
-        path: director-review/code/repo-code-audit.md
-        purpose: "Deliver prioritized code findings, any explicitly authorized patches, and reproducible test evidence without blurring audit and modification."
-        required_sections: [Repository scope, Prioritized findings, Patch plan, Authorized changes, Test and reproduction evidence, Residual risks]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 10
-        stages:
-          - id: inspect_repository
-            workers: [repo-code-verifier]
-            produces: "Evidence-backed repository findings and affected surfaces."
-          - id: plan_changes
-            workers: [patch-planner]
-            produces: "Scoped patch plan with explicit authorization needs."
-          - id: implement_and_test
-            workers: [code-implementer, unit-test-writer, sandbox-runner]
-            produces: "Authorized patch, focused tests, and sandbox results."
-          - id: reproduce_and_guard
-            workers: [repro-runner, variable-touch-guard, preflight-checker, train-test-parity-verifier]
-            produces: "Reproduction evidence and change-boundary verdicts."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Audit report that distinguishes findings, proposals, and applied changes."
-      productization_gaps:
-        - "Add an operated recipe with an explicit read-only audit versus authorized patch branch."
-        - "Define deterministic finding deduplication, severity, reproduction, and Markdown checks."
-        - "Add mode-level end-to-end tests for audit-only, patched, failed-test, and non-reproducible outcomes."
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: repo-code-audit/v1
+      primary_markdown: director-review/code/repo-code-audit.md
+      purpose: "Deliver prioritized code findings, any explicitly authorized patches, and reproducible test evidence without blurring audit and modification."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-04). _panel_recipe.render_director_markdown BLOCKs on a
+      # missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Repository scope"
+        - "Prioritized findings"
+        - "Patch plan"
+        - "Authorized changes"
+        - "Test and reproduction evidence"
+        - "Residual risks"
+      reusable_artifacts:
+        - repo-verification.artifact.json
+        - patch-plan.artifact.json
+        - implementation-record.artifact.json
+        - test-suite-record.artifact.json
+        - sandbox-report.artifact.json
+        - repro-record.artifact.json
+        - variable-touch-verdict.artifact.json
+        - preflight-report.artifact.json
+        - parity-verdict.artifact.json
+      # audits the code that implements a design or campaign
+      accepts: [experiment-design/v1, full-rigor/v2, m2-acceptance/v1]
     gate_level: record_only
     budget: {max_agent_hops: 10}
   analysis_audit_panel:
     entry_stage: ANALYZE
+    operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [ANALYZE, REPORT]   # post-result audit panel; produces diagnostics/specs, not a vault-grade claim
     agent_subset: [result-sanity-checker, baseline-comparison-auditor, variance-analyzer,
                    fairness-auditor, compliance-auditor, goal-alignment-checker,
                    failure-case-miner, figure-generator, visualization-auditor,
                    claim-strength-calibrator, figure-vlm-critic, quality-controller,
                    integrity-refusal-recommender]
-    product_maturity:
-      level: registry_routable_spec_only
-      reason: "The analysis artifact schemas and workers are connected, but no mode-level panel currently preserves independent diagnostics, resolves disagreements, and renders one claim-calibrated report."
-      evidence_refs: [tests/test_agent_connectivity.py, tests/test_analyze_panel_schemas.py, tests/test_m3e_advisory_schemas.py]
-      target_markdown:
-        path: director-review/analysis/analysis-audit-report.md
-        purpose: "Audit whether the analysis supports its claims across sanity, baselines, variance, fairness, compliance, failures, and visualization."
-        required_sections: [Analysis scope, Sanity and baseline findings, Variance and subgroup findings, Failure cases, Figure and visualization audit, Calibrated claims, Blocking issues and repairs]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 14
-        stages:
-          - id: core_result_checks
-            workers: [result-sanity-checker, baseline-comparison-auditor, variance-analyzer]
-            produces: "Independent sanity, baseline fairness, and variance diagnostics."
-          - id: validity_and_failure_panel
-            workers: [fairness-auditor, compliance-auditor, goal-alignment-checker, failure-case-miner]
-            produces: "Fairness, compliance, north-star alignment, and failure-case findings."
-          - id: figure_and_claim_panel
-            workers: [figure-generator, visualization-auditor, figure-vlm-critic, claim-strength-calibrator]
-            produces: "Figure specifications, visual integrity findings, and calibrated claims."
-          - id: quality_resolution
-            workers: [quality-controller, integrity-refusal-recommender]
-            produces: "Cross-panel coverage score and unresolved integrity issues."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Analysis audit report with disagreements and evidence references."
-      productization_gaps:
-        - "Add an operated recipe that runs diagnostic seats independently before synthesis."
-        - "Define deterministic cross-panel coverage, disagreement, and claim-evidence checks."
-        - "Add a Markdown renderer and mode-level tests for clean, conflicting, and blocking panels."
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: analysis-audit/v1
+      primary_markdown: director-review/analysis/analysis-audit-report.md
+      purpose: "Audit whether the analysis supports its claims across sanity, baselines, variance, fairness, compliance, failures, and visualization."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-04). _panel_recipe.render_director_markdown BLOCKs on a
+      # missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "Analysis scope"
+        - "Sanity and baseline findings"
+        - "Variance and subgroup findings"
+        - "Failure cases"
+        - "Figure and visualization audit"
+        - "Calibrated claims"
+        - "Blocking issues and repairs"
+      reusable_artifacts:
+        - sanity-verdict.artifact.json
+        - baseline-audit-report.artifact.json
+        - variance-report.artifact.json
+        - fairness-verdict.artifact.json
+        - compliance-verdict.artifact.json
+        - goal-alignment-verdict.artifact.json
+        - failure-inventory.artifact.json
+        - figure-spec-bundle.artifact.json
+        - viz-audit-report.artifact.json
+        - figure-critique.artifact.json
+        - calibrated-claims.artifact.json
+        - stage-scorecard.artifact.json
+        - integrity-recommendation.artifact.json
+      # audits an analysis someone else produced
+      accepts: [full-rigor/v2, m2-acceptance/v1, result-verification/v1]
     gate_level: director_signoff
     budget: {max_agent_hops: 3}
   manuscript_authoring:
@@ -777,40 +805,43 @@ modes:
     budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 2}
   aers_enhanced_research_pack:
     entry_stage: DISCOVER
+    operated: true   # wave-2 backlog closed 2026-08-07: wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
     stage_path: [DISCOVER, DESIGN, EXECUTE, ANALYZE, VERIFY, REPORT]
     agent_subset: [aers-sop-curator, literature-search-strategist, data-wrangling-auditor,
                    reproducibility-packager, benchmark-evidence-auditor,
                    submission-guideline-scout, bibliography-validator, manuscript-polish-editor]
-    product_maturity:
-      level: registry_routable_spec_only
-      reason: "AERS reference tooling and specialist workers exist, but there is no cross-stage operated recipe or final research-pack contract; its EXECUTE stage must not be read as evidence that an experiment ran."
-      evidence_refs: [tests/test_agent_connectivity.py, tests/test_aers_catalog_router.py, tests/test_aers_skill_integration_planner.py]
-      target_markdown:
-        path: director-review/research/aers-enhanced-research-pack.md
-        purpose: "Assemble a reference-only AERS-enhanced research package covering search, data handling, reproducibility, benchmarks, submission, bibliography, and manuscript polish."
-        required_sections: [AERS references and applicability, Literature search strategy, Data-wrangling protocol, Reproducibility package, Benchmark evidence, Submission checklist, Bibliography audit, Manuscript revisions]
-      minimum_worker_pipeline:
-        minimum_distinct_workers: 9
-        stages:
-          - id: curate_references_and_search
-            workers: [aers-sop-curator, literature-search-strategist]
-            produces: "Approved reference-only SOP set and literature search plan."
-          - id: audit_data_and_reproducibility
-            workers: [data-wrangling-auditor, reproducibility-packager]
-            produces: "Data-handling audit and reproducibility package specification."
-          - id: audit_benchmarks_and_submission
-            workers: [benchmark-evidence-auditor, submission-guideline-scout, bibliography-validator]
-            produces: "Benchmark evidence matrix, venue checklist, and bibliography findings."
-          - id: polish_manuscript
-            workers: [manuscript-polish-editor]
-            produces: "Traceable manuscript edit recommendations without changing scientific claims silently."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Integrated research pack with reference provenance and no execution claim."
-      productization_gaps:
-        - "Add an operated recipe with reference resolution and explicit per-stage artifact contracts."
-        - "Define EXECUTE as packaging or audit work unless a separate real execution journal is present."
-        - "Add deterministic pack coverage, bibliography, Markdown rendering, and mode-level end-to-end tests."
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: aers-enhanced-research-pack/v1
+      primary_markdown: director-review/research/aers-enhanced-research-pack.md
+      purpose: "Assemble a reference-only AERS-enhanced research package covering search, data handling, reproducibility, benchmarks, submission, bibliography, and manuscript polish; its EXECUTE stage must not be read as evidence that an experiment ran."
+      # The director-Markdown contract, moved here verbatim from product_maturity when this
+      # mode was wired (2026-08-07, closing the two-mode wave-2 backlog). _panel_recipe.render_director_markdown
+      # BLOCKs on a missing section, so these names are enforced, not documentation.
+      required_sections:
+        - "AERS references and applicability"
+        - "Literature search strategy"
+        - "Data-wrangling protocol"
+        - "Reproducibility package"
+        - "Benchmark evidence"
+        - "Submission checklist"
+        - "Bibliography audit"
+        - "Manuscript revisions"
+      reusable_artifacts:
+        - aers-integration-plan.artifact.json
+        - aers-applicability-note.artifact.json
+        - literature-search-trace.artifact.json
+        - data-protocol.artifact.json
+        - reproducibility-materials-audit.artifact.json
+        - benchmark-evidence-note.artifact.json
+        - numeric-benchmark-report.artifact.json
+        - submission-checklist-note.artifact.json
+        - bibliography-verification-note.artifact.json
+        - manuscript-polish-note.artifact.json
+      # reference-only assembly pack: reads the vault and its own AERS catalog snapshot, never a
+      # prior run's artifact. An empty accepts means this mode is an entry point, never chained
+      # downstream of another run.
+      accepts: []
     gate_level: record_only
     budget: {max_agent_hops: 12}
   # Actual deep_research operated recipe.

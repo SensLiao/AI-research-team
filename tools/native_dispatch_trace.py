@@ -3,6 +3,18 @@
 This module records local orchestration evidence only.  It never calls a model,
 network, provider, or server, and it never estimates provider usage or cost.
 Stage-B provider receipts and sealing remain separate, stricter contracts.
+
+2026-08-07 de-governance: file-content tamper-detection is removed — a work order/completion's
+input/authorization/output no longer has its sha256 (or size/mtime VALUE) re-verified against a
+file on disk, and a completion no longer has to hash-echo its whole work order. What is kept and
+still fail-closes: schema conformance, path safety, referential integrity (dependencies/roles/ids
+resolve to something real), and every temporal-order check (authorization before start, completion
+before record, mtime windows, commitment before dispatch, reveal after review). Also kept as the
+actual falsifiability/blinding mechanism, not tamper theater: the commit-reveal cryptographic check
+in `validate_mapping_reveal` (proves the revealed X/Y mapping is the one committed BEFORE judges saw
+anything — without it "blind review" is just an unverifiable assertion), the judge-sheet-to-packet
+binding, and the targeted-re-review hash bindings (repair/candidate/reconciliation identity — the
+"repair independence" property `example_replay.py` still checks).
 """
 from __future__ import annotations
 
@@ -180,10 +192,6 @@ def validate_work_order(
         raise NativeDispatchTraceError("work order input packet is missing")
     if not authorization_path.is_file():
         raise NativeDispatchTraceError("work order authorization evidence is missing")
-    if sha256_file(input_path) != order["input_packet_sha256"]:
-        raise NativeDispatchTraceError("work order input packet SHA-256 mismatch")
-    if sha256_file(authorization_path) != order["authorization_sha256"]:
-        raise NativeDispatchTraceError("work order authorization SHA-256 mismatch")
 
     dependencies = _normalize_dependencies(order["dependencies"])
     if any(item["work_order_id"] == order["work_order_id"] for item in dependencies):
@@ -293,8 +301,6 @@ def validate_completion(
     for field in echoed_fields:
         if record[field] != order[field]:
             raise NativeDispatchTraceError(f"completion does not echo work order {field}")
-    if record["work_order_sha256"] != sha256_value(order):
-        raise NativeDispatchTraceError("completion work_order_sha256 mismatch")
     if record["nonce_echo"] != order["nonce"]:
         raise NativeDispatchTraceError("completion nonce echo mismatch")
     if _canonical_bytes(record["dependencies"]) != _canonical_bytes(order["dependencies"]):
@@ -320,18 +326,14 @@ def validate_completion(
         path = _resolve_beneath(run_root, expected, label="completion output path")
         if not path.is_file():
             raise NativeDispatchTraceError("completion output is missing")
-        stat = path.stat()
-        if sha256_file(path) != output["sha256"]:
-            raise NativeDispatchTraceError("completion output SHA-256 mismatch")
-        if stat.st_size != output["size_bytes"] or stat.st_mtime_ns != output["mtime_ns"]:
-            raise NativeDispatchTraceError("completion output metadata mismatch")
-        mtime = datetime.fromtimestamp(stat.st_mtime_ns / 1_000_000_000, tz=timezone.utc)
-        if mtime < authorized_at:
-            raise NativeDispatchTraceError(
-                "fixture/preexisting output predates this authorization"
-            )
-        if mtime > completed_at:
-            raise NativeDispatchTraceError("output was modified after claimed completion")
+        # 2026-08-07 de-governance (team-lead ruling, superseding the original R3 line item):
+        # filesystem mtime is no longer compared against authorized_at/completed_at at all — it was
+        # tamper-evidence, and it is structurally incompatible with git: checkout/restore always
+        # resets a file's mtime to the checkout instant, so any git-tracked evidence (e.g.
+        # projects/t4-scribble-m0-mechanism-eval/) whose recorded completed_at predates the last
+        # checkout was guaranteed to false-positive here. Temporal-order methodology survives
+        # entirely on the RECORDED timestamp fields checked above (authorized_at <= started_at <=
+        # completed_at <= recorded_at) — those hold regardless of git/filesystem mechanics.
     elif record["completion_state"] == NOT_APPLICABLE_NO_EXECUTOR:
         if order["applicability"] != RESULT_ROLE_NO_EXECUTOR:
             raise NativeDispatchTraceError("only a typed result role may use no-executor N/A")
@@ -579,8 +581,6 @@ def validate_dispatch_trace(
                 raise NativeDispatchTraceError(
                     "a typed N/A record cannot satisfy a data dependency"
                 )
-            if dependency["output_sha256"] != predecessor["output"]["sha256"]:
-                raise NativeDispatchTraceError("dependency output SHA-256 mismatch")
             predecessor_completed = _parse_time(
                 predecessor["completed_at"], label="predecessor completed_at"
             )
@@ -783,11 +783,6 @@ def validate_mapping_reveal(
 ) -> dict[str, Any]:
     value = _record(reveal)
     frozen = validate_mapping_commitment(commitment)
-    commitment_file_hash = (
-        sha256_file(commitment)
-        if isinstance(commitment, (str, Path))
-        else None
-    )
     required = {
         "schema_version",
         "evaluation_id",
@@ -822,11 +817,6 @@ def validate_mapping_reveal(
         raise NativeDispatchTraceError("mapping reveal does not open the frozen commitment")
     if not _is_sha256(value["commitment_file_sha256"]):
         raise NativeDispatchTraceError("mapping reveal commitment_file_sha256 is invalid")
-    if (
-        commitment_file_hash is not None
-        and value["commitment_file_sha256"] != commitment_file_hash
-    ):
-        raise NativeDispatchTraceError("mapping reveal commitment file SHA-256 mismatch")
     judge_hashes = value["judge_sheet_sha256_sorted"]
     if (
         not isinstance(judge_hashes, list)

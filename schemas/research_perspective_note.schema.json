@@ -4,17 +4,88 @@
   "title": "Research Perspective Note",
   "description": "One independent perspective worker's compressed contribution to a deep_research run. It is a research memo slice, not raw notes.",
   "type": "object",
-  "required": ["perspective_id", "angle", "questions", "finding_summary", "source_refs", "coverage_limits", "actionable_opportunities"],
+  "required": [
+    "perspective_id",
+    "angle",
+    "questions",
+    "finding_summary",
+    "source_refs",
+    "coverage_limits",
+    "actionable_opportunities"
+  ],
   "additionalProperties": false,
   "properties": {
-    "perspective_id": {"type": "string", "minLength": 1, "pattern": "^P[0-9]+$"},
-    "angle": {"type": "string", "minLength": 1},
-    "questions": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}},
-    "finding_summary": {"type": "string", "minLength": 80, "maxLength": 2400},
-    "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-    "coverage_limits": {"type": "array", "items": {"type": "string"}, "default": []},
-    "actionable_opportunities": {"type": "array", "items": {"type": "string"}, "default": []},
-    "kill_criteria": {"type": "array", "items": {"type": "string"}, "default": []},
-    "confidence": {"type": "string", "enum": ["high", "medium", "low"], "default": "medium"}
+    "perspective_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^P[0-9]+$"
+    },
+    "angle": {
+      "type": "string",
+      "minLength": 1
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "finding_summary": {
+      "type": "string",
+      "minLength": 80,
+      "maxLength": 2400
+    },
+    "source_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "coverage_limits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "actionable_opportunities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "kill_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "default": "medium"
+    },
+    "specialized_angle": {
+      "type": "string",
+      "description": "Optional (2026-08-07). The assigned angle specialized to THIS topic in one sentence: what a real specialist holding this angle would care about that a generalist would not — the term they would use, the failure they would expect, the evidence they would demand. The generic label is a starting point; researching the label instead of the specialization is how four perspectives collapse into one."
+    },
+    "expected_disagreement": {
+      "type": "string",
+      "description": "Optional (2026-08-07). One point on which this perspective expects another panel member to disagree substantively, and why it holds its position anyway. Agreement between perspectives is cheap; recorded tension is what makes the synthesis worth reading."
+    },
+    "blind_spot": {
+      "type": "string",
+      "description": "Optional (2026-08-07). What this angle structurally CANNOT see, declared so the synthesizer compensates for it instead of inheriting it."
+    }
   }
 }

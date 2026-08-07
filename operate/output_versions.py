@@ -91,10 +91,14 @@ def _version_stem(node: dict, duplicate_labels: set[str]) -> str:
 
 
 def resolve_effective_output(run_dir: Path, stage: str, logical_path: Path) -> Path:
-    """Return the latest hash-linked completed version of a logical worker output."""
+    """Return the latest completed version of a logical worker output.
+
+    2026-08-07 de-governance: no longer chain/hash-verified — "latest" is simply the physical
+    output of the highest repair-NNN directory (sorted() below) whose plan row is marked
+    completed (has a recorded output_sha256; the field is still written, just no longer compared).
+    """
     root = run_dir / "inbox" / "supplements" / _safe(stage)
     current = logical_path
-    current_hash = sha256(current) if current.is_file() else None
     for plan_file in sorted(root.glob("repair-*/repair-plan.json")) if root.is_dir() else []:
         plan = _read(plan_file)
         for row in plan.get("outputs") or []:
@@ -103,15 +107,7 @@ def resolve_effective_output(run_dir: Path, stage: str, logical_path: Path) -> P
             physical = run_dir / str(row.get("physical_output") or "")
             if not physical.is_file() or not row.get("output_sha256"):
                 continue
-            if row.get("supersedes_sha256") != current_hash:
-                raise ValueError(
-                    f"supplement chain mismatch for {row.get('logical_output')}: "
-                    f"expected {current_hash}, got {row.get('supersedes_sha256')}"
-                )
-            actual = sha256(physical)
-            if actual != row.get("output_sha256"):
-                raise ValueError(f"supplement hash mismatch at {physical}")
-            current, current_hash = physical, actual
+            current = physical
     return current
 
 

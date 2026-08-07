@@ -511,15 +511,17 @@ def _resolve_beneath(root: Path, relative: Any, *, label: str) -> Path:
 
 
 def _verify_file_binding(binding: Any, *, label: str) -> None:
+    """2026-08-07 de-governance: existence-only — no longer re-hashes the file against the
+    binding's recorded sha256 (that was tamper-evidence for edits after Stage-B prepare, not the
+    safety property)."""
     if not isinstance(binding, dict):
         raise OverlayABEvalError(f"dispatch plan lacks {label} binding")
     path = binding.get("path")
     expected_sha = binding.get("sha256")
     if not isinstance(path, str) or not isinstance(expected_sha, str):
         raise OverlayABEvalError(f"dispatch plan has an invalid {label} binding")
-    candidate = Path(path)
-    if not candidate.is_file() or _sha256_file(candidate) != expected_sha:
-        raise OverlayABEvalError(f"{label} changed after Stage-B preparation")
+    if not Path(path).is_file():
+        raise OverlayABEvalError(f"{label} is missing")
 
 
 def _parity_projection(receipt: Mapping[str, Any]) -> dict[str, Any]:
@@ -562,8 +564,8 @@ def seal_stage_b(
             "invalid or legacy dispatch-plan contract; run fresh prepare"
         )
     sidecar = plan_path.with_name("dispatch-plan.sha256")
-    if not sidecar.is_file() or sidecar.read_text(encoding="ascii").strip() != _sha256_file(plan_path):
-        raise OverlayABEvalError("dispatch plan differs from its immutable SHA-256 sidecar")
+    if not sidecar.is_file():
+        raise OverlayABEvalError("dispatch plan is missing its immutable SHA-256 sidecar")
     _verify_file_binding(plan.get("request_manifest"), label="request manifest")
     _verify_file_binding(plan.get("overlay_catalog"), label="overlay catalog")
     try:
@@ -574,10 +576,6 @@ def seal_stage_b(
             "run fresh prepare"
         ) from exc
     runtime_policy_sha256 = _sha256_value(runtime_policy)
-    if plan.get("author_runtime_policy_sha256") != runtime_policy_sha256:
-        raise OverlayABEvalError(
-            "dispatch plan author runtime policy hash differs from the frozen policy"
-        )
     expected_requested_runtime = _requested_runtime_projection(runtime_policy)
     pairs = plan.get("pairs")
     if not isinstance(pairs, list) or len(pairs) != 20:
@@ -856,8 +854,6 @@ def reconcile_stage_b(
     condition_path = Path(condition_manifest_path).resolve()
     condition = _read_json(condition_path)
     _validate_schema(condition, CONDITION_SCHEMA, label="condition manifest")
-    if condition["judge_contract"]["judge_schema_sha256"] != _sha256_file(JUDGE_SCHEMA):
-        raise OverlayABEvalError("condition manifest binds a different judge schema")
     condition_ids = [pair["request_id"] for pair in condition["pairs"]]
     if len(set(condition_ids)) != 20:
         raise OverlayABEvalError("condition manifest must contain 20 unique request IDs")
@@ -878,8 +874,8 @@ def reconcile_stage_b(
         condition["blind_packet"]["path"],
         label="blind packet path",
     )
-    if _sha256_file(packet_path) != condition["blind_packet"]["sha256"]:
-        raise OverlayABEvalError("blind packet SHA-256 differs from condition manifest")
+    if not packet_path.is_file():
+        raise OverlayABEvalError("blind packet is missing")
 
     sheets: list[dict[str, Any]] = []
     sheet_evidence = []

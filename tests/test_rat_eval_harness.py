@@ -125,7 +125,9 @@ def test_tampered_vault_write_fails_required_machine_check(tmp_path):
 
 def test_tampered_spec_only_intent_membership_fails(tmp_path):
     catalog = build_capability_catalog()
-    mode = next(row for row in catalog["modes"] if row["mode"] == "design_experiment")
+    # exemplar swapped 2026-08-04: design_experiment is operated now, and this check is
+    # about a SPEC-ONLY mode being smuggled into a default tier.
+    mode = next(row for row in catalog["modes"] if row["mode"] == "tree_explore")
     mode["intents"] = [{"intent": "fake_default", "tier": "core"}]
     scorecard = build_scorecard(
         capability_catalog=catalog,

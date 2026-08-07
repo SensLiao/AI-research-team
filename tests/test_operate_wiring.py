@@ -28,7 +28,16 @@ EXPECTED_WIRED = {"new_direction", "deep_ideation", "evidence_review", "evidence
                   # paper-reading upgrade (2026-06-26): the single-paper reading family
                   "ingest_paper", "read_paper_deep",
                   # independent authoring and review are separate one-button products.
-                  "manuscript_authoring", "manuscript_review"}
+                  "manuscript_authoring", "manuscript_review",
+                  # wave 2 (2026-08-04): every mode that is not STRUCTURALLY manual is now
+                  # one-button. Nothing manual moved — the four human gates, GPU submission and
+                  # patch application are unchanged; these recipes stop AT those boundaries.
+                  "gap_scan", "full_new_direction", "design_experiment", "power_analysis_review",
+                  "m2_accept", "analysis_audit_panel", "verify_result", "check_run",
+                  "repo_code_audit",
+                  # wave-2 backlog closed (2026-08-07): the last two modules had recipes written
+                  # but no tests, so they were deliberately left unregistered until now.
+                  "ideate_ring", "aers_enhanced_research_pack"}
 
 
 def test_operated_flags_mirror_the_registry_exactly():

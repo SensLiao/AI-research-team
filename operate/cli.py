@@ -104,7 +104,7 @@ def _mode_from_run(runs_dir: str, run_id: str) -> str:
 
 def _policy_from_run(runs_dir: str, run_id: str) -> str:
     tf = json.loads((Path(_run_dir(runs_dir, run_id)) / "task_frame.artifact.json").read_text(encoding="utf-8"))
-    return tf["payload"].get("model_policy", "max_quality")
+    return tf["payload"].get("model_policy", "default")
 
 
 def _north_star_from_args(a) -> dict:
@@ -232,6 +232,14 @@ def cmd_begin(a) -> None:
             plan["run_dir"], upstream, downstream_mode=mode
         )
         runstore.pin_upstream_grounding(plan["run_dir"], grounding_path, ts)
+        unchained = None
+    else:
+        # No --upstream-run. Legal, and sometimes deliberate — but a mode that declares
+        # `handoff.accepts` is registry-documented as designed to consume a prior run, and starting it
+        # bare is usually an oversight whose cost only surfaces later, when the product turns out to
+        # contradict a finding it never read. Say so HERE, while re-beginning is still cheap, and name
+        # the completed runs it would have accepted. Advisory only: chaining is the director's call.
+        unchained = research_plan.unchained_upstream_advisory(a.runs_dir, a.project, mode)
     # Source-bound evidence review must freeze its load-bearing primary
     # sources before even the first panel seat is released.
     preflight_required = bool(
@@ -256,6 +264,8 @@ def cmd_begin(a) -> None:
                                "concrete runtime fields are optional deployment bindings.")
     if upstream:
         out["upstream_runs"] = upstream
+    elif unchained:
+        out["upstream_advisory"] = unchained
     if hasattr(mod, "pre_search"):
         out["pre_search_note"] = ("RECOMMENDED next: `pre-search --run-id " + run_id + "` — grounds "
                                   "novelty/evidence in live literature BEFORE spawning the worker "
@@ -336,6 +346,16 @@ def cmd_pre_search(a) -> None:
         sys.exit(2)
     bundle_path = fn(rd, request, ts, queries=a.query)
     bundle = json.loads(Path(bundle_path).read_text(encoding="utf-8"))
+    # C1 (2026-08-07): a non-Latin request with no explicit --query is refused before any live call —
+    # search engines silently mistranslate/misparse a raw CJK etc. sentence, which is retrieval
+    # poisoning by omission. _shared.pre_search records the refusal as this field instead of records[].
+    language_block = bundle.get("query_language_block")
+    if language_block:
+        _emit({"run_id": a.run_id, "bundle": bundle_path, "query_language_block": language_block,
+               "note": "pre-search refused: non-Latin request with no --query supplied. Direct search "
+                       "on the raw request would silently mistranslate/misparse — pass explicit "
+                       "--query terms (see required_action) and call pre-search again."})
+        sys.exit(2)
     _emit({"run_id": a.run_id, "bundle": bundle_path,
            "n_records": len(bundle.get("records") or []),
            "queries": bundle.get("queries") or [],
@@ -433,18 +453,31 @@ def cmd_run_dets(a) -> None:
         else:
             paths, report = mod.run_dets(rd, a.stage, ts)
     except GateBlock as gb:
-        hard = not isinstance(gb, TargetedGateBlock) or gb.verdict == "BLOCK"
-        if hard:
+        # 2026-08-07 de-governance (R3 A4): most plain (non-targeted) GateBlocks used to be hash/receipt
+        # tamper-evidence noise, not a real content defect. Only a TargetedGateBlock with an explicit
+        # BLOCK verdict is still terminal; a plain GateBlock now just halts THIS call — fix the flagged
+        # inbox/ input and call run-dets again, no director reopen ceremony needed.
+        targeted = isinstance(gb, TargetedGateBlock)
+        terminal = targeted and gb.verdict == "BLOCK"
+        if terminal:
             _manifest, packet = _record_hard_gate_failure(rd, a.stage, str(gb), ts)
+            gate, delivery, run_status = "BLOCK", "BLOCK", "failed"
+        elif targeted:
+            packet = write_packet(rd, generated_at=ts)
+            gate, delivery, run_status = "NEEDS_SUPPLEMENT", "USABLE_WITH_CAVEATS", "running"
         else:
             packet = write_packet(rd, generated_at=ts)
-        _emit({"run_id": a.run_id, "stage": a.stage, "halted": hard,
-               "gate": "BLOCK" if hard else "NEEDS_SUPPLEMENT", "reason": str(gb),
-               "delivery_status": "BLOCK" if hard else "USABLE_WITH_CAVEATS",
-               "run_status": "failed" if hard else "running",
+            gate, delivery, run_status = "STAGE_HALTED", "USABLE_WITH_CAVEATS", "running"
+        _emit({"run_id": a.run_id, "stage": a.stage, "halted": True,
+               "gate": gate, "reason": str(gb),
+               "delivery_status": delivery,
+               "run_status": run_status,
                "director_review_packet": str(packet),
-               "note": "The current readable result remains available. Only truth, safety, execution, or "
-                       "permission failures are hard blocks; other gaps remain explicit supplements."})
+               "note": ("The current readable result remains available. Only truth, safety, execution, or "
+                        "permission failures are hard blocks; other gaps remain explicit supplements."
+                        if targeted else
+                        "The current readable result remains available. Fix the flagged inbox/ input, "
+                        "then call run-dets again for this stage — nothing here was recorded as failed.")})
         sys.exit(3)
     except BudgetExceeded as be:
         _emit({"run_id": a.run_id, "stage": a.stage, "halted": True, "budget_stop": True, "reason": str(be),
@@ -487,6 +520,34 @@ def cmd_commit(a) -> None:
         res["pause_note"] = ("DIRECTOR GATE — do NOT proceed without the director. Review the product at this "
                              "configured decision boundary and let the director approve, reject, or pivot.")
     _emit(res)
+
+
+def cmd_reopen(a) -> None:
+    """Director-only reopen of ONE hard-gate-failed run (D8). Never model-invocable."""
+    if a.confirm != a.run_id:
+        _emit({"run_id": a.run_id, "reopened": False,
+               "error": f"--confirm must be typed as the exact run id {a.run_id!r}",
+               "note": "Reopening a failed run is a director action; the typed confirmation is the gate."})
+        sys.exit(2)
+    rd = _run_dir(a.runs_dir, a.run_id)
+    ts = a.ts or _ts()
+    digest = [
+        {"path": p.name, "sha256": runstore.hash_file(p)}
+        for p in sorted(Path(rd).glob("inbox/*.bundle.json"))
+    ]
+    try:
+        m = runstore.reopen_failed_run(rd, a.reason, "director", ts, inbox_digest=digest)
+    except (RuntimeError, ValueError, PermissionError) as exc:
+        _emit({"run_id": a.run_id, "reopened": False, "error": str(exc)})
+        sys.exit(2)
+    _emit({"run_id": a.run_id, "reopened": True, "status": m["status"],
+           "reopened_from": (m.get("failure_history") or [])[-1],
+           "inbox_digest_size": len(digest),
+           "note": ("DIRECTOR REOPEN recorded as a hash-chained run_reopened event. The original "
+                    "run_failed event is UNCHANGED and the failure moved to failure_history — this "
+                    "run is permanently marked as having failed and been reopened. Nothing is "
+                    "approved: the stage must pass its deterministic gates again, and if the defect "
+                    "was not really repaired the same gate fails it again. One reopen per failure.")})
 
 
 def cmd_reject(a) -> None:
@@ -612,22 +673,37 @@ def cmd_plan_propose(a) -> None:
 # the work (scan the knowledge base, propose the route, name the human gates) and a progress report
 # AFTER it. Both are deterministic and read-only: `brief` starts no run, `report` changes no run.
 
+def _status_bar(project, runs_dir):
+    """Director lock 2026-08-04: every card and every report ends with the same five-line bar, so
+    「现在该我按哪个按钮」 is never something the director has to go looking for. Read-only, index-free,
+    and never allowed to break its host report — a navigation aid that can fail a report is a bug."""
+    try:
+        return reporting.render_bar(reporting.build_state(project, runs_root=runs_dir))
+    except Exception as exc:  # noqa: BLE001 - the bar is an aid; the report is the product
+        return f"（状态栏这次没算出来：{exc}）"
+
+
 def cmd_brief(a) -> None:
     data, markdown = reporting.brief(
         a.request, project=a.project, intent=a.intent,
         vault_root=a.vault, projects_root=a.projects_dir, runs_dir=a.runs_dir)
     if a.json:
-        _emit(data)
+        _emit({**data, "status_bar": _status_bar(a.project, a.runs_dir)})
     else:
         print(markdown)
+        print("\n" + _status_bar(a.project, a.runs_dir))
 
 
 def cmd_report(a) -> None:
-    data, markdown = reporting.report(_run_dir(a.runs_dir, a.run_id))
+    run_dir = _run_dir(a.runs_dir, a.run_id)
+    data, markdown = reporting.report(run_dir)
+    project = (data.get("project") or (data.get("task_frame") or {}).get("project")
+               or Path(run_dir).parent.name)
     if a.json:
-        _emit(data)
+        _emit({**data, "status_bar": _status_bar(project, a.runs_dir)})
     else:
         print(markdown)
+        print("\n" + _status_bar(project, a.runs_dir))
 
 
 # --------------------------------------------------------------------------- execution granularity (W4)
@@ -891,10 +967,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "runs/<project>/<run_id>/ and creates projects/<project>/ on first use")
     b.add_argument("--run-id", default=None)
     b.add_argument("--profile", default=None, help="domain_profile_ref (pointer, recorded for provenance)")
-    b.add_argument("--model-policy", default="max_quality", choices=["default", "max_quality"],
-                   help="research runs default to max_quality: all reasoning seats request frontier "
-                        "capability from whichever runtime is available; pass --model-policy default "
-                        "for a mixed strong/frontier workload profile")
+    b.add_argument("--model-policy", default="default", choices=["default", "max_quality"],
+                   help="default (task-appropriate) routes each seat by its declared tier: judgment, "
+                        "ideation and experiment/protocol design get frontier capability, while "
+                        "writing, fixed-shape rendering and code execution get the strong tier. "
+                        "Pass --model-policy max_quality only on the director's explicit 全 OPUS.")
     b.add_argument("--north-star", default=None,
                    help="the run's ONE-sentence direction contract (defaults to the request verbatim); "
                         "pinned immutably + hash-chained; every stage is drift-gated against it")
@@ -960,6 +1037,17 @@ def build_parser() -> argparse.ArgumentParser:
     rj.add_argument("--stage", required=True)
     rj.add_argument("--reason", default=None)
     rj.set_defaults(func=cmd_reject)
+
+    ro = sub.add_parser("reopen", parents=[common],
+                        help="DIRECTOR-ONLY: reopen one hard-gate-failed run after its worker output "
+                             "was repaired; typed --confirm <run-id> required; the failure is kept, "
+                             "never erased, and the stage must pass its gates again")
+    ro.add_argument("--run-id", required=True)
+    ro.add_argument("--confirm", required=True,
+                    help="must equal the run id exactly (typed director confirmation)")
+    ro.add_argument("--reason", required=True,
+                    help="what was repaired, and how it was verified")
+    ro.set_defaults(func=cmd_reopen)
 
     ap = sub.add_parser("approve", parents=[common],
                         help="record director approval at a human gate; releases work or completes a final gate")

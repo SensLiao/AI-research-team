@@ -182,8 +182,9 @@ def validate_section_bundle(bundle_ref: str, *, run_root: str | Path,
     errors = validate_payload("manuscript_section_bundle", bundle)
     if errors:
         _fail("SECTION_BUNDLE_INVALID", "; ".join(errors[:5]), bundle_ref)
-    if _hash_without(bundle, "content_hash") != bundle["content_hash"]:
-        _fail("BUNDLE_CONTENT_HASH_MISMATCH", "section content hash does not verify", bundle_ref)
+    # 2026-08-07 de-governance: content_hash self-consistency removed (tamper-evidence, not the
+    # safety property). manuscript_snapshot_sha256 below stays — it binds the bundle to THIS frozen
+    # contract, not a stale one (a referential/binding check).
     if bundle["manuscript_snapshot_sha256"] != contract["manuscript_snapshot_sha256"]:
         _fail("STALE_BUNDLE", "section bundle targets a different frozen manuscript", bundle_ref)
     if bundle["section_id"] != assignment["section_id"]:
@@ -292,8 +293,8 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
     errors = validate_payload("manuscript_asset_manifest", value)
     if errors:
         _fail("ASSET_MANIFEST_INVALID", "; ".join(errors[:5]))
-    if _hash_without(value, "manifest_sha256") != value["manifest_sha256"]:
-        _fail("ASSET_MANIFEST_HASH_MISMATCH", "asset manifest hash does not verify")
+    # 2026-08-07 de-governance: manifest_sha256 self-consistency removed (metadata-record tamper-
+    # evidence, not the safety property; schema validation above still gates structure).
 
     files: dict[str, bytes] = {}
     seen_ids: set[str] = set()
@@ -317,8 +318,9 @@ def _asset_files(manifest: Mapping[str, Any] | None, *, contract: dict[str, Any]
             _fail("ASSET_OUTPUT_PATH_INVALID", "asset output is outside its canonical directory", output_path)
         if output["owner_run_id"] != contract["run_id"]:
             _fail("ASSET_OWNER_MISMATCH", "asset output is owned by another run", asset_id)
-        if _hash_without(asset, "asset_record_sha256") != asset["asset_record_sha256"]:
-            _fail("ASSET_RECORD_HASH_MISMATCH", "asset record hash does not verify", asset_id)
+        # 2026-08-07 de-governance: asset_record_sha256 self-consistency removed (metadata-record
+        # tamper-evidence, not the safety property). The actual asset BYTES are still verified
+        # against their claimed provenance further below (left untouched — see report).
         if not set(asset["claim_refs"]).issubset(claims) or not set(
             asset["result_refs"]
         ).issubset(results):

@@ -49,6 +49,10 @@
       "pattern": "\\S",
       "description": "The concrete result that would FALSIFY the idea (e.g. 'no Dice gain over the frozen-encoder baseline at matched compute'). Non-blank — an idea with no falsifier is not yet testable."
     },
+    "discriminating_evidence": {
+      "type": "string",
+      "description": "Optional (2026-08-07). Which TWO competing mechanisms this design tells apart, and the observation that separates them — the difference between a decisive experiment and a demonstration. For a genuinely single-mechanism idea it instead states what a failure would point to. 'The metric goes up' is not discriminating evidence; it names no mechanism."
+    },
     "next_branch": {
       "type": "string",
       "description": "Optional: what to try next if this experiment fails (the recovery branch)."

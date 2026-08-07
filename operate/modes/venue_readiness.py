@@ -266,7 +266,7 @@ def _meta_worker(run_dir: str, request: str, model: str, precommit: dict,
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     """Return only the next legal worker wave; future-wave prompts stay unavailable."""
     if stage != "VERIFY":
         return None

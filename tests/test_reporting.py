@@ -163,22 +163,28 @@ def test_briefing_starts_no_run(tmp_path):
 
 # --------------------------------------------------------------------------- progress
 
-def _fake_run(tmp_path: Path, *, status: str, with_product: bool) -> Path:
+def _fake_run(tmp_path: Path, *, status: str, with_product: bool,
+              mode: str = "evidence_review", pending_gates: list[str] | None = None,
+              with_report_note: bool = True) -> Path:
     root = tmp_path / "run-1"
     (root / "evidence" / "REPORT").mkdir(parents=True)
-    (root / "manifest.yaml").write_text(yaml.safe_dump({
-        "run_id": "run-1", "mode": "evidence_review", "project": "demo",
+    manifest: dict = {
+        "run_id": "run-1", "mode": mode, "project": "demo",
         "status": status,
         "completed_work": [{"stage": "DISCOVER"}],
-    }, sort_keys=False), encoding="utf-8")
+    }
+    if pending_gates is not None:
+        manifest["pending_gates"] = pending_gates
+    (root / "manifest.yaml").write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
     (root / "task_frame.artifact.json").write_text(json.dumps({
-        "payload": {"mode": "evidence_review", "project": "demo",
+        "payload": {"mode": mode, "project": "demo",
                     "request_text": "评一下证据",
                     "stage_path": ["DISCOVER", "REPORT"]},
     }), encoding="utf-8")
-    (root / "evidence" / "REPORT" / "report-note.artifact.json").write_text(json.dumps({
-        "payload": {"summary": "两篇来源支持结论。", "cannot_claim": ["还不能说方法更好"]},
-    }, ensure_ascii=False), encoding="utf-8")
+    if with_report_note:
+        (root / "evidence" / "REPORT" / "report-note.artifact.json").write_text(json.dumps({
+            "payload": {"summary": "两篇来源支持结论。", "cannot_claim": ["还不能说方法更好"]},
+        }, ensure_ascii=False), encoding="utf-8")
     if with_product:
         product = root / "director-review" / "evidence"
         product.mkdir(parents=True)
@@ -209,10 +215,45 @@ def test_progress_says_when_the_product_is_missing(tmp_path):
     assert "不能当交付物" in text
 
 
-def test_progress_flags_a_run_waiting_on_the_director(tmp_path):
-    data = progress.build_progress(_fake_run(tmp_path, status="awaiting", with_product=True))
+@pytest.mark.parametrize("status", ["awaiting", "awaiting_director"])
+def test_progress_flags_a_run_waiting_on_the_director(tmp_path, status):
+    """Both spellings must work — `awaiting_director` is the one the engine actually writes.
+
+    Regression, found by the first real `new_direction` run (2026-08-04): the report layer
+    compared against `"awaiting"`, a status `operate/spine.py` never writes, so the one
+    sentence the director most needs ("this is yours to sign") was dead code on the live path,
+    and the test that was supposed to protect it passed against a fictional status.
+    """
+    data = progress.build_progress(_fake_run(tmp_path, status=status, with_product=True))
     text = progress.render_progress(data)
     assert "必须你点头" in text
+
+
+def test_progress_names_the_gate_the_director_must_press(tmp_path):
+    """"Waiting on you" is useless without WHICH button. The gate is derived, never hand-typed."""
+    root = _fake_run(tmp_path, status="awaiting_director", with_product=True,
+                     mode="new_direction", pending_gates=["IDEATE"])
+    text = progress.render_progress(progress.build_progress(root))
+    assert "/idea-bet" in text, "a gate-paused run must name its gate, not just say it is paused"
+
+
+def test_a_paused_run_never_reports_a_bare_status_code(tmp_path):
+    """An internal enum reaching the director is the exact failure this layer exists to prevent."""
+    root = _fake_run(tmp_path, status="awaiting_director", with_product=True,
+                     mode="new_direction", pending_gates=["IDEATE"])
+    text = progress.render_progress(progress.build_progress(root))
+    assert "awaiting_director" not in text
+
+
+def test_a_paused_run_headline_says_what_is_waiting(tmp_path):
+    """No REPORT note exists yet at a mid-run gate; the headline must still carry information."""
+    root = _fake_run(tmp_path, status="awaiting_director", with_product=True,
+                     mode="new_direction", pending_gates=["IDEATE"], with_report_note=False)
+    data = progress.build_progress(root)
+    assert not data["summary"], "fixture sanity: a gate-paused run has no REPORT summary yet"
+    headline = progress.render_progress(data).split("## 2.")[0]
+    assert "还没写出结论" not in headline, (
+        "a run paused at a human gate has a real state to report, not a blank")
 
 
 def test_progress_never_writes_to_the_run(tmp_path):
@@ -236,10 +277,13 @@ def test_an_unfinished_run_is_never_reported_as_finished(tmp_path, status):
 # two checks are ARCHITECTURE checks — they assert the entry docs name the real modes, not that they
 # use particular wording or length.
 
+#: `.claude/CLAUDE.md` was deliberately REMOVED from this list on 2026-08-04: the director slimmed it to
+#: rules and pointers only ("内容太乱，需要精简，留下规定需要的内容"), so it is no longer an inventory
+#: surface and now points at `operate brief` for the live mode split. The anti-drift discipline is
+#: unchanged — it is enforced on the documents whose job actually IS enumeration.
 _ENTRY_DOCS = (
     ".agents/skills/research-orchestrator/SKILL.md",
     ".claude/skills/research-orchestrator/SKILL.md",
-    ".claude/CLAUDE.md",
     ".claude/commands/run-mode.md",
 )
 

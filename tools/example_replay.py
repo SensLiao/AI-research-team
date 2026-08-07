@@ -2,17 +2,23 @@
 
 **What this is, stated before anything else.** It is a REPLAY, not a re-run. It calls no model,
 opens no network, touches no GPU, and dispatches no sub-agent. It takes the artifacts a recorded
-collaboration left on disk and re-derives them: every declared ``path`` → ``sha256`` binding is
-recomputed from the file, the council bundle is recompiled from the recorded contributions by the
-CURRENT code, the three-judge reconciliation is recomputed from the recorded sheets, and the
+collaboration left on disk and re-derives them: dispatch is checked for completion/failure existence
+and ordering, the council bundle is recompiled from the recorded contributions by the CURRENT code
+and compared semantically (compiled_chain / conflicts / contribution_receipts content, not a whole-
+bundle digest), the three-judge reconciliation is recomputed from the recorded sheets, and the
 blind-mapping and repair orderings are re-checked. The verdict is stamped
 :data:`REPLAY_STATUS` — never ``EXECUTED``.
 
 **Why a replay is worth more than the tests that already exist.** ``tests/test_t4_*`` pin *this*
-example's specific ids, hashes and verdicts, so they answer "did anyone edit the example?". The
-replay answers a different question: "is the recorded run still internally consistent, and does the
-code that produced it still produce it?" It discovers the chain from disk instead of hardcoding it,
-so it survives the example changing, and it fails loudly if a single recorded byte moves.
+example's specific ids and verdicts, so they answer "did anyone edit the example?". The replay
+answers a different question: "is the recorded run still internally consistent, and does the code
+that produced it still produce it?" It discovers the chain from disk instead of hardcoding it, so it
+survives the example changing.
+
+2026-08-07 de-governance: this module no longer recomputes a digest for every declared path→sha256
+pair or the compile bundle as a whole (that stage — the tamper-evidence core — was deleted whole,
+6 stages -> 5). What is left still fails for a substantive reason: a fabricated completion, a
+blind-review timeline violation, a non-independent repair review, or a dropped truth-boundary claim.
 
 Deliberately NOT here: any path that could turn a design-only example into a result. If the recorded
 example says ``DESIGN_ONLY``, the replay says ``DESIGN_ONLY``.
@@ -35,9 +41,6 @@ DEFAULT_PROJECT = _PKG_ROOT / "projects" / "t4-scribble-m0-mechanism-eval"
 #: The only status this module may emit. A recorded run is evidence that the CONTRACTS operated; it
 #: is never evidence that anything was executed, measured, or scientifically established.
 REPLAY_STATUS = "REPLAY_OF_RECORDED_RUN"
-
-#: Keys under which a recorded artifact declares the digest of a file it names.
-_HASH_KEYS = ("sha256", "file_sha256")
 
 
 class ExampleReplayError(ValueError):
@@ -78,103 +81,7 @@ def _check(name: str, ok: bool, detail: str) -> dict[str, Any]:
     return {"name": name, "ok": bool(ok), "detail": detail}
 
 
-def _walk_bindings(value: Any, out: list[tuple[str, str, str]]) -> None:
-    """Collect every (declared path, declared digest, which key) pair, at any depth."""
-    if isinstance(value, Mapping):
-        declared = value.get("path")
-        if isinstance(declared, str):
-            for key in _HASH_KEYS:
-                digest = value.get(key)
-                if isinstance(digest, str) and len(_bare(digest)) == 64:
-                    out.append((declared, digest, key))
-        for item in value.values():
-            _walk_bindings(item, out)
-    elif isinstance(value, list):
-        for item in value:
-            _walk_bindings(item, out)
-
-
 # --------------------------------------------------------------------------------- the stages
-
-def _deliberately_stale(project: Path) -> set[tuple[Path, str]]:
-    """Digests a recorded abort says were ALREADY WRONG when the worker checked them.
-
-    One of this example's honesty records is a worker that stopped because the file it was dispatched
-    against no longer matched its packet (``SOURCE_HASH_MISMATCH_AFTER_DISPATCH``). The stale digest
-    is preserved on purpose — in the abort record and in the superseded packet that caused it. A
-    replay that demanded every recorded digest still match would report the *finding* as a defect.
-
-    So these pairs get the INVERSE assertion: they must still fail to match. Erasing the recorded
-    mismatch — "fixing" the example — then breaks the replay, which is the point. Derived from the
-    failure records themselves, never a hardcoded allowlist.
-    """
-    stale: set[tuple[Path, str]] = set()
-    failures = project / "native-eval" / "failures"
-    if not failures.is_dir():
-        return stale
-    for path in sorted(failures.glob("*.json")):
-        row = _json(path)
-        if not str(row.get("reason_code") or "").endswith("_MISMATCH_AFTER_DISPATCH"):
-            continue
-        block = row.get("expected") or {}
-        declared, digest = block.get("path"), block.get("sha256")
-        if not (isinstance(declared, str) and isinstance(digest, str)):
-            continue
-        target = _resolve(project, declared)
-        if target is not None:
-            stale.add((target, _bare(digest)))
-    return stale
-
-
-def _stage_bindings(project: Path) -> dict[str, Any]:
-    """Every recorded path→digest binding, recomputed from the bytes on disk.
-
-    This is the tamper-detecting core: one edited byte anywhere the example points at breaks it.
-    """
-    bindings: list[tuple[str, str, str]] = []
-    for path in sorted(project.rglob("*.json")):
-        try:
-            _walk_bindings(_json(path), bindings)
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            continue
-    stale = _deliberately_stale(project)
-    checks: list[dict[str, Any]] = []
-    unresolved: list[str] = []
-    mismatched: list[str] = []
-    healed: list[str] = []
-    verified = 0
-    stale_confirmed = 0
-    for declared, digest, key in sorted(set(bindings)):
-        target = _resolve(project, declared)
-        if target is None:
-            unresolved.append(declared)
-            continue
-        actual = native.sha256_file(target)
-        expected = _bare(digest)
-        if (target, expected) in stale:
-            if actual == expected:
-                healed.append(f"{declared}（记录说这个哈希当时就已经对不上了，现在却对上了）")
-            else:
-                stale_confirmed += 1
-        elif actual != expected:
-            mismatched.append(f"{declared} ({key}: 记录 {expected[:12]}… 实际 {actual[:12]}…)")
-        else:
-            verified += 1
-    checks.append(_check("每条 path→哈希 绑定都用磁盘上的字节重算过",
-                         not mismatched and verified > 0,
-                         f"{verified} 条重算一致"
-                         + (f"，{len(mismatched)} 条不一致：{'；'.join(mismatched)}" if mismatched else "")))
-    checks.append(_check("被引用的文件都还在",
-                         not unresolved,
-                         "全部找到" if not unresolved else f"找不到 {len(unresolved)} 个：{unresolved}"))
-    if stale or healed:
-        checks.append(_check("那次「派发后发现源文件已变」的失败记录仍然成立（旧哈希仍然对不上）",
-                             not healed and stale_confirmed > 0,
-                             f"{stale_confirmed} 条刻意保留的旧哈希，仍然对不上 —— 失败记录没被抹掉"
-                             if not healed else "；".join(healed)))
-    return {"stage": "① 记录的哈希绑定", "checks": checks,
-            "verified_bindings": verified, "stale_bindings_confirmed": stale_confirmed}
-
 
 def _stage_dispatch(project: Path) -> dict[str, Any]:
     """Work orders, their completions, and the two recorded failures that produced nothing."""
@@ -198,9 +105,6 @@ def _stage_dispatch(project: Path) -> dict[str, Any]:
             recorded = completions.get(upstream)
             if recorded is None:
                 broken_deps.append(f"{order_id} 依赖 {upstream}，但没有它的完成记录")
-            elif _bare(dependency.get("output_sha256", "")) != _bare(
-                    recorded.get("output", {}).get("sha256", "")):
-                broken_deps.append(f"{order_id} 记的 {upstream} 输出哈希和该完成记录不符")
 
     leaked: list[str] = []
     for failure_id, failure in failures.items():
@@ -216,8 +120,8 @@ def _stage_dispatch(project: Path) -> dict[str, Any]:
                not unmatched, f"{len(orders)} 条工单 · {len(completions)} 条完成 · "
                               f"{len(failures)} 条失败"
                               + (f"；无归属：{unmatched}" if unmatched else "")),
-        _check("下游工单记的上游输出哈希，和上游完成记录一致",
-               not broken_deps, f"{dependency_edges} 条依赖边全部对上"
+        _check("下游工单声明的每条上游依赖都能解析到一份完成记录",
+               not broken_deps, f"{dependency_edges} 条依赖边全部有完成记录对应"
                                 if not broken_deps else "；".join(broken_deps)),
         _check("被放弃/中止的工单确实什么都没产出",
                not leaked, f"{len(failures)} 条失败记录，没有一条留下产物"
@@ -256,12 +160,22 @@ def _stage_compile(project: Path) -> dict[str, Any]:
                              f"重新编译被拒：{exc}"))
         return {"stage": "③ 议会编译可复现", "checks": checks}
 
-    identical = native.sha256_value(rebuilt) == native.sha256_value(recorded)
-    checks.append(_check("现在的代码能从记录的贡献重新编译出**字节相同**的 bundle", identical,
-                         "重新编译结果与记录完全一致" if identical
-                         else "重新编译结果与记录不一致 —— 要么贡献被改过，要么编译逻辑变了"))
+    # 2026-08-07 de-governance: compare the three load-bearing fields' actual content, not a
+    # whole-bundle digest — a semantically-identical recompile, not a byte-identical one.
+    same_chain = rebuilt.get("compiled_chain") == recorded.get("compiled_chain")
+    same_conflicts = rebuilt.get("conflicts") == recorded.get("conflicts")
     receipts_match = [r for r in recorded["contribution_receipts"]] == \
                      [r for r in rebuilt["contribution_receipts"]]
+    identical = same_chain and same_conflicts and receipts_match
+    mismatched = [label for label, same in (("compiled_chain", same_chain),
+                                            ("conflicts", same_conflicts),
+                                            ("contribution_receipts", receipts_match)) if not same]
+    checks.append(_check("现在的代码能从记录的贡献重新编译出**语义相同**的 bundle"
+                         "（比 compiled_chain / conflicts / contribution_receipts 内容，不比整包哈希）",
+                         identical,
+                         "重新编译结果与记录完全一致" if identical
+                         else f"重新编译结果与记录不一致（{'、'.join(mismatched)}）—— "
+                              "要么贡献被改过，要么编译逻辑变了"))
     checks.append(_check("六席的哈希回执就是这六份贡献正文算出来的", receipts_match,
                          f"{len(recorded['contribution_receipts'])} 条回执逐条重算一致"
                          if receipts_match else "回执与贡献正文不符"))
@@ -436,8 +350,10 @@ def replay(project: str | Path = DEFAULT_PROJECT) -> dict[str, Any]:
         raise ExampleReplayError(
             f"no recorded example at {root} — this project's durable workspace is not on disk"
         )
+    # 2026-08-07 de-governance: the path->hash binding stage (was "①") is gone; the remaining
+    # 5 stages keep their original ordinals (② through ⑥) rather than renumber, so the gap is
+    # visible as a deliberate removal, not a silent shift.
     stages = [
-        _stage_bindings(root),
         _stage_dispatch(root),
         _stage_compile(root),
         _stage_blind_review(root),

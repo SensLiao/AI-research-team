@@ -58,9 +58,20 @@
             "enum": ["exact_permutation", "mc_permutation", null],
             "default": null,
             "description": "OPTIONAL. Which permutation method produced p_value: exact (n<=12, all 2^n sign flips) or seeded Monte Carlo."
+          },
+          "source_ref": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "R3 C4 (2026-08-07). OPTIONAL. Run-relative path where this exact finding is written, when the producer transcribed it from another artifact rather than computing it directly (e.g. an analysis-audit-panel seat reading an externally-produced result). Grounding, not a hash — a human-readable pointer to where the number came from."
           }
         }
       }
+    },
+    "sources_read": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "R3 C4 (2026-08-07). OPTIONAL. Run-relative paths the producer actually read while assembling this result_summary. Preserves grounding that would otherwise be silently dropped when only findings[].metric/value/condition_id are consumed downstream."
     },
     "caveats": {"type": "array", "items": {"type": "string"}, "default": []},
     "can_cite_thesis": {"type": "boolean", "const": false},

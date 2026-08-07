@@ -5,8 +5,10 @@ But that core (a) had NO runnable entrypoint — only tests called it; (b) trust
 instead of reading the candidate's REFERENCED audit artifacts and verifying their sha256; and (c) wrote the
 vault page + index + log but never the run ledger. This module closes all three:
 
-  load_and_verify_signals(candidate, base_dir) — read each referenced audit, verify its file sha256 == the
-      candidate's ref (fail-closed on mismatch / missing / out-of-run-dir path), schema-validate, extract.
+  load_and_verify_signals(candidate, base_dir) — read each referenced audit (fail-closed on missing /
+      out-of-run-dir path / bad JSON / schema), schema-validate, extract. 2026-08-07 de-governance: no
+      longer re-verifies the file's sha256 against the candidate's ref — that was tamper-evidence, not
+      the safety property (path fencing + schema conformance still are).
   run_promote_gate(...) — read+verify -> promote_to_vault -> append a tamper-evident `promote` ledger event.
 
 WORKERS CAN NEVER SELF-PROMOTE. Authorization is granted either by an exact legacy environment value or
@@ -82,12 +84,16 @@ def authorization_basis(*, explicit_director_command: bool, external_authorized:
 
 
 def load_and_verify_signals(candidate: dict, base_dir) -> Tuple[dict, List[str]]:
-    """Read the candidate's REFERENCED audit artifacts (never the caller's word), verify each file's sha256
-    matches the candidate ref, fence the path inside base_dir, schema-validate, then extract_signals.
+    """Read the candidate's REFERENCED audit artifacts (never the caller's word), fence the path
+    inside base_dir, schema-validate, then extract_signals.
 
-    Returns (signals, errors). On ANY problem (missing ref, file missing, sha mismatch, path escape, bad JSON
-    or schema) the offending audit is treated as ABSENT — its signal stays the safe/failing value AND an error
-    is recorded so the gate hard-rejects. A forged signals dict can therefore never reach the re-derivation."""
+    Returns (signals, errors). On ANY problem (missing ref, file missing, path escape, bad JSON or
+    schema) the offending audit is treated as ABSENT — its signal stays the safe/failing value AND an
+    error is recorded so the gate hard-rejects.
+
+    2026-08-07 de-governance: no longer re-verifies the file's sha256 against the candidate's ref
+    (that was tamper-evidence, not the safety property) — path fencing, existence, and schema
+    conformance are what still gate this."""
     base = Path(base_dir)
     errors: List[str] = []
     payloads = {"leakage_audit_ref": None, "fairness_audit_ref": None, "reviewer_ref": None}
@@ -98,7 +104,6 @@ def load_and_verify_signals(candidate: dict, base_dir) -> Tuple[dict, List[str]]
             errors.append(f"{field} missing — cannot verify the {schema} audit (fail-closed)")
             continue
         rel = ref.get("path", "")
-        want_sha = ref.get("sha256", "")
         p = Path(rel) if Path(rel).is_absolute() else (base / rel)
         if not _path_within(p, base):
             errors.append(f"{field} path {rel!r} escapes the run dir (refused)")
@@ -107,10 +112,6 @@ def load_and_verify_signals(candidate: dict, base_dir) -> Tuple[dict, List[str]]
             errors.append(f"{field} file {rel!r} not found")
             continue
         raw = p.read_bytes()
-        got_sha = _sha256_bytes(raw)
-        if got_sha != want_sha:
-            errors.append(f"{field} sha256 mismatch (forged or stale audit): ref={want_sha[:23]}.. file={got_sha[:23]}..")
-            continue
         try:
             loaded = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as exc:
@@ -161,10 +162,59 @@ def _append_promote_event(run_dir, record: dict, ts: str) -> None:
     }, ts)
 
 
+def _append_document_admission_event(run_dir, record: dict, ts: str) -> None:
+    """Append a tamper-evident `document_admission` ledger event for the DOCUMENT lane.
+
+    Previously only the frozen-result lane wrote a ledger event, so a real vault write through the
+    document lane was invisible to the machine's own telemetry: `workbench governance` reported
+    "promote 事件为 0" while a page had just been written. A write into the crown jewels that the
+    system cannot see is the one thing this ledger exists to prevent.
+
+    Deliberately a DIFFERENT event_type from `promote`: a director-reviewed document admission is not a
+    frozen-result promotion (no `result-status`, no `can-cite-thesis`, no metric of ours), and collapsing
+    the two would let a reviewed Markdown copy be counted as a citable result. Rejections are recorded
+    too, exactly as the frozen lane records them."""
+    ledger = Path(run_dir) / "ledger.jsonl"
+    if not ledger.parent.exists():
+        return  # no run context to anchor to — the batch record file stays the audit trail
+    append_event(ledger, "document_admission", {
+        "admissible": record.get("admissible"),
+        "admission_id": record.get("admission_id"),
+        "document_type": record.get("document_type"),
+        "vault_slug": record.get("vault_slug"),
+        "vault_path": record.get("vault_path"),
+        "candidate_sha256": (record.get("candidate_ref") or {}).get("sha256"),
+        "source_sha256": (record.get("source_ref") or {}).get("sha256"),
+        "decided_by": record.get("decided_by"),
+        "authorization_basis": record.get("authorization_basis"),
+    }, ts)
+
+
+def _run_dir_for_document_batch(batch_root: Path, run_id: Optional[str], runs_dir: str) -> Optional[Path]:
+    """Anchor a document admission to its run when one exists.
+
+    An explicit `--run-id` wins; otherwise walk up from the batch directory looking for a run root (a
+    directory holding BOTH `manifest.yaml` and `ledger.jsonl`), which is where batches staged into
+    `runs/<project>/<run_id>/inbox/...` actually live. A batch staged outside any run has nothing to
+    anchor to and records no event — its record file and the vault page's own frontmatter remain the
+    audit trail. An AMBIGUOUS run id raises from `find_run_dir` and must surface."""
+    if run_id:
+        from research_agent_teams.tools.runstore import find_run_dir
+        try:
+            return find_run_dir(runs_dir, run_id)
+        except FileNotFoundError:
+            return None
+    resolved = batch_root.resolve()
+    for parent in (resolved, *resolved.parents):
+        if (parent / "manifest.yaml").is_file() and (parent / "ledger.jsonl").is_file():
+            return parent
+    return None
+
+
 def run_promote_gate(candidate: dict, *, run_dir, vault_root, human_freeze: bool,
                      decided_by: str, decided_at: str,
                      authorization_basis: Optional[str] = None) -> dict:
-    """The full gate: verify the candidate's referenced audits (sha + schema) -> re-derive from the VERIFIED
+    """The full gate: verify the candidate's referenced audits (path + schema) -> re-derive from the VERIFIED
     signals -> write the vault page on admit -> append a `promote` ledger event. Returns the promotion_record.
 
     Verification failure HARD-REJECTS before any vault write (forged/stale audits can't promote). `human_freeze`
@@ -202,9 +252,9 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         prog="python -m research_agent_teams.tools.promote_gate",
         description="Director-command promotion gate (/promote-to-vault). Re-derives frozen/can-cite from the REAL "
-                    "referenced audits (sha-verified), writes the vault page on admit, records a tamper-evident "
-                    "promote event. Authorization comes from an explicit top-level director command or the legacy "
-                    "exact RAT_PROMOTE_AUTHORIZED capability.")
+                    "referenced audits (path-fenced + schema-verified), writes the vault page on admit, records a "
+                    "tamper-evident promote event. Authorization comes from an explicit top-level director command "
+                    "or the legacy exact RAT_PROMOTE_AUTHORIZED capability.")
     p.add_argument("--run-id", required=False, help="required for the frozen-result lane")
     p.add_argument("--runs-dir", default="research_agent_teams/runs")
     p.add_argument("--candidate", help="path to a frozen-result promotion_candidate JSON (staged in the run inbox)")
@@ -275,10 +325,15 @@ def main(argv=None) -> int:
             decided_at=ts,
             authorization_basis=basis,
         )
+        anchor_run_dir = _run_dir_for_document_batch(batch_root, a.run_id, a.runs_dir)
+        if anchor_run_dir is not None:
+            for record in records:
+                _append_document_admission_event(anchor_run_dir, record, ts)
         admissible = bool(records) and all(record["admissible"] for record in records)
         print(json.dumps({
             "admission_id": a.admission_id,
             "admissible": admissible,
+            "ledger_anchor": str(anchor_run_dir) if anchor_run_dir else None,
             "records": records,
             "gate_note": None if authorized else (
                 "NOT ADMITTED: no explicit director command and RAT_DOCUMENT_ADMISSION_AUTHORIZED != admission-id."

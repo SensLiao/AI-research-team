@@ -149,7 +149,9 @@ def test_title_partial_outage_is_lookup_error_not_false_not_found():
     res = check_reference("A Title Maybe Only In S2", TS, transport=router)
     assert res["state"] == STATE_LOOKUP_ERROR                  # NOT not_found -> would have false-BLOCKED
     v = build_existence_verdict(["A Title Maybe Only In S2"], TS, transport=router)
-    assert v["verdict"] == "PASS" and v["warnings"]
+    # C2 (2026-08-07): zero confirmed verifications + a lookup error present -> UNVERIFIED, not a
+    # false PASS. The single reference here can neither be confirmed nor confirmed-absent.
+    assert v["verdict"] == "UNVERIFIED" and v["warnings"]
 
 
 def test_cache_hits_and_never_caches_lookup_error(tmp_path):
@@ -196,7 +198,9 @@ def test_verdict_blocks_only_on_confirmed_not_found():
     assert v["verdict"] == "BLOCK" and len(v["violations"]) == 1 and len(v["warnings"]) == 1
 
     offline_only = build_existence_verdict(["10.5555/down"], TS, transport=router)
-    assert offline_only["verdict"] == "PASS"                            # offline never false-BLOCKs
+    # C2 (2026-08-07): all-offline (zero verified, zero not_found, all lookup_error) is UNVERIFIED,
+    # not a false PASS — nothing here was actually confirmed, only unreachable.
+    assert offline_only["verdict"] == "UNVERIFIED"                     # offline never false-BLOCKs
     assert offline_only["warnings"] and not offline_only["violations"]
 
 

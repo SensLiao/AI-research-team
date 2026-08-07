@@ -33,6 +33,15 @@ from pathlib import Path
 from typing import Optional
 
 from . import _deep_ideate, _shared
+from ._ideation_prompts import (
+    DIRECTION_ADVISOR_WORKER_PROMPT,
+    INVESTMENT_COLLISION_WORKER_PROMPT,
+    DIVERGENCE_OPERATOR_BLOCK,
+    DIVERGENCE_RUNNER_WORKER_PROMPT,
+    DIVERGENCE_TRACE_JSON,
+    PROPOSER_WORKER_PROMPT,
+    RANKER_WORKER_PROMPT,
+)
 from ..artifacts import GateBlock, TargetedGateBlock, write_artifact
 from ..bounded_repair import attempt_with_repair
 from ..output_versions import resolve_effective_output
@@ -51,6 +60,7 @@ from ...tools.project_memory import (
     prior_overlaps,
     workspace_for_run,
 )
+from ...tools.saturation_meter import measure_saturation
 from ...tools.scientific_investment_score import (
     rank_scientific_investments,
     validate_assessments,
@@ -94,7 +104,9 @@ Write ONLY this JSON to `{out}` (filename ends in .bundle.json, NOT .artifact.js
   "read_summary": "<2-3 sentences>",
   "evidence_table": {{"query": "<the gap-scan query>",
      "sources": [{{"id":"s1","kind":"paper","ref":"[[<slug>]]","claim_support":"strong"}}, ...],
-     "saturation_reached": true}},
+     "saturation_reached": false}},
+  "saturation_rounds": [{{"round_index":1,"queries_run":0,"new_unique_sources":0,
+     "cumulative_unique_sources":0}}],
   "claim_list": {{"source_scope": "<scope>",
      "claims": [{{"claim_id":"c1","text":"<claim>","source_ref":"[[<slug>]]"}}]}},
   "claim_evidence_map": {{"mappings": [{{"claim_id":"c1","overall_support":"supported",
@@ -103,8 +115,9 @@ Write ONLY this JSON to `{out}` (filename ends in .bundle.json, NOT .artifact.js
   "signals": [{{"gap_id":"GAP-1","statement":"<stated future-work/limitation>","source_ref":"[[<slug>]]",
      "evidence_ref":["[[<slug>]]"],"derived_from":["future_work"]}}]
 }}
-Quantities: evidence_table.sources 4-6 (>=1 "strong"); claims 2-3 (each anchored by a mapping, every locus \
-supports_claim:true); signals 4-6 with VARIED gap types (include the field(s) that set the type) and an \
+Quantities are FLOORS, not ranges — there is NO upper bound, and volume is wanted: \
+evidence_table.sources >=20 (>=5 "strong"); claims >=10 (each anchored by a mapping, every locus \
+supports_claim:true); signals >=12 with VARIED gap types (include the field(s) that set the type) and an \
 honest `derived_from` list (1-3 tags) — more distinct tags = higher novelty:
   stated_open_problem -> statement+source_ref ; methodological_gap -> locus+opportunity ;
   coverage_gap -> white_space_present:true ; transfer_gap -> source_domain+target_hook ;
@@ -112,12 +125,22 @@ honest `derived_from` list (1-3 tags) — more distinct tags = higher novelty:
   empirical_gap -> untested_condition .
 derived_from tags: future_work, white_space_present, weakness_opportunity, transfer_potential, \
 contrarian_angle, under_evidenced, empirically_untested.
+`saturation_reached` is a compatibility field only — always emit false and never self-declare \
+saturation; a deterministic meter derives it from your search rounds. Record those rounds in \
+`saturation_rounds`: one entry per retrieval pass with {{round_index, queries_run, \
+new_unique_sources, cumulative_unique_sources}}. Run at least TWO passes — one pass can never be \
+saturated, and the meter honestly reports INSUFFICIENT_DATA for a single round.
 
 Rigor bar (max-quality): for EACH gap, satisfy yourself it is genuinely OPEN — not already solved by \
 a paper you read OR by a record in the live-retrieval bundle; if a paper partially closes it, narrow the \
 gap to the part that remains. Prefer gaps whose evidence_ref cites >=2 independent papers. Mark \
-claim_support "strong" ONLY for a paper that centrally and directly supports the claim. Do not pad \
-counts with weak or speculative gaps — fewer, sharper, defensible gaps beat a long shallow list.
+claim_support "strong" ONLY for a paper that centrally and directly supports the claim.
+Volume discipline (director lock 2026-08-04): the bar is PER ITEM, never a cap on the number of items. \
+Every gap you emit must clear the bar above on its own — grounded in a real page or a real record, and \
+genuinely still open. Having cleared it, EMIT IT: do not drop a defensible gap to keep the list short, do \
+not stop at the floor, and do not summarize several distinct gaps into one. A long list of individually \
+defensible gaps is the goal; a short list is only correct when the corpus genuinely cannot support more, \
+and then you must say so explicitly in `read_summary`.
 After writing, verify it is valid JSON. Return one line: pages read + counts + the highest-novelty gap."""
 
 MEMO_CONTRACT_VERSION = "idea-investment-memo/v2"
@@ -132,181 +155,24 @@ _CURRENT_CONTRACT = "CURRENT"
 _LEGACY_UNVERIFIED = "LEGACY_UNVERIFIED"
 
 
-PROPOSER_WORKER_PROMPT = """You are the IDEA PROPOSER of a research machine. The DISCOVER stage already
-classified real gaps from the vault. Read these real artifacts:
-  - `{run_dir}/evidence/DISCOVER/gap-classification.artifact.json`
-  - `{run_dir}/evidence/DISCOVER/novelty-score.artifact.json`
+#: Every IDEATE-panel packet (proposer / ranker / collision checker / divergence runner / direction
+#: advisor) lives in `_ideation_prompts.py`, imported above and re-exported here — the invention-first
+#: rewrite of 2026-08-07 made them too large to keep inline. deep_ideation reuses this module's
+#: builders, so both modes read from ONE prompt source.
 
-Propose falsifiable hypotheses and concrete project ideas for this request:
-
-    REQUEST: {request}
-
-{north_star}
-
-Do NOT rank, select, or evolve your own proposals. A separate tournament-ranker owns comparative
-judgment. Every hypothesis and idea must reference a real upstream GAP-/IH- id and, where relevant, a
-real `[[slug]]`. For each idea, write a scientific investment thesis rather than a title: an answerable
-question, an explicit mechanism and ordered causal chain, the intended contribution relative to known
-work, why the enabling conditions make it worth testing now, and an honest feasibility triple.
-
-Also inspect `{vault}/02-wiki/negative-results/` when present. Do not silently repeat a known failure:
-either change the mechanism/control regime or expose the negative result as a named risk in the summary.
-
-If this prompt carries a REPAIR ATTEMPT block: fix EXACTLY what the gate feedback names and re-emit the
-COMPLETE bundle.
-
-Write ONLY this JSON to `{out}`:
-{{
-  "memo_contract_version": "idea-investment-memo/v2",
-  "hypotheses": [{{"hypothesis_id":"IH1","statement":"<falsifiable hypothesis>",
-     "falsifiable_prediction":"<metric + numeric threshold + dataset/condition>",
-     "evidence_needed":["<what would test it>"],"evidence_ref":["GAP-1","[[<slug>]]"]}}],
-  "ideas": [{{"idea_id":"IDEA-1","summary":"<concrete project realizing a hypothesis>",
-     "evidence_ref":["IH1","GAP-1"],"from_hypothesis_ref":"IH1",
-     "research_question":"<one answerable question ending in ?>",
-     "mechanism_hypothesis":"<why the intervention should change the outcome>",
-     "causal_chain":["<intervention -> mediator>","<mediator -> measurable outcome>"],
-     "problem_evidence":["<source/result showing the problem is real>"],
-     "independent_scientific_value":"<why this matters even outside the current project>",
-     "expected_contributions":["<conditional problem/method/mechanism/evaluation contribution>"],
-     "intended_contribution":"<specific delta over the closest known approach>",
-     "why_now":"<new data/tool/evidence/cost condition that makes this timely>",
-     "feasibility":{{"compute":"low|medium|high","data":"available|restricted|unavailable",
-        "time":"short|medium|long"}}}}]
-}}
-Emit 3-5 hypotheses and 3-5 ideas. Every idea must carry the human-first scientific case shown above;
-`causal_chain` must contain at least two ordered links. Each prediction must name a metric, numeric
-threshold, and evaluation condition. Each idea must be runnable next quarter, not a research programme.
-After writing, verify valid JSON. Return only the hypothesis and idea counts; do not self-rank."""
-
-
-RANKER_WORKER_PROMPT = """You are the IDEA TOURNAMENT RANKER. You did NOT author the proposals. Read:
-  - `{run_dir}/inbox/IDEATE.bundle.json`
-
-{north_star}
-
-Compare every unordered pair exactly once. Judge scientific leverage, falsifiability, novelty exposure,
-time-to-information, and resource risk. Name the decisive difference between both ideas; do not turn a
-feasibility shortcut into a scientific verdict. You may evolve at most two proposals, but every evolved
-idea must preserve parent provenance and carry the complete investment-thesis fields of an original.
-
-If this prompt carries a REPAIR ATTEMPT block: fix EXACTLY what the gate feedback names and re-emit the
-COMPLETE bundle.
-
-Write ONLY this JSON to `{out}`:
-{{
-  "memo_contract_version": "idea-investment-memo/v2",
-  "tournament": [{{"round":1,"pair_a":"IDEA-1","pair_b":"IDEA-2","winner":"IDEA-1",
-     "rationale":"<decisive comparison naming both ideas>"}}],
-  "evolved": [{{"idea_id":"EV-1","summary":"<stronger mutation or recombination>",
-     "parent_ids":["IDEA-1"],"mutation_type":"mutate|recombine|strengthen",
-     "evidence_ref":["IDEA-1","GAP-1"],"research_question":"<answerable question>",
-     "mechanism_hypothesis":"<mechanism claim>",
-     "causal_chain":["<cause -> mediator>","<mediator -> outcome>"],
-     "problem_evidence":["<source/result showing the problem is real>"],
-     "independent_scientific_value":"<why the problem matters beyond this project>",
-     "expected_contributions":["<conditional contribution if evidence succeeds>"],
-     "intended_contribution":"<delta over prior work>","why_now":"<timing case>",
-     "feasibility":{{"compute":"low|medium|high","data":"available|restricted|unavailable",
-        "time":"short|medium|long"}}}}],
-  "investment_assessments": [{{"idea_id":"IDEA-1",
-     "investment_case":"<why this is or is not worth scarce research capacity>",
-     "rank_rationale":"<scientific upside versus cost and failure informativeness>",
-     "dimension_scores":{{"importance":1,"mechanism_coherence":1,"novelty_exposure":1,
-       "falsifiability":1,"information_gain":1,"downstream_leverage":1}},
-     "strongest_rejection_case":"<the strongest reason a skeptical scientist should not fund it>"}}]
-}}
-Tournament must cover every unordered pair of ORIGINAL ideas exactly once. Emit one assessment for every
-original and evolved idea. Every dimension score is an integer 1-5 and must be justified by the prose;
-do not reward mere ease. Emit `evolved: []` when no mutation is genuinely stronger. Never emit a bet,
-selection, approval, or director decision. After writing, verify valid JSON."""
-
-
-INVESTMENT_COLLISION_WORKER_PROMPT = """You are the NOVELTY-COLLISION CHECKER, an independent full-paper
-novelty auditor. You did not propose or rank the ideas. Read:
-  - `{run_dir}/inbox/IDEATE.bundle.json` for original proposals
-  - `{run_dir}/inbox/RANKING.bundle.json` for evolved proposals and comparative assessments
-  - `{run_dir}/inbox/search-results.json` if it exists
-
-{north_star}
-
-For every original and evolved idea, identify its central falsifiable contribution and the closest
-real work. Search results, titles, abstracts, shared keywords, and shared components are discovery
-signals only. They can narrow a broad first-claim, but cannot kill an idea.
-
-Before emitting `collision`, obtain and read the full closest paper, including the method and the
-experiments bearing on the claim. Compare the problem/target, input state, interaction, output/edit
-semantics, mechanism/training, causal controls, primary evaluation target, actual results, and scope.
-An exact collision requires the same central claim, a materially equivalent input/output contract,
-an equivalent causal assay, and experiments when experiments are required. If full text or decisive
-evidence is unavailable, the relationship is `uncertain`, the per-idea verdict is `unverified`, and
-it cannot be a fatal collision or a false clearance.
-
-For every exact collision, preserve the full-text file actually read inside the current run and
-record its run-local path plus SHA-256. The retrieval route remains your choice; the receipt is
-required so a destructive cut is inspectable. Without it, emit `unverified`, never a fatal cut.
-
-Classify each closest paper as `exact_collision`, `partial_component_prior`, `enabling_base`,
-`gap_source`, `orthogonal`, or `uncertain`. An idea that improves or closes a gap in prior work is not
-covered merely because it inherits a prior component. State what the prior solved, what it did not
-solve, the surviving delta, and the strongest reviewer case that the delta is only a rename.
-
-Choose the retrieval, reading, and comparison route that best fits the available environment. Do not
-fabricate a paper, identifier, locator, result, figure interpretation, or quote. You do not rank,
-select, or drop ideas.
-
-Write ONLY this JSON to `{out}`:
-{{
-  "memo_contract_version": "idea-investment-memo/v2",
-  "findings": [{{
-    "idea_id":"IDEA-1","method_combination":"<combined methods>",
-    "application":"<problem>","domain":"<field>","queries":["<targeted query>"],
-    "verdict":"collision|adjacent|clear|unverified","colliding_papers":[{{
-      "ref":"arXiv:2407.01517","title":"<title>",
-      "does_same_method_on_same_problem":true,"experimentally_validated":true,
-      "full_text_reviewed":true,"relationship":"exact_collision|partial_component_prior|enabling_base|gap_source|orthogonal|uncertain",
-      "fulltext_snapshot_ref":"inbox/fulltext-docs/closest-paper.pdf",
-      "fulltext_snapshot_sha256":"<64 lowercase hex characters>",
-      "same_central_claim":true,"same_input_output_contract":true,
-      "same_causal_evaluation":true,"evidence_loci":["p.4 Method","p.7 Table 2"],
-      "method_evidence_loci":["p.4 Method"],"result_evidence_loci":["p.7 Table 2"],
-      "material_surviving_delta":false,
-      "surviving_gap":"<what remains unestablished>",
-      "justification":"<what it did, did not do, and why this relation follows>",
-      "quote":"<short support actually inspected>"
-    }}],
-    "closest_prior_art":[{{"ref":"<real ref>","title":"<title>",
-      "relationship":"<exact_collision|partial_component_prior|enabling_base|gap_source|orthogonal|uncertain>",
-      "difference":"<specific, falsifiable delta>"}}],
-    "difference_from_prior_art":"<precise surviving delta or already-done statement>",
-    "visual_evidence":[{{"source_ref":"<paper/page/figure or table actually inspected>",
-      "asset_ref":"<optional stable relative image path or null>",
-      "content":"<axes/table structure and comparison>","key_observation":"<numbers/trend>",
-      "supports":"<narrow conclusion>","does_not_support":"<boundary>"}}],
-    "confidence":"high|medium|low","retrieval_status":"complete|partial|unavailable",
-    "retrieval_note":"<coverage, full-text availability, and unresolved limits>"
-  }}],
-  "evidence_ref":["inbox/COLLISION.bundle.json"]
-}}
-`collision` requires at least one existence-verifiable paper with full_text_reviewed=true and a
-hash-verified run-local fulltext snapshot,
-relationship=exact_collision, all three same_* fields true, experimental validation, separate
-method/result evidence loci, and material_surviving_delta=false. Otherwise use adjacent or
-unverified and preserve the paper as a partial prior, enabling base, or gap source.
-`colliding_papers` must be empty for `clear`; `closest_prior_art` may still name verified adjacent work.
-Emit `visual_evidence` only after actual visual inspection; otherwise use an empty list and do not infer
-image content from captions or OCR.
-Emit exactly one finding per candidate and verify the JSON before returning."""
 
 
 # --------------------------------------------------------------------------- stage plan (what the skill spawns)
 
 def _worker_model(stage: str, model_policy: str) -> str:
     """max_quality (the director's default for governed research runs, 2026-06-09) -> all-opus.
-    default -> task-appropriate: DISCOVER reading/extraction = sonnet, IDEATE ideation/judgment = opus."""
-    if model_policy == "max_quality":
-        return "opus"
-    return "sonnet" if stage == "DISCOVER" else "opus"
+
+    default -> task-appropriate. DISCOVER moved to opus on 2026-08-07: the grounding scout does not
+    merely extract, it decides what counts as a still-OPEN gap, and every downstream idea inherits that
+    judgment — a cheap read here silently caps the whole run's ceiling. The parameters are kept so a
+    future stage can route down again without a signature change.
+    """
+    return "opus"
 
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
@@ -318,7 +184,7 @@ def pre_search(run_dir: str, request: str, ts: str, transport=None,
 
 
 def discover_worker(run_dir: str, request: str, vault: str = DEFAULT_VAULT,
-                    model_policy: str = "max_quality") -> dict:
+                    model_policy: str = "default") -> dict:
     """The base DISCOVER grounding worker (evidence_table / claim_list / claim_evidence_map / signals).
     Reused by deep_ideation too (so the two modes share ONE base-worker definition — no drift)."""
     out = f"{run_dir}/inbox/DISCOVER.bundle.json"
@@ -328,17 +194,34 @@ def discover_worker(run_dir: str, request: str, vault: str = DEFAULT_VAULT,
                                                     north_star=_shared.north_star_block(run_dir))}
 
 
+def divergence_worker(run_dir: str, request: str, model_policy: str = "default") -> dict:
+    """The B1 seat: runs the six divergence operators over the frozen DISCOVER material BEFORE the
+    proposer, so divergence is an accountable artifact instead of a side effect of whoever wrote the
+    ideas. The proposer keeps the same operator block as its own fallback, so a lighter run that does
+    NOT dispatch this seat still diverges — it just does not get an independent trace."""
+    out = f"{run_dir}/inbox/DIVERGENCE.bundle.json"
+    return {"label": "divergence-operator-runner", "model": _worker_model("IDEATE", model_policy),
+            "output": out,
+            "prompt": DIVERGENCE_RUNNER_WORKER_PROMPT.format(
+                request=request, run_dir=run_dir, out=out,
+                north_star=_shared.north_star_block(run_dir),
+                divergence_operators=DIVERGENCE_OPERATOR_BLOCK,
+                divergence_trace=DIVERGENCE_TRACE_JSON)}
+
+
 def ideate_worker(run_dir: str, request: str, vault: str = DEFAULT_VAULT,
-                  model_policy: str = "max_quality") -> dict:
+                  model_policy: str = "default") -> dict:
     """Independent proposer: hypotheses and memo-ready ideas, with no comparative judgment."""
     out = f"{run_dir}/inbox/IDEATE.bundle.json"
     return {"label": "hypothesis-generator", "model": _worker_model("IDEATE", model_policy), "output": out,
             "prompt": PROPOSER_WORKER_PROMPT.format(
                 request=request, run_dir=run_dir, out=out, vault=vault,
-                north_star=_shared.north_star_block(run_dir))}
+                north_star=_shared.north_star_block(run_dir),
+                divergence_operators=DIVERGENCE_OPERATOR_BLOCK,
+                divergence_trace=DIVERGENCE_TRACE_JSON)}
 
 
-def ranker_worker(run_dir: str, request: str, model_policy: str = "max_quality") -> dict:
+def ranker_worker(run_dir: str, request: str, model_policy: str = "default") -> dict:
     """Independent comparative judge, dispatched only after the proposal bundle exists."""
     out = f"{run_dir}/inbox/RANKING.bundle.json"
     return {"label": "idea-tournament-ranker", "model": _worker_model("IDEATE", model_policy),
@@ -348,13 +231,26 @@ def ranker_worker(run_dir: str, request: str, model_policy: str = "max_quality")
                 north_star=_shared.north_star_block(run_dir))}
 
 
+def direction_advisor_worker(run_dir: str, request: str, model_policy: str = "default") -> dict:
+    """The B5 seat: an ADVISORY outer-loop reading of the finished run (DEEPEN / BROADEN / PIVOT /
+    CONCLUDE, each with evidence for and against). It recommends; it never decides, bets, ranks, or
+    touches the menu — the director decides at /idea-bet. Absent seat degrades to no recommendation."""
+    out = f"{run_dir}/inbox/DIRECTION_ADVICE.bundle.json"
+    return {"label": "direction-decision-advisor", "model": _worker_model("REPORT", model_policy),
+            "output": out,
+            "prompt": DIRECTION_ADVISOR_WORKER_PROMPT.format(
+                request=request, run_dir=run_dir, out=out,
+                north_star=_shared.north_star_block(run_dir))}
+
+
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     """The worker PANEL to dispatch for a stage (or None if deterministic). new_direction is now
     deep-by-default but SINGLE-DOMAIN (it omits the cross-domain analogy-mapper — that breadth layer is
     deep_ideation's signature) and GRACEFUL (run_dets uses required=False, so a skipped deep worker
     degrades to the proven base instead of blocking). Panels are spawned IN ORDER (each deep worker reads
-    the prior inbox bundles). NORTH STAR is in every worker prompt (audit A2). REPORT is deterministic."""
+    the prior inbox bundles). NORTH STAR is in every worker prompt (audit A2). REPORT dispatches ONE
+    advisory seat (direction-decision-advisor) and is otherwise deterministic."""
     if stage == "DISCOVER":
         deep = _deep_ideate.discover_deep_workers(run_dir, request, vault, model_policy, with_analogy=False)
         workers = [discover_worker(run_dir, request, vault, model_policy), *deep]
@@ -369,21 +265,32 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
                               "mining independently. Wave 3 builds the mechanism graph. Deep "
                               "SINGLE-DOMAIN omits cross-domain analogy."}
     if stage == "IDEATE":
-        workers = [ideate_worker(run_dir, request, vault, model_policy),
+        workers = [divergence_worker(run_dir, request, model_policy),
+                   ideate_worker(run_dir, request, vault, model_policy),
                    ranker_worker(run_dir, request, model_policy),
                    collision_step(run_dir, vault=vault, model_policy=model_policy),
                    _deep_ideate.experiment_worker(run_dir, request, model_policy)]
         return {"workers": workers,
                 "worker_order": [worker["label"] for worker in workers],
                 "parallel_groups": [[worker["label"]] for worker in workers],
-                "panel_note": "spawn IN ORDER: hypothesis-generator (proposer) -> idea-tournament-ranker -> "
-                              "novelty-collision-checker -> experiment-planner. Each worker owns a "
-                              "distinct bundle and reads only its declared predecessors."}
-    return None  # REPORT is deterministic
+                "panel_note": "spawn IN ORDER: divergence-operator-runner (six operators over the frozen "
+                              "DISCOVER material) -> hypothesis-generator (proposer) -> "
+                              "idea-tournament-ranker -> novelty-collision-checker -> experiment-planner. "
+                              "Each worker owns a distinct bundle and reads only its declared "
+                              "predecessors."}
+    if stage == "REPORT":
+        worker = direction_advisor_worker(run_dir, request, model_policy)
+        return {"workers": [worker],
+                "worker_order": [worker["label"]],
+                "parallel_groups": [[worker["label"]]],
+                "panel_note": "direction-decision-advisor reads the finished run and recommends "
+                              "DEEPEN/BROADEN/PIVOT/CONCLUDE with evidence on both sides. Advisory only: "
+                              "the REPORT artifacts stay deterministic and the director decides."}
+    return None
 
 
 def collision_step(run_dir: str, vault: str = DEFAULT_VAULT,
-                   model_policy: str = "max_quality") -> dict:
+                   model_policy: str = "default") -> dict:
     """The INDEPENDENT novelty-collision-checker worker to dispatch in IDEATE, AFTER the ideate worker
     and BEFORE `run_dets("IDEATE")` (the gate consumes its `inbox/COLLISION.bundle.json`). It is a
     SEPARATE worker from the idea proposer (no athlete-judging-self): per director lock 2026-06-18,
@@ -481,12 +388,11 @@ def _require_legacy_replay_receipt(run_dir: str, ideate_path: Path) -> dict:
             "legacy idea replay receipt must acknowledge exactly that replay has no current "
             "scientific rank and no current PASS"
         )
-    expected_hash = _sha256_file(ideate_path)
-    if receipt.get("ideate_bundle_sha256") != expected_hash:
-        raise GateBlock(
-            "legacy idea replay receipt hash mismatch: the IDEATE bundle changed after replay was "
-            "authorized"
-        )
+    # Bundle hash comparison removed 2026-08-07 (director lock: no hash/receipt gating). What the
+    # receipt is actually for survives intact: an operator must DELIBERATELY name the source run,
+    # give a reason, and acknowledge in writing that a replay earns no current rank and no current
+    # PASS. That acknowledgement is what stops a historical bundle being mistaken for a fresh one;
+    # the digest never added to it.
     return receipt
 
 
@@ -624,9 +530,17 @@ def _vault_slug_set():
     return _shared.vault_slugs(root), root
 
 
+#: Fields projected from a rich proposal onto the typed ``idea_backlog`` contract. The 2026-08-07
+#: invention block (contribution_tier / invention_claim / mechanism_graph_refs / innovation_layers /
+#: resource_envelope) is carried through because the deterministic ranker reads contribution_tier for
+#: the invention feasibility waiver, and the director's menu renders the rest. Every one of them is
+#: OPTIONAL in the schema, so an older bundle that omits them still validates.
 _BACKLOG_IDEA_FIELDS = {
     "idea_id", "summary", "evidence_ref", "from_hypothesis_ref", "novelty_ref",
     "feasibility", "caveats",
+    "contribution_tier", "invention_claim", "mechanism_graph_refs", "intervention_point",
+    "addresses_conflicts", "origin_operator", "innovation_layers", "depth_target",
+    "conventional_base", "unusual_connection", "resource_envelope",
 }
 
 
@@ -642,6 +556,95 @@ def _backlog_candidate(idea: dict) -> dict:
 
 # --------------------------------------------------------------------------- deterministic producers (WORK)
 
+def _measured_saturation(bundle: dict) -> bool:
+    """Derive `saturation_reached` from the worker's recorded retrieval rounds.
+
+    False whenever the history cannot support a SATURATED verdict — no rounds, a single round
+    (INSUFFICIENT_DATA), or a malformed history. The meter never upgrades a thin search.
+    """
+    rounds = [r for r in (bundle.get("saturation_rounds") or []) if isinstance(r, dict)]
+    if not rounds:
+        return False
+    try:
+        return measure_saturation(rounds, report_id="SAT-DISCOVER")["verdict"] == "SATURATED"
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
+_DIVERGENCE_OPERATOR_KEYS = (
+    "constraints", "negations", "reformulations", "cross_product", "enablers", "tensions",
+)
+
+
+def _produce_divergence_trace(run_dir, ts, ideate_bundle: dict) -> Optional[str]:
+    """Record the six-operator divergence trace as a typed artifact.
+
+    Two sources, in priority order: the independent `divergence-operator-runner` seat's bundle, else
+    the proposer's own inline `divergence_trace` (the fallback for lighter runs where that seat is not
+    dispatched). Neither present -> no artifact, no block: divergence is measured, never gated.
+    """
+    trace, source = None, ""
+    dpath = Path(run_dir) / "inbox" / "DIVERGENCE.bundle.json"
+    if dpath.is_file():
+        try:
+            bundle = json.loads(dpath.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            bundle = {}
+        if isinstance(bundle, dict) and isinstance(bundle.get("divergence_trace"), dict):
+            trace, source = bundle, "divergence-operator-runner"
+    if trace is None and isinstance(ideate_bundle.get("divergence_trace"), dict):
+        trace, source = ideate_bundle, "hypothesis-generator"
+    if trace is None:
+        return None
+
+    raw = trace["divergence_trace"]
+    payload = {
+        "trace_id": str(trace.get("trace_id") or "DT-001"),
+        "produced_by": source,
+        **{key: [x for x in (raw.get(key) or []) if isinstance(x, dict)]
+           for key in _DIVERGENCE_OPERATOR_KEYS},
+    }
+    anomalies = [a for a in (trace.get("anomalies") or []) if isinstance(a, dict)]
+    if anomalies:
+        payload["anomalies"] = anomalies
+    operators_run = [str(x) for x in (trace.get("operators_run") or []) if str(x).strip()]
+    if operators_run:
+        payload["operators_run"] = operators_run
+    return write_artifact(run_dir, "IDEATE", "divergence-trace.artifact.json",
+                          "divergence_trace", source, payload, ts)
+
+
+def _produce_direction_recommendation(run_dir, ts) -> Optional[str]:
+    """Project the advisory direction-decision-advisor bundle onto its typed artifact.
+
+    Absent seat -> None. This is ADVICE: DEEPEN / BROADEN / PIVOT / CONCLUDE with evidence on both
+    sides, rendered for the director. It never selects an idea and never gates anything.
+    """
+    path = Path(run_dir) / "inbox" / "DIRECTION_ADVICE.bundle.json"
+    if not path.is_file():
+        return None
+    try:
+        bundle = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(bundle, dict) or not bundle.get("recommended"):
+        return None
+    payload = {
+        "recommendation_id": str(bundle.get("recommendation_id") or "DR-001"),
+        "recommended": str(bundle["recommended"]),
+        "confidence": str(bundle.get("confidence") or "low"),
+        "rationale": str(bundle.get("rationale") or ""),
+        "options": [o for o in (bundle.get("options") or []) if isinstance(o, dict)],
+        "evidence_ref": [str(r) for r in (bundle.get("evidence_ref") or []) if str(r).strip()]
+                        or ["inbox/DIRECTION_ADVICE.bundle.json"],
+    }
+    unresolved = [str(u) for u in (bundle.get("unresolved") or []) if str(u).strip()]
+    if unresolved:
+        payload["unresolved"] = unresolved
+    return write_artifact(run_dir, "REPORT", "direction-recommendation.artifact.json",
+                          "direction_recommendation", "direction-decision-advisor", payload, ts)
+
+
 def _discover_dets(run_dir, ts, b) -> tuple:
     _shared.require_bundle_keys(
         b, ("evidence_table", "claim_list", "claim_evidence_map", "signals"),
@@ -656,6 +659,13 @@ def _discover_dets(run_dir, ts, b) -> tuple:
     texts += [str(c.get("text") or "") for c in (cl.get("claims") or [])]
     dpath, _ = _shared.run_drift_gate(run_dir, "DISCOVER", ts, texts)
     paths.append(dpath)
+
+    # Saturation is MEASURED, never self-declared (2026-08-07). The worker records its retrieval rounds;
+    # a deterministic meter derives the verdict and overwrites whatever the bundle claimed. A single
+    # round can never be saturated (the meter reports INSUFFICIENT_DATA), and no rounds means False.
+    # Previously the worker copied `saturation_reached: true` out of its own prompt skeleton and the
+    # evidence gate accepted it, so the check verified nothing.
+    et["saturation_reached"] = _measured_saturation(b)
 
     ev = build_verdict(et)                                                   # HARD GATE 1
     paths.append(write_artifact(run_dir, "DISCOVER", "evidence-verdict.artifact.json",
@@ -717,6 +727,10 @@ def _discover_dets(run_dir, ts, b) -> tuple:
 
     report = {"evidence_gate": ev["verdict"], "citation_gate": cv["verdict"],
               "existence_gate": ex["verdict"], "existence_warnings": len(ex["warnings"]),
+              "existence_checked": ex["verdict"] != "UNVERIFIED",
+              "saturation_reached": ev["saturation_reached"],
+              "saturation_rounds": len([r for r in (b.get("saturation_rounds") or [])
+                                        if isinstance(r, dict)]),
               "gaps_classified": len(gc["gaps"]),
               "novelty_grounded": bool(records),
               "prior_gap_overlaps": overlaps,
@@ -783,6 +797,10 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
     paths.append(write_artifact(run_dir, "IDEATE", "hypothesis-set.artifact.json",
                                 "hypothesis_set", "hypothesis-generator", {"hypotheses": hypotheses}, ts))
 
+    dtrace = _produce_divergence_trace(run_dir, ts, b)
+    if dtrace:
+        paths.append(dtrace)
+
     # Dedup (AI-Researcher 0.8 pattern) then the round-robin Elo tournament (audit B3).
     dd = dedupe_ideas(ideas)
     kept_ids = {str(i["idea_id"]) for i in dd["kept"]}
@@ -827,12 +845,22 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
     # remains one bounded input and can never become the scientific verdict by itself.
     menu_ideas = [_backlog_candidate(i) for i in dd["kept"]]
     for e in evolved:
-        menu_ideas.append(_backlog_candidate({
+        # An evolved idea is re-authored here rather than passed through, so the projection stays
+        # explicit. It must carry the SAME invention block as an original — an evolved recombination is
+        # the highest-value output of the ranker, and dropping contribution_tier here would silently
+        # deny it the invention feasibility waiver downstream.
+        candidate = {
             "idea_id": str(e.get("idea_id")), "summary": str(e.get("summary") or ""),
             "evidence_ref": list(e.get("evidence_ref") or []),
             "feasibility": dict(e.get("feasibility") or {}),
             "caveats": list(e.get("caveats") or []),
-        }))
+        }
+        for field in ("contribution_tier", "invention_claim", "mechanism_graph_refs",
+                      "intervention_point", "innovation_layers", "depth_target",
+                      "conventional_base", "unusual_connection", "resource_envelope"):
+            if e.get(field) is not None:
+                candidate[field] = e[field]
+        menu_ideas.append(_backlog_candidate(candidate))
     if contract_status == _LEGACY_UNVERIFIED:
         replay_caveat = (
             "LEGACY_UNVERIFIED replay: no current scientific-investment rank or current PASS; "
@@ -918,6 +946,7 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
                     "collision_missing_findings": missing_collision_findings,
                     "idea_contract_status": contract_status,
                     "current_scientific_rank": contract_status == _CURRENT_CONTRACT,
+                    "divergence_trace": bool(dtrace),
                     "slug_warnings": ri_warnings}
 
 
@@ -947,6 +976,14 @@ def _report(run_dir, ts) -> tuple:
             )
     # Honesty (director lock "必须检查"): a run that could not verify novelty, or that cut ideas for
     # prior art, must say so to the director — never present a silently-clean menu.
+    ep = Path(run_dir) / "evidence" / "DISCOVER" / "citation-existence-verdict.artifact.json"
+    if ep.exists():
+        exv = json.loads(ep.read_text(encoding="utf-8"))["payload"]
+        if str(exv.get("verdict") or "") == "UNVERIFIED":
+            note["open_questions"].append(
+                "本次没有做任何外部存在性核对：citation existence gate = UNVERIFIED（没有可查的外部"
+                "引用，或每一次查询都失败）。不要把它读成'查过了、没问题'——它是'没查'。"
+            )
     cp = Path(run_dir) / "evidence" / "IDEATE" / "novelty-collision-verdict.artifact.json"
     if cp.exists():
         cv = json.loads(cp.read_text(encoding="utf-8"))["payload"]
@@ -961,8 +998,15 @@ def _report(run_dir, ts) -> tuple:
     if not records:
         note["open_questions"].append("novelty was vault-only this run (no pre-search bundle) — "
                                       "consider re-running with `operate pre-search` for literature grounding")
+    # Advisory outer-loop read (DEEPEN / BROADEN / PIVOT / CONCLUDE). Produced BEFORE the report note so
+    # the note can point the director at it; absent seat -> no artifact and no mention.
+    rec = _produce_direction_recommendation(run_dir, ts)
+    if rec:
+        note["references"].append("evidence/REPORT/direction-recommendation.artifact.json")
     paths = [write_artifact(run_dir, "REPORT", "report-note.artifact.json",
                             "report_note", "research-orchestrator", note, ts)]
+    if rec:
+        paths.append(rec)
     # RAT-2 Wave-3 deepening (2026-06-19; additive, REPORT-stage ONLY — zero change to the proven
     # DISCOVER/IDEATE contract): a cross-stage quality scorecard (quality-controller) + an advisory
     # integrity recommendation + the blind pairwise quality eval over the menu. deep_ideation adds the
@@ -973,7 +1017,8 @@ def _report(run_dir, ts) -> tuple:
         md_path = write_idea_bet_menu(run_dir, generated_at=ts)
     except ValueError as exc:
         raise GateBlock(str(exc))
-    return (paths, {"director_idea_bet_menu": md_path})
+    return (paths, {"director_idea_bet_menu": md_path,
+                    "direction_recommendation": bool(rec)})
 
 
 def run_dets(run_dir, stage, ts) -> tuple:

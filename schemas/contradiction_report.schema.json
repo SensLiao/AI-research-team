@@ -36,6 +36,14 @@
             "type": "string",
             "enum": ["unresolved", "explained-by-scope", "explained-by-protocol", "resolved"],
             "default": "unresolved"
+          },
+          "synthesis_attempt": {
+            "type": "string",
+            "description": "Optional (2026-08-07). What would have to be true for BOTH sides to hold at once. 'No synthesis found' is a legitimate and useful answer; a synthesis that merely averages the two numbers is not one. A conflict with a real synthesis attempt is a candidate research direction, not just a data-quality note — which is why the ideation seats read this field."
+          },
+          "opposition_is_formalization_artifact": {
+            "type": ["boolean", "string"],
+            "description": "Optional (2026-08-07). true / false / 'unknown': whether the opposition is an artifact of how the two papers formalized the problem rather than a fact about the world. 'unknown' is the honest default."
           }
         }
       }

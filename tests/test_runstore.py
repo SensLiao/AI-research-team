@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-import yaml
 
 from research_agent_teams.tools._latex_sandbox import LatexSandboxViolation
 from research_agent_teams.tools.runstore import (
@@ -165,31 +164,9 @@ def test_double_resume_rejected(tmp_path):
         prepare_resume(run_dir, TS)  # same boundary, no progress
 
 
-def test_inconsistent_manifest_blocks_resume(tmp_path):
-    create_run(tmp_path, "run1", "m", "DISCOVER", TS)
-    run_dir = tmp_path / "run1"
-    checkpoint_stage(run_dir, "DISCOVER", [_artifact(tmp_path)], "k", TS)
-    # Tamper the manifest's anchor so it disagrees with the ledger.
-    m = read_manifest(run_dir)
-    m["last_boundary_hash"] = "sha256:deadbeef"
-    (run_dir / "manifest.yaml").write_text(yaml.safe_dump(m), encoding="utf-8")
-    assert classify_status(run_dir) == "inconsistent"
-    with pytest.raises(RuntimeError, match="inconsistent"):
-        prepare_resume(run_dir, TS)
-
-
-def test_tampered_ledger_blocks_resume(tmp_path):
-    create_run(tmp_path, "run1", "m", "DISCOVER", TS)
-    run_dir = tmp_path / "run1"
-    checkpoint_stage(run_dir, "DISCOVER", [_artifact(tmp_path)], "k", TS)
-    checkpoint_stage(run_dir, "IDEATE", [_artifact(tmp_path, "b.md", "b")], "k2", TS)
-    ledger = run_dir / "ledger.jsonl"
-    lines = ledger.read_text(encoding="utf-8").splitlines()
-    import json
-    e = json.loads(lines[1])
-    e["payload"]["idempotency_key"] = "FORGED"
-    lines[1] = json.dumps(e, sort_keys=True, separators=(",", ":"))
-    ledger.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    assert classify_status(run_dir) == "tampered"
-    with pytest.raises(RuntimeError, match="tampered"):
-        prepare_resume(run_dir, TS)
+## R3 §B① (2026-08-07): the "inconsistent" (manifest last_boundary_hash disagrees with the ledger)
+## and "tampered" (ledger chain-hash mismatch) classify_status states are removed — resume no longer
+## fails closed on a hash-detected disagreement between manifest and ledger. test_inconsistent_
+## manifest_blocks_resume and test_tampered_ledger_blocks_resume tested exactly those two retired
+## states and are deleted with them. verify_chain itself (tools/ledger.py) stays a load-bearing
+## read-only diagnostic — see test_ledger.py / test_ledger_hardening.py, unaffected by this file.

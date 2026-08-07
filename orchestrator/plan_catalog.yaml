@@ -166,6 +166,142 @@ mode_questions:
       options:
         - {label: "确认 · 要的就是独立视角", value: blind}
 
+  # ---- wave 2 (2026-08-04) -----------------------------------------------------------------------
+  # One drill-down round per new one-button mode. Each knob maps onto a flag that already exists —
+  # no new operate surface — and every `note` row is an honesty acknowledgement the director ticks
+  # BEFORE the run, not a disclaimer they discover in the report.
+  gap_scan:
+    - key: pre_search
+      ask: "扫空白前先联网拉一遍真实文献吗?(更全,稍慢)"
+      maps_to: pre_search
+      options:
+        - {label: "联网 · 推荐", value: live}
+        - {label: "只用库", value: vault-only}
+  full_new_direction:
+    - key: scope
+      ask: "方向调研要收紧范围吗?(给一句更窄的北极星)"
+      maps_to: north_star
+      options:
+        - {label: "全域 · 不收紧", value: broad}
+        - {label: "我给一句更窄的方向", value: narrow}
+    - key: handoff_note
+      ask: "这条路刻意停在下注之前——押哪个方向仍然只能你按 /idea-bet,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 只要论纲,不要它替我选", value: stops-before-bet}
+  design_experiment:
+    - key: design_target
+      ask: "为哪个想法设计实验?"
+      maps_to: north_star
+      options:
+        - {label: "我在 /idea-bet 下注的那个", value: bet}
+        - {label: "我现在指定一个", value: specify}
+    - key: plan_only_note
+      ask: "这条路只出设计,不冻结预注册也不跑任何东西,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 只要设计", value: design-only}
+  power_analysis_review:
+    - key: decision_question
+      ask: "你要用这个实验回答的那个决定是什么?(功效分析要围着它算)"
+      maps_to: north_star
+      options:
+        - {label: "沿用上一步设计里的 RQ", value: upstream}
+        - {label: "我现在说清楚", value: specify}
+    - key: options_note
+      ask: "它不会给「够/不够」的二元结论,而是给若干设计改法和各自代价,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 我要选项不要判决", value: decision-options}
+  m2_accept:
+    - key: design_target
+      ask: "验收哪一份实验设计?"
+      maps_to: north_star
+      options:
+        - {label: "上一步刚冻结的那份", value: upstream}
+        - {label: "我现在指定一份", value: specify}
+    - key: gpu_note
+      ask: "没有真实执行回执时,指标一律留空、运行记录停在「只做了计划」,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 不许编数字", value: receipt-or-empty}
+  analysis_audit_panel:
+    - key: audit_target
+      ask: "审哪一批结果?"
+      maps_to: north_star
+      options:
+        - {label: "上一步跑出来的那批", value: upstream}
+        - {label: "我现在指定", value: specify}
+    - key: disagreement_note
+      ask: "诊断席位判断打架时,分歧会原样呈现给你而不是挑一个赢家,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 我要看到分歧", value: show-disagreement}
+  verify_result:
+    - key: review_target
+      ask: "审哪一个结果?"
+      maps_to: north_star
+      options:
+        - {label: "上一步审计过的那批", value: upstream}
+        - {label: "我现在指定", value: specify}
+    - key: independence_note
+      ask: "审稿席位互不通气,因此可能重复提出彼此想过的问题,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 要的就是独立视角", value: blind}
+  check_run:
+    - key: run_target
+      ask: "看哪一次运行?"
+      maps_to: north_star
+      options:
+        - {label: "最近那一次", value: latest}
+        - {label: "我给 run-id", value: specify}
+    - key: readonly_note
+      ask: "全程只读——干预菜单是选项,一次都不会替你执行,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 只看不动", value: read-only}
+  repo_code_audit:
+    - key: audit_scope
+      ask: "审哪个范围?"
+      maps_to: north_star
+      options:
+        - {label: "整个仓库", value: repo}
+        - {label: "我指定的目录/文件", value: paths}
+    - key: patch_authorization
+      ask: "默认只审不改。要现在就授权它动代码吗?"
+      maps_to: note
+      options:
+        - {label: "只审不改 · 推荐", value: audit-only}
+        - {label: "授权改动(仍会逐项留痕)", value: authorized-patch}
+
+  # ---- wave-2 backlog closed (2026-08-07) ----------------------------------------------------
+  # The last two modes whose modules were written but left unregistered pending tests.
+  ideate_ring:
+    - key: opportunity_set
+      ask: "这场淘汰赛的输入机会点是什么?(直接说清楚,ring 没有上游 DISCOVER 产物,读的就是你这句话)"
+      maps_to: north_star
+      options:
+        - {label: "我现在说清楚机会点/观察", value: specify}
+        - {label: "沿用当前北极星的范围描述", value: upstream}
+    - key: no_self_bet_note
+      ask: "五席各自独立(假设→淘汰赛→进化→可行性+查重),但机器不下注,最后你按 /idea-bet 选,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 我要菜单不要它替我选", value: no-self-bet}
+  aers_enhanced_research_pack:
+    - key: pre_search
+      ask: "配材料包前先联网拉一遍真实文献吗?(更全,稍慢)"
+      maps_to: pre_search
+      options:
+        - {label: "联网 · 推荐", value: live}
+        - {label: "只用库", value: vault-only}
+    - key: execute_boundary_note
+      ask: "EXECUTE 环节只做打包与审计,不会假装任何实验真的跑过,own_measured_metrics 结构上强制为空,确认?"
+      maps_to: note
+      options:
+        - {label: "确认 · 只要材料包,不要编数字", value: packaging-only}
+
 # ----------------------------------------------------------------------------------------------------
 # Which human gate(s) a mode routes THROUGH. When a chain reaches such a mode it PAUSES there; the
 # director decides; the model never self-decides. Rendered as "this tier will stop for your sign-off
@@ -192,6 +328,25 @@ phase_rank:
   venue_readiness: 4    # venue / publish
   manuscript_authoring: 4
   manuscript_review: 4
+  # ---- wave 2 (2026-08-04) -------------------------------------------------------------------
+  # Same four phases. Rank 3 covers design → execute → analyze → verify as ONE band on purpose:
+  # within a rank the order is free, and forcing an order between "design the experiment",
+  # "watch the run" and "audit the result" would reject legitimate chains (audit → redesign →
+  # re-audit) that a researcher really does run.
+  gap_scan: 1           # discovery / lightweight gap map
+  full_new_direction: 1 # discovery / direction brief that stops before the bet
+  repo_code_audit: 1    # discovery / a repo can be audited at any point
+  ideate_ring: 2        # ideate (tournament -> /idea-bet)
+  design_experiment: 3
+  design_experiment_minimal: 3
+  power_analysis_review: 3
+  m2_accept: 3
+  check_run: 3
+  debug_failed_run: 3
+  tree_explore: 3
+  analysis_audit_panel: 3
+  verify_result: 3
+  aers_enhanced_research_pack: 4  # submission engineering
 
 # ----------------------------------------------------------------------------------------------------
 # Intents — the research arcs a director request maps onto. Each tier's `modes` is an ordered chain of
@@ -267,8 +422,8 @@ intents:
     tiers:
       - id: core
         label: "核心 · 最快最省"
-        modes: [gap_breadth]
-        why: "5 个猎人并行扫空白 → 分类 → 打分(只打分不砍)。"
+        modes: [gap_scan]
+        why: "两个互盲猎人各自出候选 → 独立分类去重 → 每条空白都带出处。不谈新颖性、不推荐押哪个。"
       - id: mainline
         label: "主线 · 推荐"
         recommended: true
@@ -363,3 +518,119 @@ intents:
         label: "全面 · 最深最广"
         modes: [evidence_deep, full_rigor_minimal, venue_readiness]
         why: "深证据复核 → 实验严谨化 → 投稿就绪度,降低被拒风险。"
+
+  # 2026-08-04 (wave 2): four arcs that had no route at all, because the modes serving them were
+  # registry-defined but not one-button. Same rule as the 2026-08-01 round that added read_paper /
+  # design_experiment / write_manuscript: a capability with no intent is a capability the director
+  # cannot ask for in their own words, so wiring a mode without routing it changes nothing for them.
+  audit_result:
+    aliases: ["这批结果站得住吗", "审一下结果", "结果可信吗", "audit the result", "结果复核",
+              "帮我挑结果的毛病", "这个结论能不能下"]
+    keywords: ["结果", "可信", "复核", "audit", "站得住"]
+    description: "对已经跑出来的结果做独立审计 —— 基线、方差、公平性、图表、主张强度。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [analysis_audit_panel]
+        why: "诊断席位各自独立跑,分歧原样呈现给你,不挑赢家。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [analysis_audit_panel, verify_result]
+        why: "先审分析本身,再由一组互不通气的审稿人给出「支持什么 / 仍不能声称什么」。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [m2_accept, analysis_audit_panel, verify_result]
+        why: "冻结设计与执行证据 → 审分析 → 独立判决。没有真实回执时指标一律留空。"
+
+  watch_run:
+    aliases: ["实验跑得怎么样", "看一下运行状态", "现在跑到哪了", "run status", "check the run",
+              "任务还活着吗", "卡住了吗"]
+    keywords: ["跑", "运行状态", "卡住", "status", "monitor"]
+    description: "看一次正在跑的运行:状态、告警、以及可选的干预菜单(不替你动手)。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [check_run]
+        why: "观察席位只报观察到的,独立分诊席位才给可能原因和干预选项。全程只读。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [check_run, analysis_audit_panel]
+        why: "先看运行健康,再对已产出的中间结果做一次分析审计。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [check_run, analysis_audit_panel, verify_result]
+        why: "运行状态 → 分析审计 → 独立判决,一次把「跑成什么样」问到底。"
+
+  audit_code:
+    aliases: ["审一遍代码", "代码仓审计", "review the repo", "代码有没有问题", "code audit",
+              "帮我看看这个仓库"]
+    keywords: ["代码", "仓库", "repo", "code audit"]
+    description: "对一个代码仓做发现级审计;改代码要另外授权,默认只审不改。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [repo_code_audit]
+        why: "只审不改:出发现 + 补丁计划。发现 / 提议 / 真改了的,报告里分三栏,绝不混。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [repo_code_audit, check_run]
+        why: "审代码 → 再看它跑起来的实际状态。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [repo_code_audit, check_run, analysis_audit_panel]
+        why: "审代码 → 看运行 → 审它产出的分析,一条链把工程和结论都查一遍。"
+
+  design_only:
+    aliases: ["先出个实验设计", "只要设计不用跑", "实验方案", "experiment design",
+              "这个设计够不够", "样本量够吗", "power analysis"]
+    keywords: ["设计", "方案", "样本量", "power", "design"]
+    description: "只要一份可交付的实验设计(以及它到底能不能回答那个问题),先不跑。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [design_experiment]
+        why: "RQ → 变量与对照 → 数据协议 → 基线公平,外加三个独立审计审同一份冻结设计。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [design_experiment, power_analysis_review]
+        why: "出设计,再独立追问它有没有足够把握回答那个问题,并给出可选的设计改法。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [full_new_direction, design_experiment, power_analysis_review]
+        why: "先把方向和已有证据摸清 → 出设计 → 功效复核,避免设计一个别人已经回答过的实验。"
+
+  # 2026-08-07: wave-2 backlog closed. ideate_ring and aers_enhanced_research_pack are each a
+  # single standalone mode with no upstream artifact contract (`handoff.accepts: []` — see the
+  # registry) — chaining another mode in FRONT of either would promise a link the mode cannot
+  # actually consume, so each gets its own single-tier intent rather than being squeezed into an
+  # existing multi-tier arc (find_direction's/prep_submission's tiers are all more expensive than
+  # ideate_ring's 4-hop budget, and inserting it there would either break tier cost-monotonicity
+  # or misrepresent "core = cheapest").
+  compete_ideas:
+    aliases: ["跑一遍点子锦标赛", "把这些想法排个名次", "淘汰赛式产点子", "idea tournament",
+              "ideate ring", "帮我把这几个机会点比一比", "这些想法哪个更好", "机会点排名",
+              "给这些观察排个名"]
+    keywords: ["锦标赛", "排名", "tournament", "机会点", "比一比", "淘汰赛"]
+    description: "手上已经有一组机会点/观察(不是从零找方向),想让它们互相比出高下、进化、查重,产出一张下注菜单。"
+    tiers:
+      - id: core
+        label: "核心 · 唯一档"
+        recommended: true
+        modes: [ideate_ring]
+        why: "假设生成 → 真实成对淘汰赛(不是打分平均)→ 挑强者进化(带血缘,岛模型不收敛到前二)→ 独立可行性打分与查重,五席各自独立,最后给一张不自我下注的菜单。"
+
+  assemble_reference_pack:
+    aliases: ["投稿材料包", "整理复现材料", "帮我配一套投稿参考包", "aers", "reference pack",
+              "复现性审计", "文献检索策略", "整理参考文献和复现材料", "配一份材料包"]
+    keywords: ["复现", "参考包", "投稿材料", "reproducibility", "bibliography", "aers"]
+    description: "组一份引用为准的 AERS 增强研究材料包:检索策略、数据协议审计、复现性审计、基准证据、投稿清单、参考文献核验、稿件润色建议。"
+    tiers:
+      - id: core
+        label: "核心 · 唯一档"
+        recommended: true
+        modes: [aers_enhanced_research_pack]
+        why: "八席分工:AERS 参考包适用性 + 文献检索策略 → 数据协议审计(反泄漏硬门)→ 复现材料与基准证据独立审计 → 投稿清单与独立参考文献核验 → 稿件润色建议。EXECUTE 环节只打包审计,从不假装真跑过。"

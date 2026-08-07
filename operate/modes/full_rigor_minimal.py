@@ -25,6 +25,7 @@ from ._full_rigor_workers import (
 )
 from ...tools import prereg as prereg_tool
 from ...tools.alignment_checker import build_report as alignment_build
+from ...tools.alignment_checker import detect_zero_training
 from ...tools.compare_metric_impls import build_report as metric_build
 from ...tools.experiment_feedback import build_experiment_feedback
 from ...tools.execution_receipt_import import (
@@ -155,7 +156,7 @@ def _write_scripts_only_verify_panel(run_dir) -> None:
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault=None,
-             model_policy: str = "max_quality"):
+             model_policy: str = "default"):
     """Skip result-only panels when the external executor produced no result."""
     if stage in {"ANALYZE", "VERIFY"} and not _panel_has_started(run_dir, stage):
         state = execution_state(run_dir)
@@ -374,7 +375,17 @@ def _design_dets(run_dir, ts, panel) -> tuple:
     if variable_control["verdict"] == "BLOCK":
         raise GateBlock(f"variable-control BLOCK: {variable_control['violations']}")
 
-    metric_report = metric_build(bundle["metric_impls"], profile=profile)
+    # A3 (2026-08-07): a declared, in-scope treatment variation (e.g. postprocessing
+    # threshold studied as a variable) should warn, not BLOCK — see compare_metric_impls.
+    # ' -- <reason>' explanatory suffixes on a studied-variable entry are stripped before
+    # the case-insensitive comparison, mirroring the frozen-variable convention below.
+    studied_variables = {
+        str(v).split(" --")[0].strip().casefold()
+        for v in (design.get("variables") or {}).get("studied") or []
+    }
+    metric_report = metric_build(
+        bundle["metric_impls"], profile=profile, studied_variables=studied_variables,
+    )
     paths.append(write_artifact(
         run_dir,
         "DESIGN",
@@ -396,9 +407,19 @@ def _design_dets(run_dir, ts, panel) -> tuple:
         "protocol-compiler", protocol, ts
     ))
 
+    # A2 (2026-08-07): dual-lock zero_training escape hatch — bundle["train"] is this
+    # mode's equivalent of design_experiment's alignment_facts.train (no separate
+    # wrapper object exists here), so its own declared zero_training flag is the first
+    # lock; design["variables"].frozen naming zero_training is the second. Neither lock
+    # alone skips a training-only invariant.
+    zero_training = detect_zero_training(
+        bundle["train"].get("zero_training") is True,
+        (design.get("variables") or {}).get("frozen") or [],
+    )
     alignment = alignment_build(
         bundle["train"], bundle["test"], profile=profile,
-        train_ref="train-pipeline", test_ref="test-pipeline"
+        train_ref="train-pipeline", test_ref="test-pipeline",
+        zero_training=zero_training,
     )
     paths.append(write_artifact(
         run_dir,
@@ -546,9 +567,14 @@ def _execute_dets(run_dir, ts, panel) -> tuple:
         ))
         from ...tools.parity_checker import build_report as parity_build
 
+        # A2 completion: reuse the DESIGN-time alignment_report's own zero_training flag
+        # (persisted by alignment_checker.build_report — no need to re-derive the dual-lock
+        # here) so a legitimately zero_training run's actual pipeline is not false-BLOCKed
+        # at EXECUTE time for a training-only invariant it was already exempted from.
         parity = parity_build(
             journal, alignment, profile=profile,
-            journal_ref="journal_entry", alignment_ref=ALIGNMENT_REF
+            journal_ref="journal_entry", alignment_ref=ALIGNMENT_REF,
+            zero_training=bool(alignment.get("zero_training")),
         )
         paths.append(write_artifact(
             run_dir,

@@ -25,6 +25,12 @@ EXPECTED_OPERATED = {
     "new_direction", "deep_ideation", "gap_breadth", "evidence_review", "evidence_deep",
     "deep_research", "venue_readiness", "full_rigor_minimal", "ingest_paper", "read_paper_deep",
     "manuscript_authoring", "manuscript_review",
+    # wave 2 (2026-08-04): the modes that were registry-defined but hand-driven, now one-button.
+    "gap_scan", "full_new_direction", "design_experiment", "power_analysis_review", "m2_accept",
+    "analysis_audit_panel", "verify_result", "check_run", "repo_code_audit",
+    # wave-2 backlog closed (2026-08-07): the last two modules had recipes written but no tests,
+    # so they were deliberately left unregistered until now.
+    "ideate_ring", "aers_enhanced_research_pack",
 }
 GOLD_CASE_IDS = {
     "local-sufficient", "local-named-deficit", "retrieval-provider-matrix",
@@ -126,7 +132,7 @@ def test_exactly_twelve_real_operated_modes_and_no_phantom_review_pack():
     assert set(REGISTRY) == EXPECTED_OPERATED
     assert {name for name, spec in registry.items() if spec.get("operated")} == EXPECTED_OPERATED
     assert {name for name, row in catalog.items() if row["status"] == "operated"} == EXPECTED_OPERATED
-    assert len(EXPECTED_OPERATED) == 12
+    assert len(EXPECTED_OPERATED) == 23
     assert "manuscript_review_pack" not in REGISTRY
     assert "manuscript_review_pack" not in registry
     assert "manuscript_review_pack" not in catalog
@@ -240,7 +246,9 @@ def test_every_director_entry_is_synchronized_to_the_two_operated_manuscript_pro
         ), path
         assert "manuscript_review_pack" not in text, path
     facts = (ROOT / "PLATFORM-FACTS.md").read_text(encoding="utf-8")
-    assert "There are currently 12 operated modes:" in facts
+    # The count is re-derived by tests/test_governance_census.py; pinning the integer in two
+    # places is how it drifted. Here we only pin that the section exists and is honest.
+    assert "operated modes" in facts
     assert "GPU" in facts and "not operated" in facts.casefold()
     assert "manuscript_review_pack" not in facts
 

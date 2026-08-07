@@ -1,4 +1,17 @@
-"""Adversarial tests for the non-LLM executor receipt/import boundary."""
+"""Tests for the non-LLM executor receipt/import boundary.
+
+R3 §B①: signature verification and file/manifest hash-comparison are torn down (this is a
+personal single-operator tool, not a multi-tenant trust boundary). Deleted:
+test_llm_authored_or_wrongly_signed_receipt_is_rejected (ed25519 attestation),
+test_receipt_bound_result_tampering_is_rejected and the command-hash half of what was
+test_receipt_command_hash_and_run_replay_are_rejected (file/field hash comparison),
+test_coherent_metrics_do_not_override_receipt_provenance (declared-hash-field comparison), and
+test_stored_import_is_rederived_and_rehashed (whole-manifest + file hash re-equality on resume).
+What is KEPT and still fail-closed: schema validation, path fencing/existence/symlink refusal
+(`_safe_member`), timestamp ordering (finished >= started), and the run_id binding below (a plain
+identity check, not a hash comparison). `_install_receipt` still signs its fixture receipt so the
+schema shape stays realistic, even though nothing here verifies that signature any more.
+"""
 from __future__ import annotations
 
 import base64
@@ -10,16 +23,12 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from research_agent_teams.operate.artifacts import envelope
 from research_agent_teams.tools.execution_receipt_import import (
     ExecutionReceiptError,
-    IMPORT_ARTIFACT_REL,
     build_execution_import,
     canonical_json_bytes,
-    import_note_payload,
     receipt_attestation_message,
     receipt_bound_raw_rows,
-    reverify_execution_import,
     sha256_bytes,
     sha256_file,
     validate_records_against_import,
@@ -33,9 +42,6 @@ PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(
 PUBLIC_KEY = PRIVATE_KEY.public_key().public_bytes(
     encoding=serialization.Encoding.Raw,
     format=serialization.PublicFormat.Raw,
-)
-ATTACKER_KEY = Ed25519PrivateKey.from_private_bytes(
-    hashlib.sha256(b"attacker-private-key").digest()
 )
 KEY_ID = "lab-runner-test"
 TS = "2026-07-10T10:00:00Z"
@@ -151,77 +157,11 @@ def test_signed_receipt_import_binds_job_files_and_run_record(tmp_path):
     ]["role"] == "raw_result_rows"
 
 
-def test_llm_authored_or_wrongly_signed_receipt_is_rejected(tmp_path):
-    run_dir = tmp_path / "run-1"
-    ref, _ = _install_receipt(run_dir, key=ATTACKER_KEY)
-    with pytest.raises(ExecutionReceiptError, match="attestation failed"):
-        build_execution_import(
-            run_dir, [ref], run_id="run-1", created_at=TS, key_resolver=_resolver
-        )
-
-
-def test_receipt_bound_result_tampering_is_rejected(tmp_path):
-    run_dir = tmp_path / "run-1"
-    ref, _ = _install_receipt(run_dir)
-    (run_dir / "execution-results/job-c1-seed0/result.json").write_text(
-        json.dumps({"raw_result_rows": []}), encoding="utf-8"
-    )
-    with pytest.raises(ExecutionReceiptError, match="size mismatch|hash mismatch"):
-        build_execution_import(
-            run_dir, [ref], run_id="run-1", created_at=TS, key_resolver=_resolver
-        )
-
-
-def test_receipt_command_hash_and_run_replay_are_rejected(tmp_path):
-    run_dir = tmp_path / "run-1"
-    ref, _ = _install_receipt(run_dir)
-    receipt_path = run_dir / ref
-    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    receipt["command"]["argv"].append("--changed-after-signing")
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
-    with pytest.raises(ExecutionReceiptError, match="command hash mismatch"):
-        build_execution_import(
-            run_dir, [ref], run_id="run-1", created_at=TS, key_resolver=_resolver
-        )
-
+def test_receipt_replayed_into_a_different_run_is_rejected(tmp_path):
+    """run_id binding is a plain identity check (not a hash comparison) — still fail-closed."""
     replay_dir = tmp_path / "run-2"
     ref, _ = _install_receipt(replay_dir, run_id="run-1")
     with pytest.raises(ExecutionReceiptError, match="run_id mismatch"):
         build_execution_import(
             replay_dir, [ref], run_id="run-2", created_at=TS, key_resolver=_resolver
         )
-
-
-def test_coherent_metrics_do_not_override_receipt_provenance(tmp_path):
-    run_dir = tmp_path / "run-1"
-    ref, receipt = _install_receipt(run_dir)
-    manifest = build_execution_import(
-        run_dir, [ref], run_id="run-1", created_at=TS, key_resolver=_resolver
-    )
-    forged = _record(receipt)
-    forged["provenance"]["config_hash"] = sha256_bytes(b"llm-invented-config")
-    with pytest.raises(ExecutionReceiptError, match="config_hash"):
-        validate_records_against_import([forged], manifest)
-
-
-def test_stored_import_is_rederived_and_rehashed(tmp_path):
-    run_dir = tmp_path / "run-1"
-    ref, _ = _install_receipt(run_dir)
-    manifest = build_execution_import(
-        run_dir, [ref], run_id="run-1", created_at=TS, key_resolver=_resolver
-    )
-    path = run_dir / IMPORT_ARTIFACT_REL
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(envelope("note", "execution-receipt-importer", import_note_payload(manifest), TS)),
-        encoding="utf-8",
-    )
-    assert reverify_execution_import(
-        run_dir, expected_run_id="run-1", key_resolver=_resolver
-    )["import_id"] == manifest["import_id"]
-
-    (run_dir / "execution-results/job-c1-seed0/stdout.log").write_text(
-        "fabricated after import\n", encoding="utf-8"
-    )
-    with pytest.raises(ExecutionReceiptError, match="size mismatch|hash mismatch"):
-        reverify_execution_import(run_dir, expected_run_id="run-1", key_resolver=_resolver)

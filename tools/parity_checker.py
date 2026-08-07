@@ -28,8 +28,17 @@ def _designed_vs_actual_drift(designed: dict, actual: dict, side: str) -> List[s
     return out
 
 
-def check_parity(journal_entry: dict, alignment_report: dict, profile: Optional[dict] = None) -> List[str]:
-    """Return parity violations; empty == the alignment contract held at run time."""
+def check_parity(journal_entry: dict, alignment_report: dict, profile: Optional[dict] = None,
+                 *, zero_training: bool = False) -> List[str]:
+    """Return parity violations; empty == the alignment contract held at run time.
+
+    zero_training (R3 A2, 2026-08-07): passed straight through to the internal
+    check_alignment self-consistency re-check below, so a legitimately zero_training
+    actual pipeline is not flagged for a training-only mismatch it was never meant to
+    have. alignment_report.verdict already reflects the same escape hatch — the caller
+    computed it once when building that report — so this parameter only needs to reach
+    the ONE place this function makes its own fresh check_alignment call.
+    """
     violations: List[str] = []
 
     if alignment_report.get("verdict") != "PASS":
@@ -42,7 +51,7 @@ def check_parity(journal_entry: dict, alignment_report: dict, profile: Optional[
         return violations
 
     # (a) the executed pipeline must itself be internally aligned (catches eval aug turned on, etc.)
-    for v in check_alignment(actual_train, actual_test, profile):
+    for v in check_alignment(actual_train, actual_test, profile, zero_training=zero_training):
         violations.append(f"post-run drift: {v}")
 
     # (b) the executed pipeline must match the DESIGNED one (catches self-consistent drift, e.g. both
@@ -58,9 +67,10 @@ def check_parity(journal_entry: dict, alignment_report: dict, profile: Optional[
 
 
 def build_report(journal_entry: dict, alignment_report: dict, profile: Optional[dict] = None,
-                 journal_ref: Optional[str] = None, alignment_ref: Optional[str] = None) -> dict:
+                 journal_ref: Optional[str] = None, alignment_ref: Optional[str] = None,
+                 *, zero_training: bool = False) -> dict:
     """Build a parity_verdict payload (verdict derived from violations — never set by hand)."""
-    violations = check_parity(journal_entry, alignment_report, profile)
+    violations = check_parity(journal_entry, alignment_report, profile, zero_training=zero_training)
     return {
         "verdict": "BLOCK" if violations else "PASS",
         "violations": violations,

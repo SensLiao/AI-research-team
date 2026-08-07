@@ -123,6 +123,31 @@ def test_write_search_bundle(tmp_path):
     assert "crossref" in data["source_errors"]
 
 
+def test_write_search_bundle_passes_through_query_language_block(tmp_path):
+    # C1 (2026-08-07): write_search_bundle projects a fixed key set; a result carrying
+    # _shared.pre_search's Latin-only direct-query guard block must not be dropped on write.
+    res = {
+        "query": "医学图像涂鸦交互分割",
+        "records": [],
+        "source_errors": {},
+        "task_request": "医学图像涂鸦交互分割",
+        "query_language_block": {
+            "detected": "cjk",
+            "reason": "the request is cjk-script and no explicit English queries were supplied",
+            "required_action": "supply English queries",
+        },
+    }
+    p = write_search_bundle(tmp_path / "run-2", "医学图像涂鸦交互分割", res, "2026-06-10T12:00:00Z")
+    data = json.loads((tmp_path / "run-2" / "inbox" / "search-results.json").read_text(encoding="utf-8"))
+    assert data["query_language_block"] == res["query_language_block"]
+
+    # Absent when the caller never set it — the projection is otherwise unaffected.
+    clean = search("tubular segmentation", transport=routing_transport)
+    write_search_bundle(tmp_path / "run-3", "tubular segmentation", clean, "2026-06-10T12:00:00Z")
+    clean_data = json.loads((tmp_path / "run-3" / "inbox" / "search-results.json").read_text(encoding="utf-8"))
+    assert "query_language_block" not in clean_data
+
+
 def test_multilingual_query_plan_is_utf8_and_filters_off_topic_crossref_noise():
     query = "医学图像 涂鸦 交互分割"
     body = json.dumps({"message": {"items": [
@@ -171,6 +196,9 @@ def test_query_filter_rejects_generic_budget_match_and_supplement_components():
         "n_accepted": 1,
         "n_rejected": 2,
         "n_merged_duplicates": 0,
+        # R3 C1 (2026-08-07): query and every title here are Latin script, so no cross-script
+        # rejection fires.
+        "cross_script_rejections": 0,
     }
 
 

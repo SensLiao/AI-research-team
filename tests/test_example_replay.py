@@ -51,9 +51,13 @@ def test_the_recorded_example_still_replays_end_to_end():
     assert report["status"] == REPLAY_STATUS
     assert report["verdict"] == "PASS", report["failed_checks"]
     assert report["checks_failed"] == 0
-    assert report["checks_run"] >= 20, "a replay this thin would not be worth running"
-    assert [stage["stage"] for stage in report["stages"]][0].startswith("①")
-    assert len(report["stages"]) == 6
+    assert report["checks_run"] >= 15, "a replay this thin would not be worth running"
+    # The hash-binding stage (dispatch completeness, council recompile, triple-blind
+    # timeline, repair independence, truth boundary — 5 stages, not 6). The
+    # dependency-hash edge inside dispatch is gone too; dispatch is now checked by
+    # completion/failure existence and ordering, not by a recomputed digest.
+    assert [stage["stage"] for stage in report["stages"]][0].startswith("②")
+    assert len(report["stages"]) == 5
 
 
 def test_the_replay_never_claims_the_example_was_executed():
@@ -71,9 +75,6 @@ def test_the_load_bearing_facts_are_re_derived_not_quoted():
     assert "重新编译结果与记录完全一致" in detail
     assert "DESCRIPTIVE_REVIEW_PASS" in detail
     assert "FAIL → PASS" in detail, "the kept failure must be reported in real time order"
-    bindings = report["stages"][0]
-    assert bindings["verified_bindings"] >= 30
-    assert bindings["stale_bindings_confirmed"] == 1
 
 
 def test_missing_example_is_an_error_not_a_silent_pass(tmp_path):
@@ -82,36 +83,17 @@ def test_missing_example_is_an_error_not_a_silent_pass(tmp_path):
 
 
 # ------------------------------------------------------------------ tampers must be caught
-
-def test_editing_a_referenced_artifact_breaks_the_replay(example):
-    candidate = example / NATIVE / "candidates" / "council-repaired-r3.md"
-    candidate.write_text(candidate.read_text(encoding="utf-8") + "\n<!-- one added byte -->\n",
-                         encoding="utf-8")
-    report = replay(example)
-    assert report["verdict"] == "FAIL"
-    assert _failed(report, "path→哈希")
-
-
-def test_editing_a_contribution_breaks_the_recompile(example):
-    path = example / NATIVE / "contributions" / "mathematical_formalizer.json"
-    row = _load(path)
-    row["perspective_summary"] = row["perspective_summary"] + " (edited)"
-    _save(path, row)
-    report = replay(example)
-    assert report["verdict"] == "FAIL"
-    assert _failed(report, "重新编译")
-
-
-def test_healing_the_recorded_mismatch_breaks_the_replay(example):
-    """"Fixing" the preserved failure erases evidence, so the replay must refuse it."""
-    path = example / NATIVE / "failures" / "WO-TARGETED-REPAIR.json"
-    row = _load(path)
-    row["expected"]["sha256"] = row["observed"]["sha256"]
-    _save(path, row)
-    report = replay(example)
-    assert report["verdict"] == "FAIL"
-    assert _failed(report, "仍然对不上")
-
+#
+# The path→hash binding stage was deleted whole (R3 §B①): the replay no longer recomputes a
+# digest for every declared path→sha256 pair, so a tamper that only a hash recompute could catch
+# is no longer a replay property. Removed with it: test_editing_a_referenced_artifact_breaks_the_replay
+# (hash-bound markdown edit), test_editing_a_contribution_breaks_the_recompile (byte-identical bundle
+# recompile — replaced by a semantic-identical compare that a free-text summary edit doesn't trip),
+# test_healing_the_recorded_mismatch_breaks_the_replay (the deliberately-stale-hash mechanism),
+# test_breaking_a_dependency_hash_is_caught (the dependency output_sha256 edge inside dispatch), and
+# test_cli_exits_nonzero_on_a_tampered_example (its tamper vector was a hash-bound markdown file).
+# What is kept below still goes FAIL for a real reason: abandoned-order existence, blind-review
+# timeline/ordering, repair independence, and the design-only truth boundary are not hash checks.
 
 def test_a_completion_for_an_abandoned_order_breaks_the_replay(example):
     """The recorded abandonment means NO output was produced; inventing one must be caught."""
@@ -120,16 +102,6 @@ def test_a_completion_for_an_abandoned_order_breaks_the_replay(example):
     report = replay(example)
     assert report["verdict"] == "FAIL"
     assert _failed(report, "什么都没产出")
-
-
-def test_breaking_a_dependency_hash_is_caught(example):
-    path = example / NATIVE / "work-orders" / "WO-COMPILER.json"
-    row = _load(path)
-    row["dependencies"][0]["output_sha256"] = "0" * 64
-    _save(path, row)
-    report = replay(example)
-    assert report["verdict"] == "FAIL"
-    assert _failed(report, "上游完成记录一致")
 
 
 def test_revealing_the_mapping_before_review_is_caught(example):
@@ -168,12 +140,6 @@ def test_cli_reports_pass_on_the_real_example(capsys):
     out = capsys.readouterr().out
     assert "全部重新推导通过" in out
     assert "REPLAY_OF_RECORDED_RUN" in out
-
-
-def test_cli_exits_nonzero_on_a_tampered_example(example, capsys):
-    (example / NATIVE / "candidates" / "council.md").write_text("gutted", encoding="utf-8")
-    assert main(["--project", str(example)]) == 1
-    assert "项没通过" in capsys.readouterr().out
 
 
 def test_cli_json_view_is_machine_readable(capsys):

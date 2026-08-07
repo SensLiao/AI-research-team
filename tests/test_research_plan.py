@@ -108,9 +108,11 @@ def test_validate_chain_rejects_unknown_mode():
 
 
 def test_validate_chain_flags_spec_only_mode_without_hard_failing():
-    """A spec-only mode is honestly FLAGGED (hand-driven), not pretended one-button — but not a hard error."""
-    v = rp.validate_chain(["ideate_ring"])
-    assert "ideate_ring" in v["spec_only"]
+    """A spec-only mode is honestly FLAGGED (hand-driven), not pretended one-button — but not a
+    hard error. Exemplar swapped 2026-08-07: ideate_ring is one-button now, so the honesty note
+    it used to demonstrate had to move to a mode that is still hand-driven."""
+    v = rp.validate_chain(["tree_explore"])
+    assert "tree_explore" in v["spec_only"]
     assert v["warnings"]
     assert v["ok"], "spec-only is a flag (warning), not a violation"
 

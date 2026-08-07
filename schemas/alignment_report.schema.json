@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/alignment_report.schema.json",
   "title": "Train/Test/Inference Alignment Report",
-  "description": "Output of train-test-alignment-auditor (the '对齐人'). A hard gate: verdict BLOCK means train/test/inference are not aligned and the comparison would be invalid. Domain-specific extra invariants come from the active profile.",
+  "description": "Output of train-test-alignment-auditor (the '对齐人'). A hard gate: verdict BLOCK means train/test/inference are not aligned and the comparison would be invalid. Domain-specific extra invariants come from the active profile. R3 A2 (2026-08-07): zero_training + skipped_invariants record when the dual-lock no-training escape hatch (check_alignment(..., zero_training=True)) legitimately skipped a training-only invariant.",
   "type": "object",
   "required": ["verdict", "violations"],
   "additionalProperties": false,
@@ -11,7 +11,18 @@
     "violations": {"type": "array", "items": {"type": "string"}},
     "checked_invariants": {"type": "array", "items": {"type": "string"}, "default": []},
     "train_ref": {"type": ["string", "null"], "default": null},
-    "test_ref": {"type": ["string", "null"], "default": null}
+    "test_ref": {"type": ["string", "null"], "default": null},
+    "zero_training": {
+      "type": "boolean",
+      "default": false,
+      "description": "True iff the dual-lock no-training escape hatch was confirmed (alignment_facts.zero_training declared AND a matching frozen-variable entry) — never true from a single unchecked flag."
+    },
+    "skipped_invariants": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Which training-only invariants (preprocessing/precision/label_space match, 'pretrained' declaration) were skipped because zero_training is true. Empty whenever zero_training is false."
+    }
   },
   "allOf": [
     {

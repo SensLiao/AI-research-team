@@ -18,18 +18,29 @@ registry's `operated: true` flag mirrors THIS dict (a wiring test enforces the m
 never claimed operable unless it really is).
 """
 from . import (
+    aers_enhanced_research_pack,
+    analysis_audit_panel,
+    check_run,
     deep_ideation,
     deep_research,
+    design_experiment,
     evidence_deep,
     evidence_review,
+    full_new_direction,
     full_rigor_minimal,
     gap_breadth,
+    gap_scan,
+    ideate_ring,
     ingest_paper,
+    m2_accept,
     manuscript_authoring,
     manuscript_review,
     new_direction,
+    power_analysis_review,
     read_paper_deep,
+    repo_code_audit,
     venue_readiness,
+    verify_result,
 )
 
 REGISTRY = {
@@ -48,8 +59,32 @@ REGISTRY = {
     # Paper authoring and independent review are deliberately separate operated products.
     "manuscript_authoring": manuscript_authoring,
     "manuscript_review": manuscript_review,
+    # ------------------------------------------------------------------ wave 2 (2026-08-04)
+    # The director's call: every mode that is not STRUCTURALLY manual becomes one-button. Nothing
+    # manual moved — the four human gates, GPU submission and patch application stay exactly where
+    # they were; these recipes stop AT those boundaries instead of around them. All of them are
+    # built on `_panel_recipe`, which compiles each mode's registry-declared worker pipeline and
+    # director-Markdown contract into the same spine wave 1 uses, so a wave-2 mode carries the same
+    # drift / existence / referential-integrity gates and the same bounded repair loop.
+    "gap_scan": gap_scan,
+    "full_new_direction": full_new_direction,
+    "design_experiment": design_experiment,
+    "power_analysis_review": power_analysis_review,
+    "m2_accept": m2_accept,
+    "analysis_audit_panel": analysis_audit_panel,
+    "verify_result": verify_result,
+    "check_run": check_run,
+    "repo_code_audit": repo_code_audit,
+    # 2026-08-07: the last two of the five wave-2 modes left spec-only — their modules were
+    # already written, just missing tests, so wiring them was a matter of completing the
+    # four-piece contract (recipe + registry flip + catalog rows + tests), not new code.
+    "ideate_ring": ideate_ring,
+    "aers_enhanced_research_pack": aers_enhanced_research_pack,
 }
 
-__all__ = ["REGISTRY", "deep_ideation", "deep_research", "evidence_deep", "evidence_review",
-           "full_rigor_minimal", "gap_breadth", "ingest_paper", "manuscript_authoring",
-           "manuscript_review", "new_direction", "read_paper_deep", "venue_readiness"]
+__all__ = ["REGISTRY", "aers_enhanced_research_pack", "analysis_audit_panel", "check_run",
+           "deep_ideation", "deep_research", "design_experiment", "evidence_deep",
+           "evidence_review", "full_new_direction", "full_rigor_minimal", "gap_breadth",
+           "gap_scan", "ideate_ring", "ingest_paper", "m2_accept", "manuscript_authoring",
+           "manuscript_review", "new_direction", "power_analysis_review", "read_paper_deep",
+           "repo_code_audit", "venue_readiness", "verify_result"]

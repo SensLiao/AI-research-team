@@ -49,6 +49,14 @@ _STOPWORDS = frozenset((
 _MIN_TOKEN_LEN = 3
 LOW_COVERAGE_THRESHOLD = 0.4  # advisory only — below this, note possible soft drift
 
+# C7 (2026-08-07): a handful of CJK function words common enough to carry no direction
+# signal on their own — the bigram-level equivalent of _STOPWORDS. Deliberately small for
+# the same reason _STOPWORDS is small: over-aggressive stopwording would delete real anchor
+# bigrams from a short Chinese statement.
+_CJK_STOPWORD_BIGRAMS = frozenset((
+    "研究", "方法", "我们", "本文", "这个", "可以", "进行", "一个",
+))
+
 
 def _tokens(text: str) -> List[str]:
     return _WORD_RE.findall((text or "").lower())
@@ -58,13 +66,43 @@ def _norm_phrase(text: str) -> str:
     return " ".join(_tokens(text))
 
 
+def _anchor_tokens(text: str) -> List[str]:
+    """Anchor/coverage tokens: Latin words as before, CJK as adjacent-character bigrams.
+
+    C7 (2026-08-07): Chinese carries no whitespace, so the plain word run _tokens() uses for
+    _norm_phrase (an unbroken CJK clause is ONE token) made anchor coverage against a Chinese
+    north star structurally near-zero — a real anchor phrase like "医学影像残差校正" could never
+    match anything shorter than itself. Latin runs keep the exact _tokens() length/stopword
+    rule; a CJK run is split into overlapping 2-character bigrams (a lone single-character run
+    keeps the character itself — _MIN_TOKEN_LEN does not apply to CJK, a 2-character bigram is
+    already shorter than 3). _norm_phrase/_tokens are UNCHANGED and still own out-of-scope
+    PHRASE matching below (the GT泄漏 fix) — this is a second, coverage-only tokenizer.
+    """
+    tokens: List[str] = []
+    for match in _WORD_RE.finditer((text or "").lower()):
+        run = match.group(0)
+        if run[0].isascii():
+            if len(run) >= _MIN_TOKEN_LEN and run not in _STOPWORDS:
+                tokens.append(run)
+            continue
+        if len(run) == 1:
+            tokens.append(run)
+            continue
+        for i in range(len(run) - 1):
+            bigram = run[i:i + 2]
+            if bigram not in _CJK_STOPWORD_BIGRAMS:
+                tokens.append(bigram)
+    return tokens
+
+
 def anchor_terms(statement: str, in_scope: Iterable[str] = ()) -> List[str]:
     """The north star's anchor vocabulary: content tokens of the statement plus every in_scope
-    entry's tokens. Deterministic order (first occurrence), de-duplicated, stopwords removed."""
+    entry's tokens. Deterministic order (first occurrence), de-duplicated, stopwords removed.
+    CJK text is tokenized as adjacent-character bigrams — see _anchor_tokens."""
     seen: Dict[str, None] = {}
     for src in [statement, *list(in_scope or [])]:
-        for t in _tokens(src):
-            if len(t) >= _MIN_TOKEN_LEN and t not in _STOPWORDS and t not in seen:
+        for t in _anchor_tokens(src):
+            if t not in seen:
                 seen[t] = None
     return list(seen)
 
@@ -84,7 +122,10 @@ def check_drift(north_star: dict, texts: Iterable[str]) -> dict:
 
     anchors = anchor_terms(statement, in_scope)
     joined = " ".join(str(t) for t in texts if t)
-    out_tokens = set(_tokens(joined))
+    # C7: coverage tokens must use the SAME tokenizer as anchor_terms (_anchor_tokens), or a
+    # Chinese anchor bigram could never appear in an unbroken Chinese output run tokenized
+    # differently. out-of-scope PHRASE matching below still uses _tokens/_norm_phrase.
+    out_tokens = set(_anchor_tokens(joined))
     norm_joined = _norm_phrase(joined)
 
     matched = [a for a in anchors if a in out_tokens]

@@ -23,7 +23,6 @@ test-injection point for the network-facing gate (run_dets signatures stay CLI-f
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import re
 from pathlib import Path
@@ -38,7 +37,12 @@ from ...tools.drift_gate import build_verdict as _build_drift_verdict
 from ...tools.idea_dedup import lexical_similarity
 from ...tools.novelty_collision import SOURCE_WORKER, VERDICT_DEAD, build_collision_verdict
 from ...tools import project_memory as _pm
-from ...tools.paper_search import no_semantic_neighbor_found, search_many, write_search_bundle
+from ...tools.paper_search import (
+    no_semantic_neighbor_found,
+    script_of,
+    search_many,
+    write_search_bundle,
+)
 from ...tools.schema_normalizer import normalize_payload, write_report
 from ...tools.scope_guard import discover_vault_root
 from ...tools.validate_artifact import PROFILE_DIR, validate_payload
@@ -65,6 +69,34 @@ def resolve_vault_root(default_vault=None):
     if default_vault and Path(default_vault).is_dir():
         return default_vault
     return None
+
+#: The `support_relation` enum, restated for every linker prompt that asks for the field.
+#:
+#: Registered as D9 (2026-08-06).  `claim_evidence_map.schema.json` has declared a four-value enum
+#: since claim-span/v1, and `evidence_review` spelled it out in its prompt — but `deep_research`,
+#: `evidence_deep` and `read_paper_deep` named the field without ever stating its legal values.  The
+#: 2026-08-04 deep_research run is the measurement: 146 loci carried **22 distinct** relation labels
+#: and only **one of them** was inside the enum.  The gate then had nothing machine-readable to tell
+#: "the source refutes this" apart from "the source was unreachable", so it called both a
+#: contradiction.  Naming the enum at the seat is the input-side half of D9; `tools/citation_checker`
+#: is the gate-side half.  Fail-closed by construction: an unrecognised label still blocks.
+SUPPORT_RELATION_CONTRACT = """
+`support_relation` IS A CLOSED ENUM — use one of exactly four values, verbatim and lowercase, and
+never invent a more descriptive label. A label outside this set is not machine-readable, so the
+deterministic gate cannot tell your nuance apart from a refutation and BLOCKS the run:
+  - "entails"      — this locus, on its own, establishes the claim.
+  - "partial"      — this locus supports the claim but narrows, bounds, or qualifies it. Use this for
+                     a locus that supports the claim while contextualising it; it is NOT a refutation.
+  - "contradicts"  — this locus reports the OPPOSITE of the claim, or refutes its attribution.
+  - "insufficient" — you could NOT establish support here: the source was unreachable, paywalled,
+                     403/404, truncated, or simply does not address the point. This records an
+                     UNVERIFIED locus, NOT a contradiction, and it is how retrieval failure is
+                     reported honestly instead of being dressed up as counter-evidence.
+Set `supports_claim` consistently with it: true for "entails" and "partial", false for "contradicts"
+and "insufficient". Put the nuance your label wanted to carry into `reported_result`, which is free
+prose with no length limit. A claim every one of whose loci is "insufficient" is an UNSUPPORTED claim
+and still blocks — the enum buys honesty about WHY, never a pass.
+"""
 
 _SLUG_REF_RE = re.compile(r"^\[\[([a-z0-9]+(?:-[a-z0-9]+)*)\]\]$")
 # Internal artifact ids (GAP-1, IH2, IDEA-003, EV-1, FW-2, conf1, c1) — anchored tightly, same
@@ -367,12 +399,18 @@ def north_star_block(run_dir) -> str:
     out_s = ", ".join(ns["out_of_scope"]) if ns["out_of_scope"] else "(none declared)"
     return (
         "NORTH STAR (the run's ONLY direction — a deterministic drift gate checks every stage's "
-        "output against it; producing an out-of-scope topic is a hard BLOCK):\n"
+        "output against it; naming an out_of_scope topic, or producing output with zero connection "
+        "to this direction, is a hard BLOCK):\n"
         f"    {ns['statement']}\n"
-        f"  in_scope: {in_s}\n"
-        f"  out_of_scope: {out_s}\n"
-        "Serve this direction only. If your inputs pull elsewhere, SAY SO in your output instead "
-        "of silently following them; you never re-scope the run — only the director may."
+        f"  in_scope (TOPIC boundary — what this run is ABOUT): {in_s}\n"
+        f"  out_of_scope (hard exclusions): {out_s}\n"
+        "in_scope is a TOPIC boundary, NOT a solution menu and NOT a component list to fill in. Any "
+        "mechanism, architecture, loss, training procedure or computation that addresses this "
+        "direction is in scope, including one that no term above names and one that replaces a "
+        "named component entirely. Proposing a solution the north star did not anticipate is the "
+        "point of the run, not drift. Only naming an excluded topic, or answering a different "
+        "question, is drift. If your inputs pull elsewhere, SAY SO in your output instead of "
+        "silently following them; you never re-scope the run — only the director may."
     )
 
 
@@ -438,17 +476,25 @@ def external_refs(evidence_table: dict, claim_evidence_map: Optional[dict] = Non
 def run_existence_gate(run_dir, stage: str, ts: str, refs: List[str]) -> Tuple[str, dict]:
     """Live three-state existence check over external refs (audit H4 — the unplugged weapon, plugged).
 
-    BLOCK iff a ref is CONFIRMED not to exist (the fabrication signal); lookup_error -> warning
-    (offline-safe). The per-run sqlite cache makes re-checks free and the verdict reproducible."""
+    Three states, and only one of them halts a run:
+      BLOCK       a ref is CONFIRMED not to exist (the fabrication signal) -> GateBlock.
+      UNVERIFIED  nothing could be checked at all — zero refs, or every lookup errored (offline).
+                  The artifact is written with status="draft" so the run continues while carrying,
+                  in writing, that NO external existence check actually happened. Reporting the
+                  absence of a check as a PASS was the defect this state exists to remove.
+      PASS        at least one ref was really resolved and none came back not-found.
+    The per-run sqlite cache makes re-checks free and the verdict reproducible.
+    """
     clean = [r for r in dict.fromkeys(str(r).strip() for r in refs) if r]
     cache = ExistenceCache(str(Path(run_dir) / "inbox" / "citation-cache.sqlite"))
     try:
         verdict = build_existence_verdict(clean, ts, transport=EXISTENCE_TRANSPORT, cache=cache)
     finally:
         cache.close()
+    status = {"BLOCK": "blocked", "UNVERIFIED": "draft"}.get(str(verdict["verdict"]), "approved")
     path = write_artifact(run_dir, stage, "citation-existence-verdict.artifact.json",
                           "citation_existence_verdict", "citation-integrity-auditor", verdict, ts,
-                          "blocked" if verdict["verdict"] == "BLOCK" else "approved")
+                          status)
     if verdict["verdict"] == "BLOCK":
         raise GateBlock(f"citation existence gate BLOCK at {stage}: {verdict['violations']}")
     return path, verdict
@@ -503,7 +549,47 @@ def pre_search(run_dir, request: str, ts: str, transport=None,
     """Deterministic live-retrieval pre-step: drop inbox/search-results.json for the worker AND
     the novelty grounding signal. A dead network degrades to an empty-records bundle with
     source_errors recorded — the run proceeds vault-only and the report says so; nothing is
-    fabricated. (Generalized from deep_research; every DISCOVER-entry recipe shares it.)"""
+    fabricated. (Generalized from deep_research; every DISCOVER-entry recipe shares it.)
+
+    C1 guard (2026-08-07): the scholarly APIs behind `search_many` are English-biased. Firing a raw
+    non-Latin request at them returns wrong or empty results that then get reported as real
+    coverage — retrieval poison, and worse than no retrieval because it looks grounded. When no
+    explicit `queries` were supplied and the request is not Latin-script, the direct query is
+    REFUSED: an empty-records bundle is written carrying `query_language_block`, which names the
+    detected script and the action required (supply English `queries`). Passing `queries` yourself
+    always bypasses the guard — translating the request is the caller's judgment, not the machine's.
+    """
+    if not queries and script_of(request) != "latin":
+        detected = script_of(request)
+        res = {
+            "query": request,
+            "records": [],
+            "source_errors": {},
+            "task_request": request,
+            "query_language_block": {
+                "detected": detected,
+                "reason": (
+                    f"the request is {detected}-script and no explicit English queries were "
+                    "supplied; the arXiv/OpenAlex/Crossref/Semantic-Scholar facade is "
+                    "English-biased, so querying it with this string directly would return "
+                    "wrong-or-empty results that later read as real literature coverage"
+                ),
+                "required_action": (
+                    "re-run `operate pre-search` with explicit English `queries` (translate the "
+                    "research question, keeping domain terms as the target literature writes "
+                    "them), or proceed vault-only and mark novelty UNVERIFIED"
+                ),
+            },
+        }
+        path = write_search_bundle(run_dir, request, res, ts)
+        # `write_search_bundle` projects a fixed key set, so the block is re-attached here. The
+        # tidier home is a passthrough inside that writer (tools/paper_search.py, W-gates' file) —
+        # reported rather than reached into, since one owner per file is what keeps this parallel.
+        bundle_path = Path(path)
+        written = json.loads(bundle_path.read_text(encoding="utf-8"))
+        written["query_language_block"] = res["query_language_block"]
+        bundle_path.write_text(json.dumps(written, ensure_ascii=False, indent=1), encoding="utf-8")
+        return path
     try:
         res = search_many(queries or [request], sources=sources,
                           limit_per_source=limit_per_source, transport=transport)
@@ -603,16 +689,23 @@ def collision_findings_bundle(run_dir) -> Optional[dict]:
 
 
 def _verify_collision_fulltext_snapshot(run_dir, paper: dict) -> bool:
-    """Verify the worker's exact-collision full-text receipt inside this run.
+    """Presence-and-fencing check on the worker's exact-collision full-text receipt.
 
-    The checker remains free to obtain/read a paper however it chooses, but a
-    destructive cut must bind that reading to an inspectable immutable input.
-    Missing, external, or hash-mismatched snapshots simply make the collision
-    UNVERIFIED; they never stop delivery and never remove an idea.
+    2026-08-07 (director lock: no hash gating): the SHA-256 comparison against the worker's declared
+    digest is gone. What remains is the part that was never about integrity accounting — a
+    destructive cut must still be bound to a full text that is actually present INSIDE this run's
+    directory, so the cut is inspectable after the fact.
+
+    Deliberately not made to return a constant False. `novelty_collision._is_full_claim_collision`
+    requires this flag, so a hard-coded False would make the prior-art cut unsatisfiable — turning a
+    hash removal into a silent removal of the one destructive gate the director keeps (an EVIDENCED
+    prior-art collision may cut an idea; a novelty SCORE never may). Raised with the team lead.
+
+    A missing, external, or unreadable snapshot still yields False, which downgrades the collision to
+    UNVERIFIED — it never stops delivery and never removes an idea on its own.
     """
     ref = str((paper or {}).get("fulltext_snapshot_ref") or "").strip()
-    claimed = str((paper or {}).get("fulltext_snapshot_sha256") or "").strip().lower()
-    if not ref or not re.fullmatch(r"[0-9a-f]{64}", claimed):
+    if not ref:
         return False
     root = Path(run_dir).resolve()
     candidate = Path(ref)
@@ -623,9 +716,7 @@ def _verify_collision_fulltext_snapshot(run_dir, paper: dict) -> bool:
         resolved.relative_to(root)
     except (OSError, ValueError):
         return False
-    if not resolved.is_file():
-        return False
-    return hashlib.sha256(resolved.read_bytes()).hexdigest() == claimed
+    return resolved.is_file()
 
 
 def run_collision_gate(run_dir, stage: str, ts: str, menu_ideas: List[dict], *,
@@ -666,6 +757,9 @@ def run_collision_gate(run_dir, stage: str, ts: str, menu_ideas: List[dict], *,
     # A non-empty JSON file is not a retrieval receipt. Current workers report
     # complete/partial/unavailable per idea; missing or unavailable status is
     # conservatively ungrounded (legacy bundles can be replayed but cannot cut).
+    # Since 2026-08-07 this reads `retrieval_status` ONLY — the snapshot-hash channel it used to
+    # sit beside is gone, and grounding is a statement about whether retrieval happened, never
+    # about whether a file's bytes matched a digest.
     retrieval_grounded = (
         bundle is not None and bool(findings)
         and all(str(f.get("retrieval_status") or "") in {"complete", "partial"}

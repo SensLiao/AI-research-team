@@ -69,11 +69,19 @@ def test_every_declared_seat_is_a_real_agent():
 def test_the_memo_split_is_verified_not_assumed(data):
     """"157 workers, 120 used by operated modes, 37 spec-only" — checked in code, and it holds."""
     totals = data["totals"]
-    assert totals["rostered"] == 163
+    assert totals["rostered"] == 166
     assert totals["control"] == 6
-    assert totals["workers"] == 157
-    assert totals["declared_by_operated"] == 120
-    assert totals["spec_only"] == 37
+    assert totals["workers"] == 160
+    # Wave 2 (2026-08-04) moved 27 seats from hand-driven to one-button; the 2026-08-07 backlog
+    # close (ideate_ring, aers_enhanced_research_pack) moved 8 more; the same-day registry HANDOFF
+    # (B1 divergence-operator-runner + B5 direction-decision-advisor into new_direction/deep_ideation,
+    # B4 research-trajectory-extractor into read_paper_deep) added 3 rostered seats, all reachable.
+    # These are REACHABILITY numbers only — how many seats a director could dispatch with one
+    # command. How many have ever actually run is a different axis with a different source
+    # (governance census over run bundles), pinned separately in
+    # test_agent_connectivity::test_reachable_is_never_reported_as_exercised.
+    assert totals["declared_by_operated"] == 158
+    assert totals["spec_only"] == 2
     assert totals["in_no_subset"] == 0
     assert totals["workers"] == totals["declared_by_operated"] + totals["spec_only"]
 
@@ -92,10 +100,16 @@ def test_the_roster_ceiling_is_never_below_what_the_recipe_dispatches(teams):
 
 
 def test_the_council_only_gap_is_named_seat_by_seat(teams):
-    """15 seats across 3 modes fire only on the mechanism-council path — say which, not just how many."""
+    """Seats that fire only on the mechanism-council path — say WHICH, not just how many.
+
+    The count is derived, never pinned: it was 15 before wave 2 and is smaller after, because a seat
+    stops being council-only the moment some wired mode declares it. Pinning the integer is what made
+    this test stale twice; the invariant that matters is that every council-only seat is NAMED and is
+    genuinely reachable-but-not-recipe-dispatched.
+    """
     gap = {t["mode"]: t["council_only"] for t in teams["teams"] if t["council_only"]}
-    assert set(gap) == {"full_rigor_minimal", "manuscript_review", "venue_readiness"}
-    assert sum(len(v) for v in gap.values()) == teams["totals"]["council_only"] == 15
+    assert {"full_rigor_minimal", "manuscript_review"} <= set(gap)
+    assert sum(len(v) for v in gap.values()) == teams["totals"]["council_only"] > 0
     for mode, seats in gap.items():
         assert seats == sorted(seats), mode
         for seat in seats:
@@ -116,7 +130,7 @@ def test_only_the_modes_with_a_real_knob_are_called_scalable(teams):
 
 def test_team_plan_rejects_a_mode_that_is_not_one_button():
     with pytest.raises(KeyError):
-        census.team_plan("verify_result")
+        census.team_plan("tree_explore")
 
 
 # ------------------------------------------------------------------------- feeds the outcome card

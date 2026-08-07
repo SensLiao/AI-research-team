@@ -20,7 +20,7 @@ GOOD = {
 def test_sufficient_saturated_evidence_passes():
     reasons, facts = check_evidence(GOOD)
     assert reasons == []
-    assert facts == {"n_sources": 3, "n_strong": 1, "saturation_reached": True}
+    assert facts == {"n_sources": 3, "n_strong": 1, "saturation_reached": True, "warnings": []}
     assert build_verdict(GOOD)["verdict"] == "PASS"
 
 
@@ -39,11 +39,21 @@ def test_no_strong_support_blocks():
     assert build_verdict(weak)["verdict"] == "BLOCK"
 
 
-def test_unsaturated_search_blocks():
+def test_unsaturated_search_warns_but_does_not_block():
+    """Director lock 2026-08-07: saturation is measured and REPORTED, never a halt.
+
+    Under the legacy contract the worker self-declared `saturation_reached` by copying its own prompt
+    skeleton, so blocking on it enforced nothing while being able to stop a run. The value is now
+    derived from the recorded retrieval rounds and surfaces as an advisory.
+    """
     unsat = copy.deepcopy(GOOD)
     unsat["saturation_reached"] = False
-    assert any("saturation" in r for r in check_evidence(unsat)[0])
-    assert build_verdict(unsat)["verdict"] == "BLOCK"
+    reasons, facts = check_evidence(unsat)
+    assert not any("saturation" in r for r in reasons)
+    assert any("saturation" in w for w in facts["warnings"])
+    verdict = build_verdict(unsat)
+    assert verdict["verdict"] == "PASS"
+    assert verdict["saturation_reached"] is False      # still visible to the director
 
 
 def test_profile_can_tighten_threshold_not_loosen():

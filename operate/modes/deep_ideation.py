@@ -36,7 +36,7 @@ def pre_search(run_dir: str, request: str, ts: str, transport=None,
 
 
 def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
-             model_policy: str = "max_quality") -> Optional[dict]:
+             model_policy: str = "default") -> Optional[dict]:
     """The worker(s) to dispatch for a stage. DISCOVER and IDEATE return a PANEL ('workers') the skill
     spawns IN ORDER (each deep worker reads the prior workers' inbox bundles). REPORT is deterministic."""
     if stage == "DISCOVER":
@@ -54,17 +54,23 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
                               "mining independently. Wave 3 builds mechanisms; wave 4 maps only "
                               "mechanism-supported cross-domain analogies."}
     if stage == "IDEATE":
-        workers = [new_direction.ideate_worker(run_dir, request, vault, model_policy),
+        workers = [new_direction.divergence_worker(run_dir, request, model_policy),
+                   new_direction.ideate_worker(run_dir, request, vault, model_policy),
                    new_direction.ranker_worker(run_dir, request, model_policy),
                    new_direction.collision_step(run_dir, vault=vault, model_policy=model_policy),
                    _deep_ideate.experiment_worker(run_dir, request, model_policy)]
         return {"workers": workers,
                 "worker_order": [worker["label"] for worker in workers],
                 "parallel_groups": [[worker["label"]] for worker in workers],
-                "panel_note": "spawn IN ORDER: hypothesis-generator (proposer) -> idea-tournament-ranker -> "
-                              "novelty-collision-checker -> experiment-planner. Ranking, collision, "
-                              "and planning remain independent judgments with distinct bundles."}
-    return None  # REPORT is deterministic
+                "panel_note": "spawn IN ORDER: divergence-operator-runner (six operators over the "
+                              "frozen DISCOVER material) -> hypothesis-generator (proposer) -> "
+                              "idea-tournament-ranker -> novelty-collision-checker -> "
+                              "experiment-planner. Ranking, collision, and planning remain "
+                              "independent judgments with distinct bundles."}
+    if stage == "REPORT":
+        # Advisory outer-loop seat, identical to new_direction's (one definition, two modes).
+        return new_direction.llm_step(run_dir, stage, request, vault=vault, model_policy=model_policy)
+    return None
 
 
 def _discover_dets(run_dir, ts) -> tuple:

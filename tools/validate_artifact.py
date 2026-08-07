@@ -168,6 +168,10 @@ PAYLOAD_SCHEMAS = {
     "experiment_sketch": "experiment_sketch.schema.json",      # experiment-planner (IDEATE; minimal testable experiment per surviving idea; lighter than DESIGN protocol)
     "idea_lineage": "idea_lineage.schema.json",                # idea-evolver (IDEATE; per-idea provenance ledger; disposition is mechanical, never a bet)
     "idea_quality_eval": "idea_quality_eval.schema.json",      # idea_quality_eval.py (REPORT; blind pairwise quality harness; decomposed scores, no collapsed total / no bet)
+    # --- Invention-first ideation (2026-08-07; director's innovation cognitive map) ---
+    "divergence_trace": "divergence_trace.schema.json",        # divergence-operator-runner (IDEATE; the six divergence operators run BEFORE proposing; measurement only, never a cut)
+    "direction_recommendation": "direction_recommendation.schema.json",  # direction-decision-advisor (REPORT; DEEPEN/BROADEN/PIVOT/CONCLUDE with evidence both ways; ADVICE, never a decision)
+    "exploration_tree": "exploration_tree.schema.json",        # research-trajectory-extractor (DISCOVER; dead ends / decisions / pivots behind a published method)
     # --- Paper-reading upgrade (2026-06-26; see _design/paper-reading-upgrade/paper-reading-upgrade-LEDGER.md) ---
     "method_teardown": "method_teardown.schema.json",          # Pass-2 method teardown of a read paper (problem / assumptions / per-term loss / flows / data / cost / baseline diff)
     "figure_reading": "figure_reading.schema.json",            # Pass-2 structured figure reading (axes / controls / error-bars / take-home / distrust)

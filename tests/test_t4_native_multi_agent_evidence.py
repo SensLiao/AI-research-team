@@ -60,7 +60,11 @@ def test_source_phase1_selection_and_server_query_contract():
     assert source_lock["source_count"] == len(source_lock["sources"]) == 9
     assert source_lock["skill_count_total"] == 359
     assert sum(row["skill_count"] for row in source_lock["sources"]) == 359
-    assert sum(len(row["source_artifacts"]) for row in source_lock["sources"]) == 45
+    # Receipts GROW when a new overlay card cites a new upstream original, so the invariant is
+    # "every source is receipted", not a frozen total. A literal here (was 45) only records the
+    # last time somebody widened the catalog.
+    assert all(row["source_artifacts"] for row in source_lock["sources"]), "a source with no receipt"
+    assert sum(len(row["source_artifacts"]) for row in source_lock["sources"]) >= 45
 
     registry = _json(ROOT / "orchestrator" / "research_skill_integration_registry.json")
     capabilities = registry["capabilities"]

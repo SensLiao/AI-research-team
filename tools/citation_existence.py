@@ -10,11 +10,17 @@ reference a worker cites is looked up against the live scholarly APIs and lands 
 plus ``skipped`` for refs this checker does not own (vault ``[[slug]]`` refs are resolved by the
 existing citation-integrity-auditor structural gate; bare URLs are carried as-is).
 
-Verdict discipline (conservative, offline-safe):
-  BLOCK  iff at least one reference is ``not_found`` (a confirmed-nonexistent citation is the
-         fabrication signal this gate exists to catch).
-  PASS   otherwise; every ``lookup_error`` becomes a WARNING — a dead network must never
-         false-BLOCK a run, and must never silently count as verified either.
+Verdict discipline (conservative, offline-safe; C2, 2026-08-07 — three states; director-
+tightened 2026-08-07 — a confirmed fabrication BLOCKs unconditionally, checked first):
+  BLOCK       at least one reference is ``not_found`` — a confirmed-nonexistent citation is
+              the fabrication signal this gate exists to catch, and grounding is never
+              relaxed for it: it BLOCKs even in the same batch as an unrelated lookup_error,
+              even when nothing else in the batch was ever verified.
+  UNVERIFIED  (when not BLOCK) no refs were given, or nothing was genuinely verified and at
+              least one lookup errored — no external existence check actually happened, so
+              the run must not read as a clean PASS.
+  PASS        otherwise; every ``lookup_error`` becomes a WARNING — a dead network must never
+              false-BLOCK a run, and must never silently count as verified either.
 
 The state for each ref is cached (sqlite, machine-side path supplied by the caller — typically
 under ``runs/``; never the vault) keyed by the normalized ref, so re-checks are free and a run's
@@ -183,9 +189,20 @@ def build_existence_verdict(refs: List[str], ts: str, transport: Optional[Transp
                             cache: Optional[ExistenceCache] = None) -> dict:
     """Check every ref; return the ``citation_existence_verdict`` payload.
 
-    BLOCK iff any ref is confirmed ``not_found``. ``lookup_error`` -> warning, never a block
-    (offline-safe) and never silently verified. Deterministic: same refs + same transport
-    answers -> same payload.
+    Three-state verdict (C2, 2026-08-07; director-tightened 2026-08-07) — checked in this
+    order:
+      BLOCK       iff any ref is confirmed ``not_found`` — checked FIRST and unconditionally.
+                  A confirmed fabrication BLOCKs even in the same batch as an unrelated
+                  lookup_error, even when n_verified==0 elsewhere in the batch: grounding is
+                  never relaxed for a confirmed-missing citation.
+      UNVERIFIED  iff (not BLOCK and) no refs were given, OR nothing was verified AND at
+                  least one lookup errored (nothing genuinely checked out clean; reporting
+                  that as PASS would claim a verification that never happened).
+      PASS        otherwise.
+    ``lookup_error`` alone (with at least one genuine ``verified`` ref, and no confirmed
+    ``not_found``) still never blocks — a dead network on one source must not sink an
+    otherwise-clean citation list. Deterministic: same refs + same transport answers -> same
+    payload.
     """
     checked = [check_reference(r, ts, transport=transport, cache=cache)
                for r in refs]
@@ -195,13 +212,19 @@ def build_existence_verdict(refs: List[str], ts: str, transport: Optional[Transp
                   for c in checked if c["state"] == STATE_NOT_FOUND]
     warnings = [f"{c['ref']}: could not check — {c['detail']}"
                 for c in checked if c["state"] == STATE_LOOKUP_ERROR]
+    if violations:
+        verdict = "BLOCK"
+    elif not checked or (n[STATE_VERIFIED] == 0 and n[STATE_LOOKUP_ERROR] > 0):
+        verdict = "UNVERIFIED"
+    else:
+        verdict = "PASS"
     return {
         "checked": checked,
         "n_verified": n[STATE_VERIFIED],
         "n_not_found": n[STATE_NOT_FOUND],
         "n_lookup_error": n[STATE_LOOKUP_ERROR],
         "n_skipped": n[STATE_SKIPPED],
-        "verdict": "BLOCK" if violations else "PASS",
+        "verdict": verdict,
         "violations": violations,
         "warnings": warnings,
     }

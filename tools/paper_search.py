@@ -80,6 +80,26 @@ def _norm_title(title: str) -> str:
     return " ".join(_WORD_RE.findall((title or "").lower()))
 
 
+def script_of(text: str) -> str:
+    """Classify text's script: 'latin', 'cjk', or 'mixed' (Unicode ranges, no dependencies).
+
+    C1 (2026-08-07): the sanctioned scholarly-search facade fans queries at English-biased
+    metadata APIs; a raw non-Latin request sent to them directly is retrieval poison (wrong
+    or empty results reported as if they were real coverage). This is the shared script
+    classifier both pre_search's Latin-only direct-query guard and search_many's
+    cross_script_rejections counter key off of. Empty or script-free text (pure digits/
+    punctuation) classifies as 'latin' — a conservative default that never trips the guard
+    on ambiguous input.
+    """
+    has_latin = bool(re.search(r"[a-zA-Z]", text or ""))
+    has_cjk = bool(_CJK_RE.search(text or ""))
+    if has_latin and has_cjk:
+        return "mixed"
+    if has_cjk:
+        return "cjk"
+    return "latin"
+
+
 def _salient_terms(text: str) -> set[str]:
     """Multilingual lexical anchors for a conservative query/title relevance gate.
 
@@ -222,9 +242,11 @@ def search_many(queries: Sequence[str], sources=DEFAULT_SOURCES, limit_per_sourc
     n_candidates = 0
     n_rejected = 0
     n_merged_duplicates = 0
+    n_cross_script_rejected = 0
     for query_index, query in enumerate(clean_queries, start=1):
         result = search(query, sources=sources, limit_per_source=limit_per_source,
                         transport=transport)
+        query_script = script_of(query)
         for source, detail in result.get("source_errors", {}).items():
             errors[f"q{query_index}:{source}"] = sanitize_scholar_error(detail)
         for record in result.get("records", []):
@@ -238,6 +260,11 @@ def search_many(queries: Sequence[str], sources=DEFAULT_SOURCES, limit_per_sourc
             score = query_title_relevance(query, title)
             if score < min_relevance:
                 n_rejected += 1
+                # C1 (2026-08-07): a rejection where the query and this title are in different
+                # scripts is named separately — it may be a genuine mismatch, or it may be a
+                # translation/retrieval gap worth flagging rather than reading as "no related work".
+                if title and script_of(title) != query_script:
+                    n_cross_script_rejected += 1
                 continue
             key = _dedup_key(record)
             if key not in merged:
@@ -275,6 +302,7 @@ def search_many(queries: Sequence[str], sources=DEFAULT_SOURCES, limit_per_sourc
             "n_accepted": len(records),
             "n_rejected": n_rejected,
             "n_merged_duplicates": n_merged_duplicates,
+            "cross_script_rejections": n_cross_script_rejected,
         },
         "retrieval_channels": {
             "metadata_apis": list(sources),
@@ -367,6 +395,11 @@ def write_search_bundle(run_dir, query: str, result: dict, ts: str) -> str:
                    "local_fulltext": "fulltext-pre",
                    "agent_web_search": "worker fallback over primary sources only",
                }}
+    # C1 passthrough (2026-08-07): this writer otherwise projects a fixed key set, which would
+    # silently drop _shared.pre_search's Latin-only direct-query guard block. Callers that don't
+    # set it are unaffected — the key is only added when present.
+    if "query_language_block" in result:
+        payload["query_language_block"] = result["query_language_block"]
     p.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     return str(p)
 

@@ -31,10 +31,16 @@ _UNFINISHED_HINT = {
     "failed": "中途停下了，没有跑完",
     "rejected": "被你在关卡上否决了",
     "crashed_mid_stage": "跑到一半中断了，可以从断点续上",
+    # `awaiting_director` is what `operate/spine.py` actually writes; `awaiting` is kept for older runs.
     "awaiting": "停在关卡上，等你拍板",
+    "awaiting_director": "停在关卡上，等你拍板",
+    "awaiting_resume": "停下了，等着从断点续跑",
     "tampered": "记录对不上，这次结果不可信",
     "inconsistent": "台账和流水对不上，需要人工看一眼",
 }
+
+# Every status that means "the machine is deliberately stopped, waiting for the human".
+_AWAITING = ("awaiting", "awaiting_director")
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -96,14 +102,49 @@ def build_progress(run_dir: str | Path) -> dict[str, Any]:
         "caveats": [str(x) for x in (report.get("delivery_caveats") or []) if str(x).strip()],
         "director_files": _director_files(root),
         "quality": grade,
+        "pending_stages": [str(s) for s in (manifest.get("pending_gates") or [])],
+        "pending_gates": _gates_for_mode(mode),
     }
+
+
+def _gates_for_mode(mode: str) -> list[str]:
+    """Which human gate(s) this mode's pause belongs to — DERIVED, never hand-typed.
+
+    Reuses the status bar's recipe-driven mapping so the two never disagree; an unknown mode
+    yields an empty list, and the report then says "waiting on you" without naming a button
+    it cannot justify.
+    """
+    if not mode:
+        return []
+    try:
+        from . import status_bar
+        return sorted(gate for gate, modes in status_bar.gate_prerequisites().items()
+                      if mode in modes)
+    except Exception:  # noqa: BLE001 — a derivation failure must not break the report
+        return []
 
 
 # --------------------------------------------------------------------------- rendering
 
 def _headline(data: dict[str, Any]) -> list[str]:
-    summary = data.get("summary") or "（这次运行还没写出结论）"
+    summary = data.get("summary") or _paused_headline(data) or "（这次运行还没写出结论）"
     return ["## 1. 一句话结论", "", f"{summary}", ""]
+
+
+def _paused_headline(data: dict[str, Any]) -> str:
+    """A run stopped at a human gate has no REPORT note yet — but it is not a blank.
+
+    The honest headline is the state itself: the work reached a decision boundary and is
+    holding there for the director.  Saying "no conclusion" would read as failure.
+    """
+    if str(data.get("status")) not in _AWAITING:
+        return ""
+    stages = data.get("pending_stages") or []
+    where = "、".join(words.say(s) for s in stages)
+    done = len(data.get("completed_stages") or [])
+    head = (f"做到「{where}」就停下了" if where else "做到关卡就停下了")
+    return (f"{head}，等你拍板才能往下走"
+            f"（已跑完 {done} 步，产物在第 3 节，决定在第 5 节）。")
 
 
 def _progress_bar(data: dict[str, Any]) -> list[str]:
@@ -164,8 +205,15 @@ def _honesty(data: dict[str, Any]) -> list[str]:
 
 def _decisions(data: dict[str, Any]) -> list[str]:
     out = ["## 5. 需要你做的决定", ""]
-    if str(data.get("status")) == "awaiting":
-        out += ["- 这次停在关卡上了，**必须你点头才能继续**。机器不会替你决定。", ""]
+    if str(data.get("status")) in _AWAITING:
+        out.append("- 这次停在关卡上了，**必须你点头才能继续**。机器不会替你决定。")
+        gates = data.get("pending_gates") or []
+        if gates:
+            named = " 或 ".join(words.gate_label(g) for g in gates)
+            out.append(f"- **要按的是**：{named}")
+        else:
+            out.append("- 这个模式没有登记对应的关卡按钮 —— 直接告诉我「继续」或「换方向」即可。")
+        out.append("")
         return out
     if str(data.get("status")) == "done":
         out += ["- 没有卡住的决定。唯一可选动作："

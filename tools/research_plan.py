@@ -53,24 +53,26 @@ _BAND_MEDIUM_MAX = 16
 
 # --------------------------------------------------------------------------- catalog / registry I/O
 
-#: path -> ((mtime_ns, size), parsed). The two catalogs are 58 KB and 14 KB of YAML, read on nearly
+#: path -> (raw_text, parsed). The two catalogs are 58 KB and 14 KB of YAML, read on nearly
 #: every control-plane call: parsing one costs ~84 ms, deep-copying the parsed tree ~0.8 ms. Rendering
-#: the outcome menu did it a few hundred times and took 11.6 s of the director's time.
-_YAML_CACHE: dict[str, tuple[tuple[int, int], dict]] = {}
+#: the outcome menu did it a few hundred times and took 11.6 s of the director's time. The cache key
+#: is the file's TEXT, not its (mtime, size) stamp: a same-size rewrite inside one filesystem
+#: timestamp tick (Windows granularity) left the old stamp intact and served a stale parse, while
+#: re-reading the text costs ~1 ms — it is the parse we are avoiding, not the read.
+_YAML_CACHE: dict[str, tuple[str, dict]] = {}
 
 
 def _load_yaml_cached(path: Path) -> dict:
-    """Parse once per (mtime, size), then hand every caller its own independent copy.
+    """Parse once per distinct file content, then hand every caller its own independent copy.
 
     The contract callers already had is preserved exactly — a fresh mutable dict — so a caller that
     edits the result (`tests/test_graph_spec.py` does) still cannot affect anyone else, and an edit
-    to the yaml on disk still takes effect with no restart because the stamp changes.
+    to the yaml on disk still takes effect with no restart because the text changes.
     """
-    stat_result = path.stat()
-    stamp = (stat_result.st_mtime_ns, stat_result.st_size)
+    text = path.read_text(encoding="utf-8")
     cached = _YAML_CACHE.get(str(path))
-    if cached is None or cached[0] != stamp:
-        cached = (stamp, yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+    if cached is None or cached[0] != text:
+        cached = (text, yaml.safe_load(text) or {})
         _YAML_CACHE[str(path)] = cached
     return copy.deepcopy(cached[1])
 
@@ -798,9 +800,19 @@ def validate_upstream_grounding(grounding: dict) -> list[str]:
     accepted = {str(value) for value in downstream.get("accepts") or []}
     if grounding.get("downstream_mode") and downstream and not downstream.get("contract_pinned"):
         errors.append("downstream product contract is not pinned in the task frame")
+    # Same rule as `_validate_downstream_compatibility`, and it must STAY the same rule: these two
+    # used to disagree about an empty `accepts` — this one skipped the check, that one refused every
+    # upstream — so whether a chain was legal depended on which validator happened to run.
+    downstream_mode_name = str(grounding.get("downstream_mode") or "downstream")
     for run in grounding.get("upstream_runs") or []:
         product = str((run.get("product_contract") or {}).get("product_version") or "")
-        if accepted and product and product not in accepted:
+        if not product:
+            continue
+        if not accepted:
+            if _declares_no_upstream_contract(downstream_mode_name):
+                errors.append(
+                    _entry_point_refusal(downstream_mode_name, str(run.get("run_id")), product))
+        elif product not in accepted:
             errors.append(
                 f"mode handoff mismatch: downstream accepts {sorted(accepted)}, "
                 f"but upstream {run.get('run_id')!r} provides {product!r}"
@@ -827,6 +839,30 @@ def validate_upstream_grounding(grounding: dict) -> list[str]:
     return errors
 
 
+def _declares_no_upstream_contract(downstream_mode: str) -> bool:
+    """True only for a REGISTERED mode whose `handoff.accepts` is empty — i.e. a real entry point.
+
+    A name the registry does not know (a synthetic fixture mode, a legacy run recorded before its
+    mode existed) also yields an empty `accepts`, but it means "unknown", not "root". Refusing those
+    would turn a missing registry entry into a chaining error, so they keep the older permissive
+    behaviour: nothing is declared, so nothing is checked.
+    """
+    return downstream_mode in (load_mode_registry().get("modes") or {})
+
+
+def _entry_point_refusal(downstream_mode: str, run_id: str, product: str) -> str:
+    """The message an ENTRY-POINT mode gives when someone tries to chain a run into it.
+
+    An empty `handoff.accepts` means "this mode consumes no upstream RUN" — `ingest_paper` takes a
+    PDF, not another run's product. Saying `accepts []` made that look like a registry gap rather
+    than a designed property, so the reader could not tell a root mode from an unfinished one.
+    """
+    return (f"{downstream_mode!r} is an entry-point mode: it declares no upstream contract "
+            f"(handoff.accepts is empty) and consumes no prior run, so it cannot be chained. "
+            f"Upstream {run_id!r} provides {product!r}. Start {downstream_mode!r} without "
+            f"--upstream-run, or chain into a mode that accepts {product!r}.")
+
+
 def _validate_downstream_compatibility(runs: list[dict], downstream_mode: Optional[str],
                                        downstream_contract: Optional[dict] = None) -> None:
     if not downstream_mode:
@@ -835,7 +871,14 @@ def _validate_downstream_compatibility(runs: list[dict], downstream_mode: Option
     accepted = {str(value) for value in downstream.get("accepts") or []}
     for run in runs:
         product = str((run.get("product_contract") or {}).get("product_version") or "")
-        if product and product not in accepted:
+        if not product:
+            continue
+        if not accepted:
+            if _declares_no_upstream_contract(downstream_mode):
+                raise ValueError(
+                    _entry_point_refusal(downstream_mode, str(run.get("run_id")), product))
+            continue        # unregistered mode: nothing declared, so nothing to check
+        if product not in accepted:
             raise ValueError(
                 f"mode handoff mismatch: {downstream_mode!r} accepts {sorted(accepted)}, "
                 f"but upstream {run.get('run_id')!r} provides {product!r}"
@@ -1045,3 +1088,56 @@ def augment_worker_with_upstream(worker: Optional[dict], run_dir: str) -> Option
     elif isinstance(worker.get("prompt"), str):
         worker["prompt"] = worker["prompt"] + block
     return worker
+
+
+def unchained_upstream_advisory(runs_dir: str, project: str, downstream_mode: str) -> Optional[dict]:
+    """Name the chain the director could have made but did not — at `begin`, before any worker runs.
+
+    `--upstream-run` has always worked; nothing ever pointed out that it was MISSING. A mode that
+    declares `handoff.accepts` is saying, in the registry, that it is designed to consume a prior
+    run's product; starting it bare is legal but is usually an oversight, and the cost only surfaces
+    much later when the downstream product turns out to contradict a finding it never read.
+
+    Returns ``None`` when there is nothing to say — an entry-point mode (empty `accepts`), or no
+    completed run in this project whose product the mode accepts. Advisory only: it never blocks,
+    because chaining is the director's call and a deliberate fresh start is legitimate.
+    """
+    accepts = {str(x) for x in (_mode_handoff(downstream_mode).get("accepts") or [])}
+    if not accepts:
+        return None
+    project_root = Path(runs_dir) / project
+    if not project_root.is_dir():
+        return None
+    candidates: list[dict] = []
+    for run_dir in sorted(project_root.iterdir()):
+        if not run_dir.is_dir():
+            continue
+        payload = (_read_json(run_dir / "task_frame.artifact.json") or {}).get("payload") or {}
+        mode = str(payload.get("mode") or "")
+        if not mode:
+            continue
+        product = str(_contract_for_run(payload, mode).get("product_version") or "")
+        if product not in accepts:
+            continue
+        if str((_read_yaml(run_dir / "manifest.yaml") or {}).get("status") or "") != "done":
+            continue        # an unfinished run is not a handoff; readiness validation would refuse it
+        report = (_read_json(run_dir / "evidence" / "REPORT" / "report-note.artifact.json") or {})
+        candidates.append({
+            "run_id": str(payload.get("task_id") or run_dir.name),
+            "mode": mode,
+            "product_version": product,
+            "summary": str((report.get("payload") or {}).get("summary") or "")[:240],
+        })
+    if not candidates:
+        return None
+    ids = ", ".join(c["run_id"] for c in candidates)
+    return {
+        "status": "NOT_CHAINED",
+        "downstream_mode": downstream_mode,
+        "accepts": sorted(accepts),
+        "available_upstream_runs": candidates,
+        "note": (f"{downstream_mode!r} declares it can consume {sorted(accepts)}, and this project "
+                 f"has {len(candidates)} completed run(s) it would accept, but this run was started "
+                 f"with no --upstream-run. It will NOT read them. If that is not what you meant, "
+                 f"re-begin with: --upstream-run {ids}"),
+    }

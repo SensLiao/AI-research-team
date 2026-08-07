@@ -280,12 +280,14 @@ def test_ideate_panel_keeps_proposer_ranker_collision_planner_separate(tmp_path)
     workers = spec["workers"]
 
     assert [w["label"] for w in workers] == [
+        "divergence-operator-runner",
         "hypothesis-generator",
         "idea-tournament-ranker",
         "novelty-collision-checker",
         "experiment-planner",
     ]
     assert [Path(w["output"]).name for w in workers] == [
+        "DIVERGENCE.bundle.json",
         "IDEATE.bundle.json",
         "RANKING.bundle.json",
         "COLLISION.bundle.json",
@@ -600,15 +602,37 @@ def test_explicit_hash_bound_legacy_replay_stays_unverified_and_unranked(tmp_pat
     assert all(row["trust_status"] == "LEGACY_UNVERIFIED" for row in new_direction.menu(rd))
 
 
-def test_tampering_legacy_bundle_after_receipt_blocks_replay(tmp_path):
+def test_editing_a_legacy_bundle_after_the_receipt_no_longer_blocks_replay(tmp_path):
+    """The receipt's job is DELIBERATENESS, not integrity (2026-08-07 no-hash-gating lock).
+
+    An operator restoring a historical bundle must still name the source run, give a reason, and
+    acknowledge in writing that a replay earns no current scientific rank and no current PASS. That
+    acknowledgement is what stops a stale bundle being mistaken for a fresh one — and it is carried
+    into the menu as a caveat on every idea (asserted below). The digest never added to it.
+    """
     rd = _begin(tmp_path)
     _drop(rd, "IDEATE", copy.deepcopy(IDEATE_BUNDLE))
     new_direction.write_legacy_replay_receipt(
         rd, source_run_id="historical-di1", reason="frozen replay")
     path = Path(rd) / "inbox" / "IDEATE.bundle.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    payload["ideas"][0]["summary"] += " tampered"
+    payload["ideas"][0]["summary"] += " edited after the receipt"
     path.write_text(json.dumps(payload), encoding="utf-8")
 
-    with pytest.raises(GateBlock, match="hash mismatch"):
+    merged = new_direction._load_ideate_bundle(rd)
+    assert merged[new_direction._CONTRACT_STATUS_KEY] == new_direction._LEGACY_UNVERIFIED
+
+
+def test_a_legacy_replay_without_its_acknowledgement_still_blocks(tmp_path):
+    """The part of the receipt that carries meaning is still enforced."""
+    rd = _begin(tmp_path)
+    _drop(rd, "IDEATE", copy.deepcopy(IDEATE_BUNDLE))
+    new_direction.write_legacy_replay_receipt(
+        rd, source_run_id="historical-di1", reason="frozen replay")
+    receipt_path = Path(rd) / "inbox" / new_direction.LEGACY_REPLAY_RECEIPT_NAME
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["limitations_acknowledged"] = []
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(GateBlock, match="acknowledge"):
         new_direction._load_ideate_bundle(rd)

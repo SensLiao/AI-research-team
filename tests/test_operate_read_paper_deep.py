@@ -396,6 +396,23 @@ def _good_bundle(source_ref=SOURCE):
             "cost": "4.2M trainable params",
             "baseline_difference": "the boundary loss on a frozen FM",
         },
+        "exploration_tree": {
+            "source_ref": source_ref,
+            "nodes": [
+                {"node_id": "DE-1", "type": "dead_end", "support_level": "explicit",
+                 "summary": "full fine-tuning of the encoder was tried and dropped",
+                 "hypothesis": "unfreezing the encoder would recover thin-structure recall",
+                 "failure_mode": "canal recall fell 6 Dice points and training diverged past epoch 40",
+                 "lesson": "on 480 volumes the encoder overfits before the boundary loss can bind",
+                 "source_refs": ["Table 3 ablation row 2"]},
+                {"node_id": "DC-1", "type": "decision", "support_level": "explicit",
+                 "summary": "boundary loss chosen over a topology-preservation penalty",
+                 "choice": "boundary-aware loss", "alternatives": ["topology-preservation penalty"],
+                 "informed_by": "the topology penalty needed a skeleton the dataset does not carry",
+                 "source_refs": ["Sec 3.2"]},
+            ],
+            "extraction_note": "ablation table made both nodes explicit; no pivot reported",
+        },
         "figure_reading": {
             "source_ref": source_ref,
             "visual_input_status": "INSPECTED_VISUAL",
@@ -750,7 +767,10 @@ def test_read_paper_deep_writes_all_nineteen_artifacts_and_gates_approve(tmp_pat
 
     for needle in EXPECTED_DEEP_FILES:
         assert any(needle in p for p in paths), f"missing artifact {needle}"
-    assert report["citation_gate"] == "PASS" and report["existence_gate"] == "PASS"
+    # UNVERIFIED, not PASS (C2, 2026-08-07): this fixture's refs are all local slugs, so there is
+    # nothing external to look up and no external check happens. Reporting "PASS" for a check that
+    # never ran was the defect; the run still proceeds.
+    assert report["citation_gate"] == "PASS" and report["existence_gate"] == "UNVERIFIED"
     assert report["quality_verdict"] == "PASS"
     assert report["single_paper_completeness"] == "complete"
     assert report["source_fidelity"] == "strong"
@@ -971,7 +991,14 @@ def test_read_paper_deep_current_run_cannot_omit_citation_auditor(tmp_path):
         read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
 
 
-def test_read_paper_deep_recomputes_snapshot_hash_and_blocks_tampering(tmp_path):
+def test_read_paper_deep_rereads_the_snapshot_and_blocks_a_quote_that_is_not_there(tmp_path):
+    """Changed bytes are still caught — by READING them, not by comparing a digest.
+
+    The SHA-256 recomputation was removed on 2026-08-07 (director lock: no hash gating). This case
+    is unchanged in outcome: edit the snapshot and the declared exact_quote is no longer at the
+    declared locator, so the citation-attribution gate blocks on what actually matters — the quote
+    does not support the claim. Grounding survived the hash removal; only the bookkeeping went.
+    """
     run_dir = _mk_run(tmp_path)
     _write_fulltext_context(run_dir)
     _write_deep_worker_bundles(run_dir, _with_page_anchors(_good_bundle()))
@@ -979,7 +1006,7 @@ def test_read_paper_deep_recomputes_snapshot_hash_and_blocks_tampering(tmp_path)
         "tampered after linker output", encoding="utf-8")
     with pytest.raises(GateBlock) as exc:
         read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
-    assert "SHA-256 mismatch" in str(exc.value)
+    assert "exact_quote mismatch" in str(exc.value)
 
 
 def test_read_paper_deep_quote_locator_mismatch_blocks_truth_claim(tmp_path):
@@ -1320,26 +1347,48 @@ def test_read_paper_deep_missing_visual_manifest_is_delivery_caveat(tmp_path):
     assert any("visual manifest" in row.casefold() for row in advisory["warnings"])
 
 
-def test_read_paper_deep_tampered_visual_asset_hash_is_content_delivery_caveat(tmp_path):
+def test_read_paper_deep_missing_visual_asset_is_content_delivery_caveat(tmp_path):
+    """Asset-digest checking is gone (2026-08-07); asset PRESENCE still bounds the visual claim.
+
+    A figure the run says it inspected must at least be a real file inside the run. Deleting it
+    downgrades delivery to PASS_WITH_CAVEATS rather than blocking — a presentation-evidence gap
+    never hides an otherwise readable card.
+    """
     run_dir = _mk_run(tmp_path)
     _write_fulltext_context(run_dir)
-    (run_dir / VISUAL_REF).write_bytes(b"tampered-after-manifest")
+    (run_dir / VISUAL_REF).unlink()
     _write_deep_worker_bundles(run_dir, _with_page_anchors(_good_bundle()))
     _paths, report = read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
     advisory = json.loads((run_dir / "inbox" / "usable-first-advisory.json").read_text())
     assert report["quality_verdict"] == "PASS_WITH_CAVEATS"
-    assert any("asset" in row.casefold() and "mismatch" in row.casefold()
+    assert any("asset" in row.casefold() and "missing" in row.casefold()
                for row in advisory["warnings"])
 
 
-def test_read_paper_deep_tampered_source_snapshot_blocks_visual_provenance(tmp_path):
+def test_read_paper_deep_edited_source_document_no_longer_blocks_on_a_digest(tmp_path):
+    """Only the digest comparison went (2026-08-07). The source must still EXIST and be run-local.
+
+    A re-rendered or re-saved PDF used to halt the whole read. What still catches a source that
+    genuinely stopped supporting the claims is the exact-quote gate above, which reads the bytes.
+    """
     run_dir = _mk_run(tmp_path)
     _write_fulltext_context(run_dir)
     (run_dir / SOURCE_DOC_REF).write_bytes(b"changed source after rendering")
     _write_deep_worker_bundles(run_dir, _with_page_anchors(_good_bundle()))
-    with pytest.raises(GateBlock) as ei:
-        read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
-    assert "source-document hash mismatch" in str(ei.value)
+    _paths, report = read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
+    assert report["quality_verdict"] in {"PASS", "PASS_WITH_CAVEATS"}
+
+
+def test_read_paper_deep_missing_source_document_still_blocks_visual_provenance(tmp_path):
+    """The check that survived: you cannot claim to have read a page image of a file that is gone."""
+    run_dir = _mk_run(tmp_path)
+    _write_fulltext_context(run_dir)
+    (run_dir / SOURCE_DOC_REF).unlink()
+    _write_deep_worker_bundles(run_dir, _with_page_anchors(_good_bundle()))
+    _paths, report = read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
+    advisory = json.loads((run_dir / "inbox" / "usable-first-advisory.json").read_text())
+    assert report["quality_verdict"] == "PASS_WITH_CAVEATS"
+    assert any("missing" in row.casefold() for row in advisory["warnings"])
 
 
 def test_read_paper_deep_unread_visual_is_delivery_caveat(tmp_path):
@@ -1430,7 +1479,7 @@ def test_read_paper_deep_llm_step_shape_carries_north_star(tmp_path):
     run_dir = str(_mk_run(tmp_path))
     spec = read_paper_deep.llm_step(run_dir, "DISCOVER", "read this canal paper", model_policy="default")
     assert spec["label"] == "read-paper-deep-panel"
-    assert len(spec["workers"]) == 20
+    assert len(spec["workers"]) == 21      # +research-trajectory-extractor (2026-08-07)
     assert spec["worker_order"][0] == "independent-reading-critic"
     assert spec["worker_order"][1] == "paper-reading-planner"
     assert spec["worker_order"][-1] == "paper-markdown-writer"

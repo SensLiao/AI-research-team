@@ -81,8 +81,29 @@ def test_numeric_benchmark_blocks_metric_mismatch(tmp_path):
     assert any("claimed=0.9" in violation for violation in report["violations"])
 
 
-def test_numeric_benchmark_blocks_non_live_hash_or_missing_journal(tmp_path):
-    run_records, results, manifest, journal = _inputs(tmp_path, live=False, journal=False)
+def test_numeric_benchmark_non_live_hash_manifest_is_informational_not_blocking(tmp_path):
+    """R3 §B①: a non-live (offline-plan) hash manifest no longer drives BLOCK on its own — the
+    adapter's own `requires_live_hash_manifest` gate is now informational. `hash_check` itself
+    (from hash_manifest_validator, untouched — see test_hash_manifest_validator.py) still says
+    BLOCK internally; it is just no longer folded into the top-level violations that decide the
+    adapter's verdict."""
+    run_records, results, manifest, journal = _inputs(tmp_path, live=False, journal=True)
+    report = build_report_from_files(
+        run_records_path=run_records,
+        result_artifact_paths=[results],
+        hash_manifest_path=manifest,
+        journal_path=journal,
+        required_paths=["results.json"],
+    )
+    assert report["verdict"] == "PASS"
+    assert not any(v.startswith("hash:") for v in report["violations"])
+    assert report["hash_check"]["verdict"] == "BLOCK"
+    assert any("not live evidence" in v for v in report["hash_check"]["violations"])
+
+
+def test_numeric_benchmark_blocks_missing_journal(tmp_path):
+    """The run-journal requirement is untouched by R3 — only the hash-manifest gate was downgraded."""
+    run_records, results, manifest, journal = _inputs(tmp_path, live=True, journal=False)
     report = build_report_from_files(
         run_records_path=run_records,
         result_artifact_paths=[results],
@@ -91,7 +112,6 @@ def test_numeric_benchmark_blocks_non_live_hash_or_missing_journal(tmp_path):
         required_paths=["results.json"],
     )
     assert report["verdict"] == "BLOCK"
-    assert any("not live evidence" in violation for violation in report["violations"])
     assert any("run journal" in violation for violation in report["violations"])
 
 

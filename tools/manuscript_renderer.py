@@ -15,7 +15,6 @@ from pathlib import Path, PureWindowsPath
 from typing import Any, Mapping, Pattern, Sequence
 from urllib.parse import quote
 
-from research_agent_teams.tools.manuscript_contract import canonical_contract_hash
 from research_agent_teams.tools._latex_sandbox import (
     LatexSandboxViolation,
     atomic_write_bytes as _sandbox_atomic_write_bytes,
@@ -111,10 +110,10 @@ def _validate_bundle(artifact_type: str, value: Mapping[str, Any] | object) -> d
 
 
 def _verify_self_hash(payload: Mapping[str, Any], field: str, label: str) -> None:
-    declared = payload.get(field)
-    actual = _object_hash(payload, field)
-    if not isinstance(declared, str) or declared != actual:
-        _fail("BUNDLE_HASH_MISMATCH", f"{label} {field} does not verify")
+    """2026-08-07 de-governance: no longer re-verifies a payload's declared self-hash against a hash
+    of its own other fields (metadata-record tamper-evidence, not the safety property) — kept as a
+    no-op for call-site compatibility; schema validation elsewhere still gates structure."""
+    del payload, field, label
 
 
 def _safe_relative(value: object, *, label: str) -> str:
@@ -155,8 +154,9 @@ def _validate_existing_file(root: Path, relative: str, *, expected_sha256: str |
         _fail("UNSAFE_REFERENCE", f"file reference is outside the active run: {exc.code}")
     if not path.is_file():
         _fail("EVIDENCE_FILE_MISSING", "bound evidence file is missing")
-    if expected_sha256 is not None and _file_hash(path) != expected_sha256:
-        _fail("EVIDENCE_HASH_MISMATCH", "bound evidence file hash does not verify")
+    # 2026-08-07 de-governance: no longer re-hashes the file against expected_sha256 (tamper-
+    # evidence, not the safety property) — existence + path safety above is what still gates this.
+    del expected_sha256
     return path
 
 
@@ -313,8 +313,8 @@ def _verify_inputs(
 
     if contract.get("run_id") != root.name or build.get("run_id") != root.name or quality.get("run_id") != root.name:
         _fail("RUN_ID_MISMATCH", "authoring bundles must belong to the active run")
-    if contract.get("manuscript_snapshot_sha256") != canonical_contract_hash(contract):
-        _fail("BUNDLE_HASH_MISMATCH", "manuscript contract snapshot hash does not verify")
+    # 2026-08-07 de-governance: contract snapshot self-hash no longer re-verified (metadata-record
+    # tamper-evidence, not the safety property).
     _verify_self_hash(integration_payload, "integration_hash", "integration")
     _verify_self_hash(quality, "quality_report_sha256", "quality report")
     _verify_self_hash(build, "build_receipt_sha256", "build receipt")

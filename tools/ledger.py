@@ -1,13 +1,13 @@
-"""Append-only, hash-chained run ledger (tamper-evident history).
+"""Append-only, hash-chained run ledger.
 
 Each line in runs/<id>/ledger.jsonl is a ledger_event:
     hash = chain_hash(prev_hash, {seq, ts, event_type, payload})
 
-Tamper model:
-  - Changing ANY non-tip event (payload, ts, type, order) is always detected by verify_chain
-    (either the event's own hash stops matching, or the next event's prev_hash linkage breaks).
-  - The tip event can be re-hashed by a tamperer; that is caught one level up by the run manifest,
-    which independently stores last_boundary_hash (see runstore.classify_status -> "inconsistent").
+2026-08-07 de-governance: the hash chain is still computed and written on every append (this
+module's core primitive; downstream schemas and resume still read `hash`/`prev_hash`), but it no
+longer GATES anything. `verify_chain` stays available as a read-only diagnostic (workbench
+governance calls it to report on chain health) — appending no longer calls it first, and
+`runstore.classify_status` no longer derives a "tampered"/"inconsistent" run status from it.
 """
 from __future__ import annotations
 
@@ -21,8 +21,13 @@ from research_agent_teams.tools.hash_artifact import canonical_json, chain_hash
 
 EVENT_TYPES = {
     "run_started", "task_frame_pinned", "upstream_handoff_pinned", "stage_started", "step_done", "boundary",
-    "resume", "gate_pending", "gate_resolved", "run_completed", "run_failed", "promote",
+    "resume", "gate_pending", "gate_resolved", "run_completed", "run_failed", "run_reopened", "promote",
 }
+#: `run_reopened` (D8, 2026-08-06) is the ONLY event that may follow `run_failed` on the same run,
+#: and it never replaces it: the hard-gate failure stays on the chain verbatim, and the reopen is
+#: appended after it carrying the director's authority, the reason, and a SHA-256 digest of every
+#: worker bundle as it stood at reopen time. Reading the chain therefore still shows that this run
+#: failed — the override is recorded, not laundered.
 
 
 @contextmanager
@@ -75,17 +80,15 @@ def _core(seq: int, ts: str, event_type: str, payload: Any) -> dict:
 def append_event(ledger_path, event_type: str, payload: dict, ts: str) -> dict:
     """Append one event, computing seq + hash-chain from existing events. Returns the event.
 
-    Audit M4: the existing chain is verified BEFORE every append — tampering now fails loud at the
-    next write instead of waiting for a resume/status check. Audit M13: the read-seq-append section
-    runs under an OS file lock so concurrent writers cannot silently fork the chain."""
+    2026-08-07 de-governance: no longer refuses to append just because `verify_chain` would flag the
+    existing chain (that was tamper-evidence, not a correctness gate on THIS write) — the chain is
+    still computed and written every append, `verify_chain` just isn't called first anymore. Audit
+    M13: the read-seq-append section still runs under an OS file lock so concurrent writers cannot
+    silently fork the chain."""
     if event_type not in EVENT_TYPES:
         raise ValueError(f"unknown event_type '{event_type}'")
     with _ledger_lock(ledger_path):
         events = read_events(ledger_path)
-        errors = verify_chain(events)
-        if errors:
-            raise ValueError(
-                f"refusing to append to a corrupted ledger ({ledger_path}): {errors[:3]}")
         seq = len(events)
         prev_hash: Optional[str] = events[-1]["hash"] if events else None
         core = _core(seq, ts, event_type, payload)

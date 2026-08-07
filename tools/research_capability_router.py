@@ -85,6 +85,47 @@ class ResearchCapabilityRouterError(ValueError):
     """Raised when a mode request or overlay catalog is invalid."""
 
 
+#: The SAFETY half of the catalog policy: pinned by equality, never negotiable. These are the
+#: read-never-execute boundary, so a catalog that weakens any of them is rejected outright.
+_REQUIRED_SAFETY_POLICY: dict[str, Any] = {
+    "network_default": "DENY",
+    "external_execution": False,
+    "copy_third_party_code": False,
+    "copy_third_party_long_text": False,
+}
+
+#: The VOLUME half is a window, not a constant. It used to be pinned to selection_min=2 /
+#: selection_max=5 by equality here AND in the in-memory validator AND in task_frame.schema.json
+#: AND by a literal in two tests -- four locks agreeing that at most five method lenses could ever
+#: reach a worker, no matter how large the catalog grew. That is why the 358 vendored upstream
+#: bundles felt unreachable. Widening is now a one-line catalog edit; only sanity is enforced.
+#: Raised 24 -> 28 on 2026-08-07 when the catalog gained the four innovation/rigor cards
+#: (creative_operator_ladder, ai_research_failure_modes, productive_disagreement_council,
+#: innovation_cognitive_map). The ceiling must stay >= the catalog's selection_max AND
+#: <= task_frame.schema.json /capability_overlay_plan/overlays maxItems -- three places, one number.
+_SELECTION_WINDOW_CEILING = 28
+
+
+def _check_selection_window(policy: dict[str, Any]) -> None:
+    """Validate the selection window as a window: sane, ordered, and bounded -- not pinned."""
+    try:
+        low = int(policy["selection_min"])
+        high = int(policy["selection_max"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ResearchCapabilityRouterError(
+            "catalog policy needs integer selection_min and selection_max"
+        ) from exc
+    if low < 1:
+        raise ResearchCapabilityRouterError("selection_min must be at least 1")
+    if high < low:
+        raise ResearchCapabilityRouterError("selection_max must be >= selection_min")
+    if high > _SELECTION_WINDOW_CEILING:
+        raise ResearchCapabilityRouterError(
+            f"selection_max {high} exceeds the structural ceiling {_SELECTION_WINDOW_CEILING}; "
+            "raise task_frame.schema.json /capability_overlay_plan/overlays maxItems first"
+        )
+
+
 def _load_json(path: str | Path, *, kind: str) -> dict[str, Any]:
     candidate = Path(path)
     if not candidate.is_file():
@@ -242,17 +283,10 @@ def load_overlay_catalog(
     overlays = catalog.get("overlays")
     if not isinstance(policy, dict) or not isinstance(sources, list) or not isinstance(overlays, list):
         raise ResearchCapabilityRouterError("catalog requires policy, sources, and overlays")
-    required_policy = {
-        "network_default": "DENY",
-        "external_execution": False,
-        "copy_third_party_code": False,
-        "copy_third_party_long_text": False,
-        "selection_min": 2,
-        "selection_max": 5,
-    }
-    for key, expected in required_policy.items():
+    for key, expected in _REQUIRED_SAFETY_POLICY.items():
         if policy.get(key) != expected:
             raise ResearchCapabilityRouterError(f"unsafe or invalid catalog policy: {key}")
+    _check_selection_window(policy)
     forbidden = set(policy.get("forbidden_actions") or [])
     expected_forbidden = {"installer", "hook", "mcp", "auto_update", "whole_repo_execution"}
     if not expected_forbidden.issubset(forbidden):
@@ -310,17 +344,10 @@ def _validate_in_memory_overlay_catalog(catalog: Mapping[str, Any]) -> dict[str,
     overlays = value.get("overlays")
     if not isinstance(policy, dict) or not isinstance(sources, list) or not isinstance(overlays, list):
         raise ResearchCapabilityRouterError("catalog requires policy, sources, and overlays")
-    required_policy = {
-        "network_default": "DENY",
-        "external_execution": False,
-        "copy_third_party_code": False,
-        "copy_third_party_long_text": False,
-        "selection_min": 2,
-        "selection_max": 5,
-    }
-    for key, expected in required_policy.items():
+    for key, expected in _REQUIRED_SAFETY_POLICY.items():
         if policy.get(key) != expected:
             raise ResearchCapabilityRouterError(f"unsafe or invalid catalog policy: {key}")
+    _check_selection_window(policy)
     expected_forbidden = {"installer", "hook", "mcp", "auto_update", "whole_repo_execution"}
     if not expected_forbidden.issubset(set(policy.get("forbidden_actions") or [])):
         raise ResearchCapabilityRouterError("catalog policy is missing forbidden actions")

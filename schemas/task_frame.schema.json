@@ -108,7 +108,7 @@
         "overlays": {
           "type": "array",
           "minItems": 2,
-          "maxItems": 5,
+          "maxItems": 28,
           "items": {
             "type": "object",
             "additionalProperties": false,

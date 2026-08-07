@@ -2,7 +2,11 @@
 
 This adapter recomputes aggregate metrics from result rows and compares them
 against provisional run_records. It treats prose summaries as non-evidence:
-a PASS requires result rows, a run journal object, and a live hash manifest.
+a PASS requires result rows and a run journal object.
+
+2026-08-07 de-governance: a live hash manifest is no longer required for PASS. `hash_check` is
+still computed in full and reported (hash_manifest_validator.py is untouched), it is just
+informational now — a non-live or missing manifest no longer blocks the verdict on its own.
 """
 from __future__ import annotations
 
@@ -157,6 +161,11 @@ def build_report(
 ) -> dict[str, Any]:
     recomputed = _group_means(result_rows)
     metric_checks, metric_violations = _metric_checks(run_records, recomputed, tolerance=tolerance)
+    # 2026-08-07 de-governance: the live-hash-manifest gate is now informational — hash_check is
+    # still computed in full (hash_manifest_validator.py itself is untouched: a non-live manifest
+    # still reports its own BLOCK verdict + violations), it just no longer feeds the report's
+    # top-level `violations` / `verdict`. Metric recomputation and the run-journal requirement are
+    # the actual evidence gates now.
     hash_check = validate_manifest(
         hash_manifest,
         required_paths,
@@ -167,7 +176,6 @@ def build_report(
     if not result_rows:
         violations.append("no result rows available for recomputation")
     violations.extend(metric_violations)
-    violations.extend(f"hash: {v}" for v in hash_check.get("violations") or [])
     violations.extend(f"journal: {v}" for v in journal_check.get("violations") or [])
     payload = {
         "schema_version": "1.0.0",
@@ -195,7 +203,8 @@ def build_report(
         "trust_boundary": {
             "prose_summaries_trusted": False,
             "requires_result_rows": True,
-            "requires_live_hash_manifest": True,
+            # 2026-08-07 de-governance: no longer a hard requirement — see hash_check above.
+            "requires_live_hash_manifest": False,
             "requires_run_journal": True,
             "vault_write": False,
         },

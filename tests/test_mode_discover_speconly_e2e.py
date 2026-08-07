@@ -300,6 +300,9 @@ def _make_full_new_direction_producer(evidence: str = "clean", citation: str = "
             cem = {"mappings": [{"claim_id": "c1", "overall_support": "contradicted",
                                  "loci": [{"locus_id": "l1", "source_ref": "[[hu-2021-lora]]", "location": "Sec 5",
                                            "kind": "text", "reported_result": "claims it is already solved",
+                                           # A1 (2026-08-07): naming a contradicted claim now
+                                           # requires the explicit contradicts relation.
+                                           "support_relation": "contradicts",
                                            "supports_claim": False}]}]}
         cv = citation_report(_CLAIM_LIST, cem)
         _write(d / "citation-verdict.artifact.json",

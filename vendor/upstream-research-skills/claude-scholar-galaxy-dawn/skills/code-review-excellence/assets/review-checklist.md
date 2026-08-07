@@ -1,6 +1,0 @@
-- Intent understood
-- Correctness checked
-- Tests reviewed
-- Security checked
-- Performance checked
-- Decision recorded

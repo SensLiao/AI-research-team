@@ -561,22 +561,37 @@ def _normalize_claim_evidence_map(payload: dict, changes: list[dict]) -> dict:
             relation = str(locus.get("support_relation") or "")
             if relation not in {"", "entails", "partial", "contradicts", "insufficient"}:
                 lowered = relation.casefold()
-                after = "entails" if lowered in {
+                # R3 A1 (2026-08-07): a linker's own boundary/qualification label
+                # ('contextualizes_and_bounds' and kin — 21 of 22 labels the
+                # 2026-08-04 run actually produced fell here) is a PARTIAL support,
+                # never a contradiction. The explicit alias lists below are checked
+                # first; anything still unrecognised falls through to the substring
+                # fallback ladder, which never falls back to the original raw value
+                # any more — an unrecognised label always lands on a real enum member.
+                if lowered in {
                     "support", "supported", "direct_support", "boundary_support",
                     "absence_boundary", "scope_boundary", "supports", "supports_absence",
                     "direct_entailment",
-                } else (
-                    "partial" if lowered in {
-                        "absence_audit", "methodological_inference", "scope_limit",
-                        "conflict_side_a", "conflict_side_b", "bounds",
-                        "direct_evidence_with_interpretation_boundary",
-                        "fulltext_coverage_supports_nonreporting_observation",
-                    }
-                    else "entails" if lowered.startswith("entails")
-                    else "entails" if lowered.startswith("direct_support") or lowered.startswith("direct_entailment")
-                    else "partial" if lowered.startswith("partial")
-                    else relation
-                )
+                } or lowered.startswith(("entails", "direct_support", "direct_entailment")):
+                    after = "entails"
+                elif lowered in {
+                    "absence_audit", "methodological_inference", "scope_limit",
+                    "conflict_side_a", "conflict_side_b", "bounds",
+                    "direct_evidence_with_interpretation_boundary",
+                    "fulltext_coverage_supports_nonreporting_observation",
+                    "contextualizes_and_bounds", "contextualises_and_bounds", "contextualizes",
+                    "bounds_the_claim", "scope_qualification", "qualifies", "limits", "narrows",
+                    "partial_context_only", "context_only", "applicability_boundary",
+                } or lowered.startswith("partial"):
+                    after = "partial"
+                elif any(token in lowered for token in ("context", "bound", "qualif", "scope", "limit")):
+                    after = "partial"
+                elif any(token in lowered for token in ("refut", "contradict", "disconfirm")):
+                    after = "contradicts"
+                elif any(token in lowered for token in ("unavail", "paywall", "403", "silent", "insufficient")):
+                    after = "insufficient"
+                else:
+                    after = "partial"
                 if after != relation:
                     locus["support_relation"] = after
                     changes.append({

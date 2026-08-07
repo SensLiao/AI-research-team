@@ -45,16 +45,19 @@ def test_operated_modes_are_exactly_the_real_operate_registry():
 
 def test_spec_only_modes_are_honestly_not_push_button():
     modes = _modes_by_name(build_capability_catalog())
-    assert modes["design_experiment"]["status"] == "spec_only"
-    assert modes["design_experiment"]["runnable_surface"] == "registry_defined_not_one_button"
-    assert modes["design_experiment"]["operate_recipe_present"] is False
-    assert "spec_only_not_push_button" in modes["design_experiment"]["honesty_notes"]
-    assert "target_product_contract_not_implemented" in modes["design_experiment"]["honesty_notes"]
+    # Exemplar swapped 2026-08-04: design_experiment is one-button now, so the honesty note it used
+    # to demonstrate had to move to a mode that is still hand-driven.
+    assert modes["tree_explore"]["status"] == "spec_only"
+    assert modes["tree_explore"]["runnable_surface"] == "registry_defined_not_one_button"
+    assert modes["tree_explore"]["operate_recipe_present"] is False
+    assert "spec_only_not_push_button" in modes["tree_explore"]["honesty_notes"]
+    assert "target_product_contract_not_implemented" in modes["tree_explore"]["honesty_notes"]
 
 def test_every_spec_only_mode_has_a_machine_readable_target_product_contract():
     catalog = build_capability_catalog()
     spec_only = [row for row in catalog["modes"] if row["status"] == "spec_only"]
-    assert len(spec_only) == 14
+    # 5 -> 3 (2026-08-07): ideate_ring and aers_enhanced_research_pack closed the wave-2 backlog.
+    assert len(spec_only) == 3
     assert catalog["summary"]["spec_only_product_contracts"] == len(spec_only)
 
     for row in spec_only:
@@ -83,24 +86,17 @@ def test_every_spec_only_mode_has_a_machine_readable_target_product_contract():
 
 def test_spec_only_maturity_matrix_and_target_markdown_paths_are_pinned():
     modes = _modes_by_name(build_capability_catalog())
+    # Wave 2 (2026-08-04) wired nine of these; the 2026-08-07 backlog close wired the remaining
+    # two (ideate_ring, aers_enhanced_research_pack). A wired mode MUST NOT keep a
+    # product_maturity block (the catalog validator calls it "reserved for modes without
+    # operated:true"), so its director-Markdown contract moved into `handoff` — asserted below,
+    # so wiring a mode can never silently drop the path that used to be pinned here.
     engine_tested = {
-        "check_run",
-        "gap_scan",
-        "design_experiment",
         "design_experiment_minimal",
-        "verify_result",
-        "full_new_direction",
-        "m2_accept",
-        "ideate_ring",
         "debug_failed_run",
         "tree_explore",
     }
-    registry_routable = {
-        "power_analysis_review",
-        "repo_code_audit",
-        "analysis_audit_panel",
-        "aers_enhanced_research_pack",
-    }
+    registry_routable: set[str] = set()
     assert {
         name
         for name, row in modes.items()
@@ -114,29 +110,44 @@ def test_spec_only_maturity_matrix_and_target_markdown_paths_are_pinned():
     } == registry_routable
 
     expected_markdown = {
-        "check_run": "director-review/operations/run-health-brief.md",
-        "gap_scan": "director-review/gaps/gap-scan.md",
-        "design_experiment": "director-review/experiments/experiment-design.md",
         "design_experiment_minimal": "director-review/experiments/minimal-experiment-design.md",
-        "power_analysis_review": "director-review/experiments/power-analysis-review.md",
-        "verify_result": "director-review/verification/result-verification.md",
-        "full_new_direction": "director-review/ideas/full-new-direction-brief.md",
-        "m2_accept": "director-review/experiments/m2-acceptance-report.md",
-        "ideate_ring": "director-review/ideas/idea-bet-menu.md",
         "debug_failed_run": "director-review/experiments/debug-rerun-brief.md",
         "tree_explore": "director-review/experiments/experiment-tree-menu.md",
-        "repo_code_audit": "director-review/code/repo-code-audit.md",
-        "analysis_audit_panel": "director-review/analysis/analysis-audit-report.md",
-        "aers_enhanced_research_pack": "director-review/research/aers-enhanced-research-pack.md",
     }
     assert {
         name: modes[name]["product_maturity"]["target_markdown"]["path"]
         for name in expected_markdown
     } == expected_markdown
 
+    # The eleven wave-2 modes keep the SAME director-facing paths they were promised as
+    # spec-only — now under `handoff`, where an operated mode's product contract lives. Same
+    # promise, new home.
+    registry = load_mode_registry()["modes"]
+    wired_markdown = {
+        "check_run": "director-review/operations/run-health-brief.md",
+        "gap_scan": "director-review/gaps/gap-scan.md",
+        "design_experiment": "director-review/experiments/experiment-design.md",
+        "power_analysis_review": "director-review/experiments/power-analysis-review.md",
+        "verify_result": "director-review/verification/result-verification.md",
+        "full_new_direction": "director-review/ideas/full-new-direction-brief.md",
+        "m2_accept": "director-review/experiments/m2-acceptance-report.md",
+        "repo_code_audit": "director-review/code/repo-code-audit.md",
+        "analysis_audit_panel": "director-review/analysis/analysis-audit-report.md",
+        "ideate_ring": "director-review/ideas/idea-bet-menu.md",
+        "aers_enhanced_research_pack": "director-review/research/aers-enhanced-research-pack.md",
+    }
+    assert {
+        name: registry[name]["handoff"]["primary_markdown"] for name in wired_markdown
+    } == wired_markdown
+    for name in wired_markdown:
+        assert "product_maturity" not in registry[name], (
+            f"{name} is operated and must not keep a target contract it has already met")
+        assert registry[name]["handoff"]["required_sections"], (
+            f"{name} lost the required_sections its renderer BLOCKs on")
+
     summary = build_capability_catalog()["summary"]
-    assert summary["spec_only_engine_tested_modes"] == 10
-    assert summary["spec_only_registry_routable_modes"] == 4
+    assert summary["spec_only_engine_tested_modes"] == 3
+    assert summary["spec_only_registry_routable_modes"] == 0
 
 
 def test_manuscript_modes_are_distinct_operated_contracts_with_no_phantom_review_pack():
@@ -297,34 +308,56 @@ def test_aers_pack_and_m2_accept_keep_execution_claims_honest():
     modes = _modes_by_name(build_capability_catalog())
 
     aers = modes["aers_enhanced_research_pack"]
+    assert aers["status"] == "operated"
     assert aers["execute_stage_present"] is True
     assert aers["requires_server_for_real_experiment"] is False
     assert "execute_stage_present_no_execution_claim_without_run_evidence" in aers["honesty_notes"]
-    assert "must not be read as evidence that an experiment ran" in aers["product_maturity"]["reason"]
+    # aers_enhanced_research_pack became one-button on 2026-08-07, so `product_maturity` is now
+    # None (reserved for spec-only modes) — the honesty text it used to carry moved verbatim into
+    # the registry's own `handoff.purpose`, asserted directly rather than through the catalog row.
+    assert aers["product_maturity"] is None
+    registry_aers = load_mode_registry()["modes"]["aers_enhanced_research_pack"]
+    assert "must not be read as evidence that an experiment ran" in registry_aers["handoff"]["purpose"]
+
+    # m2_accept became one-button on 2026-08-04, so the promise that used to live in its
+    # productization_gaps ("integrate real server execution before any result claim") is no longer a
+    # TODO — it is enforced in the recipe. Assert the enforcement, not the removed prose: the mode
+    # still declares it needs a server, and its recipe routes every metric through the one canonical
+    # planned-vs-ran classifier, which refuses numbers without a verified receipt.
+    import inspect
+
+    from research_agent_teams.operate.modes import m2_accept as m2_recipe
 
     m2_accept = modes["m2_accept"]
+    assert m2_accept["status"] == "operated"
     assert m2_accept["requires_server_for_real_experiment"] is True
-    assert "real server execution" in " ".join(
-        m2_accept["product_maturity"]["productization_gaps"]
-    )
+    assert "real_experiment_execution_requires_server_evidence" in m2_accept["honesty_notes"]
+    source = inspect.getsource(m2_recipe)
+    assert "refuse_metrics_without_receipt" in source, (
+        "m2_accept must gate every metric on a verified execution receipt")
+    assert "execution_truth" in source, (
+        "m2_accept must use the single canonical planned-vs-ran classifier, not a local re-decision")
 
 
 def test_catalog_validation_rejects_missing_contract_and_unknown_pipeline_worker(monkeypatch):
+    # Exemplar swapped 2026-08-07: ideate_ring is one-button now and no longer carries a
+    # product_maturity block to corrupt, so debug_failed_run (still spec-only) demonstrates the
+    # unknown-pipeline-worker half of this test instead.
     registry = copy.deepcopy(load_mode_registry())
-    del registry["modes"]["design_experiment"]["product_maturity"]
-    registry["modes"]["power_analysis_review"]["product_maturity"][
+    del registry["modes"]["tree_explore"]["product_maturity"]
+    registry["modes"]["debug_failed_run"]["product_maturity"][
         "minimum_worker_pipeline"
     ]["stages"][0]["workers"] = ["not-a-real-worker"]
     monkeypatch.setattr(capability_catalog_module, "load_mode_registry", lambda: registry)
 
     errors = build_capability_catalog()["validation"]["mode_registry_errors"]
-    assert any("design_experiment.product_maturity missing" in error for error in errors)
+    assert any("tree_explore.product_maturity missing" in error for error in errors)
     assert any("unknown agent: not-a-real-worker" in error for error in errors)
 
 
 def test_capability_schema_requires_product_contract_for_spec_only_rows():
     catalog = build_capability_catalog()
-    mode = next(row for row in catalog["modes"] if row["mode"] == "design_experiment")
+    mode = next(row for row in catalog["modes"] if row["mode"] == "tree_explore")
     mode["product_maturity"] = None
     assert validate_against("rat_capability_catalog.schema.json", catalog) != []
 
@@ -355,14 +388,7 @@ def test_query_modes_filters_without_hiding_honesty_fields():
 
     engine_tested_spec_only = query_modes(maturity_level="engine_tested_spec_only")
     assert {row["mode"] for row in engine_tested_spec_only} == {
-        "check_run",
-        "gap_scan",
-        "design_experiment",
         "design_experiment_minimal",
-        "verify_result",
-        "full_new_direction",
-        "m2_accept",
-        "ideate_ring",
         "debug_failed_run",
         "tree_explore",
     }

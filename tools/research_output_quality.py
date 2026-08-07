@@ -159,6 +159,141 @@ MODE_OUTPUT_CONTRACTS: dict[str, OutputContract] = {
             "decision_boundary": ("unapplied", "does not submit", "director"),
         },
     ),
+    # ---- wave 2 (2026-08-04) -----------------------------------------------------------------
+    # Every operated mode must declare what BUSINESS content its director Markdown has to carry —
+    # the eval harness treats a missing contract as a critical failure, because a mode with no
+    # depth contract can ship a well-formed but empty page. Each concept below is anchored to a
+    # `required_sections` entry the renderer BLOCKs on, so the graded phrases are guaranteed to be
+    # renderable rather than aspirational.
+    "gap_scan": OutputContract(
+        ("director-review/gaps/gap-scan.md",), 700,
+        {
+            "search_scope": ("search scope", "检索范围"),
+            "candidate_gaps": ("candidate gaps", "候选空白"),
+            "evidence_anchors": ("evidence and source anchors", "source anchor", "证据锚点"),
+            "gap_classification": ("gap classification", "空白分类"),
+            "unknowns": ("unknowns and next searches", "unknown", "还缺"),
+            "no_novelty_claim": ("not a novelty", "no novelty claim", "不谈新颖性", "未核实"),
+        },
+    ),
+    "full_new_direction": OutputContract(
+        ("director-review/ideas/full-new-direction-brief.md",), 900,
+        {
+            "problem_landscape": ("problem landscape", "问题版图"),
+            "model_dataset": ("model and dataset opportunities", "dataset", "数据集"),
+            "evidence_quality": ("evidence quality", "证据质量"),
+            "direction_theses": ("candidate direction theses", "direction thesis", "方向论纲"),
+            "collision_uncertainty": ("collision and uncertainty", "collision", "查重", "未核实"),
+            "handoff": ("recommended handoff", "/idea-bet", "交接"),
+        },
+    ),
+    "design_experiment": OutputContract(
+        ("director-review/experiments/experiment-design.md",), 900,
+        {
+            "research_question": ("research question and hypotheses", "研究问题"),
+            "variables_conditions": ("variables and conditions", "变量", "对照"),
+            "data_split": ("data and split protocol", "split", "数据划分"),
+            "baseline_fairness": ("method and baseline fairness", "baseline", "基线"),
+            "metrics_analysis": ("metrics and analysis plan", "metric", "指标"),
+            "director_decisions": ("risks and director decisions", "unresolved", "待你决定"),
+        },
+    ),
+    "power_analysis_review": OutputContract(
+        ("director-review/experiments/power-analysis-review.md",), 700,
+        {
+            "decision_question": ("decision question", "决定问题"),
+            "assumptions": ("inputs and assumptions", "assumption", "假设"),
+            "power_analysis": ("power or precision analysis", "power", "功效"),
+            "sensitivity": ("sensitivity scenarios", "sensitivity", "敏感性"),
+            "design_changes": ("recommended design changes", "design change", "设计改法"),
+            "remaining_uncertainty": ("remaining uncertainty", "uncertainty", "不确定"),
+        },
+    ),
+    "m2_accept": OutputContract(
+        ("director-review/experiments/m2-acceptance-report.md",), 1000,
+        {
+            "frozen_design": ("frozen design", "冻结设计"),
+            "execution_journal": ("execution journal", "journal", "执行记录"),
+            "result_analysis": ("result analysis", "结果分析"),
+            "sanity_parity": ("sanity and parity checks", "parity", "一致性"),
+            "adversarial": ("adversarial verification", "adversarial", "对抗复核"),
+            "acceptance_inputs": ("acceptance decision inputs", "acceptance", "验收"),
+            "execution_boundary": ("plan, not a result", "Really ran", "没有真实"),
+        },
+    ),
+    "analysis_audit_panel": OutputContract(
+        ("director-review/analysis/analysis-audit-report.md",), 900,
+        {
+            "analysis_scope": ("analysis scope", "分析范围"),
+            "sanity_baseline": ("sanity and baseline findings", "baseline", "基线"),
+            "variance_subgroup": ("variance and subgroup findings", "variance", "方差"),
+            "failure_cases": ("failure cases", "失败案例"),
+            "figure_audit": ("figure and visualization audit", "figure", "图表"),
+            "calibrated_claims": ("calibrated claims", "claim", "主张强度"),
+            "blocking_issues": ("blocking issues and repairs", "blocking", "阻断"),
+        },
+    ),
+    "verify_result": OutputContract(
+        ("director-review/verification/result-verification.md",), 900,
+        {
+            "result_under_review": ("result under review", "被审结果"),
+            "review_config": ("review configuration", "review lens", "审视镜头"),
+            "panel_findings": ("independent panel findings", "panel", "独立审稿"),
+            "baseline_history": ("baseline and historical context", "baseline", "历史"),
+            "claim_calibration": ("claim calibration", "cannot claim", "不能声称"),
+            "next_actions": ("required next actions", "next action", "下一步"),
+        },
+    ),
+    "check_run": OutputContract(
+        ("director-review/operations/run-health-brief.md",), 600,
+        {
+            "run_status": ("current run status", "运行状态"),
+            "alerts": ("evidence-backed alerts", "alert", "告警"),
+            "intervention_options": ("intervention options", "intervention", "干预"),
+            "unresolved": ("unresolved decisions", "unresolved", "待定"),
+            "read_only_boundary": ("not been done", "read-only", "只读", "还没做"),
+            "execution_boundary": ("plan, not a result", "Really ran", "没有真实"),
+        },
+    ),
+    "repo_code_audit": OutputContract(
+        ("director-review/code/repo-code-audit.md",), 800,
+        {
+            "repo_scope": ("repository scope", "仓库范围"),
+            "prioritized_findings": ("prioritized findings", "finding", "发现"),
+            "patch_plan": ("patch plan", "补丁计划"),
+            "authorized_changes": ("authorized changes", "authorized", "已授权改动"),
+            "test_evidence": ("test and reproduction evidence", "reproduction", "复现证据"),
+            "residual_risks": ("residual risks", "residual", "残留风险"),
+        },
+    ),
+    # ---- wave-2 backlog closed (2026-08-07) -------------------------------------------------
+    # The last two modules had recipes written but no tests, so they were deliberately left
+    # unregistered until now. Each concept below is anchored to a `required_sections` entry the
+    # renderer BLOCKs on, matching every other wave-2 contract's discipline.
+    "ideate_ring": OutputContract(
+        ("director-review/ideas/idea-bet-menu.md",), 900,
+        {
+            "opportunity_set": ("opportunity set", "机会点"),
+            "falsifiable_hypotheses": ("falsifiable hypotheses", "falsifiable", "可证伪"),
+            "tournament_results": ("tournament results", "pairwise", "淘汰赛"),
+            "evolved_lineage": ("evolved ideas and lineage", "lineage", "血缘", "进化"),
+            "prior_art_collisions": ("prior-art collisions", "collision", "查重"),
+            "no_self_bet": ("director bet menu", "/idea-bet", "下注"),
+        },
+    ),
+    "aers_enhanced_research_pack": OutputContract(
+        ("director-review/research/aers-enhanced-research-pack.md",), 1000,
+        {
+            "aers_applicability": ("aers references and applicability", "applicab", "适用性"),
+            "search_strategy": ("literature search strategy", "search strategy", "检索策略"),
+            "data_protocol": ("data-wrangling protocol", "data protocol", "数据协议"),
+            "reproducibility": ("reproducibility package", "reproducib", "复现"),
+            "benchmark_evidence": ("benchmark evidence", "benchmark", "基准证据"),
+            "no_execution_claim": ("did not run", "plan, not a result", "没有真实"),
+            "submission_checklist": ("submission checklist", "投稿清单"),
+            "bibliography_audit": ("bibliography audit", "bibliography", "文献核验"),
+        },
+    ),
 }
 
 

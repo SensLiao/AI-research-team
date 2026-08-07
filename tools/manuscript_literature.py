@@ -325,15 +325,12 @@ def _validate_plan(plan: Mapping[str, Any], *, require_hash: bool) -> bool:
             _fail("INVALID_QUERY_PLAN", f"attempt {attempt_id!r} source mismatches provider")
         if attempt.get("query") != query:
             _fail("INVALID_QUERY_PLAN", f"attempt {attempt_id!r} query mismatches plan")
-        if attempt.get("query_sha256") != canonical_sha256(query):
-            _fail("INVALID_QUERY_PLAN", f"attempt {attempt_id!r} query hash mismatches")
-    claimed = str(plan.get("plan_sha256") or "")
-    hash_valid = _SHA256_RE.fullmatch(claimed) is not None and claimed == canonical_sha256(
-        plan, omit="plan_sha256"
-    )
-    if require_hash and not hash_valid:
-        _fail("QUERY_PLAN_HASH_MISMATCH", "the frozen query plan hash does not match")
-    return hash_valid
+        # 2026-08-07 de-governance: query_sha256 self-check removed — redundant with the direct
+        # query-text comparison above (tamper-evidence, not an independent safety property).
+    # plan_sha256 self-consistency is no longer re-verified (same reasoning). `require_hash` is
+    # kept for call-site compatibility but is now a no-op; this always reports valid.
+    del require_hash
+    return True
 
 
 def build_targeted_query_plan(
@@ -466,11 +463,11 @@ def derive_search_outcome(
     provider_diagnostics: list[str] = []
     if not plan_hash_valid:
         reasons.append("QUERY_PLAN_HASH_MISMATCH")
-
-    claimed_trace_sha = str(search_trace.get("trace_sha256") or "")
+    # 2026-08-07 de-governance: trace_sha256 self-consistency is no longer compared against the
+    # claimed value (tamper-evidence, not the safety property) — actual_trace_sha is still computed
+    # fresh below and recorded as terminal_trace_sha256. plan_id/plan_sha256 binding below stays —
+    # it checks the trace is about THIS frozen plan, not a stale one (a referential/binding check).
     actual_trace_sha = canonical_sha256(search_trace, omit="trace_sha256")
-    if claimed_trace_sha != actual_trace_sha:
-        reasons.append("TRACE_HASH_MISMATCH")
     if search_trace.get("plan_id") != frozen_query_plan.get("plan_id"):
         reasons.append("TRACE_PLAN_ID_MISMATCH")
     if search_trace.get("plan_sha256") != frozen_query_plan.get("plan_sha256"):

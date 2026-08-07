@@ -13,7 +13,14 @@ Design invariants (same as idea_grounding.py and feasibility_score.py):
 - NEVER cuts an idea, NEVER gates a stage (advisory measurement only).
 - stability and cost are deliberately OMITTED (require multi-run / budget telemetry).
 
-Six required score dimensions (each in [0.0, 1.0], rounded to 3 decimal places):
+Seven required score dimensions (each in [0.0, 1.0], rounded to 3 decimal places).
+
+Recalibration 2026-08-07 (director lock: ideation must invent). The old scale capped depth and
+breadth at exactly the value the mechanism/analogy prompts set as their FLOOR, so a 31-node graph and
+an 8-node graph scored the same and every pairwise comparison on those dimensions was a forced tie.
+Depth and breadth are now LOG-scaled, so more real structure keeps earning score with diminishing
+returns instead of hitting a wall; refutation became per-idea; and a new mechanism_invention dimension
+separates a genuinely new mechanism from a re-labelled one.
 
 depth (RUN-LEVEL, same score for every idea):
     Source: mechanism_graph — treats the graph as a DAG and finds the longest
@@ -21,9 +28,9 @@ depth (RUN-LEVEL, same score for every idea):
     path to avoid infinite loops). Computes longest_chain_len (number of nodes in
     the longest chain, minimum 1 if no edges), n_nodes, n_edges.
     score = mean([
-        min(1, (longest_chain_len - 1) / 4),
-        min(1, n_edges / 8),
-        min(1, n_nodes / 8),
+        min(1, log1p(max(0, longest_chain_len - 1)) / log1p(12)),
+        min(1, log1p(n_edges) / log1p(48)),
+        min(1, log1p(n_nodes) / log1p(32)),
     ])
     If mechanism_graph is None -> 0.0.
 
@@ -32,8 +39,8 @@ breadth (RUN-LEVEL, same score for every idea):
     items whose verdict is in {"PASS", "REPAIR"} (case-sensitive enum check), and
     the total count of shared_mechanisms items across those same entries.
     score = mean([
-        min(1, distinct_domains / 3),
-        min(1, total_shared / 6),
+        min(1, log1p(distinct_domains) / log1p(8)),
+        min(1, log1p(total_shared) / log1p(24)),
     ])
     If mechanism_mappings is None or empty, or none pass the verdict filter -> 0.0.
 
@@ -49,12 +56,30 @@ grounding (PER-IDEA):
     The grounding_by_id override path (float from idea_grounding_report) takes
     precedence over the local evidence_ref heuristic.
 
-refutation (RUN-LEVEL, same score for every idea):
-    Source: contradiction — if n_claims_checked > 0:
-        score = min(1, len(conflicts) / 3)
-    else:
-        score = 0.0
-    If contradiction is None -> 0.0.
+refutation (PER-IDEA — a DIGESTION rate, not a conflict count):
+    Source: contradiction + the idea's own "addresses_conflicts".
+    If contradiction is None, or n_claims_checked <= 0, or the report holds no
+    conflicts -> 0.5 (NEUTRAL: a clean evidence base is a real finding, and an idea
+    cannot be marked down for conflicts that do not exist).
+    Otherwise, with known = the report's conflict_ids and engaged = the idea's
+    addresses_conflicts entries that name a real conflict_id:
+        score = min(1, len(engaged) / min(3, len(known)))
+    An idea that engages none of the live conflicts scores 0.0. Previously this was
+    a run-level count of how many conflicts the MINER found, which measured the
+    contradiction-miner and gave every idea the same score.
+
+mechanism_invention (PER-IDEA):
+    Source: the idea's contribution_tier / invention_claim / mechanism_graph_refs,
+    cross-checked against the mechanism_graph.
+    base by tier: mechanism_invention 1.0 | method_invention 0.85 |
+                  measurement 0.4 | audit 0.2 | absent-or-unknown 0.4
+    If base >= 0.85 and invention_claim is blank/None -> 0.4 (an invention tier
+    with no stateable claim is not checkable, so it does not earn the tier).
+    If base >= 0.85 and mechanism_graph is present and none of the idea's
+    mechanism_graph_refs name a real node_id/edge_id -> base * 0.6 (an invention
+    that cannot point at what it changes is a claim about nothing).
+    Absent tier scores the neutral 0.4, so an older bundle is never punished for a
+    field that did not exist when it was written.
 
 falsifiability (PER-IDEA):
     1.0 if some experiment_sketch has idea_ref == idea_id AND a non-blank "falsifier".
@@ -74,6 +99,7 @@ novelty (PER-IDEA):
 """
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from typing import Dict, List, Optional
 
@@ -90,7 +116,31 @@ _NOVELTY_MAP: Dict[str, float] = {
     "collision": 0.0,
 }
 
-_REQUIRED_DIMS = ["depth", "breadth", "grounding", "refutation", "falsifiability", "novelty"]
+#: Contribution-tier base scores for the mechanism_invention dimension. An unknown or absent tier
+#: gets the same neutral 0.4 as `measurement`, so a bundle written before the field existed is
+#: neither rewarded nor punished for it.
+_TIER_BASE: Dict[str, float] = {
+    "mechanism_invention": 1.0,
+    "method_invention": 0.85,
+    "measurement": 0.4,
+    "audit": 0.2,
+}
+_TIER_NEUTRAL = 0.4
+_INVENTION_TIER_FLOOR = 0.85
+
+_REQUIRED_DIMS = ["depth", "breadth", "grounding", "refutation", "falsifiability", "novelty",
+                  "mechanism_invention"]
+
+
+def _log_scale(value: float, ceiling: float) -> float:
+    """Diminishing-returns scale: 0 at 0, 1.0 at `ceiling`, still climbing in between.
+
+    Replaces the old linear `min(1, n / k)` where k equalled the worker prompt's own floor, which
+    made every compliant run score exactly 1.0 and turned the dimension into a constant.
+    """
+    if value <= 0:
+        return 0.0
+    return min(1.0, math.log1p(value) / math.log1p(ceiling))
 
 
 def _longest_chain(adjacency: Dict[str, List[str]], nodes: List[str]) -> int:
@@ -141,9 +191,9 @@ def _score_depth(mechanism_graph: Optional[dict]) -> float:
     longest = _longest_chain(dict(adjacency), node_ids)
 
     raw = [
-        min(1.0, (longest - 1) / 4.0),
-        min(1.0, n_edges / 8.0),
-        min(1.0, n_nodes / 8.0),
+        _log_scale(longest - 1, 12),
+        _log_scale(n_edges, 48),
+        _log_scale(n_nodes, 32),
     ]
     return round(sum(raw) / len(raw), 3)
 
@@ -160,21 +210,56 @@ def _score_breadth(mechanism_mappings: Optional[List[dict]]) -> float:
                             if m.get("source_domain", "")})
     total_shared = sum(len(m.get("shared_mechanisms") or []) for m in passing)
     raw = [
-        min(1.0, distinct_domains / 3.0),
-        min(1.0, total_shared / 6.0),
+        _log_scale(distinct_domains, 8),
+        _log_scale(total_shared, 24),
     ]
     return round(sum(raw) / len(raw), 3)
 
 
-def _score_refutation(contradiction: Optional[dict]) -> float:
-    """Compute the refutation score from a contradiction_report payload."""
+def _known_conflict_ids(contradiction: Optional[dict]) -> List[str]:
+    """The conflict_ids a contradiction_report actually declares (empty when it declares none)."""
     if contradiction is None:
-        return 0.0
+        return []
     n_checked = contradiction.get("n_claims_checked", 0)
     if not isinstance(n_checked, (int, float)) or n_checked <= 0:
-        return 0.0
-    conflicts = contradiction.get("conflicts") or []
-    return round(min(1.0, len(conflicts) / 3.0), 3)
+        return []
+    return [str(c.get("conflict_id")) for c in (contradiction.get("conflicts") or [])
+            if isinstance(c, dict) and c.get("conflict_id")]
+
+
+def _score_refutation(idea: Optional[dict], known_conflict_ids: List[str]) -> float:
+    """Per-idea contradiction DIGESTION rate.
+
+    Neutral 0.5 when there is nothing to digest (no report, no conflicts, or no idea to ask): a clean
+    evidence base is a real finding and must not read as a defect on every idea. Otherwise the score
+    is the fraction of live conflicts this idea engages, saturating at three — engaging every one of a
+    twelve-conflict report is not a realistic bar for a single idea.
+    """
+    if not known_conflict_ids or idea is None:
+        return 0.5
+    known = set(known_conflict_ids)
+    engaged = {str(c) for c in (idea.get("addresses_conflicts") or []) if str(c) in known}
+    return round(min(1.0, len(engaged) / min(3, len(known))), 3)
+
+
+def _score_mechanism_invention(idea: dict, mechanism_graph: Optional[dict]) -> float:
+    """How much genuinely NEW mechanism this idea introduces (per-idea)."""
+    tier = str(idea.get("contribution_tier") or "").strip().lower()
+    base = _TIER_BASE.get(tier, _TIER_NEUTRAL)
+    if base < _INVENTION_TIER_FLOOR:
+        return round(base, 3)
+    claim = idea.get("invention_claim")
+    if not (isinstance(claim, str) and claim.strip()):
+        return _TIER_NEUTRAL                    # an invention tier with no stateable claim
+    if mechanism_graph is not None:
+        real_ids = {str(n.get("node_id")) for n in (mechanism_graph.get("nodes") or [])
+                    if isinstance(n, dict) and n.get("node_id")}
+        real_ids |= {str(e.get("edge_id")) for e in (mechanism_graph.get("edges") or [])
+                     if isinstance(e, dict) and e.get("edge_id")}
+        refs = {str(r) for r in (idea.get("mechanism_graph_refs") or [])}
+        if real_ids and not (refs & real_ids):
+            return round(base * 0.6, 3)         # cannot point at what it changes
+    return round(base, 3)
 
 
 def _score_grounding(
@@ -328,10 +413,11 @@ def build_quality_eval(
     if not ideas:
         raise ValueError("ideas must be a non-empty list")
 
-    # Pre-compute run-level scores (same for every idea)
+    # Pre-compute run-level scores (same for every idea). refutation left this group on 2026-08-07:
+    # it now measures whether THIS idea digested the run's conflicts, not how many the miner found.
     run_depth = _score_depth(mechanism_graph)
     run_breadth = _score_breadth(mechanism_mappings)
-    run_refutation = _score_refutation(contradiction)
+    known_conflicts = _known_conflict_ids(contradiction)
 
     # Build sketch lookup: idea_id -> falsifier string (first non-blank match wins)
     sketch_by_idea: Dict[str, str] = {}
@@ -352,9 +438,10 @@ def build_quality_eval(
             "depth": run_depth,
             "breadth": run_breadth,
             "grounding": grounding,
-            "refutation": run_refutation,
+            "refutation": _score_refutation(idea, known_conflicts),
             "falsifiability": falsifiability,
             "novelty": novelty,
+            "mechanism_invention": _score_mechanism_invention(idea, mechanism_graph),
         }
         evidence_ref = _evidence_refs_for(
             idea, mechanism_graph, mechanism_mappings, contradiction,

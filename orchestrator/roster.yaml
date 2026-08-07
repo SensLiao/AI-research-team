@@ -48,6 +48,7 @@ agents:
     - paper-reading-quality-auditor
     - paper-markdown-writer
     - manuscript-venue-corpus-scout
+    - research-trajectory-extractor
   gap_hunting:
     - future-work-miner
     - weakness-spotter
@@ -67,6 +68,7 @@ agents:
     - mathematical-formalizer
     - analogy-mapper
     - novelty-collision-checker
+    - divergence-operator-runner
   design:
     - baseline-fairness-critic
     - protocol-critic
@@ -174,3 +176,4 @@ agents:
     - manuscript-polish-editor
     - manuscript-submission-packager
     - hypothesis-compiler
+    - direction-decision-advisor
