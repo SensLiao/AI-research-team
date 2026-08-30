@@ -1,21 +1,8 @@
 <div align="right"><a href="README.zh-CN.md">简体中文</a></div>
 
-<p align="center"><img src="docs/hero.png" alt="Research Agent Teams banner" width="100%"></p>
+<p align="center"><img src="docs/hero.png" alt="Research Agent Teams — auditable multi-agent research orchestration" width="100%"></p>
 
-<p align="center"><b>Orchestrated research runs where every claim is traced to a source and a human signs off at each gate.</b></p>
-
-<p align="center">
-<img src="https://img.shields.io/badge/Python-stdlib--first-7c6cf0?style=flat-square" alt="Python stdlib-first">
-<img src="https://img.shields.io/badge/Agents-166-7c6cf0?style=flat-square" alt="166 agents">
-<img src="https://img.shields.io/badge/Pipeline-7%20stages-7c6cf0?style=flat-square" alt="7-stage pipeline">
-<img src="https://img.shields.io/badge/JSON%20Schema-Draft%202020--12-7c6cf0?style=flat-square" alt="JSON Schema Draft 2020-12">
-<img src="https://img.shields.io/badge/Human%20gates-5-7c6cf0?style=flat-square" alt="5 human gates">
-<img src="https://img.shields.io/badge/License-planned-64748b?style=flat-square" alt="License planned">
-</p>
-
-Research Agent Teams is an auditable multi-agent research orchestration system. It coordinates AI agents through a real research workflow — from discovery to a written report — without losing traceability or human control. Every run produces a **director-review packet**: evidence briefs, idea bets, experiment plans, a manuscript draft, and a reviewer report.
-
-Evidence is auditable end-to-end: citation attribution recomputes every claim→source span from a local, immutable snapshot, and each run is recorded in a hash-chained, append-only ledger. The fastest way in is the test suite (see [Getting started](#-getting-started)).
+Research Agent Teams is an auditable multi-agent research orchestration system. It coordinates AI agents through a real research workflow — from discovery to a written report — without losing traceability or human control. Evidence stays auditable end to end: citation attribution recomputes every claim→source span from a local, immutable snapshot, and each run is recorded in a hash-chained, append-only ledger. The fastest way in is the test suite.
 
 **What a run produces — a director-review packet:**
 
@@ -34,7 +21,24 @@ Evidence is auditable end-to-end: citation attribution recomputes every claim→
 - **Search saturation, tracked** — an evidence-search-saturation trace records when a search has been exhausted.
 - **Controlled promotion** — a gated promotion seam moves results into a separate research vault only through an explicit gate.
 
-## 📊 By the numbers
+## 🏗 Architecture
+
+<p align="center"><img src="docs/architecture.png" alt="Research Agent Teams architecture — seven-stage pipeline over control, execution and evidence planes" width="100%"></p>
+
+<p align="center"><sub>Seven pipeline stages resting on three planes: control, execution and repair, evidence and audit.</sub></p>
+
+Runs flow through a seven-stage pipeline — **DISCOVER → IDEATE → DESIGN → EXECUTE → ANALYZE → VERIFY → REPORT** — driven by a control plane that holds the orchestrator's stage graph, a registry of 26 modes and a roster of 166 specialised agents. Execution runs on an operated spine (begin → workers → commit → report) with bounded repair, and 5 human decision gates sit between stages so a person signs off before work proceeds — placed so the model structurally cannot bet on its own ideas. Everything the run emits passes through the evidence layer: 170 JSON-Schema contracts double-validate each artifact, citation attribution ties every claim back to a source span, and the hash-chained, append-only ledger records the run. A full pass ends in the director-review packet; moving results into the separate research vault happens only through a single gated promotion seam.
+
+## 🧰 Tech stack
+
+| Layer | Choice |
+| --- | --- |
+| Language | Python, standard-library-first |
+| Key libraries | PyYAML, jsonschema, cryptography, PyMuPDF, paramiko |
+| Contracts | JSON Schema Draft 2020-12 |
+| Hooks | Two Node hooks |
+
+The system it adds up to:
 
 | Measure | Count |
 | --- | --- |
@@ -46,22 +50,9 @@ Evidence is auditable end-to-end: citation attribution recomputes every claim→
 | Human decision gates | 5 |
 | Test files | 245 |
 
-## 🏗 Architecture
-
-<p align="center"><img src="docs/architecture.png" alt="Research Agent Teams architecture" width="100%"></p>
-
-Runs flow through a seven-stage pipeline — **DISCOVER → IDEATE → DESIGN → EXECUTE → ANALYZE → VERIFY → REPORT** — with 5 human decision gates placed between stages where a person signs off before work proceeds. Agents operate in typed modes and call a shared tool set; every artifact they emit is validated twice against JSON-Schema contracts, appended to a hash-chained ledger, and — when promoted — moved through a single gated seam into a separate research vault.
-
-## 🧰 Tech stack
-
-- **Language:** Python, standard-library-first
-- **Key libraries:** PyYAML, jsonschema, cryptography, PyMuPDF, paramiko
-- **Contracts:** JSON Schema Draft 2020-12
-- **Hooks:** two Node hooks
-
 ## 🚀 Getting started
 
-The checkout directory must be named `research_agent_teams` — modules import from `research_agent_teams.*`.
+Prerequisites: Python with pytest. The checkout directory must be named `research_agent_teams` — modules import from `research_agent_teams.*`.
 
 ```bash
 python -m pytest tests/ -q
@@ -79,12 +70,12 @@ python -m pytest tests/ -q
 
 All 170 JSON-Schema contracts parse, and every artifact is double-validated against them.
 
-## 📌 Project status
+## 📌 Limitations
 
-A personal research-infrastructure project, designed and built end-to-end by **Ruixuan Liao**. It is functional and exercised by its test suite; note the two practical caveats above — the checkout directory must be named `research_agent_teams`, and no bundled end-to-end example project ships in this repository. A rename of the repository to `research-agent-teams` is planned.
+A personal research-infrastructure project, designed and built end to end by **Ruixuan Liao**. It is functional and exercised by its test suite, with two practical caveats worth knowing before you clone it: the checkout directory must be named `research_agent_teams`, and no bundled end-to-end example project ships here.
 
 ## 📄 License
 
-A license is planned but not yet added — no LICENSE file ships in this repository today.
+No LICENSE file ships in this repository, so the terms of use are not yet defined.
 
 <p align="center"><sub>Built by <a href="https://github.com/SensLiao">Ruixuan "Sens" Liao</a> · USYD Advanced Computing (Honours)</sub></p>
