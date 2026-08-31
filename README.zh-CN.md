@@ -138,7 +138,17 @@ python -m pytest tests/ -q
 
 整套测试规模不小——**245 个测试文件**中包含数千条断言——在笔记本上需要数分钟。它是理解本系统承诺了什么的最快且最诚实的途径，因为那些承诺*就是*这些测试：账本链能检出序号、链接与内容三类篡改；引文与偏移不符时位点核验失败；被围栏的智能体写不了知识库；Python 范围守卫与它的 Node 镜像互相一致；当审计不支持时晋升会被拒绝。
 
-仓库不附带端到端示例项目，因此请把测试套件与 [`PLATFORM-FACTS.md`](PLATFORM-FACTS.md) 搭配阅读——后者是一份由机器推导出的"今天究竟存在什么"的清单，与"它能达成什么"的主张被刻意分开。
+**在干净检出上，这套测试并不会全绿，这是预期之内的。** 在 Windows 11 / Python 3.9 上的一次完整运行结果是：
+
+```text
+66 failed, 4434 passed, 26 skipped, 4 errors in 266.51s (0:04:26)
+```
+
+这些失败无一例外都是"缺少 fixture"，而不是"承诺被打破"。有八个测试模块会去读 `projects/<slug>/` 下的工作目录——`test_projects.py`、`test_resources.py`、`test_resource_resolver.py`、`test_workbench_views.py`、`test_hooks_js.py`、`test_collision_gate_integration.py`、`test_t4_example_dry_run.py`、`test_t4_native_multi_agent_evidence.py`——而 `projects/` 是**刻意不发布**的：它包含这些运行所在机器的真实主机名、IP 与 SSH 材料。失败表现为 `FileNotFoundError: ...\projects	4-scribble-m0-mechanism-eval`。
+
+所以这个数字应当读作：**已发布部分上有 4,434 条断言通过**；而那 66 条应当被当成待办——需要先合成出 fixture，那条路径才能在干净检出上被验证。
+
+仓库同样不附带端到端示例项目，因此请把测试套件与 [`PLATFORM-FACTS.md`](PLATFORM-FACTS.md) 搭配阅读——后者是一份由机器推导出的"今天究竟存在什么"的清单，与"它能达成什么"的主张被刻意分开。
 
 ## 🗺 仓库地图
 
@@ -192,7 +202,7 @@ python -m pytest tests/ -q
 
 ## 📊 项目状态
 
-- **已运作并被强制** — 控制平面、受操作的主干、schema 契约、账本、引用归因、范围守卫、晋升与文档收录两条通道，以及导师评审包渲染器。以上全部被那 245 个测试文件覆盖。
+- **已运作并被强制** — 控制平面、受操作的主干、schema 契约、账本、引用归因、范围守卫、晋升与文档收录两条通道，以及导师评审包渲染器。以上全部被那 245 个测试文件覆盖，其中 **237 个模块能在干净检出上运行**——剩下 8 个需要未发布的 `projects/` fixture（见[预期效果](#预期效果)）。
 - **有规格但未运作** — 26 种模式中有一部分仅有规格，执行层的一部分受 GPU 服务器门控。`PLATFORM-FACTS.md` 把它们分成明确的桶，而不是含混带过。
 - **已知漂移** — `PLATFORM-FACTS.md` 是有日期的快照，其中部分计数落后于当前代码树（例如它记录 167 份 schema，而仓库现在是 170 份）。YAML 文件与测试是事实源；该快照是一次验证运行的记录。
 - **不在这里** — 没有随附的端到端示例项目，没有 CI 配置，也还没有 LICENSE。

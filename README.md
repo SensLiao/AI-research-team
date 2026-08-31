@@ -138,7 +138,17 @@ python -m pytest tests/ -q
 
 The full suite is large — on the order of a few thousand assertions across **245 test files** — and takes several minutes on a laptop. It is the fastest honest way to see what the system guarantees, because the guarantees *are* the tests: the ledger chain detects sequence, linkage and content tampering; citation loci fail when a quote does not match its offsets; fenced agents cannot write the vault; the Python scope guard and its Node mirror agree; promotion refuses a candidate whose audits do not support it.
 
-There is no bundled end-to-end example project, so pair the suite with [`PLATFORM-FACTS.md`](PLATFORM-FACTS.md) — a machine-derived inventory of what actually exists today, kept deliberately separate from claims about what it can achieve.
+**On a clean clone the suite does not come out all-green, and that is expected.** A full run here on Windows 11 / Python 3.9 gave:
+
+```text
+66 failed, 4434 passed, 26 skipped, 4 errors in 266.51s (0:04:26)
+```
+
+Every one of those failures is a missing fixture, not a broken guarantee. Eight test modules reach for a working directory under `projects/<slug>/` — `test_projects.py`, `test_resources.py`, `test_resource_resolver.py`, `test_workbench_views.py`, `test_hooks_js.py`, `test_collision_gate_integration.py`, `test_t4_example_dry_run.py`, `test_t4_native_multi_agent_evidence.py` — and `projects/` is deliberately **not** published: it held real host, IP and SSH material from the machines these runs executed on. The failure surfaces as `FileNotFoundError: ...\projects	4-scribble-m0-mechanism-eval`.
+
+So read the number as **4,434 passing assertions over the parts that ship**, and treat the 66 as a to-do: the fixtures need synthesising before that path can be verified from a clean clone.
+
+There is no bundled end-to-end example project either, so pair the suite with [`PLATFORM-FACTS.md`](PLATFORM-FACTS.md) — a machine-derived inventory of what actually exists today, kept deliberately separate from claims about what it can achieve.
 
 ## 🗺 Repository map
 
@@ -192,7 +202,7 @@ Written standards live in [`docs/`](docs/) (in Chinese), each defining what a go
 
 ## 📊 Project status
 
-- **Working and enforced** — the control plane, the operated spine, the schema contracts, the ledger, citation attribution, the scope guards, the promotion and document-admission lanes, and the director packet renderer. All of it is covered by the 245-file suite.
+- **Working and enforced** — the control plane, the operated spine, the schema contracts, the ledger, citation attribution, the scope guards, the promotion and document-admission lanes, and the director packet renderer. All of it is covered by the 245-file suite, of which **237 modules run on a clean clone** — the remaining 8 need the unpublished `projects/` fixtures (see [What you should see](#what-you-should-see)).
 - **Specified but not operated** — a subset of the 26 modes are specification-only, and part of the execute layer is gated on a GPU server. `PLATFORM-FACTS.md` splits these into explicit buckets rather than blurring them.
 - **Known drift** — `PLATFORM-FACTS.md` is a dated snapshot and some of its counts trail the live tree (for example it records 167 schemas where the repository now has 170). The YAML files and the tests are the source of truth; the snapshot is a record of one verification run.
 - **Not here** — no bundled end-to-end example project, no CI configuration, and no LICENSE yet.
