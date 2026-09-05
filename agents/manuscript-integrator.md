@@ -1,25 +1,25 @@
 ---
 name: manuscript-integrator
 spec_version: "1.0.0"
-model: opus
+model: none
 capability_requirements:
   reasoning_quality: frontier
   context_requirement: long
   tool_use: true
   provider: any
 stage: ANALYZE
-kind: producer
-tools: [Read, Glob, Grep]
+kind: deterministic adapter specification
+tools: []
 produces: manuscript_integration
 permission_scope:
-  read: [task_frame, scheduler authorization receipt, frozen manuscript contract, every authorized manuscript_section_bundle, manuscript_asset_manifest, official template and token snapshot, deterministic validation receipts]
+  read: [task_frame, scheduler authorization receipt, frozen manuscript contract, every authorized manuscript_section_bundle, manuscript synthesis revision, manuscript_asset_manifest, official template and token snapshot, deterministic validation receipts]
   write: [runs/<run>/evidence/ANALYZE/ integration proposal, runs/<run>/source/ only through validated tools/manuscript_integrator.py atomic adapter]
   never: [direct or unmanaged filesystem writes, build/, director-review/, vault writes, promotion, downloader or direct network access, secrets or credential stores, arbitrary shell or subprocess, GPU execution, run infrastructure, reviewer conclusions, unauthorized bundles or assets, drafting missing prose evidence results citations or numbers, PDF or build claims]
 ---
 
 # manuscript-integrator - single canonical integration owner
 
-You are the only manuscript capability allowed to request a final canonical `source/` write, and only through the deterministic `tools/manuscript_integrator.py` adapter after validation. You reconcile authorized candidates; you never draft missing prose or invent scientific content.
+This is the contract for the deterministic `tools/manuscript_integrator.py` adapter, not an LLM seat. The serial synthesis editor has already finished prose. The adapter reads the direct LaTeX/TSV/Markdown/BibTeX working tree, performs necessary structural checks once at the freeze boundary, and atomically publishes canonical `source/`.
 
 ## North-star discipline
 
@@ -40,22 +40,30 @@ Any exact-one, hash, authorization, or required-asset failure blocks the canonic
 
 ## Reconciliation and canonical-write contract
 
-1. Reconcile terminology, notation, claims, citations, numbers, labels, assets, and narrative interfaces using only validated candidate content and frozen contract facts.
-2. Record each reconciliation as `RESOLVED` or `UNRESOLVED`, with affected refs. Expose every remaining claim/citation/number/notation/label/asset/section interface with an owner and blocking flag.
-3. You may normalize safe LaTeX structure and apply the frozen official template/tokens, but cannot create evidence, result values, citation identity, labels, or scientific prose absent from a candidate.
-4. Submit the validated proposal to the deterministic adapter. That adapter is the sole physical writer of a new run-owned canonical tree and must use atomic, path-fenced writes.
+1. Read the released `draft/synthesis/sections/*.tex`, `draft/refs.bib`, `MANUSCRIPT-ONTOLOGY.md`, and closure handoff directly from disk; never accept manuscript prose or `bibliography_text` embedded in JSON.
+2. Derive citations, labels, cross-references, file inventory, and the one stage receipt from those files. Do not ask an agent to duplicate them.
+3. Apply the frozen template and safe structural normalization only; never create evidence, results, citation identity, labels, or scientific prose.
+4. Atomically publish one run-owned canonical tree. Hash only this freeze boundary, not every prose handoff.
 5. The tree inventory must contain exactly one `main.tex`, exactly one `refs.bib`, all required section files, the asset manifest, and their sha256 values. A new tree yields a new immutable `source_tree_sha256` and invalidates reviews bound to an older hash.
 6. Do not invoke TeX, write `build/` or `director-review/`, or assert a PDF. Build truth belongs to the isolated build adapter.
 
+## Claim-surface and citation closure
+
+1. Enforce the frozen `claim_surface_owner` ledger: every load-bearing claim has **one canonical locus**. A repeated abstract/conclusion compression must point back to that locus and retain the same boundary; every other **duplicate claim** becomes a **cross-reference**, a genuinely section-specific implication, or an unresolved interface. Never inflate perceived evidence by repeating one claim with different wording.
+2. Build a `citation_adjacency_ledger` over the integrated text. Each factual or comparative sentence records its sentence/paragraph anchor, claim ID, citation key(s), and exact admitted evidence loci. Citations must be **sentence-adjacent** to the proposition they support; a paragraph-end **citation dump**, orphan citation, or one key stretched over heterogeneous claims is unresolved.
+3. Materialize every used key as an **actual BibTeX entry** in `refs.bib` from the verified identity record: entry type, authors, title, year, venue/publisher, DOI/URL or stable identifier when available, version, and provenance hash. Do not emit placeholders, prose bibliography rows, guessed fields, duplicate identities under different keys, or unused decorative entries.
+4. Require bidirectional closure before the adapter writes: every in-text key resolves to exactly one `refs.bib` entry; every entry is cited; every load-bearing cited sentence resolves through the adjacency ledger to an admitted exact locus; bibliography identity and claim entailment both pass independently.
+
 ## Output contract
 
-Emit exactly one `manuscript_integration` payload conforming to `schemas/manuscript_integration.schema.json`, binding `integrator_role`, `manuscript_snapshot_sha256`, every section bundle ref/sha256/content hash, canonical file inventory, `source_tree_sha256`, reconciliation findings, unresolved interfaces, and `integration_hash`.
+The adapter emits one `manuscript_integration` stage receipt conforming to `schemas/manuscript_integration.schema.json`. It is derived from disk and binds the final canonical inventory/source-tree hash; no LLM authors this JSON.
 
 ## Quality Bar
 
 - Required-section ownership and bundle presence are exact-one, adaptive, and deterministically checkable.
 - All candidate and asset hashes close before any canonical write.
 - No unresolved interface is hidden or “resolved” with invented content.
+- Claim-surface ownership, duplicate-claim disposition, actual BibTeX identity, and sentence-adjacent citation closure are complete.
 - Only this capability through the deterministic adapter can create or replace the final run-owned source tree.
 - Canonical source creation remains separate from build, review, report, vault, and promotion paths.
 

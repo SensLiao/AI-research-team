@@ -22,7 +22,6 @@ is a bounded composition over a frozen, human-authored menu — not a free-form 
 from __future__ import annotations
 
 import copy
-import copy
 import hashlib
 import json
 import os
@@ -123,6 +122,11 @@ def match_intents(request: str) -> List[Tuple[str, int]]:
         # where a full alias is broken up, e.g. 找/个/研究/方向).
         terms = list(spec.get("aliases") or []) + list(spec.get("keywords") or [])
         score = sum(1 for t in terms if str(t).strip() and str(t).strip().lower() in req)
+        negative_terms = list(spec.get("negative_keywords") or [])
+        score -= 3 * sum(
+            1 for term in negative_terms
+            if str(term).strip() and str(term).strip().lower() in req
+        )
         scored.append((iid, score))
     scored.sort(key=lambda x: (-x[1], order.index(x[0])))
     return scored
@@ -139,13 +143,21 @@ def best_intents(request: str) -> Tuple[List[str], bool]:
 
 # --------------------------------------------------------------------------- cost / gates / validation
 
+#: Nominal hop cost for an UNBOUNDED mode (max_agent_hops: null, director lock 2026-08-09).
+#: Unbounded is the deepest/most expensive tier by design, so it must never cost 0 or below a
+#: bounded mode — the "fastest/cheapest -> deepest" tier promise depends on monotonic costs.
+UNBOUNDED_HOP_COST = 64
+
+
 def estimate_cost(modes: List[str]) -> dict:
-    """A chain's rough cost = sum of its modes' max_agent_hops (from mode_registry budgets)."""
+    """A chain's rough cost = sum of its modes' max_agent_hops (from mode_registry budgets).
+    A mode with max_agent_hops: null (unbounded) counts as UNBOUNDED_HOP_COST, never 0."""
     reg = load_mode_registry().get("modes") or {}
     hops = 0
     for m in modes:
         budget = (reg.get(m) or {}).get("budget") or {}
-        hops += int(budget.get("max_agent_hops") or 0)
+        ceiling = budget.get("max_agent_hops")
+        hops += UNBOUNDED_HOP_COST if ceiling is None else int(ceiling)
     if hops <= _BAND_LIGHT_MAX:
         band = "light"
     elif hops <= _BAND_MEDIUM_MAX:
@@ -197,6 +209,25 @@ def validate_chain(modes: List[str]) -> dict:
             violations.append(
                 f"phase order: {b_m!r} (rank {b_r}) cannot run after {a_m!r} (rank {a_r}) — a chain "
                 "runs discovery -> ideate -> design -> venue")
+
+    registry_modes = (load_mode_registry().get("modes") or {})
+    for upstream, downstream in zip(modes, modes[1:]):
+        if (upstream, downstream) not in {
+            ("manuscript_reconstruction", "manuscript_authoring"),
+            ("evidence_deep", "manuscript_authoring"),
+            ("manuscript_authoring", "manuscript_review"),
+            ("manuscript_review", "venue_readiness"),
+        }:
+            continue
+        up_handoff = (registry_modes.get(upstream) or {}).get("handoff") or {}
+        down_handoff = (registry_modes.get(downstream) or {}).get("handoff") or {}
+        product = up_handoff.get("product_version")
+        accepts = list(down_handoff.get("accepts") or [])
+        if product and accepts and product not in accepts:
+            violations.append(
+                f"handoff: {downstream!r} does not accept {upstream!r} product {product!r}; "
+                f"accepted products are {accepts}"
+            )
 
     return {"ok": not violations, "violations": violations, "warnings": warnings,
             "spec_only": spec_only}
@@ -988,10 +1019,59 @@ def write_upstream_grounding(new_run_dir: str, prev_run_dirs: List[str],
     grounding["citation_snapshot_handoff"] = materialize_upstream_citation_snapshots(
         new_run_dir, grounding
     )
+    if downstream_mode == "manuscript_authoring":
+        _stage_reconstruction_manuscript(new_run_dir, grounding)
     _write_json_atomic(root,
                         (Path("inbox") / UPSTREAM_GROUNDING_FILE).as_posix(),
                         grounding, label="upstream grounding manifest")
     return str(out)
+
+
+def _stage_reconstruction_manuscript(new_run_dir: str, grounding: dict) -> None:
+    """Stage one current LaTeX tree for a reconstruction→authoring link.
+
+    This is a direct file handoff, not a generated script or another content
+    schema. Unchanged files become the revision baseline; final hashes are
+    computed only when the canonical source tree is frozen.
+    """
+
+    root = Path(new_run_dir).resolve()
+    allowed_suffixes = {
+        ".tex", ".bib", ".md", ".tsv", ".csv", ".png", ".jpg", ".jpeg", ".svg", ".pdf"
+    }
+    for upstream in grounding.get("upstream_runs") or []:
+        if upstream.get("mode") != "manuscript_reconstruction":
+            continue
+        upstream_root = Path(str(upstream.get("run_dir") or "")).resolve()
+        input_path = upstream_root / "inbox/manuscript-reconstruction/external-review-input.json"
+        payload = _read_json(input_path) or {}
+        source_text = str(payload.get("manuscript_dir") or "").strip()
+        if not source_text:
+            raise ValueError("manuscript reconstruction handoff lacks manuscript_dir")
+        source = Path(source_text).resolve()
+        if not source.is_dir() or source.is_symlink():
+            raise ValueError("manuscript reconstruction manuscript_dir is not a safe directory")
+        destination = root / "inbox/manuscript-inputs/current-source"
+        if destination.exists():
+            raise ValueError("current manuscript source was already staged")
+        destination.mkdir(parents=True)
+        for path in sorted(source.rglob("*")):
+            if not path.is_file() or path.is_symlink() or path.suffix.casefold() not in allowed_suffixes:
+                continue
+            if any(part.startswith(".") for part in path.relative_to(source).parts):
+                continue
+            target = destination / path.relative_to(source)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+        bib_text = str(payload.get("bib_path") or "").strip()
+        if bib_text:
+            bib = Path(bib_text).resolve()
+            target = destination / "refs.bib"
+            if bib.is_file() and not target.exists():
+                shutil.copy2(bib, target)
+        if not any(destination.rglob("*.tex")):
+            raise ValueError("staged manuscript source contains no LaTeX files")
+        return
 
 
 def _grounding_block(run_dir: str, grounding: dict) -> str:

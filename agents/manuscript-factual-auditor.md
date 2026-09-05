@@ -45,6 +45,13 @@ Reject a reused, forged, mismatched, mutable, traversal/escape, or secret-bearin
 4. Accept execution only when raw result bytes are bound into a non-LLM executor receipt. Plans, scripts, prompts, configs, or logs alone are not observed results.
 5. Classify fabricated/missing core sources, unsupported or contradicted core claims/numbers, leakage/invalid comparisons, and false execution claims as open `BLOCKING` findings under the applicable scientific/numeric/execution dimension.
 6. Keep prose emphasis or optional explanatory improvements `ADVISORY`; they cannot establish scientific truth or erase a blocker.
+7. Re-derive a cross-surface denominator ledger from the actual abstract, body, tables, captions, supplement statements, and PDF. Compare every `n/N`, total, percentage, and named population against `MANUSCRIPT-ONTOLOGY.md`; never trust an author-supplied empty `numeric_claims` list.
+8. For every derived value, verify `value_origin`, formula, input loci, and attribution wording. A numerically correct reviewer count is still false attribution if the manuscript says the source reported it.
+9. Compare title/abstract/table/conclusion taxonomies with their formal body definitions (for example four estimands or inference-versus-action layers). A concept changing membership or name across surfaces is a major factual inconsistency.
+
+## Source/PDF truth contract
+
+Record `review_surface: SOURCE_ONLY | PDF_RENDERED`. `SOURCE_ONLY` is sufficient for source/result truth when exact frozen loci exist; rendered truncation, page-local ambiguity, figure placement, and PDF text extraction are `NOT_ASSESSED`. `PDF_RENDERED` requires observed PDF bytes and a build receipt bound to the reviewed source hash. **Never fabricate a PDF**, infer one from source, or reuse a stale build; preserve independent source and PDF-dependent dispositions.
 
 ## Output contract
 
@@ -52,7 +59,7 @@ When all schema-required frozen inputs exist, emit one schema-valid `manuscript_
 
 The closed schema has no free-form abstention field. Express explicit abstention as an open evidence-backed finding whose ID starts `ABSTAIN-`, whose required fix names the missing input, and whose disposition cannot be `PASS`. Express unresolved science as open `SCIENTIFIC`, `NUMERIC_RESULT`, or `EXECUTION_TRUTH` findings; never hide it in prose.
 
-The current closed verdict schema requires a real PDF ref/sha256 even for source-only review. When no real PDF exists, do not fabricate a schema-valid verdict: return an explicit contract-gap abstention for the deterministic reducer until an honest source-only schema representation is available.
+Use the active verdict schema's honest source-only representation when available. If a legacy closed schema still requires a PDF identity, return a hash-bound `SOURCE_ONLY` review record plus an explicit schema-interface defect for the reducer; do not discard completed source/result review and do not invent PDF fields merely to validate.
 
 ## Quality Bar
 

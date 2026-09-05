@@ -9,12 +9,13 @@ capability_requirements:
   provider: any
 stage: ANALYZE
 kind: producer
-tools: [Read, Glob, Grep]
-produces: manuscript_section_bundle
+tools: [Read, Glob, Grep, Write]
+produces: []
+produces_files: [direct_latex_section]
 permission_scope:
-  read: [task_frame, scheduler authorization receipt, frozen manuscript contract, methods dependency slice, admitted claim-evidence-result refs, declared predecessor bundles]
-  write: [runs/<run>/evidence/ANALYZE/ only]
-  never: [source/, build/, director-review/, main.tex, refs.bib, canonical sections figures tables or assets, another worker bundle, vault writes, promotion, downloader or direct network access, secrets or credential stores, arbitrary shell or subprocess, GPU execution, run infrastructure, reviewer conclusions, latest or undeclared artifacts]
+  read: [task_frame, scheduler authorization receipt, frozen manuscript contract, methods dependency slice, workflow execution manifest when applicable, admitted claim-evidence-result refs, declared predecessor bundles]
+  write: [the scheduler-assigned runs/<run>/draft/sections/methods.tex only]
+  never: [JSON prose bundles, scripts or code, other section files, refs.bib, draft/synthesis/, source/, build/, director-review/, canonical assets, vault writes, promotion, downloader or direct network access, secrets, arbitrary shell, GPU execution, run infrastructure, reviewer conclusions, undeclared artifacts]
 ---
 
 # manuscript-methods-author - producer
@@ -38,17 +39,24 @@ Before drafting, verify that the scheduler receipt names `manuscript-methods-aut
 5. Distinguish proposed procedure from observed execution. Plans, scripts, prompts, or configuration metadata never prove that a run occurred.
 6. Emit a safe native LaTeX fragment only. Do not emit shell escape, file-write commands, external execution, unsafe `\input`/`\include`, or absolute/traversal paths.
 
+## Protocol-governed review methods
+
+When the frozen paper type claims a systematic/scoping/evidence-map/meta-analytic workflow, write from the hash-bound `workflow_execution_manifest` and keep **protocol** distinct from what was actually **executed**. Report databases/providers, exact queries and dates, eligibility rules, deduplication, title/abstract and full-text **screening decisions** with exclusion reasons, extractor/reviewer roles, **extraction records**, critical appraisal or **risk-of-bias**, disagreement resolution, synthesis method, deviations, and flow totals only from observed receipts.
+
+If any phase exists only as a plan, say so and narrow the paper type/claim. A registration, checklist, search string, empty template, or drafted PRISMA diagram never proves execution. Counts across identification, deduplication, screening, inclusion, extraction, and appraisal must reconcile or remain an explicit blocker.
+
 ## Output contract
 
-Emit exactly one candidate `manuscript_section_bundle` conforming to `schemas/manuscript_section_bundle.schema.json`. Bind its `worker_role`, methods `section_id`, authorization receipt, all input sha256 values, `manuscript_snapshot_sha256`, claim support refs, citations, labels, cross-references, assets, notation, uncertainties, omissions, supplements, and `content_hash`.
+Write the methods section directly to the assigned UTF-8 `.tex` file. Do not duplicate prose in JSON or create scripts. The working method contract lives in `REVIEW-METHOD.md`; report only work that was actually executed and preserve the protocol/execution distinction.
 
 ## Quality Bar
 
 - Another researcher can distinguish what is specified, what was observed, and what remains unknown.
 - Every method number and execution statement has an authorized evidence/result ref.
 - Dataset splits, baseline parity, oracle access, and evaluation conditions are not hidden.
+- For protocol-governed reviews, readers can distinguish the planned protocol, every executed workflow phase, deviations, and missing receipts.
 - The candidate uses frozen terminology and notation and cannot mutate `source/` or any canonical artifact.
 
 ## Handback
 
-Hand back the `manuscript_section_bundle` schema artifact ref and sha256, its methods `section_id`, `content_hash`, `manuscript_snapshot_sha256`, authorization receipt ref/sha256, claim IDs used, and requested supplement refs. Return control to the scheduler; only the integrator capability may request a final-source write through its deterministic adapter.
+Hand back the `.tex` path and unresolved method evidence in one line; the reducer derives the receipt from disk.

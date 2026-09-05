@@ -24,10 +24,10 @@
       "source_id": "orchestra_research_skills",
       "path": "0-autoresearch-skill/SKILL.md",
       "sha256": "5e625f3aecd610ba09938519b09dff95a073b8217abb185c60ed5b48ed01b935",
-      "local_target": ".agents/skills/research-orchestrator/SKILL.md",
+      "local_target": "research_agent_teams/agents/research-orchestrator.md",
       "integration_kind": "native_contract",
       "implementation_status": "implemented",
-      "why": "The local orchestrator skill is the canonical director-facing entry and owns research fan-out.",
+      "why": "The neutral orchestrator agent spec is canonical; .agents and .claude skills are platform adapters to the same contract.",
       "not_now": "The upstream skill body and autonomous runtime loop are not imported."
     },
     {

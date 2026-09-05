@@ -255,10 +255,10 @@ def _findings(inventory: dict[str, Any], used: dict[str, Any]) -> list[dict[str,
     if leads and dispatched and len(leads) < len(dispatched):
         out.append({
             "id": "obs-jsonl-is-not-a-dispatch-log",
-            "what": f"`obs.jsonl` 里只有 {len(leads)} 个名字，而真实派发过的席位是 {len(dispatched)} 个。",
+            "what": f"`obs.jsonl` 里只有 {len(leads)} 个名字，而真实派发过的 agent 是 {len(dispatched)} 个。",
             "why": "它记的是每个阶段的 lead 标签（`agent_name: lead or \"operate\"`），不是每个 worker 的"
                    "派发记录。把它当派发日志读会少算一个数量级。真实记录是 "
-                   "`inbox/<阶段>.<席位>.bundle.json` —— 一个 worker 一份。",
+                   "`inbox/<阶段>.<agent>.bundle.json` —— 一个 worker 一份。",
         })
 
     done = int((used.get("run_status") or {}).get("done", 0))
@@ -288,7 +288,7 @@ def _findings(inventory: dict[str, Any], used: dict[str, Any]) -> list[dict[str,
         out.append({
             "id": "only-the-document-lane-has-ever-written-the-vault",
             "what": f"库真的被写过 {vault_writes} 次，全部走**文档收录**通道"
-                    + (f"（另有 {rejected} 次申请被关卡拒了）" if rejected else "")
+                    + (f"（另有 {rejected} 次申请被检查拒了）" if rejected else "")
                     + "；**冻结结果**通道仍是 0 次。",
             "why": "两条通道不是一回事，不能混着报。文档收录只是把导演审过的 Markdown 收进库，"
                    "结构上不产生 `result-status`、不产生 `can-cite-thesis`、不产生任何我们自己的指标。"
@@ -319,7 +319,7 @@ def census(runs_root: Path = RUNS_ROOT) -> dict[str, Any]:
         axes.append(_axis("一键模式", inventory["operated_modes"],
                           list(used["modes_used"]),
                           "按 manifest 的 mode 字段精确计数；只覆盖 runs/ 里还在的运行。"))
-        axes.append(_axis("席位", inventory["rostered_seats"],
+        axes.append(_axis("agent", inventory["rostered_seats"],
                           list(used["seats_dispatched"]),
                           "来自 inbox 的 bundle 文件名（一个 worker 一份）；没有 inbox 的运行无法计入。"))
         # `/promote-to-vault` is the ONE named gate whose firing leaves a deterministic on-disk trace:
@@ -331,9 +331,9 @@ def census(runs_root: Path = RUNS_ROOT) -> dict[str, Any]:
             or (used.get("ledger_events") or {}).get("promote")
             else []
         )
-        axes.append(_axis("人工关卡（gates/ 里的 5 个）", inventory["named_human_gates"], gates_evidenced,
-                          "账本里的 gate 事件是**阶段**导演关卡（`configured_director_gate`），"
-                          "不带 gates/ 里的关卡名，所以这一轴多数无法从账本判定。唯一例外是 "
+        axes.append(_axis("导演决定点（gates/ 里的 5 个）", inventory["named_human_gates"], gates_evidenced,
+                          "账本里的 gate 事件是**阶段**导演决定点（`configured_director_gate`），"
+                          "不带 gates/ 里的检查点名，所以这一轴多数无法从账本判定。唯一例外是 "
                           "`/promote-to-vault` —— 它每次决定（收录或拒绝）都自己落一份 "
                           "`*promotion-record-*.json`，那是确定性痕迹，算「用过」。"
                           "其余四个一律留空，不拿文本里提到过当成触发过。"))
@@ -347,8 +347,8 @@ def census(runs_root: Path = RUNS_ROOT) -> dict[str, Any]:
         "findings": _findings(inventory, used) if not absent else [],
         "authorizes": [],
         "does_not_authorize": [
-            "不删除、不停用、不弱化任何关卡或检查 —— 这份只报数",
-            "「没被用过」不等于「可以砍」：互盲猎手 / 独立审计 / 不能自查的查重员，"
+            "不删除、不停用、不弱化任何检查点或检查 —— 这份只报数",
+            "「没被用过」不等于「可以砍」：互相独立的搜索 agent / 独立审计 / 不能自查的查重员，"
             "正是结论可信的理由",
             "真要减治理，必须由导演拍板，并且逐项说清减掉之后失去什么",
         ],
@@ -372,11 +372,11 @@ def render_census(report: dict[str, Any]) -> str:
     used = report["usage"]
     lines = ["# 治理用量盘点", "",
              f"> 基于 **{report['runs_measured']} 次真实运行**（不是估算，不是抽样）。",
-             "> 这份**只报数**：不删任何关卡，也不建议删。要不要减是导演的决定。", ""]
+             "> 这份**只报数**：不删任何检查点，也不建议删。要不要减是导演的决定。", ""]
 
     lines += ["## 一句话", "",
               "机器造出来的治理面，比真实用到的多得多 —— 但「没用到」的大部分原因是"
-              "**那条路还没走过**，不是那道关卡多余。", ""]
+              "**那条路还没走过**，不是那道检查点多余。", ""]
 
     lines += ["## 有多少 vs 用过多少", "", "| 轴 | 造了多少 | 真用过 | 从没用过 |", "|---|---|---|---|"]
     for axis in report["axes"]:
@@ -402,14 +402,14 @@ def render_census(report: dict[str, Any]) -> str:
     lines += ["## 真实运行长什么样", "",
               f"- 状态：{used['run_status']}",
               f"- 阶段进入次数：{used['stages_entered']}",
-              f"- 导演关卡：{used['ledger_events'].get('gate_pending', 0)} 次挂起 / "
+              f"- 导演决定点：{used['ledger_events'].get('gate_pending', 0)} 次挂起 / "
               f"{used['ledger_events'].get('gate_resolved', 0)} 次拍板，决定分布 {used['gate_decisions']}", ]
     doc = used.get("document_admissions") or {}
     if doc.get("records"):
         detail = "、".join(f"`{slug}`" for slug in doc.get("vault_slugs") or [])
         rejected = max(0, int(doc["records"]) - int(doc["admitted"]))
         lines.append(f"- 📥 入库：**文档收录**通道成功写进库 {doc['admitted']} 次"
-                     + (f"（另有 {rejected} 次被关卡拒了）" if rejected else "")
+                     + (f"（另有 {rejected} 次被检查拒了）" if rejected else "")
                      + (f"，已入库页：{detail}" if detail else "")
                      + "；冻结结果通道 "
                      + f"{used['ledger_events'].get('promote', 0)} 次")
@@ -419,8 +419,8 @@ def render_census(report: dict[str, Any]) -> str:
     if used["stage_level_bundle_kinds"] or used["non_seat_bundle_kinds"]:
         lines.append(f"- inbox 里另有 {len(used['stage_level_bundle_kinds'])} 类**阶段级**产物 + "
                      f"{len(used['non_seat_bundle_kinds'])} 类其他产物"
-                     f"（{'、'.join(used['non_seat_bundle_kinds'])}）—— 都不是席位，"
-                     "没算进席位统计，也没悄悄丢掉")
+                     f"（{'、'.join(used['non_seat_bundle_kinds'])}）—— 都不是 agent，"
+                     "没算进 agent 统计，也没悄悄丢掉")
     lines.append("")
 
     if report["findings"]:

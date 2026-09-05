@@ -165,13 +165,13 @@ modes:
     product_maturity:
       level: engine_tested_spec_only
       reason: "The minimal DESIGN slice is engine-tested, but it still lacks a one-button recipe and a concise Markdown compiler that proves every required audit consumed the same protocol."
-      evidence_refs: [tests/test_m1_end_to_end.py, tests/test_mode_ideate_design_verify_e2e.py]
+      evidence_refs: [machine/test_m1_end_to_end.py, machine/test_mode_ideate_design_verify_e2e.py]
       target_markdown:
         path: director-review/experiments/minimal-experiment-design.md
         purpose: "Provide the smallest decision-ready protocol that can be handed to execution without implying any run occurred."
         required_sections: [Experiment matrix, Compiled protocol, Variable controls, Train-test alignment, Metric implementation, Go or revise decisions]
       minimum_worker_pipeline:
-        minimum_distinct_workers: 6
+        minimum_distinct_workers: 5
         stages:
           - id: plan_and_compile
             workers: [experiment-planner, protocol-compiler]
@@ -179,9 +179,6 @@ modes:
           - id: independent_design_audits
             workers: [variable-control-auditor, train-test-alignment-auditor, metric-implementation-auditor]
             produces: "Three independent gate reports over the same frozen protocol."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Compact experiment design and explicit revision list."
       productization_gaps:
         - "Add an operated recipe that freezes one protocol across all three audits."
         - "Add a deterministic Markdown compiler with cross-reference validation."
@@ -325,8 +322,12 @@ modes:
       contract_version: mode-handoff/v2
       product_version: evidence-deep/v2
       primary_markdown: director-review/evidence/evidence-deep-brief.md
-      reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, landscape-map.artifact.json]
-      accepts: [ingest-paper/v1, paper-reading/v2, paper-reading/v3, evidence-brief/v2]
+      reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, landscape-map.artifact.json, systematic-review-execution-manifest.artifact.json]
+      # evidence-deep/v2 removed 2026-08-20: a mode that accepts its own product is a chain
+      # link that adds nothing, and test_no_mode_accepts_its_own_product enforces that.
+      accepts: [ingest-paper/v1, paper-reading/v2, paper-reading/v3, evidence-brief/v2,
+                research-brief/v2, gap-dossier/v1]
+      accepts_delivery_statuses: [USABLE, USABLE_WITH_CAVEATS, NEEDS_SUPPLEMENT]
   m2_accept:
     entry_stage: DESIGN
     operated: true   # wave 2 (2026-08-04): wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
@@ -428,10 +429,12 @@ modes:
                    # 2026-08-07 registry HANDOFF: IDEATE dispatches B1 directly (new_direction.divergence_worker,
                    # reused); REPORT delegates to new_direction.llm_step verbatim, which dispatches B5 —
                    # so both must be in THIS mode's own agent_subset too, not just new_direction's.
-                   divergence-operator-runner, direction-decision-advisor]
+                   divergence-operator-runner, direction-decision-advisor,
+                   # 2026-08-09 director lock: multi-view IDEATE panel (4 views + merger).
+                   proposer-mechanism, proposer-tension, proposer-analogy, proposer-corpus, idea-merger]
     gate_level: director_signoff
     director_gate_stages: [IDEATE]
-    budget: {max_agent_hops: 9}
+    budget: {max_agent_hops: null}  # director lock 2026-08-09: unbounded; convergence via verification gates
     handoff:
       contract_version: mode-handoff/v2
       product_version: idea-investment-memo/v2
@@ -499,13 +502,13 @@ modes:
     product_maturity:
       level: engine_tested_spec_only
       reason: "Failure triage and rerun guardrails are engine-tested, but there is no operated recipe that applies a bounded patch, captures real rerun evidence, and renders a director decision brief."
-      evidence_refs: [tests/test_mode_execute_speconly_e2e.py, tests/test_m3_integration.py]
+      evidence_refs: [machine/test_mode_execute_speconly_e2e.py, machine/test_m3_integration.py]
       target_markdown:
         path: director-review/experiments/debug-rerun-brief.md
         purpose: "Explain the failure, proposed bounded fix, guard verdicts, and rerun outcome without silently changing studied variables."
         required_sections: [Failure evidence, Root-cause hypotheses, Proposed patch, Variable-touch and preflight checks, Rerun evidence, Director decision]
       minimum_worker_pipeline:
-        minimum_distinct_workers: 6
+        minimum_distinct_workers: 5
         stages:
           - id: independent_triage
             workers: [failure-triager]
@@ -516,9 +519,6 @@ modes:
           - id: guard_and_rerun_check
             workers: [variable-touch-guard, preflight-checker, train-test-parity-verifier]
             produces: "Patch safety, run readiness, and post-run parity verdicts."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Debug and rerun brief with attempted versus completed actions."
       productization_gaps:
         - "Add an operated recipe with patch application, rollback, and resumable rerun handoffs."
         - "Integrate actual rerun journal evidence before reporting a resolved failure."
@@ -532,13 +532,13 @@ modes:
     product_maturity:
       level: engine_tested_spec_only
       reason: "Bounded tree generation and execution guards are engine-tested, but there is no operated scheduler, branch evidence journal, or director-facing experiment-tree menu."
-      evidence_refs: [tests/test_mode_execute_speconly_e2e.py, tests/test_m3_integration.py]
+      evidence_refs: [machine/test_mode_execute_speconly_e2e.py, machine/test_m3_integration.py]
       target_markdown:
         path: director-review/experiments/experiment-tree-menu.md
         purpose: "Offer a bounded set of legal next-run branches, their expected information gain, and any completed branch evidence."
         required_sections: [Current experiment state, Candidate branches, Variable-touch verdicts, Cost and stop bounds, Branch evidence, Director branch menu]
       minimum_worker_pipeline:
-        minimum_distinct_workers: 5
+        minimum_distinct_workers: 4
         stages:
           - id: propose_bounded_tree
             workers: [experiment-tree-explorer]
@@ -549,9 +549,6 @@ modes:
           - id: verify_branch_execution
             workers: [train-test-parity-verifier]
             produces: "Parity verdict for every branch that actually ran."
-          - id: render_markdown
-            workers: [synthesis-writer]
-            produces: "Tree menu that separates proposed branches from executed branches."
       productization_gaps:
         - "Add an operated recipe and bounded branch scheduler with durable stop state."
         - "Integrate per-branch execution journals and never infer completion from a proposed tree."
@@ -647,7 +644,7 @@ modes:
                    manuscript-evidence-steward, manuscript-introduction-author,
                    manuscript-related-work-author, manuscript-methods-author,
                    manuscript-results-author, manuscript-section-author,
-                   manuscript-figure-table-engineer, manuscript-integrator,
+                   manuscript-figure-table-engineer, manuscript-synthesis-editor,
                    manuscript-factual-auditor, manuscript-citation-auditor,
                    manuscript-style-latex-auditor]
     authoring_contract:
@@ -658,9 +655,9 @@ modes:
         methods: manuscript-methods-author
         results: manuscript-results-author
       remaining_required_section_owner: manuscript-section-author
-      candidate_artifact_type: manuscript_section_bundle
-      candidate_bundles_per_required_section: 1
-      integrator: manuscript-integrator
+      candidate_artifact_type: direct_latex_section
+      direct_files_per_required_section: 1
+      integrator: deterministic tools/manuscript_integrator.py
       integrator_may_author_missing_prose: false
       generation_evidence_eligible_as_independent_review: false
       instance_isolation:
@@ -685,7 +682,7 @@ modes:
         cardinality: exactly_one_per_required_section
         compare_against: manuscript_contract.required_sections
         integrator_may_author_missing_prose: false
-        canonical_owner: manuscript-integrator
+        canonical_owner: deterministic tools/manuscript_integrator.py
       parallel_groups:
         - id: venue_and_corpus_reconnaissance
           workers: [manuscript-venue-corpus-scout]
@@ -701,13 +698,13 @@ modes:
                     manuscript-methods-author, manuscript-results-author,
                     manuscript-section-author, manuscript-figure-table-engineer]
           depends_on: [freeze_manuscript_contract, admit_evidence]
-        - id: integrate_canonical_tree
-          workers: [manuscript-integrator]
+        - id: serial_synthesis_handoff
+          workers: [manuscript-synthesis-editor]
           depends_on: [author_candidates]
         - id: independent_authoring_audits
           workers: [manuscript-factual-auditor, manuscript-citation-auditor,
                     manuscript-style-latex-auditor]
-          depends_on: [integrate_canonical_tree]
+          depends_on: [serial_synthesis_handoff]
     paper_type_contract_fixtures:
       section_set_source: frozen_contract_required_sections
       fixed_section_count: false
@@ -720,20 +717,26 @@ modes:
           required_sections: [abstract, introduction, related_work, dataset_card, data_governance, benchmarks, limitations, ethics_statement, conclusion, appendix, venue_dataset_checklist]
         survey:
           required_sections: [abstract, introduction, related_work, taxonomy, landscape, discussion, limitations, conclusion, appendix, venue_survey_checklist]
+        methodological_critical_review:
+          required_sections: [abstract, introduction, review_method, conceptual_architecture, evidence_synthesis, methodological_appraisal, discussion, limitations, conclusion, appendix, venue_review_checklist]
         system:
           required_sections: [abstract, introduction, related_work, architecture, system_evaluation, discussion, limitations, ethics_statement, conclusion, appendix, venue_system_checklist]
     handoff:
       contract_version: mode-handoff/v2
-      product_version: manuscript-authoring/v1
+      product_version: manuscript-authoring/v2
       primary_markdown: director-review/manuscript/00-OVERVIEW.md
       evidence_namespace: evidence/manuscript-authoring/
       reusable_artifacts: [manuscript-contract.artifact.json, local-literature-coverage.artifact.json,
-                           manuscript-section-bundles.artifact.json, manuscript-integration.artifact.json,
+                           manuscript-integration.artifact.json,
                            manuscript-asset-manifest.artifact.json, manuscript-build-receipt.artifact.json,
                            manuscript-quality-report.artifact.json]
-      accepts: [paper-reading/v3, evidence-deep/v2, research-brief/v2]
+      accepts: [paper-reading/v3, evidence-deep/v2, research-brief/v2, manuscript-reconstruction/v1]
+      accepts_delivery_statuses: [USABLE, USABLE_WITH_CAVEATS, NEEDS_SUPPLEMENT]
     gate_level: record_only
-    budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 3, max_fulltext_reads: 20}
+    # Adaptive survey outlines may exceed the original 9-section fixture.
+    # Budget covers DISCOVER+DESIGN, one author per required section, assets,
+    # integrator, and authoring audits without authorizing extra evidence reads.
+    budget: {max_agent_hops: 24, max_iterations_without_new_evidence: 3, max_fulltext_reads: 20}
   manuscript_review:
     entry_stage: VERIFY
     operated: true   # concrete independent review recipe is wired in operate/modes/__init__.py::REGISTRY
@@ -741,10 +744,7 @@ modes:
     agent_subset: [manuscript-domain-contribution-reviewer,
                    manuscript-methods-reproducibility-reviewer,
                    manuscript-figure-table-reviewer, manuscript-factual-auditor,
-                   manuscript-citation-auditor, manuscript-style-latex-auditor,
-                   review-synthesizer, synthesis-writer, contribution-ledger-builder,
-                   threats-to-validity-writer, review-response-simulator,
-                   manuscript-submission-packager]
+                   manuscript-citation-auditor, manuscript-style-latex-auditor]
     review_contract:
       frozen_input_hashes: [contract_sha256, manuscript_sha256, source_tree_sha256, pdf_sha256]
       instance_isolation:
@@ -776,7 +776,7 @@ modes:
         require_exact_capability_set: true
         require_frozen_verdicts: true
         preserve_minority_findings: true
-        meta_review_worker: review-synthesizer
+        meta_review_worker: deterministic manuscript review reducer
       parallel_groups:
         - id: blind_capability_reviews
           workers: [manuscript-domain-contribution-reviewer,
@@ -784,14 +784,6 @@ modes:
                     manuscript-figure-table-reviewer, manuscript-factual-auditor,
                     manuscript-citation-auditor, manuscript-style-latex-auditor]
           depends_on: []
-        - id: deterministic_reconciliation_and_meta_review
-          workers: [review-synthesizer]
-          depends_on: [blind_capability_reviews]
-        - id: submission_evidence_pack
-          workers: [synthesis-writer, contribution-ledger-builder,
-                    threats-to-validity-writer, review-response-simulator,
-                    manuscript-submission-packager]
-          depends_on: [deterministic_reconciliation_and_meta_review]
     handoff:
       contract_version: mode-handoff/v2
       product_version: manuscript-review/v1
@@ -800,9 +792,38 @@ modes:
       reusable_artifacts: [manuscript-review-verdicts.artifact.json,
                            manuscript-review-reconciliation.artifact.json,
                            manuscript-submission-package.artifact.json]
-      accepts: [manuscript-authoring/v1]
+      accepts: [manuscript-authoring/v1, manuscript-authoring/v2]
+      accepts_delivery_statuses: [USABLE, USABLE_WITH_CAVEATS, NEEDS_SUPPLEMENT, BLOCK]
     gate_level: record_only
-    budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 2}
+    budget: {max_agent_hops: 8, max_iterations_without_new_evidence: 2}
+  manuscript_reconstruction:
+    entry_stage: DISCOVER
+    operated: true   # 2026-08-20 team upgrade: wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
+    # v1 scope (deliberate): decompose a REAL external review into typed, artifact-verified
+    # repair lanes and independently re-check every claim verdict. Repairs chain to
+    # manuscript_authoring (--upstream-run); the rebuilt manuscript is re-reviewed by an
+    # independent manuscript_review run. The in-run five-stage repair panel is a registered
+    # next step (_design/2026-08-20-team-upgrade/01-seats-and-dispatch.md Q3), not a claim.
+    stage_path: [DISCOVER, VERIFY, REPORT]
+    agent_subset: [external-review-decomposer, manuscript-factual-auditor]
+    gate_level: record_only
+    budget: {max_agent_hops: 4}
+    handoff:
+      contract_version: mode-handoff/v2
+      product_version: manuscript-reconstruction/v1
+      primary_markdown: director-review/manuscript/reconstruction-report.md
+      purpose: "Turn an external review into a verified, lane-typed response plan the director can route — every reviewer claim checked against artifacts, dissents surfaced, nothing softened, nothing executed."
+      required_sections:
+        - "Review decomposition"
+        - "Claim verification"
+        - "Repair lanes and owners"
+        - "Decisions for the director"
+      reusable_artifacts:
+        - external-review-decomposition.artifact.json
+        - claim-check-concurrence.artifact.json
+      # consumes a finished authoring/review product; its plan feeds the next authoring run
+      accepts: [manuscript-authoring/v1, manuscript-review/v1]
+    evidence_namespace: evidence/manuscript-reconstruction/
   aers_enhanced_research_pack:
     entry_stage: DISCOVER
     operated: true   # wave-2 backlog closed 2026-08-07: wired in operate/modes/__init__.py::REGISTRY; the wiring test enforces the mirror
@@ -848,22 +869,34 @@ modes:
   deep_research:
     entry_stage: DISCOVER
     operated: true   # wired in operate/modes/__init__.py::REGISTRY (audit B1/B3; wiring test enforces the mirror)
-    stage_path: [DISCOVER, REPORT]   # true perspective panel -> claim/evidence/contradiction synthesis -> Markdown research brief
+    stage_path: [DISCOVER, REPORT]   # perspective panel -> author -> 3 blind reviews -> H-Max convergence -> Markdown brief
     agent_subset: [lit-scout, source-quality-ranker, evidence-search-moderator,
                    model-dataset-scout, future-work-miner,
                    cross-domain-transfer-scout, weakness-spotter, claim-extractor,
                    claim-evidence-linker, citation-coverage-auditor, contradiction-miner, landscape-mapper,
+                   research-dossier-method-reviewer, research-dossier-implementation-reviewer,
+                   research-dossier-evidence-reviewer, research-convergence-chair,
                    evidence-verifier, citation-integrity-auditor]
     # Research delivery itself is record-only: deterministic scientific gates
     # still run inside DISCOVER, but producing a brief is not a director choice.
     # Human sign-off belongs to /idea-bet, /venue-* and /promote-to-vault.
     gate_level: record_only
-    budget: {max_agent_hops: 12, max_iterations_without_new_evidence: 3, max_fulltext_reads: 20, max_debug_retries_per_run: 3}
+    # Budget caps lifted 2026-08-20 by explicit director instruction ("预算不要控死…如果 paper 需要阅读的
+    # 多的话，不要控制做，要的是质量，而不是控制数量"). null = unbounded (tools/budget_tracker.py).
+    # A 124-source corpus against max_fulltext_reads: 20 was the structural cause of treating "retrieved"
+    # as "read" (D-04). The CONVERGENCE guard is deliberately kept: iterations_without_new_evidence still
+    # stops sprawl that adds no evidence, which bounds waste without bounding depth.
+    budget: {max_agent_hops: null, max_supplement_agent_hops: 200, max_iterations_without_new_evidence: 3, max_fulltext_reads: null, max_debug_retries_per_run: 3}
+    # max_supplement_agent_hops stays an integer because schemas/task_frame.schema.json types it
+    # `integer` (only max_agent_hops and max_fulltext_reads accept null). Raised 16 -> 200 rather
+    # than widening the schema: a contract change needs the director, a generous bound does not.
     handoff:
       contract_version: mode-handoff/v2
       product_version: research-brief/v2
       primary_markdown: director-review/research/research-brief.md
-      reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, research-brief.artifact.json, research-markdown-brief.artifact.json]
+      # The delivery boundary is the reusable truth surface. Content convergence alone is never
+      # evidence/citation/novelty clearance, and downstream modes must not infer that it is.
+      reusable_artifacts: [evidence-table.artifact.json, source-quality-report.artifact.json, claim-list.artifact.json, claim-evidence-map.artifact.json, contradiction-report.artifact.json, research-brief.artifact.json, research-dossier-method-review.artifact.json, research-dossier-implementation-review.artifact.json, research-dossier-evidence-review.artifact.json, research-convergence-verdict.artifact.json, research-delivery-boundary.artifact.json, research-markdown-brief.artifact.json]
       accepts: [ingest-paper/v1, paper-reading/v2, paper-reading/v3, evidence-brief/v2, evidence-deep/v2]
   # --- M3-d (VR-1 venue-targeted peer-review) — VERIFY-entry, reuses the M2 panel + venue agents ---
   venue_readiness:
@@ -881,4 +914,4 @@ modes:
       product_version: venue-readiness/v2
       primary_markdown: director-review/venue/venue-readiness.md
       reusable_artifacts: [venue-readiness-verdict.artifact.json, venue-meta-review.artifact.json]
-      accepts: [full-rigor/v2]
+      accepts: [full-rigor/v2, manuscript-review/v1]

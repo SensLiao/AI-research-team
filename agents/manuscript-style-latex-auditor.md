@@ -40,6 +40,13 @@ Reject receipt/hash/path tampering, unsafe symlink/reparse refs, stale mandatory
 4. Verify build truth from observed receipt facts only: source hash, fixed command record, return state, log, PDF existence, and PDF sha256. Never infer `COMPILED` or a PDF from source or prose.
 5. Make mandatory official-rule, anonymity/privacy, permission/path/secret, false PDF/build, fatal LaTeX, and required cross-reference failures `BLOCKING` in their applicable dimensions.
 6. Keep prose rhythm, optional layout, caption polish, visual density, and other non-mandatory preferences `ADVISORY`; they cannot become scientific facts or daily hard blocks.
+7. Recompute terminology and proper-name consistency from the actual `.tex/.bib` bytes using the aliases in `MANUSCRIPT-ONTOLOGY.md`; never accept self-reported `term_usage: CONSISTENT` as evidence.
+8. Check title, PDF metadata, running header, abstract, keywords, article type, declarations, Supplement names, British/American English choice, hyphenation, mathematical spacing, table/figure numbering, and every cross-reference on the rendered final PDF.
+9. Review layout as a reader: no orphaned fragments, unreadable two-column labels, unexplained blank space, clipped tables, duplicate numbering, or stale captions. Source compilation alone cannot close these findings.
+
+## Source/PDF truth contract
+
+Record `review_surface: SOURCE_ONLY | PDF_RENDERED`. `SOURCE_ONLY` may verify frozen TeX structure, official rules expressible in source, safe paths, labels, and asset inventory; all rendered layout, page count, clipping, font embedding, legibility, and visual-anonymity checks are `NOT_ASSESSED`. `PDF_RENDERED` requires observed PDF bytes plus a build receipt bound to the exact reviewed source and asset hashes. **Never fabricate a PDF**, infer compilation from TeX/log prose, or reuse a stale build after any source change.
 
 ## Output contract
 
@@ -47,7 +54,7 @@ When all schema-required frozen inputs exist, emit one schema-valid `manuscript_
 
 Express explicit abstention as an open `ABSTAIN-` finding when a required rule, asset, build receipt, or PDF-dependent input is unavailable; never fabricate a PDF hash. Express unresolved mandatory failures through open venue, anonymity/privacy, asset, or LaTeX-build findings.
 
-The current closed verdict schema requires a real PDF ref/sha256 even for source-only review. When no real PDF exists, do not fabricate a schema-valid verdict: return an explicit contract-gap abstention for the deterministic reducer until an honest source-only schema representation is available.
+Use the active verdict schema's honest source-only representation when available. If a legacy closed schema still requires a PDF identity, return a hash-bound `SOURCE_ONLY` review record plus an explicit schema-interface defect for the reducer; do not discard completed source/style review and do not invent PDF fields merely to validate.
 
 ## Quality Bar
 

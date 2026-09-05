@@ -29,11 +29,12 @@ clock discipline) — this module never reads the wall clock.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import sqlite3
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from research_agent_teams.tools.scholar_clients import (
     ScholarLookupError,
@@ -54,6 +55,11 @@ STATE_SKIPPED = "skipped"
 
 _SLUG_REF_RE = re.compile(r"^\[\[[a-z0-9]+(?:-[a-z0-9]+)*\]\]")
 _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+_LOCAL_SHA_REF_RE = re.compile(
+    r"^(?P<path>.+)\+sha(?:256)?:(?P<digest>[0-9a-fA-F]{64})$",
+    re.IGNORECASE,
+)
+_LOCAL_SHA_MARKER_RE = re.compile(r"\+sha(?:256)?:", re.IGNORECASE)
 _TITLE_MATCH_RATIO = 0.92
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
@@ -67,6 +73,14 @@ def classify_ref(ref: str) -> Dict[str, str]:
     r = (ref or "").strip()
     if _SLUG_REF_RE.match(r):
         return {"kind": "slug", "value": r}
+    arxiv_doi = re.fullmatch(
+        r"(?:doi:)?10\.48550/arxiv\.(\d{4}\.\d{4,5}(?:v\d+)?)", r,
+        re.IGNORECASE,
+    )
+    if arxiv_doi:
+        aid = normalize_arxiv_id(arxiv_doi.group(1))
+        if aid:
+            return {"kind": "arxiv", "value": aid}
     doi = normalize_doi(r.split("doi:")[-1] if r.lower().startswith("doi:") else r)
     if doi:
         return {"kind": "doi", "value": doi}
@@ -76,6 +90,109 @@ def classify_ref(ref: str) -> Dict[str, str]:
     if _URL_RE.match(r):
         return {"kind": "url", "value": r}
     return {"kind": "title", "value": r}
+
+
+def _within(path: Path, root: Path) -> bool:
+    """Return whether *path* resolves inside *root* (symlinks included in the check)."""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _check_local_reference(ref: str, local_roots: Sequence[Path]) -> Optional[Dict[str, str]]:
+    """Verify a hash-bound local reference without ever sending it to scholarly APIs.
+
+    The on-disk citation schema predates local references and restricts ``kind`` to five values;
+    ``title`` is retained here for schema compatibility while ``detail`` explicitly records the
+    local-file verification.  A local-looking reference is fail-closed: malformed syntax, an
+    escaped path, a missing/non-file target, or a digest mismatch is ``not_found`` and therefore
+    blocks the ordinary existence verdict.
+    """
+    raw = (ref or "").strip()
+    if _URL_RE.match(raw):
+        return None
+    match = _LOCAL_SHA_REF_RE.fullmatch(raw)
+    if match is None:
+        if _LOCAL_SHA_MARKER_RE.search(raw):
+            return {
+                "ref": ref,
+                "kind": "title",
+                "state": STATE_NOT_FOUND,
+                "detail": (
+                    "malformed local hash-bound reference; expected "
+                    "'<path>+sha:<64 hexadecimal characters>'"
+                ),
+            }
+        return None
+
+    roots = [Path(root).resolve() for root in local_roots]
+    if not roots:
+        return {
+            "ref": ref,
+            "kind": "title",
+            "state": STATE_NOT_FOUND,
+            "detail": "local hash-bound reference has no authorized run/workspace root",
+        }
+
+    raw_path = Path(match.group("path"))
+    if raw_path.is_absolute():
+        candidate = raw_path.resolve()
+        candidates = [(candidate, root) for root in roots]
+    else:
+        first_part = raw_path.parts[0].casefold() if raw_path.parts else ""
+        if first_part == "inbox":
+            candidate_roots = roots[:1]       # explicitly run-relative
+        elif first_part == "research_agent_teams":
+            candidate_roots = roots[-1:]      # explicitly workspace-relative
+        else:
+            candidate_roots = roots
+        candidates = [((root / raw_path).resolve(), root) for root in candidate_roots]
+
+    authorized = [candidate for candidate, owning_root in candidates
+                  if _within(candidate, owning_root)]
+    if not authorized:
+        return {
+            "ref": ref,
+            "kind": "title",
+            "state": STATE_NOT_FOUND,
+            "detail": "local path escapes the authorized run/workspace roots",
+        }
+
+    existing = [candidate for candidate in authorized if candidate.is_file()]
+    if not existing:
+        display = ", ".join(str(candidate) for candidate in authorized[:2])
+        return {
+            "ref": ref,
+            "kind": "title",
+            "state": STATE_NOT_FOUND,
+            "detail": f"local evidence file does not exist (checked: {display})",
+        }
+
+    expected = match.group("digest").lower()
+    mismatches = []
+    for candidate in existing:
+        actual = hashlib.sha256(candidate.read_bytes()).hexdigest()
+        if actual == expected:
+            return {
+                "ref": ref,
+                "kind": "title",
+                "state": STATE_VERIFIED,
+                "detail": f"local hash-bound file verified: {candidate}",
+            }
+        mismatches.append((candidate, actual))
+
+    candidate, actual = mismatches[0]
+    return {
+        "ref": ref,
+        "kind": "title",
+        "state": STATE_NOT_FOUND,
+        "detail": (
+            f"local evidence hash mismatch: {candidate} "
+            f"(expected {expected}, observed {actual})"
+        ),
+    }
 
 
 # --------------------------------------------------------------------------- cache (sqlite, machine-side)
@@ -140,8 +257,15 @@ def _check_title(title: str, transport: Optional[Transport]) -> Dict[str, str]:
 
 
 def check_reference(ref: str, ts: str, transport: Optional[Transport] = None,
-                    cache: Optional[ExistenceCache] = None) -> Dict[str, str]:
+                    cache: Optional[ExistenceCache] = None,
+                    local_roots: Optional[Sequence[Path]] = None) -> Dict[str, str]:
     """Check ONE reference; returns {"ref", "kind", "state", "detail"} (state per module docstring)."""
+    local = _check_local_reference(ref, local_roots or ())
+    if local is not None:
+        # Never cache local checks: the file can be deleted or modified while retaining the same
+        # path+digest ref, and every deterministic gate run must observe that fresh state.
+        return local
+
     c = classify_ref(ref)
     if c["kind"] in ("slug", "url"):
         return {"ref": ref, "kind": c["kind"], "state": STATE_SKIPPED,
@@ -186,7 +310,8 @@ def check_reference(ref: str, ts: str, transport: Optional[Transport] = None,
 # --------------------------------------------------------------------------- verdict (allOf idiom)
 
 def build_existence_verdict(refs: List[str], ts: str, transport: Optional[Transport] = None,
-                            cache: Optional[ExistenceCache] = None) -> dict:
+                            cache: Optional[ExistenceCache] = None,
+                            local_roots: Optional[Sequence[Path]] = None) -> dict:
     """Check every ref; return the ``citation_existence_verdict`` payload.
 
     Three-state verdict (C2, 2026-08-07; director-tightened 2026-08-07) — checked in this
@@ -204,11 +329,12 @@ def build_existence_verdict(refs: List[str], ts: str, transport: Optional[Transp
     otherwise-clean citation list. Deterministic: same refs + same transport answers -> same
     payload.
     """
-    checked = [check_reference(r, ts, transport=transport, cache=cache)
+    checked = [check_reference(r, ts, transport=transport, cache=cache,
+                               local_roots=local_roots)
                for r in refs]
     n = {s: sum(1 for c in checked if c["state"] == s)
          for s in (STATE_VERIFIED, STATE_NOT_FOUND, STATE_LOOKUP_ERROR, STATE_SKIPPED)}
-    violations = [f"{c['ref']}: confirmed not found — {c['detail']}"
+    violations = [f"{c['ref']}: verification failed — {c['detail']}"
                   for c in checked if c["state"] == STATE_NOT_FOUND]
     warnings = [f"{c['ref']}: could not check — {c['detail']}"
                 for c in checked if c["state"] == STATE_LOOKUP_ERROR]

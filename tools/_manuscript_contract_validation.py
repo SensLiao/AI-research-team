@@ -135,10 +135,18 @@ def validate_official_profile(
         code="OFFICIAL_SOURCE_HASH",
         label="requires_pdf.source_sha256",
     )
-    if policy.get("classification") != "OFFICIAL_HARD" or policy.get("weakenable") is not False:
+    policy_class = policy.get("classification")
+    official_policy = (
+        policy_class == "OFFICIAL_HARD" and policy.get("weakenable") is False
+    )
+    provisional_policy = (
+        policy_class == "ADVISORY" and policy.get("weakenable") is True
+    )
+    if not (official_policy or provisional_policy):
         fail(
             "REQUIRES_PDF_POLICY",
-            "requires_pdf must remain OFFICIAL_HARD and non-weakenable",
+            "requires_pdf must be OFFICIAL_HARD/non-weakenable or "
+            "ADVISORY/weakenable for a provisional authoring profile",
         )
     if (policy_ref, policy_sha) not in official_pairs | {(template_ref, template_sha)}:
         fail(
@@ -317,17 +325,23 @@ def validate_source_closure(payload: Mapping[str, Any]) -> None:
     if requires_pdf is None:
         fail("REQUIRES_PDF_POLICY", "resolved requires_pdf token is missing")
     policy = venue.get("hard_field_policy", {}).get("requires_pdf", {})
+    expected_classification = (
+        "HARD"
+        if policy.get("classification") == "OFFICIAL_HARD"
+        else "ADVISORY"
+    )
+    expected_weakenable = expected_classification == "ADVISORY"
     if (
         requires_pdf.get("value") is not venue.get("requires_pdf")
-        or requires_pdf.get("classification") != "HARD"
-        or requires_pdf.get("weakenable") is not False
+        or requires_pdf.get("classification") != expected_classification
+        or requires_pdf.get("weakenable") is not expected_weakenable
         or requires_pdf.get("resolved_layer") != "venue"
         or requires_pdf.get("source_ref") != policy.get("source_ref")
         or requires_pdf.get("source_sha256") != policy.get("source_sha256")
     ):
         fail(
             "REQUIRES_PDF_POLICY_MISMATCH",
-            "resolved requires_pdf must exactly preserve official venue policy",
+            "resolved requires_pdf must exactly preserve the frozen venue policy",
         )
 
     known_inputs = {**evidence, **results, **sources}

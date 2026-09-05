@@ -361,15 +361,15 @@ def build_parser() -> argparse.ArgumentParser:
     on.set_defaults(func=cmd_outcome)
 
     tm = sub.add_parser("team", parents=[common],
-                        help="席位盘点：谁在册、谁真被派、哪个模式能缩规模")
+                        help="agent 盘点：谁在册、谁真被派、哪个模式能缩规模")
     tm.set_defaults(func=cmd_team)
 
     gv = sub.add_parser("governance", parents=[common],
-                        help="治理用量盘点：造了多少关卡 vs 真实运行用过多少（只报数，不动任何关卡）")
+                        help="治理用量盘点：造了多少检查点 vs 真实运行用过多少（只报数，不动任何检查点）")
     gv.set_defaults(func=cmd_governance)
 
     ga = sub.add_parser("gates", parents=[common],
-                        help="现在该你按哪个命令 / 每个人工关卡要走到哪一步才需要按（最常用的一条）")
+                        help="现在该你按哪个命令 / 每个导演决定点要走到哪一步才需要按（最常用的一条）")
     ga.add_argument("--project", default=None)
     ga.set_defaults(func=cmd_gates)
 

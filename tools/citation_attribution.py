@@ -482,7 +482,8 @@ def _verify_figure_region(run_dir: str | Path | None, locator: str) -> tuple[str
 
 
 def _mechanically_verify_locus(claim_id: str, locus: dict,
-                               run_dir: str | Path | None) -> dict:
+                               run_dir: str | Path | None,
+                               snapshot_cache: dict[str, tuple[Path | None, bytes | None, str | None, str | None, bool]] | None = None) -> dict:
     locus_id = str(locus.get("locus_id") or "?")
     snapshot_ref = str(locus.get("snapshot_ref") or "")
     result = {
@@ -495,25 +496,35 @@ def _mechanically_verify_locus(claim_id: str, locus: dict,
         "quote_verified": False,
         "details": [],
     }
-    path, problem, policy_block = _resolve_snapshot(run_dir, snapshot_ref)
+    cache = snapshot_cache if snapshot_cache is not None else {}
+    cached = cache.get(snapshot_ref)
+    if cached is None:
+        path, problem, policy_block = _resolve_snapshot(run_dir, snapshot_ref)
+        raw: bytes | None = None
+        actual_hash: str | None = None
+        if not problem:
+            try:
+                raw = path.read_bytes()
+                actual_hash = hashlib.sha256(raw).hexdigest()
+            except OSError as exc:
+                problem = f"snapshot could not be read: {exc}"
+        cached = (path, raw, actual_hash, problem, policy_block)
+        cache[snapshot_ref] = cached
+    path, raw, actual_hash, problem, policy_block = cached
     if problem:
         result["verdict"] = "BLOCK" if policy_block else "UNVERIFIED"
         result["details"].append(problem)
         return result
 
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        result["details"].append(f"snapshot could not be read: {exc}")
+    declared_hash = str(locus.get("document_hash") or "").lower()
+    if declared_hash != actual_hash:
+        result["verdict"] = "BLOCK"
+        result["details"].append("document_hash does not match the frozen source snapshot bytes")
         return result
-    # B1 (2026-08-07): the document_hash completeness comparison was torn down — it checked
-    # that a declared hash matched, never that the content was true. hash_verified now marks
-    # only that the snapshot was actually opened (kept for schema/resume stability); the real
-    # grounding check is the exact_quote/char-span comparison against these bytes below.
     result["hash_verified"] = True
 
     try:
-        text = raw.decode("utf-8")
+        text = (raw or b"").decode("utf-8")
     except UnicodeDecodeError:
         result["details"].append(
             "snapshot is not UTF-8 text; exact_quote cannot be mechanically checked from this snapshot"
@@ -596,6 +607,7 @@ def build_attribution_report(claim_list: dict, claim_evidence_map: dict,
     mapped_claims: set[str] = set()
     mechanical_results: list[dict] = []
     mechanical_by_id: dict[str, dict] = {}
+    snapshot_cache: dict[str, tuple[Path | None, bytes | None, str | None, str | None, bool]] = {}
     for mapping in _rows(claim_evidence_map.get("mappings")):
         claim_id = str(mapping.get("claim_id") or "")
         if claim_id not in claim_id_set:
@@ -609,7 +621,7 @@ def build_attribution_report(claim_list: dict, claim_evidence_map: dict,
             errors.append(f"{claim_id}: strict claim mapping has no loci")
         for locus in loci:
             errors.extend(_precise_locator_errors(claim_id, locus))
-            mechanical = _mechanically_verify_locus(claim_id, locus, run_dir)
+            mechanical = _mechanically_verify_locus(claim_id, locus, run_dir, snapshot_cache)
             mechanical_results.append(mechanical)
             locus_id = str(locus.get("locus_id") or "")
             if locus_id:

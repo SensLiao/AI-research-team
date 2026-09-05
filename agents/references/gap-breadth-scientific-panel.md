@@ -6,7 +6,7 @@
 ## 科研流水线
 
 ```text
-Wave 1（并行、互盲）
+Wave 1（并行、互相独立）
   future-work-miner
   weakness-spotter
   white-space-mapper
@@ -26,7 +26,7 @@ Deterministic gates
   完整性、证据状态、知识象限、机制 dossier、六维审计、Markdown lint
 ```
 
-五个 hunter 必须互盲，避免相互锚定。后三个 worker 必须串行，避免 prosecutor 在看到“漂亮机制”后替候选
+五个 hunter 必须互相独立，避免相互锚定。后三个 worker 必须串行，避免 prosecutor 在看到“漂亮机制”后替候选
 辩护，也避免 auditor 复用 synthesizer 的自评分。
 
 ## 三个后置角色

@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/research_dossier_review.schema.json",
+  "title": "Research Dossier Review",
+  "description": "Independent content review of a frozen deep-research author bundle. Findings are internal repair obligations; missing external evidence/state is recorded separately and can never be repaired by rewriting prose.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version", "review_id", "reviewer_lens", "reviewer_instance_id",
+    "independent_of_author", "author_agent", "reviewed_artifact_ref",
+    "reviewed_artifact_sha256", "review_round", "coverage_checks", "findings",
+    "external_blockers", "recommendation", "summary"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "evidence_refs": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "json_pointers": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "type": "string", "minLength": 1,
+        "pattern": "^(?:/(?:[^~/]|~[01])*)+$"
+      }
+    }
+  },
+  "properties": {
+    "contract_version": {"const": "research-dossier-review/v1"},
+    "review_id": {"type": "string", "minLength": 1},
+    "reviewer_lens": {
+      "enum": ["method-and-paper", "implementation-and-project-state", "evidence-and-completeness"]
+    },
+    "reviewer_instance_id": {
+      "type": "string", "pattern": "^dispatch-[0-9a-f]{32}$",
+      "description": "Scheduler-issued dispatch_instance_id copied verbatim from scheduler_contract; never worker-generated."
+    },
+    "independent_of_author": {"const": true},
+    "author_agent": {"const": "landscape-mapper"},
+    "reviewed_artifact_ref": {"type": "string", "minLength": 1},
+    "reviewed_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "review_round": {"type": "integer", "minimum": 0},
+    "project_state_assessment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "snapshot_ref", "snapshot_sha256", "rationale"],
+      "properties": {
+        "status": {"enum": ["CURRENT_HASH_BOUND", "MISSING", "STALE", "UNBOUND"]},
+        "snapshot_ref": {"type": ["string", "null"]},
+        "snapshot_sha256": {
+          "oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]
+        },
+        "rationale": {"type": "string", "minLength": 1}
+      }
+    },
+    "coverage_checks": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["check_id", "status", "evidence", "finding_refs", "external_blocker_refs"],
+        "properties": {
+          "check_id": {"type": "string", "minLength": 1},
+          "status": {"enum": ["PASS", "WARN", "FAIL", "NOT_APPLICABLE"]},
+          "evidence": {"type": "string", "minLength": 1},
+          "finding_refs": {
+            "type": "array", "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "external_blocker_refs": {
+            "type": "array", "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": [
+          "finding_id", "severity", "category", "anchor", "evidence",
+          "evidence_refs", "responsible_agent", "target_artifact_ref",
+          "repair_action", "acceptance_check", "allowed_json_pointers", "status"
+        ],
+        "properties": {
+          "finding_id": {"type": "string", "minLength": 1},
+          "severity": {"enum": ["CRITICAL", "MAJOR", "MINOR"]},
+          "category": {
+            "enum": [
+              "claim-boundary", "prior-art", "comparator-identity",
+              "intervention-legality", "representation-attribution", "venue-scope",
+              "source-of-truth", "state-freshness", "implementation-contract",
+              "leakage-firewall", "experiment-budget", "seed-chain",
+              "citation-readiness", "coverage-completeness", "status-truth",
+              "internal-consistency", "formal-gate-separation", "other"
+            ]
+          },
+          "anchor": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"},
+          "responsible_agent": {"const": "landscape-mapper"},
+          "target_artifact_ref": {"type": "string", "minLength": 1},
+          "repair_action": {"type": "string", "minLength": 1},
+          "acceptance_check": {"type": "string", "minLength": 1},
+          "allowed_json_pointers": {"$ref": "#/$defs/json_pointers"},
+          "status": {"const": "OPEN"}
+        }
+      }
+    },
+    "external_blockers": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["blocker_id", "kind", "description", "evidence_refs", "required_input"],
+        "properties": {
+          "blocker_id": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["MISSING_FULLTEXT", "MISSING_PROJECT_STATE", "STALE_PROJECT_STATE", "UNBOUND_PROJECT_STATE", "MISSING_EXECUTION_EVIDENCE", "HUMAN_DECISION", "OTHER"]},
+          "description": {"type": "string", "minLength": 1},
+          "evidence_refs": {"$ref": "#/$defs/evidence_refs"},
+          "required_input": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "recommendation": {"enum": ["PASS", "REVISE", "PASS_WITH_EXTERNAL_BLOCKERS"]},
+    "summary": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"reviewer_lens": {"const": "implementation-and-project-state"}},
+        "required": ["reviewer_lens"]
+      },
+      "then": {"required": ["project_state_assessment"]}
+    }
+  ]
+}

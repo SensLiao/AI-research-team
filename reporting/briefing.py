@@ -37,8 +37,9 @@ def _route_options(request: str, intent: Optional[str] = None) -> dict[str, Any]
     """The candidate routes for this request, annotated with cost and human gates."""
     try:
         resolution = resolve_operated_mode(request, intent=intent)
+        resolved_intent = intent or resolution.get("intent")
         proposal = resolution.get("proposal") or research_plan.propose_for_request(
-            request, intent=intent
+            request, intent=resolved_intent
         )
     except Exception:  # noqa: BLE001 — a briefing still renders without a route match
         return {"available": False, "matched": False, "auto_mode": None, "routes": []}
@@ -73,10 +74,14 @@ def _route_options(request: str, intent: Optional[str] = None) -> dict[str, Any]
     }
 
 
-def _matched_outcome(request: str) -> Optional[dict[str, Any]]:
+def _matched_outcome(request: str, *, intent: str | None = None) -> Optional[dict[str, Any]]:
     """Which of the six outcomes this request lands on — so the plan card and the
     `workbench outcomes` menu can never name different things for the same request."""
     try:
+        if intent:
+            for recipe in outcome_recipes.resolve_all():
+                if intent in recipe.get("covers_intents", []):
+                    return {"id": recipe["id"], "want": recipe.get("want", ""), "via_intent": intent}
         return outcome_recipes.match_recipe(request)
     except Exception:  # noqa: BLE001 — a briefing still renders without an outcome match
         return None
@@ -86,9 +91,10 @@ def build_briefing(request: str, *, project: Optional[str] = None,
                    intent: Optional[str] = None, **scan_kwargs: Any) -> dict[str, Any]:
     """Scan the world, then assemble the structured pre-task briefing."""
     facts = scan_all(request, project=project, **scan_kwargs)
+    routes = _route_options(request, intent)
     return {"contract": "director-briefing/v1", "request": request, "project": project,
-            "facts": facts, "routes": _route_options(request, intent),
-            "outcome": _matched_outcome(request)}
+            "facts": facts, "routes": routes,
+            "outcome": _matched_outcome(request, intent=routes.get("auto_intent"))}
 
 
 # --------------------------------------------------------------------------- rendering
@@ -163,7 +169,7 @@ def _section_gates(briefing: dict[str, Any]) -> list[str]:
     gates = list((picked or {}).get("gates") or [])
     out = ["## 4. 会在哪里停下来等你拍板", ""]
     if not gates:
-        out += ["- 这条路线中途没有需要你签字的关卡；做完直接给你看结果。", ""]
+        out += ["- 这条路线中途没有需要你签字的决定点；做完直接给你看结果。", ""]
         return out
     out += [f"- {words.gate_label(g)}" for g in gates]
     out += ["", "> 这些决定机器永远不会替你做——它只把依据摆出来。", ""]

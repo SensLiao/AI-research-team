@@ -29,8 +29,10 @@ from __future__ import annotations
 import json
 import http.client
 import os
+import random
 import re
 import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -110,9 +112,74 @@ class ScholarLookupError(RuntimeError):
 
 
 class _HTTPStatusError(ScholarLookupError):
-    def __init__(self, status: int, url: str):
+    def __init__(self, status: int, url: str, *, body_snippet: str = "",
+                 retry_after_s: Optional[float] = None):
         super().__init__(f"HTTP {status} for {url}")
         self.status = status
+        self.body_snippet = body_snippet          # first bytes of the error body (429 classification)
+        self.retry_after_s = retry_after_s        # parsed Retry-After header, when the provider sent one
+
+
+# --------------------------------------------------------------------------- budget-429 classification
+# Failure-catalog A2: an OpenAlex 429 is a DAILY REQUEST BUDGET (resets 00:00 UTC), not a
+# throttle — exponential backoff can never succeed against it. A budget-class 429 must be
+# NAMED and NEVER retried; a throttle-class 429 is retried with backoff (A1: no breakers).
+
+_CHANNEL_BY_HOST = {
+    "api.openalex.org": "openalex",
+    "export.arxiv.org": "arxiv",
+    "api.crossref.org": "crossref",
+    "api.semanticscholar.org": "s2",
+}
+_BUDGET_RESET_HINTS = {
+    "openalex": ("OpenAlex enforces a daily request budget that resets 00:00 UTC — "
+                 "backoff cannot succeed today; stop, do not spin"),
+}
+GENERIC_BUDGET_RESET_HINT = ("provider request budget exhausted — retrying now cannot "
+                             "succeed; wait for the provider's reset window")
+
+
+def channel_for_url(url: str) -> str:
+    """Map a request URL to its scholarly channel name (falls back to the bare host)."""
+    try:
+        host = (urllib.parse.urlsplit(str(url or "")).hostname or "").lower()
+    except (TypeError, ValueError):
+        host = ""
+    return _CHANNEL_BY_HOST.get(host, host or "unknown")
+
+
+def budget_reset_hint(channel: str) -> str:
+    return _BUDGET_RESET_HINTS.get(channel, GENERIC_BUDGET_RESET_HINT)
+
+
+class ScholarBudgetError(ScholarLookupError):
+    """A budget-class 429: the provider's request budget is exhausted for its whole window.
+
+    NEVER retried and never breaker'd — the caller must checkpoint, name the channel as
+    lost-for-the-window, and stop cleanly (resumable after the reset)."""
+
+    def __init__(self, channel: str, reset_hint: Optional[str] = None, *,
+                 status: int = 429, detail: object = None):
+        self.channel = channel
+        self.status = status
+        self.reset_hint = reset_hint or budget_reset_hint(channel)
+        super().__init__(detail or f"budget-class HTTP {status} from {channel}: {self.reset_hint}")
+
+
+def is_budget_status_error(exc: object) -> bool:
+    """True when ``exc`` is a 429 whose body names a budget (vs a plain throttle)."""
+    if isinstance(exc, ScholarBudgetError):
+        return True
+    return (isinstance(exc, _HTTPStatusError) and exc.status == 429
+            and "budget" in (exc.body_snippet or "").lower())
+
+
+def _parse_retry_after(value: object) -> Optional[float]:
+    try:
+        seconds = float(str(value).strip())
+        return seconds if seconds >= 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _ua() -> str:
@@ -121,13 +188,25 @@ def _ua() -> str:
 
 
 def default_transport(url: str, headers: Dict[str, str]) -> bytes:
-    """urllib transport: GET url -> body bytes. HTTP error -> _HTTPStatusError; network -> ScholarLookupError."""
+    """urllib transport: GET url -> body bytes. HTTP error -> _HTTPStatusError; network -> ScholarLookupError.
+
+    Exactly ONE attempt (retry/backoff lives in ``retrying_transport``; the module default
+    is ``resilient_transport``). On an HTTP error the first bytes of the error body and any
+    Retry-After header are preserved on the exception so a 429 can be classified as
+    budget-class (A2) vs throttle-class."""
     req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:  # nosec - fixed public API hosts
             return resp.read()
     except urllib.error.HTTPError as e:  # has a status code
-        raise _HTTPStatusError(e.code, url) from e
+        snippet = ""
+        try:
+            snippet = (e.read(2048) or b"").decode("utf-8", "replace")
+        except (OSError, ValueError, AttributeError):
+            snippet = ""
+        retry_after = _parse_retry_after(e.headers.get("Retry-After")) if e.headers else None
+        raise _HTTPStatusError(e.code, url, body_snippet=snippet,
+                               retry_after_s=retry_after) from e
     except urllib.error.URLError as e:
         raise ScholarLookupError(f"network failure for {url}: {e.reason}") from e
     except (TimeoutError, socket.timeout, ConnectionError, OSError,
@@ -140,11 +219,86 @@ def default_transport(url: str, headers: Dict[str, str]) -> bytes:
         ) from e
 
 
+# --------------------------------------------------------------------------- retry / pacing (A1/A2 fixes)
+# Bounded retry with jitter on transient statuses; NEVER a circuit breaker (a transient
+# failure costs time, never a whole channel). Budget-class 429s are raised immediately as
+# ScholarBudgetError and are NEVER retried. Injected test transports bypass all of this —
+# the injectable-transport contract keeps every test offline and instant.
+
+_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+_RETRY_MAX_TRIES = 4
+_RETRY_BASE_SLEEP_S = 1.0
+_RETRY_MAX_SLEEP_S = 30.0
+# arXiv's API terms ask for >= 3 s between requests; violated by multi-query plans before.
+# Semantic Scholar documents 1 request/second with an API key (a shared pool without one); the
+# recursive funnel issues consecutive S2 searches, which returned 429 before this pacing existed.
+_MIN_INTERVAL_S = {"export.arxiv.org": 3.0, "api.semanticscholar.org": 1.0}
+_last_request_monotonic: Dict[str, float] = {}
+
+
+def _pace(url: str, sleep: Callable[[float], None] = time.sleep) -> None:
+    """Per-host minimum-interval pacing (applies only to the real-network default path)."""
+    try:
+        host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    except (TypeError, ValueError):
+        return
+    min_interval = _MIN_INTERVAL_S.get(host)
+    if not min_interval:
+        return
+    now = time.monotonic()
+    last = _last_request_monotonic.get(host)
+    if last is not None and now - last < min_interval:
+        sleep(min_interval - (now - last))
+    _last_request_monotonic[host] = time.monotonic()
+
+
+def retrying_transport(inner: Transport, *, max_tries: int = _RETRY_MAX_TRIES,
+                       base_sleep_s: float = _RETRY_BASE_SLEEP_S,
+                       max_sleep_s: float = _RETRY_MAX_SLEEP_S,
+                       sleep: Callable[[float], None] = time.sleep,
+                       jitter: Callable[[], float] = random.random,
+                       pace: Optional[Callable[[str], None]] = None) -> Transport:
+    """Wrap ``inner`` with bounded retry/backoff (+jitter) on 429/500/502/503/504.
+
+    - budget-class 429 (body names a budget) -> ScholarBudgetError immediately, NEVER retried;
+    - throttle-class 429 / 5xx -> sleep min(max_sleep, Retry-After or base*2^attempt + jitter);
+    - network errors and every other status raise unchanged (no retry — the 404-vs-error
+      and read-failure disciplines of ``default_transport`` are preserved);
+    - never a circuit breaker: each request starts with the channel alive.
+    """
+    def transport(url: str, headers: Dict[str, str]) -> bytes:
+        for attempt in range(max_tries):
+            if pace is not None:
+                pace(url)
+            try:
+                return inner(url, headers)
+            except _HTTPStatusError as e:
+                if is_budget_status_error(e):
+                    raise ScholarBudgetError(channel_for_url(url), status=e.status) from e
+                if e.status in _RETRYABLE_STATUSES and attempt + 1 < max_tries:
+                    delay = (e.retry_after_s if e.retry_after_s is not None
+                             else base_sleep_s * (2 ** attempt) + jitter())
+                    sleep(min(max_sleep_s, max(0.0, delay)))
+                    continue
+                raise
+        raise ScholarLookupError(f"retries exhausted for {url}")  # pragma: no cover - loop always raises
+
+    return transport
+
+
+_DEFAULT_RETRYING: Transport = retrying_transport(default_transport, pace=_pace)
+
+
+def resilient_transport(url: str, headers: Dict[str, str]) -> bytes:
+    """The module-default transport: per-host pacing + bounded retry around ``default_transport``."""
+    return _DEFAULT_RETRYING(url, headers)
+
+
 def _get(url: str, transport: Optional[Transport], extra_headers: Optional[Dict[str, str]] = None) -> bytes:
     headers = {"User-Agent": _ua(), "Accept": "*/*"}
     if extra_headers:
         headers.update(extra_headers)
-    return (transport or default_transport)(url, headers)
+    return (transport or resilient_transport)(url, headers)
 
 
 def _fetch_parse(url: str, parser, transport: Optional[Transport],
@@ -377,17 +531,26 @@ def _parse_s2_edge(body: bytes, key: str) -> List[dict]:
     return out
 
 
-def get_references_s2(paper_id: str, limit: int = 25, transport: Optional[Transport] = None) -> List[dict]:
-    """Outgoing references of a paper (the 'follow citations' half of the Asta PaperFinder recipe)."""
+def get_references_s2(paper_id: str, limit: int = 25, transport: Optional[Transport] = None,
+                      offset: int = 0) -> List[dict]:
+    """Outgoing references of a paper (the 'follow citations' half of the Asta PaperFinder recipe).
+
+    ``offset`` pages through long reference lists (audit Q2 defect 5: a real chase pages;
+    a single capped page silently truncates the JBI step-3 search)."""
     params = {"limit": int(limit), "fields": _S2_FIELDS}
+    if int(offset) > 0:
+        params["offset"] = int(offset)
     pid = urllib.parse.quote(paper_id, safe="")          # safe="" : a '/' in the id can't rewrite the API path
     url = f"{S2_API}/paper/{pid}/references?{urllib.parse.urlencode(params)}"
     return _fetch_parse(url, lambda b: _parse_s2_edge(b, "citedPaper"), transport, _s2_headers())[:limit]
 
 
-def get_citations_s2(paper_id: str, limit: int = 25, transport: Optional[Transport] = None) -> List[dict]:
-    """Incoming citations of a paper (forward snowball)."""
+def get_citations_s2(paper_id: str, limit: int = 25, transport: Optional[Transport] = None,
+                     offset: int = 0) -> List[dict]:
+    """Incoming citations of a paper (forward snowball). ``offset`` pages the citation list."""
     params = {"limit": int(limit), "fields": _S2_FIELDS}
+    if int(offset) > 0:
+        params["offset"] = int(offset)
     pid = urllib.parse.quote(paper_id, safe="")          # safe="" : a '/' in the id can't rewrite the API path
     url = f"{S2_API}/paper/{pid}/citations?{urllib.parse.urlencode(params)}"
     return _fetch_parse(url, lambda b: _parse_s2_edge(b, "citingPaper"), transport, _s2_headers())[:limit]

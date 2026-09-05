@@ -33,6 +33,14 @@ version: 1
 #   note        -> an honesty acknowledgement (no flag; e.g. GPU-still-gated)
 # A mode not listed here has no knob beyond the shared pre-search default.
 mode_questions:
+  manuscript_reconstruction:
+    - key: pre_search
+      ask: "有 unverifiable-here / 补证据车道时,先联网核对相关文献吗?(更实,稍慢)"
+      maps_to: pre_search
+      options:
+        - {label: "联网 · 推荐", value: "live"}
+        - {label: "只用库", value: "vault-only"}
+
   gap_breadth:
     - key: pre_search
       ask: "扫空白前先联网拉一遍真实文献吗?(更全,稍慢)"
@@ -135,7 +143,7 @@ mode_questions:
         - {label: "文件已放进 01-raw/", value: in-raw}
         - {label: "我给标题或链接", value: specify}
     - key: read_focus
-      ask: "这次深读最想要什么?(会影响 20 席的重心,不会砍掉任何一席)"
+      ask: "这次深读最想要什么?(会影响 20 个 agent 的重心,不会砍掉任何一个 agent)"
       maps_to: north_star
       options:
         - {label: "全面拆解 · 推荐", value: full}
@@ -233,7 +241,7 @@ mode_questions:
         - {label: "上一步跑出来的那批", value: upstream}
         - {label: "我现在指定", value: specify}
     - key: disagreement_note
-      ask: "诊断席位判断打架时,分歧会原样呈现给你而不是挑一个赢家,确认?"
+      ask: "诊断 agent 判断打架时,分歧会原样呈现给你而不是挑一个赢家,确认?"
       maps_to: note
       options:
         - {label: "确认 · 我要看到分歧", value: show-disagreement}
@@ -245,7 +253,7 @@ mode_questions:
         - {label: "上一步审计过的那批", value: upstream}
         - {label: "我现在指定", value: specify}
     - key: independence_note
-      ask: "审稿席位互不通气,因此可能重复提出彼此想过的问题,确认?"
+      ask: "审稿 agent 互不通气,因此可能重复提出彼此想过的问题,确认?"
       maps_to: note
       options:
         - {label: "确认 · 要的就是独立视角", value: blind}
@@ -285,7 +293,7 @@ mode_questions:
         - {label: "我现在说清楚机会点/观察", value: specify}
         - {label: "沿用当前北极星的范围描述", value: upstream}
     - key: no_self_bet_note
-      ask: "五席各自独立(假设→淘汰赛→进化→可行性+查重),但机器不下注,最后你按 /idea-bet 选,确认?"
+      ask: "五个 agent 各自独立(假设→淘汰赛→进化→可行性+查重),但机器不下注,最后你按 /idea-bet 选,确认?"
       maps_to: note
       options:
         - {label: "确认 · 我要菜单不要它替我选", value: no-self-bet}
@@ -328,6 +336,7 @@ phase_rank:
   venue_readiness: 4    # venue / publish
   manuscript_authoring: 4
   manuscript_review: 4
+  manuscript_reconstruction: 4
   # ---- wave 2 (2026-08-04) -------------------------------------------------------------------
   # Same four phases. Rank 3 covers design → execute → analyze → verify as ONE band on purpose:
   # within a rank the order is free, and forcing an order between "design the experiment",
@@ -423,7 +432,7 @@ intents:
       - id: core
         label: "核心 · 最快最省"
         modes: [gap_scan]
-        why: "两个互盲猎人各自出候选 → 独立分类去重 → 每条空白都带出处。不谈新颖性、不推荐押哪个。"
+        why: "两个互相独立的搜索 agent 各自出候选 → 独立分类去重 → 每条空白都带出处。不谈新颖性、不推荐押哪个。"
       - id: mainline
         label: "主线 · 推荐"
         recommended: true
@@ -452,7 +461,7 @@ intents:
         label: "主线 · 推荐"
         recommended: true
         modes: [read_paper_deep]
-        why: "20 席深读:核心主张 + 证据在第几页 + 方法拆解 + 结果复核 + 图表数学复现材料 + 审稿人会攻击的点。"
+        why: "20 个 agent 深读:核心主张 + 证据在第几页 + 方法拆解 + 结果复核 + 图表数学复现材料 + 审稿人会攻击的点。"
       - id: full
         label: "全面 · 最深最广"
         modes: [read_paper_deep, evidence_deep]
@@ -478,11 +487,33 @@ intents:
         modes: [deep_research, evidence_deep, full_rigor_minimal]
         why: "深读文献 → 深度证据评估 → 实验设计,把基线公平性和统计严谨度都拉满。"
 
+  write_review_article:
+    aliases: ["写综述", "写一篇综述", "综述文章", "方法学批判综述", "methodological critical review",
+              "critical review article", "write a review article", "draft a survey paper"]
+    keywords: ["综述", "critical review", "review article", "survey paper"]
+    negative_keywords: ["control plane", "orchestrator", "skill", "mode", "router", "workflow implementation", "测试", "test"]
+    description: "先形成可复核的综述语料和方法边界，再直接写 LaTeX，并由独立稿件评审检查最终 PDF。"
+    tiers:
+      - id: core
+        label: "核心 · 已有冻结语料"
+        modes: [manuscript_authoring, manuscript_review]
+        why: "只在已有全文语料、ontology、SOURCES/EVIDENCE ledger 已冻结时使用。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [evidence_deep, manuscript_authoring, manuscript_review]
+        why: "证据与检索边界 → LaTeX 成稿 → 最终稿独立盲审；最关键的论文再定向深读，不全量启动 20 个 agent。"
+      - id: full
+        label: "全面 · 加投稿体检"
+        modes: [evidence_deep, manuscript_authoring, manuscript_review, venue_readiness]
+        why: "在主线之后核对目标期刊规则；不会把 critical review 伪装成 systematic/scoping review。"
+
   write_manuscript:
     aliases: ["写稿", "写论文", "帮我写稿", "起草论文", "写初稿", "审稿", "审一遍我的稿",
               "独立审稿", "帮我审稿", "manuscript", "write the paper", "draft the paper",
               "review my manuscript", "peer review"]
     keywords: ["写稿", "初稿", "稿件", "审稿", "manuscript", "draft"]
+    negative_keywords: ["control plane", "orchestrator", "skill", "mode", "router", "workflow implementation", "测试", "test"]
     description: "把已经成立的结果写成稿件,并用独立盲审挑毛病(写与审分开跑,防自评)。"
     tiers:
       - id: core
@@ -498,6 +529,26 @@ intents:
         label: "全面 · 最深最广"
         modes: [manuscript_authoring, manuscript_review, venue_readiness]
         why: "写稿 → 独立审稿 → 投稿就绪度(模拟盲审 + 目标会议匹配),一路到 /venue-pick。"
+
+  respond_to_review:
+    aliases: ["返修", "回应审稿意见", "回复审稿", "回复审稿意见", "审稿意见来了", "rebuttal",
+              "revise and resubmit", "respond to the review", "respond to reviewers"]
+    keywords: ["返修", "审稿意见", "rebuttal", "revise", "reviewer"]
+    description: "外部审稿意见到了:逐条核验审稿人说的对不对,给出修复分工计划;修与复审各自独立成跑。"
+    tiers:
+      - id: core
+        label: "核心 · 最快最省"
+        modes: [manuscript_reconstruction]
+        why: "把真实审稿意见拆成逐条已核验的修复车道(改哪、谁改、哪些要你拍板),不动稿子。"
+      - id: mainline
+        label: "主线 · 推荐"
+        recommended: true
+        modes: [manuscript_reconstruction, manuscript_authoring, manuscript_review]
+        why: "旧意见逐条核验 → 直接修 LaTeX → 对最终 source/PDF 做新一轮盲审；两道门一次跑完。"
+      - id: full
+        label: "全面 · 最深最广"
+        modes: [manuscript_reconstruction, manuscript_authoring, manuscript_review, venue_readiness]
+        why: "核验 → 修复 → 完全独立盲审 → 投稿体检；每一步都绑定最终稿，不复用旧 review。"
 
   prep_submission:
     aliases: ["够投顶会吗", "够投吗", "投稿就绪", "能投吗", "venue", "venue readiness", "submission ready",
@@ -532,7 +583,7 @@ intents:
       - id: core
         label: "核心 · 最快最省"
         modes: [analysis_audit_panel]
-        why: "诊断席位各自独立跑,分歧原样呈现给你,不挑赢家。"
+        why: "诊断 agent 各自独立跑,分歧原样呈现给你,不挑赢家。"
       - id: mainline
         label: "主线 · 推荐"
         recommended: true
@@ -552,7 +603,7 @@ intents:
       - id: core
         label: "核心 · 最快最省"
         modes: [check_run]
-        why: "观察席位只报观察到的,独立分诊席位才给可能原因和干预选项。全程只读。"
+        why: "观察 agent 只报观察到的,独立分诊 agent 才给可能原因和干预选项。全程只读。"
       - id: mainline
         label: "主线 · 推荐"
         recommended: true
@@ -565,6 +616,7 @@ intents:
 
   audit_code:
     aliases: ["审一遍代码", "代码仓审计", "review the repo", "代码有没有问题", "code audit",
+              "control plane", "orchestrator skill", "改进 skill", "workflow implementation audit",
               "帮我看看这个仓库"]
     keywords: ["代码", "仓库", "repo", "code audit"]
     description: "对一个代码仓做发现级审计;改代码要另外授权,默认只审不改。"
@@ -621,7 +673,7 @@ intents:
         label: "核心 · 唯一档"
         recommended: true
         modes: [ideate_ring]
-        why: "假设生成 → 真实成对淘汰赛(不是打分平均)→ 挑强者进化(带血缘,岛模型不收敛到前二)→ 独立可行性打分与查重,五席各自独立,最后给一张不自我下注的菜单。"
+        why: "假设生成 → 真实成对淘汰赛(不是打分平均)→ 挑强者进化(带血缘,岛模型不收敛到前二)→ 独立可行性打分与查重,五个 agent 各自独立,最后给一张不自我下注的菜单。"
 
   assemble_reference_pack:
     aliases: ["投稿材料包", "整理复现材料", "帮我配一套投稿参考包", "aers", "reference pack",
@@ -633,4 +685,4 @@ intents:
         label: "核心 · 唯一档"
         recommended: true
         modes: [aers_enhanced_research_pack]
-        why: "八席分工:AERS 参考包适用性 + 文献检索策略 → 数据协议审计(反泄漏硬门)→ 复现材料与基准证据独立审计 → 投稿清单与独立参考文献核验 → 稿件润色建议。EXECUTE 环节只打包审计,从不假装真跑过。"
+        why: "八个 agent 分工:AERS 参考包适用性 + 文献检索策略 → 数据协议审计(反泄漏硬门)→ 复现材料与基准证据独立审计 → 投稿清单与独立参考文献核验 → 稿件润色建议。EXECUTE 环节只打包审计,从不假装真跑过。"

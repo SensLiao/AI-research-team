@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Novelty Verification Gate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["n_audited", "n_verified", "n_unverified", "verified_ratio", "floor", "gate"],
+  "properties": {
+    "n_audited": {"type": "integer", "minimum": 0},
+    "n_verified": {"type": "integer", "minimum": 0},
+    "n_unverified": {"type": "integer", "minimum": 0},
+    "verified_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "floor": {"type": "number", "minimum": 0, "maximum": 1},
+    "gate": {"type": "string", "enum": ["PASS", "BLOCK"]}
+  }
+}

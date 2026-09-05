@@ -65,12 +65,21 @@ _TIER_MODE_SIGNALS: dict[str, tuple[str, ...]] = {
         "author manuscript",
     ),
     "manuscript_review": (
-        "审稿", "审一遍", "同行评审", "返修", "peer review", "review my manuscript",
-        "rebuttal",
+        "审稿", "审一遍", "同行评审", "peer review", "review my manuscript",
+    ),
+    # 2026-08-20: responding to a REAL external review routes to reconstruction, not review —
+    # manuscript_review can only re-review, never repair (catalog E4).
+    "manuscript_reconstruction": (
+        "返修", "回应审稿意见", "回复审稿", "审稿意见", "rebuttal", "revise and resubmit",
+        "respond to the review", "reconstruction",
     ),
 }
 
 _DEFAULT_OPERATED_FALLBACK = "deep_research"
+_CONTROL_PLANE_SIGNALS = (
+    "control plane", "orchestrator skill", "router test", "mode registry", "workflow implementation",
+    "改进 skill", "修改 skill", "改 orchestrator", "路由测试", "控制面",
+)
 
 _FALLBACK_OVERLAYS: tuple[str, ...] = (
     "results_to_claim_contract",
@@ -465,6 +474,23 @@ def resolve_operated_mode(
     operated = _operated_mode_names(modes)
     if not operated:
         raise ResearchCapabilityRouterError("mode registry has no operated modes")
+
+    lowered_request = request.casefold()
+    control_hits = [signal for signal in _CONTROL_PLANE_SIGNALS if signal.casefold() in lowered_request]
+    if control_hits:
+        if "repo_code_audit" not in operated:
+            raise ResearchCapabilityRouterError(
+                "control-plane maintenance is not a manuscript research request and repo_code_audit is unavailable"
+            )
+        return {
+            "mode": "repo_code_audit",
+            "intent": "audit_code",
+            "tier": "core",
+            "matched": True,
+            "candidate_modes": ["repo_code_audit"],
+            "matched_signals": [f"control_plane:{value}" for value in control_hits],
+            "proposal": None,
+        }
 
     # Publication output types are a secondary entry surface.  Their ordered
     # preferences are filtered through the same operated-only boundary.

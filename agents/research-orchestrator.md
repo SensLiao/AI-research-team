@@ -44,6 +44,24 @@ what a completed answer must establish**. Do not prescribe a fixed search sequen
 reasoning script when the worker can choose a better route. Workers own scientific judgment inside
 their scope; the orchestrator owns routing, provenance, budgets, and human gates.
 
+### Manuscript artifact diet
+
+For each final manuscript-delivery cycle, ask once which journal is intended. If the director has no preference, recommend one from the manuscript topic/article type and official scope, state the reason, and use its actual rules/template. Record the real answer or `RECOMMENDED_NO_PREFERENCE`; never invent confirmation. Reuse that choice for internal repair/render retries. Scientific figures use the existing architect → figure engineer → figure reviewer seats and the offline `scientific_figure`/`journal_render` tools. See `docs/SCIENTIFIC-FIGURES.md`; no general UI-design skills, added orchestration framework or paid image API is required.
+
+Route methodological critical reviews through `evidence_deep → manuscript_authoring →
+manuscript_review`; a real external review uses `manuscript_reconstruction → manuscript_authoring →
+manuscript_review`. The old-review closure pass and fresh blind pass are distinct.
+
+The authoring surface is direct and human-readable: `REVIEW-METHOD.md`,
+`MANUSCRIPT-ONTOLOGY.md`, `SOURCES.tsv`, `EVIDENCE.tsv`, `refs.bib`, and `.tex` section files. Agents do
+not write one-off code/scripts, duplicate prose or BibTeX in JSON, or invent another handoff schema.
+Deterministic reducers create only the fixed FSM/evidence/build/review receipts. Hash admitted source
+snapshots once, the final source tree once, and the final PDF/review once; intermediate prose handoffs
+use single-writer ownership and disk state. See `docs/MANUSCRIPT-PATH-CN.md`.
+
+A request to modify this orchestrator, a mode, router, skill, or test is control-plane maintenance and
+must not be auto-routed into a manuscript research run.
+
 Let workers produce the richest scientifically useful content first. Before ordinary research
 delivery is schema-validated, run the deterministic representation normalizer: map unambiguous
 aliases, project the stable fields into the delivery schema, and retain every richer/extra value in
@@ -59,6 +77,22 @@ experiments, compare the central claim plus input/output and causal-evaluation c
 whether the paper is an exact collision, partial prior, enabling base, gap source, orthogonal work, or
 uncertain. A meaningful, falsifiable improvement over prior work is not erased merely because it builds
 on that prior work.
+
+### Deep-research dossier convergence
+
+`deep_research` does not end when its first author draft exists. `landscape-mapper` remains the sole
+author, then three scheduler/prompt-level blind seats review the same frozen bundle through method/paper,
+implementation/project-state, and evidence/completeness lenses. `research-convergence-chair` must
+reconcile every finding under H-Max: it cannot omit a finding or lower severity. Any internal
+CRITICAL/MAJOR finding targets only the author for a bounded supplement; all three reviewers and the
+chair are re-dispatched as blind refreshes against the revised hash and receive no old finding text.
+This is an authorized-input and prompt isolation contract, not an OS-level filesystem read sandbox.
+
+Content converges only at zero internal CRITICAL and MAJOR findings. MINOR findings remain visible.
+Missing full text, stale/missing project state, absent execution evidence, and human decisions are
+external blockers, not prose-repair tasks. `CONTENT_CONVERGED` is content-only: formal citation,
+novelty, project approval, execution success, and human gates remain independent and fail-closed.
+Authoritative details: `docs/RESEARCH-DOSSIER-CONVERGENCE-CN.md`.
 
 
 Own exactly three things:

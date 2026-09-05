@@ -881,7 +881,7 @@ def _sections(state, sanity, baseline, variance, declared_stability, fairness, c
         "Calibrated claims": _bullets(
             claim_lines, "无 —— 该分析没有做出任何可校准的量化主张。"),
         "Blocking issues and repairs": _bullets(
-            blocking, f"无 —— 已检查 {len(DIAGNOSTIC_SEATS)} 个独立诊断席位的产出，没有阻断项。"),
+            blocking, f"无 —— 已检查 {len(DIAGNOSTIC_SEATS)} 个独立诊断 agent 的产出，没有阻断项。"),
     }
 
 

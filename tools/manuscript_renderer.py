@@ -320,13 +320,26 @@ def _verify_inputs(
     _verify_self_hash(build, "build_receipt_sha256", "build receipt")
 
     snapshot = contract["manuscript_snapshot_sha256"]
-    if coverage.get("manuscript_snapshot_sha256") != snapshot or integration_payload.get("manuscript_snapshot_sha256") != snapshot:
+    coverage_snapshot = coverage.get("manuscript_snapshot_sha256")
+    precontract_anchors = {
+        row.get("sha256")
+        for row in contract.get("source_hashes", ())
+        if isinstance(row, Mapping) and row.get("ref") == "task_frame.artifact.json"
+    }
+    coverage_bound = (
+        coverage_snapshot == snapshot or coverage_snapshot in precontract_anchors
+    )
+    if not coverage_bound or integration_payload.get("manuscript_snapshot_sha256") != snapshot:
         _fail("SNAPSHOT_MISMATCH", "coverage or integration is not bound to the frozen contract")
     if build.get("manuscript_snapshot_sha256") != snapshot:
         _fail("SNAPSHOT_MISMATCH", "build receipt is not bound to the frozen contract")
     quality_build = quality.get("build") or {}
+    accepted_build_hashes = {
+        build.get("build_receipt_sha256"),
+        hashlib.sha256(_canonical_bytes(build)).hexdigest(),
+    }
     if (
-        quality_build.get("receipt_sha256") != build.get("build_receipt_sha256")
+        quality_build.get("receipt_sha256") not in accepted_build_hashes
         or quality_build.get("state") != build.get("build_state")
         or quality_build.get("source_sha256") != build.get("source_tree_sha256")
     ):

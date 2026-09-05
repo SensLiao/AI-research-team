@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/project_state_snapshot.schema.json",
+  "title": "Project State Snapshot",
+  "description": "Hash-bound, time-bounded current-project facts supplied to the implementation reviewer. Every fact is grounded in a run-local source copy.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version", "project_id", "source_of_truth_id", "captured_at",
+    "valid_until", "sources", "facts"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "run_ref": {
+      "type": "string",
+      "pattern": "^inbox/project-state/sources/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*$",
+      "minLength": 1
+    }
+  },
+  "properties": {
+    "contract_version": {"const": "project-state-snapshot/v1"},
+    "project_id": {"type": "string", "minLength": 1},
+    "source_of_truth_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Named canonical project state surface, such as a live manifest or canonical vault record."
+    },
+    "captured_at": {"type": "string", "format": "date-time"},
+    "valid_until": {"type": "string", "format": "date-time"},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_ref", "source_sha256", "role"],
+        "properties": {
+          "source_ref": {"$ref": "#/$defs/run_ref"},
+          "source_sha256": {"$ref": "#/$defs/sha256"},
+          "role": {"enum": ["CANONICAL_STATE", "LIVE_MANIFEST", "CODE_CONTRACT", "DATA_CONTRACT", "RESOURCE_STATUS", "SUPPORTING"]}
+        }
+      }
+    },
+    "facts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fact_id", "statement", "source_refs"],
+        "properties": {
+          "fact_id": {"type": "string", "minLength": 1},
+          "statement": {"type": "string", "minLength": 1},
+          "source_refs": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/run_ref"}
+          }
+        }
+      }
+    }
+  }
+}

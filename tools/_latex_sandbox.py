@@ -194,10 +194,27 @@ def validate_recorder_inputs(data: bytes, *, cwd: Path, allowed_roots: Sequence[
 
 
 @contextmanager
-def private_workspace(build_root: Path) -> Iterator[tuple[Path, Path, Path]]:
-    """Yield a random private source/output pair and remove all scratch artifacts."""
+def private_workspace(
+    build_root: Path,
+    *,
+    platform_name: str | None = None,
+) -> Iterator[tuple[Path, Path, Path]]:
+    """Yield a random private source/output pair and remove all scratch artifacts.
 
-    workspace = Path(tempfile.mkdtemp(prefix=".latex-private-", dir=build_root))
+    Classic Windows process creation still rejects some working directories at
+    or above ``MAX_PATH`` even when Python can create them.  A long run path can
+    therefore make the private ``source`` directory unusable by TeX.  Keep the
+    ordinary run-owned scratch location when it is safely short; otherwise use
+    the operating-system temporary root and continue to publish only through
+    the run-owned atomic output paths.
+    """
+
+    host = platform_name or os.name
+    build = build_root.absolute()
+    workspace_parent: Path | None = build
+    if host == "nt" and len(str(build)) + 80 >= 240:
+        workspace_parent = None
+    workspace = Path(tempfile.mkdtemp(prefix=".latex-private-", dir=workspace_parent))
     source = workspace / "source"
     output = workspace / "output"
     source.mkdir(mode=0o700)

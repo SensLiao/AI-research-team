@@ -115,12 +115,14 @@ def _is_sha256(value: object) -> bool:
 def _verified_manuscript_review(
     rows: list[tuple[Path, dict]], *, expected_review_run_id: str
 ) -> dict | None:
-    """Extract a separately identified review verdict for navigation only.
+    """Extract a frozen blind-review verdict for navigation only.
 
     This deliberately checks a compact subset of the closed verdict contract.
     Schema validation already occurs when normal artifacts are persisted; the
     second check makes hand-dropped/incomplete JSON fail closed before a
-    director packet presents it as independent review evidence.
+    director packet presents it as frozen review evidence. A reviewer-authored
+    `independent_from_authoring` flag is structural metadata, never proof of
+    externally verified independence.
     """
 
     for _path, artifact in rows:
@@ -138,6 +140,8 @@ def _verified_manuscript_review(
             and isinstance(receipt, dict)
             and _safe_evidence_ref(frozen.get("manuscript_ref"))
             and _is_sha256(frozen.get("manuscript_sha256"))
+            and _safe_evidence_ref(frozen.get("source_tree_ref"))
+            and _is_sha256(frozen.get("source_tree_sha256"))
             and _is_sha256(payload.get("verdict_sha256"))
             and _is_sha256(receipt.get("scheduler_authorization_sha256"))
         ):
@@ -279,7 +283,7 @@ def _mode_findings(mode: str, rows: list[tuple[Path, dict]], run_dir: Path) -> l
         if verdict is not None and reviewer_report is not None:
             findings.extend(
                 [
-                    "Independent review product: [reviewer-report.md](./manuscript/reviewer-report.md).",
+                    "Frozen blind-review product: [reviewer-report.md](./manuscript/reviewer-report.md).",
                     f"It is bound to review run `{run_id}`, manuscript `{verdict['manuscript_ref']}`, "
                     f"manuscript SHA-256 `{verdict['manuscript_sha256']}`, "
                     f"verdict SHA-256 `{verdict['verdict_sha256']}`, and blind receipt SHA-256 `{verdict['receipt_sha256']}`.",

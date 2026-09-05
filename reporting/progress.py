@@ -29,14 +29,14 @@ from . import plain_words as words
 
 _UNFINISHED_HINT = {
     "failed": "中途停下了，没有跑完",
-    "rejected": "被你在关卡上否决了",
+    "rejected": "被你在决定点上否决了",
     "crashed_mid_stage": "跑到一半中断了，可以从断点续上",
     # `awaiting_director` is what `operate/spine.py` actually writes; `awaiting` is kept for older runs.
-    "awaiting": "停在关卡上，等你拍板",
-    "awaiting_director": "停在关卡上，等你拍板",
+    "awaiting": "停在决定点上，等你拍板",
+    "awaiting_director": "停在决定点上，等你拍板",
     "awaiting_resume": "停下了，等着从断点续跑",
     "tampered": "记录对不上，这次结果不可信",
-    "inconsistent": "台账和流水对不上，需要人工看一眼",
+    "inconsistent": "记录表和流水对不上，需要人工看一眼",
 }
 
 # Every status that means "the machine is deliberately stopped, waiting for the human".
@@ -142,7 +142,7 @@ def _paused_headline(data: dict[str, Any]) -> str:
     stages = data.get("pending_stages") or []
     where = "、".join(words.say(s) for s in stages)
     done = len(data.get("completed_stages") or [])
-    head = (f"做到「{where}」就停下了" if where else "做到关卡就停下了")
+    head = (f"做到「{where}」就停下了" if where else "做到决定点就停下了")
     return (f"{head}，等你拍板才能往下走"
             f"（已跑完 {done} 步，产物在第 3 节，决定在第 5 节）。")
 
@@ -206,13 +206,13 @@ def _honesty(data: dict[str, Any]) -> list[str]:
 def _decisions(data: dict[str, Any]) -> list[str]:
     out = ["## 5. 需要你做的决定", ""]
     if str(data.get("status")) in _AWAITING:
-        out.append("- 这次停在关卡上了，**必须你点头才能继续**。机器不会替你决定。")
+        out.append("- 这次停在决定点上了，**必须你点头才能继续**。机器不会替你决定。")
         gates = data.get("pending_gates") or []
         if gates:
             named = " 或 ".join(words.gate_label(g) for g in gates)
             out.append(f"- **要按的是**：{named}")
         else:
-            out.append("- 这个模式没有登记对应的关卡按钮 —— 直接告诉我「继续」或「换方向」即可。")
+            out.append("- 这个模式没有登记对应的决定点按钮 —— 直接告诉我「继续」或「换方向」即可。")
         out.append("")
         return out
     if str(data.get("status")) == "done":

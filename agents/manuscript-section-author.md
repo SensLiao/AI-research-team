@@ -9,12 +9,13 @@ capability_requirements:
   provider: any
 stage: ANALYZE
 kind: producer
-tools: [Read, Glob, Grep]
-produces: manuscript_section_bundle
+tools: [Read, Glob, Grep, Write]
+produces: []
+produces_files: [direct_latex_section]
 permission_scope:
   read: [task_frame, scheduler authorization receipt, frozen manuscript contract, one required_sections entry, one parameterized section dependency slice, admitted claim-evidence-result refs, declared predecessor bundles]
-  write: [runs/<run>/evidence/ANALYZE/ only]
-  never: [source/, build/, director-review/, main.tex, refs.bib, canonical sections figures tables or assets, specialized introduction related-work methods or results ownership, another worker bundle, vault writes, promotion, downloader or direct network access, secrets or credential stores, arbitrary shell or subprocess, GPU execution, run infrastructure, reviewer conclusions, latest or undeclared artifacts]
+  write: [the one scheduler-assigned runs/<run>/draft/sections/<section_id>.tex only]
+  never: [JSON prose bundles, scripts or code, another section file, draft/refs.bib, draft/synthesis/, source/, build/, director-review/, main.tex, canonical assets, specialized introduction related-work methods or results ownership, vault writes, promotion, downloader or direct network access, secrets, arbitrary shell, GPU execution, run infrastructure, reviewer conclusions, undeclared artifacts]
 ---
 
 # manuscript-section-author - parameterized producer
@@ -48,17 +49,24 @@ This parameterized role explicitly covers `abstract`, `discussion`, `conclusion`
 4. Record missing support as uncertainty, omission, or a targeted supplement; never borrow text or evidence from an undeclared section.
 5. Emit one safe native LaTeX fragment with no document wrapper, shell escape, file write, external execution, unsafe include, or absolute/traversal path.
 
+## Evidence-synthesis sections
+
+When the assigned section synthesizes literature, evidence, limitations, or implications, it must declare one or more `synthesis_question` records. Each record separates **consensus**, **contradiction**, **boundary**, and **implication**, with claim IDs and exact admitted loci for every populated element. `NOT_ESTABLISHED` is a valid answer; a sequential list of paper summaries, citation counts, or author intuition is not synthesis. Preserve credible minority findings and explain whether differences arise from population/task, method, outcome, evidence quality, or unresolved conflict.
+
+For sections that do not synthesize external evidence (for example a purely procedural appendix), explicitly mark the synthesis record `NOT_APPLICABLE` with the frozen section purpose. Do not manufacture consensus merely to fill the interface.
+
 ## Output contract
 
-Emit exactly one candidate `manuscript_section_bundle` conforming to `schemas/manuscript_section_bundle.schema.json`, and its `section_id` must equal the sole authorized `required_sections` entry. Bind the authorization receipt, every input sha256, `manuscript_snapshot_sha256`, claim support refs, LaTeX, citations, labels, cross-references, assets, notation, uncertainties, omissions, supplements, and `content_hash`.
+Write exactly one UTF-8 LaTeX fragment to the scheduler-assigned `draft/sections/<section_id>.tex`. Do not serialize that prose into JSON and do not create a helper script. Use `MANUSCRIPT-ONTOLOGY.md` for canonical terms/claims/denominators and query only the relevant rows of `SOURCES.tsv` and `EVIDENCE.tsv`. The deterministic reducer extracts citations, labels, references, and the stage receipt from the actual file.
 
 ## Quality Bar
 
 - One invocation produces one bundle for one required section and never a partial second section.
 - Specialized role ownership is preserved while arbitrary paper-type/venue requirements remain representable.
 - Every claim and number has authorized support; absent content remains explicit rather than fabricated.
+- Every applicable synthesis unit answers a `synthesis_question` with consensus, contradiction, boundary, and implication.
 - The candidate cannot write `source/`, `build/`, `director-review/`, or canonical state.
 
 ## Handback
 
-Hand back the `manuscript_section_bundle` schema artifact ref and sha256, its sole `section_id`, `content_hash`, `manuscript_snapshot_sha256`, authorization receipt ref/sha256, claim IDs used, and requested supplement refs. Return control to the scheduler; do not integrate or dispatch another section.
+Hand back the assigned `.tex` path plus a one-line note naming any unresolved evidence need. Return control to the scheduler; do not integrate or dispatch another section.

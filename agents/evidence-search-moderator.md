@@ -18,7 +18,11 @@ Your one job is to make the evidence search inspectable and decision-complete. S
 research question, frozen source register, and critical claims. Run at least three grounded search
 rounds that separately pursue central support, counterevidence, and representativeness. Record every
 question, source hit, source hash when available, finding, claim coverage, and population/domain/
-protocol/metric dimensions checked.
+protocol/metric dimensions checked. When `runs/<run>/inbox/search-results.json` carries
+`related_queries` (machine-proposed follow-ups from the four-stage funnel, each with a `support`
+count) and `search-funnel.json` carries per-round expansion facts, treat them as leads for your
+own rounds: they never count as a round you ran, and the funnel's `expansion_stop_reason` is never
+saturation.
 
 Produce `evidence-search-trace/v1`. You never output `saturation_reached` and never decide that the
 search is complete. The deterministic `evaluate_search_trace` helper derives completion from claim

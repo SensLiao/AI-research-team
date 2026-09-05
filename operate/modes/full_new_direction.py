@@ -204,10 +204,11 @@ def llm_step(run_dir: str, stage: str, request: str, vault: str = DEFAULT_VAULT,
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
                sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
-               queries=None) -> str:
+               queries=None, **funnel_kwargs) -> str:
     """Live-retrieval pre-step: grounds lit-scout's literature base in real records before dispatch."""
     return _shared.pre_search(run_dir, request, ts, transport=transport,
-                              sources=sources, limit_per_source=limit_per_source, queries=queries)
+                              sources=sources, limit_per_source=limit_per_source, queries=queries,
+                              **funnel_kwargs)
 
 
 # --------------------------------------------------------------------------- ingest (frozen bundle read)

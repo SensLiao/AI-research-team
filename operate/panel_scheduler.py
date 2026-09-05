@@ -10,6 +10,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import uuid
 from copy import deepcopy
 from pathlib import Path
 from typing import Iterable, Optional
@@ -30,6 +31,11 @@ from ..tools.validate_artifact import validate_payload
 
 
 CONTRACT_VERSION = "panel-dispatch/v1"
+
+# These panels use the scheduler authorization as part of their scientific
+# independence proof.  An output that existed before the scheduler issued its
+# dispatch cannot be accepted as an equivalent worker invocation.
+STRICT_RECEIPTED_PANELS = {("deep_research", "DISCOVER")}
 
 # Compatibility is resolved at the dispatch boundary so old inline mode code
 # cannot leak an ambiguous role into receipts or connectivity checks.
@@ -120,6 +126,16 @@ def validate_worker_spec_connectivity(mode: str, stage: str, spec: Optional[dict
     return errors
 
 
+def _resolve_abs(path: Path) -> Path:
+    """Resolve to an absolute path even when the target does not exist yet.
+
+    Python 3.13's Path.resolve(strict=False) no longer anchors a nonexistent relative path to the
+    CWD — it returns the path unchanged, which then fails relative_to(absolute_run_dir) with
+    'one path is relative and the other is absolute'. os.path.abspath keeps the pre-3.13 semantics.
+    """
+    import os
+    return Path(os.path.abspath(path))
+
 def _task_payload(run_dir: Path) -> dict:
     path = run_dir / "task_frame.artifact.json"
     try:
@@ -140,13 +156,13 @@ def _output_path(run_dir: Path, raw: object) -> Path:
         # Mode builders sometimes emit a cwd-relative path which already
         # contains the run root. Resolve that spelling once before treating a
         # genuinely run-relative path (for example inbox/x.json) as local.
-        cwd_candidate = path.resolve(strict=False)
+        cwd_candidate = _resolve_abs(path)
         try:
             cwd_candidate.relative_to(run_dir.resolve())
             path = cwd_candidate
         except ValueError:
             path = run_dir / path
-    resolved = path.resolve(strict=False)
+    resolved = _resolve_abs(path)
     try:
         resolved.relative_to(run_dir.resolve())
     except ValueError as exc:
@@ -155,7 +171,9 @@ def _output_path(run_dir: Path, raw: object) -> Path:
 
 
 def _rel(run_dir: Path, path: Path) -> str:
-    return path.resolve(strict=False).relative_to(run_dir.resolve()).as_posix()
+    if not path.is_absolute():
+        path = run_dir / path
+    return _resolve_abs(path).relative_to(_resolve_abs(run_dir)).as_posix()
 
 
 def _normal_pattern(run_dir: Path, raw: object) -> str:
@@ -164,10 +182,23 @@ def _normal_pattern(run_dir: Path, raw: object) -> str:
         return text
     path = Path(text)
     if path.is_absolute():
+        magic = next((i for i, ch in enumerate(text) if ch in "*?["), None)
+        if magic is not None:
+            # Windows Path.resolve() rejects glob characters (WinError 123).
+            # Resolve only the literal head before the first glob segment, then
+            # keep the wildcard suffix relative to the run dir for fnmatch.
+            head = text[:magic].rsplit("/", 1)[0]
+            suffix = text[len(head):].lstrip("/")
+            try:
+                rel_head = _resolve_abs(Path(head)).relative_to(
+                    run_dir.resolve()).as_posix()
+            except ValueError:
+                return text
+            return f"{rel_head}/{suffix}" if rel_head != "." else suffix
         try:
-            return path.resolve(strict=False).relative_to(run_dir.resolve()).as_posix()
+            return _resolve_abs(path).relative_to(run_dir.resolve()).as_posix()
         except ValueError:
-            return path.resolve(strict=False).as_posix()
+            return _resolve_abs(path).as_posix()
     return text.lstrip("./")
 
 
@@ -240,14 +271,24 @@ def _repair_cycle(run_dir: Path, stage: str) -> dict:
         raise PanelContractError(f"invalid repair state: {exc}") from exc
     attempts = [row for row in state["attempts"] if row.get("stage") == stage]
     if not attempts:
-        return {"cycle": 0, "attempt": None, "targets": set()}
+        return {"cycle": 0, "attempt": None, "targets": set(), "blind_targets": set()}
     latest = attempts[-1]
     targets = {
         canonical_agent_label(agent)
-        for agent in (latest.get("target_agents") or []) + (latest.get("refresh_agents") or [])
+        for agent in (
+            (latest.get("target_agents") or [])
+            + (latest.get("refresh_agents") or [])
+            + (latest.get("blind_refresh_agents") or [])
+        )
         if str(agent).strip()
     }
-    return {"cycle": len(attempts), "attempt": latest, "targets": targets}
+    blind_targets = {
+        canonical_agent_label(agent)
+        for agent in (latest.get("blind_refresh_agents") or [])
+        if str(agent).strip()
+    }
+    return {"cycle": len(attempts), "attempt": latest, "targets": targets,
+            "blind_targets": blind_targets}
 
 
 def _infer_plain_repair_targets(nodes: list[dict], attempt: Optional[dict]) -> set[str]:
@@ -293,6 +334,11 @@ def _feedback_for_agent(context: dict, agent: str) -> Optional[str]:
         return None
     if context.get("targets") and agent not in context["targets"]:
         return None
+    if agent in (context.get("blind_targets") or set()):
+        # Fresh reviewers must judge the revised artifact, not anchor on the
+        # previous round's finding text. They still receive repair_cycle and
+        # the new predecessor hash through scheduler_contract.
+        return None
     rows = []
     for defect in attempt.get("defects") or []:
         affected = set(defect.get("target_agents") or []) | set(defect.get("refresh_agents") or [])
@@ -335,6 +381,15 @@ def _load_receipt(path: Path, stage: str) -> dict:
         raise PanelContractError(f"scheduler receipt contract mismatch at {path}")
     if not isinstance(value.get("authorizations"), list) or not isinstance(value.get("waves"), list):
         raise PanelContractError(f"scheduler receipt lists are malformed at {path}")
+    dispatch_ids = [
+        str(row.get("dispatch_instance_id") or "").strip()
+        for row in value["authorizations"]
+        if row.get("dispatch_instance_id") is not None
+    ]
+    if any(not item for item in dispatch_ids) or len(dispatch_ids) != len(set(dispatch_ids)):
+        raise PanelContractError(
+            f"scheduler receipt has empty or duplicate dispatch_instance_id values at {path}"
+        )
     return value
 
 
@@ -472,6 +527,35 @@ def _apply_director_supplement_extension(run_dir: Path, budget: dict) -> dict:
     return effective
 
 
+def _apply_director_initial_extension(run_dir: Path, budget: dict) -> dict:
+    """Apply one explicit, run-local director extension without mutating the task frame."""
+
+    path = run_dir / "inbox" / "director-initial-budget-extension.json"
+    if not path.is_file():
+        return budget
+    try:
+        extension = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PanelContractError(f"invalid director initial extension: {exc}") from exc
+    base = budget.get("max_agent_hops")
+    if (
+        extension.get("contract_version") != "director-initial-extension/v1"
+        or extension.get("authorized_by") != "director"
+        or extension.get("dimension") != "max_agent_hops"
+        or extension.get("base_limit") != base
+        or not isinstance(extension.get("extended_limit"), int)
+        or extension["extended_limit"] <= int(base or 0)
+        or not str(extension.get("reason") or "").strip()
+    ):
+        raise PanelContractError(
+            "director initial extension must bind the current base limit, a larger integer "
+            "limit, director authority, and a non-empty reason"
+        )
+    effective = dict(budget)
+    effective["max_agent_hops"] = extension["extended_limit"]
+    return effective
+
+
 def _normalize_nodes(run_dir: Path, spec: dict) -> tuple[list[dict], list[list[dict]]]:
     raw_workers = spec.get("workers")
     workers = raw_workers if isinstance(raw_workers, list) else [spec]
@@ -491,6 +575,16 @@ def _normalize_nodes(run_dir: Path, spec: dict) -> tuple[list[dict], list[list[d
         if output_rel in outputs:
             raise PanelContractError(f"two workers declare the same output: {output_rel}")
         outputs.add(output_rel)
+        raw_owned = worker.get("owned_outputs") or []
+        if not isinstance(raw_owned, list):
+            raise PanelContractError("owned_outputs must be a list of run-relative paths")
+        owned_output_paths = [_output_path(run_dir, value) for value in raw_owned]
+        owned_output_rels = [_rel(run_dir, value) for value in owned_output_paths]
+        for owned_rel in owned_output_rels:
+            if owned_rel in outputs:
+                raise PanelContractError(f"two workers declare the same output: {owned_rel}")
+            outputs.add(owned_rel)
+        worker["owned_outputs"] = owned_output_rels
         worker["label"] = label
         if source_label != label:
             worker["source_label"] = source_label
@@ -502,6 +596,8 @@ def _normalize_nodes(run_dir: Path, spec: dict) -> tuple[list[dict], list[list[d
             "worker": worker,
             "output_path": output_path,
             "output_rel": output_rel,
+            "owned_output_paths": owned_output_paths,
+            "owned_output_rels": owned_output_rels,
             "barrier_deps": set(),
             "data_deps": set(),
             "external_deps": set(),
@@ -820,7 +916,9 @@ def _worker_for_dispatch(
     *,
     cycle: int,
     feedback: Optional[str],
+    blind_refresh: bool = False,
     authorized: bool,
+    authorization: Optional[dict] = None,
     repair_plan: Optional[dict] = None,
 ) -> dict:
     worker = deepcopy(node["worker"])
@@ -846,9 +944,17 @@ def _worker_for_dispatch(
         "worker_id": node["id"],
         "canonical_label": node["label"],
         "repair_cycle": cycle,
+        "blind_refresh": bool(blind_refresh),
         "logical_output": node["output_rel"],
         "physical_output": _rel(run_dir, Path(worker["output"])),
+        "owned_outputs": list(node.get("owned_output_rels") or []),
         "dispatch_authorized": authorized,
+        "dispatch_instance_id": (
+            str((authorization or {}).get("dispatch_instance_id") or "") or None
+        ),
+        "authorization_receipt_ref": (
+            _rel(run_dir, _receipt_path(run_dir, stage)) if authorized else None
+        ),
         "predecessor_outputs": predecessors,
         "external_predecessors": external,
         "allowed_inputs": node["allowed_inputs"],
@@ -864,7 +970,9 @@ def _worker_for_dispatch(
     fence = (
         "\n\nSCHEDULER INPUT CONTRACT\n"
         "Use only inputs declared in scheduler_contract. Do not inspect sibling or future-wave "
-        "outputs. The receipt records predecessor hashes and your declared read boundary.\n"
+        "outputs. The receipt records predecessor hashes and your declared read boundary. "
+        "When your output schema has an instance-id field, copy scheduler_contract.dispatch_instance_id "
+        "exactly; never invent or reuse one.\n"
     )
     if feedback:
         fence += "\n" + feedback + "\n"
@@ -972,6 +1080,22 @@ def schedule_next_wave(
     unknown_targets = targets - {node["label"] for node in nodes}
     if unknown_targets:
         raise PanelContractError(f"repair targets unknown panel agents: {sorted(unknown_targets)}")
+    # Director lock 2026-08-16 (accept-with-caveats): when the director has filed a
+    # convergence acceptance for this run, do NOT demand the pending repair wave.
+    # The stage's deterministic gates still run and adjudicate; the acceptance only
+    # skips re-dispatching seats over findings the director accepted as caveats.
+    acceptance_path = root / "inbox" / "director-convergence-acceptance.json"
+    if cycle and acceptance_path.is_file():
+        return {
+            "status": "complete",
+            "stage": stage,
+            "workers": [],
+            "dispatch": None,
+            "cycle": cycle,
+            "director_acceptance": "recorded; stage dets adjudicate",
+            **_authorization_report(root),
+            "scheduler_receipt": None,
+        }
     repair_plan = (
         prepare_plan(root, stage, cycle, nodes, targets, repair["attempt"])
         if cycle else None
@@ -984,11 +1108,39 @@ def schedule_next_wave(
         if row.get("cycle") == cycle
     }
     any_auth = {row["worker_id"]: row for row in receipt["authorizations"]}
+    strict_receipted = (mode, stage) in STRICT_RECEIPTED_PANELS
+
+    def authorization_for(node: dict) -> Optional[dict]:
+        rows = current_auth if cycle and node["label"] in targets else any_auth
+        return rows.get(node["id"])
+
+    def validate_receipted_output(node: dict, path: Path) -> None:
+        if not strict_receipted:
+            return
+        row = authorization_for(node)
+        if row is None:
+            raise PanelContractError(
+                f"{mode}/{stage} strict panel output for {node['label']} has no scheduler "
+                "authorization receipt; prewritten output is rejected"
+            )
+        expected_output = _rel(root, path)
+        dispatch_id = str(row.get("dispatch_instance_id") or "").strip()
+        if (
+            row.get("agent") != node["label"]
+            or row.get("output") != expected_output
+            or list(row.get("owned_outputs") or []) != list(node.get("owned_output_rels") or [])
+            or not dispatch_id
+        ):
+            raise PanelContractError(
+                f"{mode}/{stage} strict panel receipt does not bind {node['label']} to "
+                f"{expected_output} with a scheduler-issued dispatch_instance_id"
+            )
 
     def fresh(node: dict) -> bool:
         if cycle and node["label"] in targets:
             path = physical_output(root, repair_plan, node["id"])
             if path and path.is_file():
+                validate_receipted_output(node, path)
                 _validate_current_worker_output_contract(mode, stage, node, path)
                 finalize_output(root, stage, cycle, node["id"], ts)
                 return True
@@ -999,6 +1151,9 @@ def schedule_next_wave(
             raise PanelContractError(str(exc)) from exc
         if not path.is_file():
             return False
+        if any(not owned.is_file() for owned in node.get("owned_output_paths") or []):
+            return False
+        validate_receipted_output(node, path)
         _validate_current_worker_output_contract(mode, stage, node, path)
         return True
 
@@ -1025,7 +1180,9 @@ def schedule_next_wave(
         workers = [
             _worker_for_dispatch(
                 root, stage, node, by_id, cycle=cycle,
-                feedback=_feedback_for_agent(repair, node["label"]), authorized=True,
+                feedback=_feedback_for_agent(repair, node["label"]),
+                blind_refresh=node["label"] in repair.get("blind_targets", set()), authorized=True,
+                authorization=current_auth.get(node["id"]),
                 repair_plan=repair_plan,
             )
             for node in pending_authorized
@@ -1099,6 +1256,7 @@ def schedule_next_wave(
             usage_key = "supplement_agent_hops"
             used = counts["supplement"]
         else:
+            budget = _apply_director_initial_extension(root, budget)
             usage_key = "agent_hops"
             used = counts["initial"]
         # Authorize atomically.  The budget helper treats used == limit as the
@@ -1113,30 +1271,41 @@ def schedule_next_wave(
             "worker_ids": [node["id"] for node in wave_nodes],
             "agents": [node["label"] for node in wave_nodes],
         })
+        new_authorizations = []
         for node in wave_nodes:
             scheduled_output = (
                 physical_output(root, repair_plan, node["id"])
                 if repair_plan is not None else None
             ) or node["output_path"]
-            receipt["authorizations"].append({
+            authorization = {
                 "worker_id": node["id"],
                 "agent": node["label"],
                 "source_label": node["source_label"],
                 "output": _rel(root, scheduled_output),
                 "logical_output": node["output_rel"],
+                "owned_outputs": list(node.get("owned_output_rels") or []),
                 "cycle": cycle,
                 "wave": wave_no,
                 "authorized_at": ts,
                 "authorization_kind": "supplement" if is_supplement else "initial",
-            })
+                "dispatch_instance_id": "dispatch-" + uuid.uuid4().hex,
+            }
+            receipt["authorizations"].append(authorization)
+            new_authorizations.append(authorization)
         _save_receipt(root, receipt_path, receipt)
+        for row in new_authorizations:
+            any_auth[row["worker_id"]] = row
+            if row.get("cycle") == cycle:
+                current_auth[row["worker_id"]] = row
     else:
         wave_no = len(receipt["waves"]) + 1
 
     workers = [
         _worker_for_dispatch(
             root, stage, node, by_id, cycle=cycle,
-            feedback=_feedback_for_agent(repair, node["label"]), authorized=authorize,
+            feedback=_feedback_for_agent(repair, node["label"]),
+            blind_refresh=node["label"] in repair.get("blind_targets", set()), authorized=authorize,
+            authorization=current_auth.get(node["id"]) if authorize else None,
             repair_plan=repair_plan,
         )
         for node in wave_nodes

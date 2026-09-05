@@ -140,7 +140,7 @@
             "allOf": [
               {
                 "contains": {
-                  "$ref": "#/$defs/open_advisory_finding"
+                  "$ref": "#/$defs/open_repair_finding"
                 }
               },
               {
@@ -176,7 +176,7 @@
             "allOf": [
               {
                 "contains": {
-                  "$ref": "#/$defs/open_advisory_finding"
+                  "$ref": "#/$defs/open_repair_finding"
                 }
               },
               {
@@ -330,6 +330,12 @@
         "manuscript_sha256": {
           "$ref": "#/$defs/sha256"
         },
+        "source_tree_ref": {
+          "$ref": "#/$defs/safe_ref"
+        },
+        "source_tree_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
         "pdf_ref": {
           "$ref": "#/$defs/safe_ref"
         },
@@ -393,6 +399,7 @@
           "type": "string",
           "enum": [
             "BLOCKING",
+            "MAJOR",
             "ADVISORY"
           ]
         },
@@ -459,6 +466,21 @@
       "properties": {
         "severity": {
           "const": "ADVISORY"
+        },
+        "status": {
+          "const": "OPEN"
+        }
+      }
+    },
+    "open_repair_finding": {
+      "type": "object",
+      "required": [
+        "severity",
+        "status"
+      ],
+      "properties": {
+        "severity": {
+          "enum": ["MAJOR", "ADVISORY"]
         },
         "status": {
           "const": "OPEN"

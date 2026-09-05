@@ -35,6 +35,9 @@ from ...tools.research_brief_markdown import (
     write_research_brief_markdown,
 )
 from ...tools.source_methodology_audit import audit_source_quality_report
+from ...tools.systematic_review_corpus import (
+    validate_manifest as validate_systematic_review_manifest,
+)
 
 STAGES = ["DISCOVER", "REPORT"]
 DEFAULT_VAULT = "AI agent database/PhD-Research-OS"
@@ -42,6 +45,9 @@ SOURCE_PREFLIGHT_REQUIRED = True
 SOURCE_PREFLIGHT_VERSION = "evidence-deep-source-preflight/v1"
 SOURCE_PREFLIGHT_REL = Path("inbox/evidence-deep-source-preflight.json")
 FULLTEXT_QA_REL = Path("inbox/fulltext-qa.json")
+SYSTEMATIC_REVIEW_MANIFEST_REL = Path(
+    "inbox/systematic-review/systematic-review-execution-manifest.json"
+)
 _COMPLETE_SOURCE_PARSERS = {
     "pymupdf-page-text/v1",
     "html-body-text/v1",
@@ -116,6 +122,38 @@ EVIDENCE_DEEP_PARALLEL_GROUPS = [
 ]
 
 
+def persist_systematic_review_manifest(run_dir, ts: str) -> str:
+    """Persist an already executed, validated review corpus as reusable evidence."""
+
+    source = Path(run_dir) / SYSTEMATIC_REVIEW_MANIFEST_REL
+    if not source.is_file():
+        raise GateBlock(
+            "publication review requires a run-local systematic-review execution manifest"
+        )
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise GateBlock(
+            f"systematic-review execution manifest is unreadable: {type(exc).__name__}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise GateBlock("systematic-review execution manifest must be a JSON object")
+    try:
+        validate_systematic_review_manifest(payload)
+    except ValueError as exc:
+        raise GateBlock(f"systematic-review execution manifest BLOCK: {exc}") from exc
+    return write_artifact(
+        run_dir,
+        "DISCOVER",
+        "systematic-review-execution-manifest.artifact.json",
+        "systematic_review_execution_manifest",
+        "research-orchestrator",
+        payload,
+        ts,
+        "approved",
+    )
+
+
 def _worker_model(model_policy: str, agent: str) -> str:
     if model_policy == "max_quality":
         return "opus"
@@ -129,10 +167,11 @@ def _worker_model(model_policy: str, agent: str) -> str:
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
                sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
-               queries=None) -> str:
+               queries=None, **funnel_kwargs) -> str:
     """Live-retrieval pre-step exposed on every evidence mode."""
     return _shared.pre_search(run_dir, request, ts, transport=transport,
-                              sources=sources, limit_per_source=limit_per_source, queries=queries)
+                              sources=sources, limit_per_source=limit_per_source, queries=queries,
+                              **funnel_kwargs)
 
 
 def fulltext_pre(run_dir: str, question: str, doc_paths, ts: str) -> Optional[str]:
@@ -377,6 +416,10 @@ a sample — including negative/boundary evidence. The saturation field is a
 fixed compatibility placeholder; only the deterministic search-trace evaluator derives completion.
 Every `source_ref` declared in the mandatory source-preflight record is load-bearing and MUST appear
 unchanged in the evidence table. Do not substitute a search snippet, abstract, or derivative page for it.
+For every important source record version_read, access_scope, supplement_scope, figure_scope, code_scope,
+acquisition_channel, search_receipt_ref, and local snapshot ref/hash. A logged-in IEEE result is
+IEEE_XPLORE_MANUAL only when the run carries its query/filter/date/document-id receipt; a worksheet is
+NOT_EXECUTED and contributes no search-completion claim. Do not copy cookies, tokens, or headers.
 """,
         "source-quality-ranker": """
 Task: independently audit every evidence-table source at inspectable locators.
@@ -413,9 +456,18 @@ semantic_complete. Never emit or self-set saturation; budget exhaustion is not c
 Task: link every claim to exact evidence spans from immutable source/fulltext snapshots.
 Output exactly: {"claim_evidence_map": {attribution_contract_version:"claim-span/v1",
 mappings:[{claim_id,overall_support,loci,claim_risk}]}}.
-Every locus must include source_ref, location, kind, reported_result, supports_claim, support_relation,
-directness, span_id, snapshot_ref, document_hash, parser_version, exact_quote, and either char_start/char_end,
-table_cell_ref, or figure_region_ref. Use partial/insufficient instead of inflating support. You only link;
+Every locus must include locus_id (unique per map, e.g. "CE-C1-L1"), source_ref, location, kind,
+reported_result, supports_claim, support_relation, directness, span_id, snapshot_ref, document_hash,
+parser_version, exact_quote, and either char_start/char_end, table_cell_ref, or figure_region_ref.
+Also preserve version_read and value_origin. SOURCE_REPORTED is the only origin that may be attributed
+as "the paper reports"; RE_DERIVED/REVIEWER_COUNT require a formula and input loci; suspected source
+errors remain separate annotations and exact_quote stays verbatim.
+Closed enums (machine-readable; any other value BLOCKS the run):
+  overall_support ∈ {"supported","partial","contradicted","not-found"} — never a support_relation word;
+  kind ∈ {"table","figure","text","code","dataset","appendix","other"} — never a source-channel label;
+  directness ∈ {"direct","indirect","proxy","assumed"};
+  claim_risk is an OPTIONAL OBJECT {"level":"high|medium|low","note":"<why>"} — never a bare string.
+Use partial/insufficient instead of inflating support. You only link;
 a different worker reopens every locator and independently judges semantic support.
 """ + _shared.SUPPORT_RELATION_CONTRACT,
         "citation-coverage-auditor": """
@@ -427,6 +479,9 @@ Output exactly: {"citation_audit": {"contract_version":"citation-attribution/v1"
 "verdict":"entails|partial|contradicts|insufficient","locator_verified":true,
 "verified_locus_ids":["L1"],"unsupported_locus_ids":[],"notes":"<independent reason>"}]}}.
 Emit exactly one result per claim. A source existing or mentioning the topic is not entailment.
+Independently check value origin and attribution, not only numeric equality. Re-derived values with no
+formula/input loci, or source-reported wording applied to reviewer counts, are unsupported even when the
+number itself is correct.
 """,
         "contradiction-miner": """
 Task: compare claims and source findings for conflicts; propose invalidation only for real vault claims.
@@ -574,6 +629,144 @@ def _data_descendants(agent: str) -> list[str]:
                 frontier.add(candidate)
     impacted.discard(agent)
     return [candidate for candidate in PANEL_AGENTS if candidate in impacted]
+
+
+def _normalize_source_quality_compat(b: dict) -> None:
+    """Project rich source-review prose into conservative machine categories.
+
+    The prose is retained verbatim in ``limitations``. Unknown judgments map
+    to ``unclear`` rather than being guessed into a stronger quality class.
+    """
+
+    quality_levels = {"strong", "adequate", "weak", "unclear", "not-applicable"}
+    method_fields = (
+        "design_appropriateness",
+        "bias_control",
+        "measurement_validity",
+        "statistical_validity",
+        "reproducibility",
+    )
+    sample_fields = (
+        "sample_adequacy",
+        "evaluation_independence",
+        "comparator_fairness",
+        "uncertainty_reporting",
+    )
+
+    def preserve(row: dict, field: str, value: object) -> None:
+        if value in (None, ""):
+            return
+        note = f"Original {field} description (conservatively normalized): {value}"
+        limitations = row.setdefault("limitations", [])
+        if note not in limitations:
+            limitations.append(note)
+
+    def quality_block(row: dict, key: str, fields: tuple[str, ...]) -> dict:
+        raw = row.get(key)
+        raw = raw if isinstance(raw, dict) else {}
+        normalized = {}
+        for field in fields:
+            value = raw.get(field)
+            if value in quality_levels:
+                normalized[field] = value
+            else:
+                preserve(row, f"{key}.{field}", value)
+                normalized[field] = "unclear"
+        for field, value in raw.items():
+            if field not in fields:
+                preserve(row, f"{key}.{field}", value)
+        return normalized
+
+    for row in (b.get("source_quality_report") or {}).get("ranked_sources") or []:
+        if not isinstance(row, dict):
+            continue
+        directness = str(row.get("directness") or "").strip()
+        if directness not in {"direct", "indirect", "background"}:
+            preserve(row, "directness", directness)
+            token = directness.upper()
+            if "FULLTEXT_PRIMARY" in token:
+                row["directness"] = "direct"
+            elif any(label in token for label in ("SURVEY", "BACKGROUND", "CONTEXT")):
+                row["directness"] = "background"
+            else:
+                row["directness"] = "indirect"
+
+        if not row.get("tier"):
+            ref = str(row.get("source_ref") or "").casefold()
+            row["tier"] = (
+                "preprint"
+                if ref.startswith("arxiv:")
+                or "10.48550/arxiv" in ref
+                or ref.startswith("doi:10.2139/")
+                else "peer-reviewed"
+                if ref.startswith("doi:")
+                else "other"
+            )
+
+        score = row.get("rigor_score")
+        if isinstance(score, (int, float)) and not isinstance(score, bool):
+            if score > 1.0:
+                preserve(row, "rigor_score", score)
+                row["rigor_score"] = max(0.0, min(1.0, float(score) / 100.0))
+
+        row["methodology_review"] = quality_block(
+            row, "methodology_review", method_fields
+        )
+        row["sample_evaluation_review"] = quality_block(
+            row, "sample_evaluation_review", sample_fields
+        )
+
+        for evidence in row.get("evidence_refs") or []:
+            if isinstance(evidence, dict) and not evidence.get("evidence_ref"):
+                evidence["evidence_ref"] = str(row.get("source_ref") or "source")
+
+
+def _normalize_search_trace_compat(b: dict) -> None:
+    """Keep only frozen literature rows in ``source_hits``.
+
+    Scheduler/controller files are provenance inputs, not scholarly hits.
+    Newly discovered external identities remain visible as boundary findings
+    until a later run freezes and assesses them in the evidence table.
+    """
+
+    frozen_refs = {
+        str(row.get("ref"))
+        for row in (b.get("evidence_table") or {}).get("sources") or []
+        if isinstance(row, dict) and row.get("ref")
+    }
+    for round_row in (b.get("evidence_search_trace") or {}).get("rounds") or []:
+        if not isinstance(round_row, dict):
+            continue
+        kept = []
+        external = []
+        for hit in round_row.get("source_hits") or []:
+            if not isinstance(hit, dict) or not hit.get("source_ref"):
+                continue
+            ref = str(hit["source_ref"])
+            if ref in frozen_refs:
+                kept.append(hit)
+            elif re.match(r"^(?:doi:|arxiv:|pmid:|https?://)", ref, re.I):
+                external.append(ref)
+        round_row["source_hits"] = kept
+        findings = round_row.setdefault("findings", [])
+        existing = {
+            str(ref)
+            for finding in findings
+            if isinstance(finding, dict)
+            for ref in finding.get("source_refs") or []
+        }
+        round_index = int(round_row.get("round_index") or 0)
+        for offset, ref in enumerate(external, start=1):
+            if ref in existing:
+                continue
+            findings.append(
+                {
+                    "finding_id": f"unfrozen-search-lead-r{round_index}-{offset}",
+                    "source_refs": [ref],
+                    "claim_ids": list(round_row.get("claim_ids_addressed") or []),
+                    "finding_kind": "boundary",
+                }
+            )
 
 
 def _validate_payloads(run_dir, b: dict) -> dict:
@@ -751,10 +944,14 @@ def _consistency_checks(b: dict) -> None:
 
 
 def _discover_dets(run_dir, ts, b) -> tuple:
+    _normalize_source_quality_compat(b)
+    _normalize_search_trace_compat(b)
     normalization = _validate_payloads(run_dir, b)
     _consistency_checks(b)
 
     paths = []
+    if (Path(run_dir) / SYSTEMATIC_REVIEW_MANIFEST_REL).is_file():
+        paths.append(persist_systematic_review_manifest(run_dir, ts))
     et = build_evidence_table(
         b["evidence_table"]["query"],
         b["evidence_table"]["sources"],
@@ -950,6 +1147,7 @@ def _report(run_dir, ts) -> tuple:
             "evidence/DISCOVER/landscape-map.artifact.json",
             "evidence/DISCOVER/contradiction-report.artifact.json",
             "evidence/DISCOVER/citation-attribution-report.artifact.json",
+            "evidence/DISCOVER/systematic-review-execution-manifest.artifact.json",
         ],
         "produced_artifacts": [],
         "open_questions": [],

@@ -40,6 +40,12 @@ Reject reused or forged receipts, unsafe paths, hash drift, mutable/undeclared i
 4. Audit availability and hashes for code, configs, environment, data instructions, prompts, checkpoints, and other materials required to reconstruct the claimed result.
 5. Make invalid assumptions, material protocol omissions, leakage, unfair comparison, false execution, or irreproducible load-bearing results open `BLOCKING` scientific/numeric/execution findings.
 6. Keep optional exposition or convenience-material improvements `ADVISORY`; they cannot compensate for an invalid design or missing execution truth.
+7. For a methodological critical review, verify that the manuscript identity, search/reporting standard, eligibility, appraisal, synthesis, and absence-claim language agree. SANRA, PRISMA-S, PRESS, PRISMA-ScR, and systematic-review language are not interchangeable labels.
+8. Any statement that human reviewers screened, extracted, verified, or adjudicated must be supported by an explicit accountable human record. Missing evidence narrows the methods claim; never repair it by inventing a human process or by exposing internal machine workflow in unrelated scientific prose.
+
+## Source/PDF truth contract
+
+Record `review_surface: SOURCE_ONLY | PDF_RENDERED`. `SOURCE_ONLY` can establish methods/reproducibility findings from frozen source and materials, while pagination-, crop-, readability-, and rendered-disclosure checks remain `NOT_ASSESSED`. `PDF_RENDERED` requires observed PDF bytes and a build receipt bound to the reviewed source hash. **Never fabricate a PDF**, infer it from TeX, or reuse an earlier build after source changes; report source disposition separately from PDF-dependent coverage.
 
 ## Output contract
 
@@ -47,7 +53,7 @@ Emit one schema-valid `manuscript_review_verdict` conforming to `schemas/manuscr
 
 Express explicit `abstention` as an open evidence-backed `ABSTAIN-` finding and non-PASS disposition. Express each `unresolved_science` assumption, protocol, leakage, fairness, material, or reproducibility issue as an open finding with a precise locus and required fix.
 
-The current closed verdict schema requires a real PDF ref/sha256 even for source-only review. When no real PDF exists, do not fabricate a schema-valid verdict: return an explicit contract-gap abstention for the deterministic reducer until an honest source-only schema representation is available.
+Use the active verdict schema's honest source-only representation when available. If a legacy closed schema still requires a PDF identity, return a hash-bound `SOURCE_ONLY` review record plus an explicit schema-interface defect for the reducer; do not discard completed source review and do not invent PDF fields merely to validate.
 
 ## Quality Bar
 

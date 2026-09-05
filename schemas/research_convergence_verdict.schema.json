@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/research_convergence_verdict.schema.json",
+  "title": "Research Dossier Convergence Verdict",
+  "description": "H-Max reconciliation of three independent dossier reviews. It certifies internal content convergence only; it never grants novelty, project approval, or citation clearance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version", "convergence_id", "chair_instance_id", "review_round",
+    "reviewed_artifact_ref", "reviewed_artifact_sha256", "review_refs", "hmax_policy",
+    "counts", "consolidated_findings", "external_blockers", "disposition",
+    "status_boundaries", "rationale"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "json_pointers": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "type": "string", "minLength": 1,
+        "pattern": "^(?:/(?:[^~/]|~[01])*)+$"
+      }
+    }
+  },
+  "properties": {
+    "contract_version": {"const": "research-dossier-convergence/v1"},
+    "convergence_id": {"type": "string", "minLength": 1},
+    "chair_instance_id": {
+      "type": "string", "pattern": "^dispatch-[0-9a-f]{32}$",
+      "description": "Scheduler-issued dispatch_instance_id copied verbatim from scheduler_contract; never chair-generated."
+    },
+    "review_round": {"type": "integer", "minimum": 0},
+    "reviewed_artifact_ref": {"type": "string", "minLength": 1},
+    "reviewed_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "review_refs": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["review_id", "reviewer_lens", "reviewer_instance_id", "artifact_ref", "artifact_sha256"],
+        "properties": {
+          "review_id": {"type": "string", "minLength": 1},
+          "reviewer_lens": {"enum": ["method-and-paper", "implementation-and-project-state", "evidence-and-completeness"]},
+          "reviewer_instance_id": {"type": "string", "pattern": "^dispatch-[0-9a-f]{32}$"},
+          "artifact_ref": {"type": "string", "minLength": 1},
+          "artifact_sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "hmax_policy": {"const": true},
+    "counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["critical", "major", "minor", "external_blockers"],
+      "properties": {
+        "critical": {"type": "integer", "minimum": 0},
+        "major": {"type": "integer", "minimum": 0},
+        "minor": {"type": "integer", "minimum": 0},
+        "external_blockers": {"type": "integer", "minimum": 0}
+      }
+    },
+    "consolidated_findings": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": [
+          "finding_id", "severity", "category", "source_findings", "anchor",
+          "evidence", "responsible_agent", "repair_action", "acceptance_check",
+          "allowed_json_pointers", "status"
+        ],
+        "properties": {
+          "finding_id": {"type": "string", "minLength": 1},
+          "severity": {"enum": ["CRITICAL", "MAJOR", "MINOR"]},
+          "category": {"type": "string", "minLength": 1},
+          "source_findings": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["review_id", "finding_id"],
+              "properties": {
+                "review_id": {"type": "string", "minLength": 1},
+                "finding_id": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "anchor": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1},
+          "responsible_agent": {"const": "landscape-mapper"},
+          "repair_action": {"type": "string", "minLength": 1},
+          "acceptance_check": {"type": "string", "minLength": 1},
+          "allowed_json_pointers": {"$ref": "#/$defs/json_pointers"},
+          "status": {"const": "OPEN"}
+        }
+      }
+    },
+    "external_blockers": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["blocker_id", "kind", "description", "source_blockers", "required_input"],
+        "properties": {
+          "blocker_id": {"type": "string", "minLength": 1},
+          "kind": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "source_blockers": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["review_id", "blocker_id"],
+              "properties": {
+                "review_id": {"type": "string", "minLength": 1},
+                "blocker_id": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "required_input": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "disposition": {"enum": ["REVISE", "CONTENT_CONVERGED", "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS"]},
+    "status_boundaries": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_convergence_only", "novelty_clearance", "project_approval", "formal_citation_gate"],
+      "properties": {
+        "content_convergence_only": {"const": true},
+        "novelty_clearance": {"const": false},
+        "project_approval": {"const": false},
+        "formal_citation_gate": {"const": "PENDING"}
+      }
+    },
+    "rationale": {"type": "string", "minLength": 1}
+  }
+}

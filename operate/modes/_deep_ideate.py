@@ -319,6 +319,34 @@ def experiment_worker(run_dir: str, request: str, model_policy: str) -> dict:
                 run_dir=run_dir, out=out, north_star=ns)}
 
 
+def ideate_view_workers(run_dir: str, request: str, model_policy: str) -> List[dict]:
+    """The multi-view IDEATE panel (director lock 2026-08-09): FOUR independent proposer views
+    (parallel) + ONE synthesis merger. No single agent owns the stage; each view reads a different
+    material focus; the merger dedups, renumbers to IDEA-1..N and enforces prior-art wording
+    discipline against the run's prior-art registry. Output lands in the standard
+    `inbox/IDEATE.bundle.json` so every downstream producer is untouched."""
+    from . import _view_prompts
+
+    ns = _shared.north_star_block(run_dir)
+    model = _deep_model(model_policy)
+    workers: List[dict] = []
+    for spec in _view_prompts.VIEW_SPECS.values():
+        out = f"{run_dir}/inbox/{spec['stem']}.bundle.json"
+        prompt = _view_prompts.VIEW_WORKER_PROMPT_TEMPLATE.format(
+            view_name=spec["view_name"], request=request, north_star=ns,
+            focus_materials=spec["focus_materials"].format(run_dir=run_dir),
+            view_discipline=spec["view_discipline"],
+            out=out, view_prefix=spec["stem"].replace("IDEATE-", ""))
+        workers.append({"label": spec["label"], "model": model, "output": out,
+                        "depends_on": ["divergence-operator-runner"], "prompt": prompt})
+    out = f"{run_dir}/inbox/IDEATE.bundle.json"
+    workers.append({"label": "idea-merger", "model": model, "output": out,
+                    "depends_on": [s["label"] for s in _view_prompts.VIEW_SPECS.values()],
+                    "prompt": _view_prompts.MERGER_WORKER_PROMPT.format(
+                        request=request, run_dir=run_dir, out=out, north_star=ns)})
+    return workers
+
+
 # --------------------------------------------------------------------------- helpers
 
 def _inbox(run_dir, stem: str, *, required: bool) -> Optional[dict]:
@@ -702,14 +730,110 @@ def produce_idea_lineage(run_dir, ts) -> Optional[str]:
                            "idea_lineage", "idea-evolver", {"lineages": lineages}, ts)
 
 
+def _produce_idea_quality_gate(run_dir, ts) -> Optional[str]:
+    """Deterministic idea-quality gate over the MERGED IDEATE bundle (director lock 2026-08-09:
+    supervisor/verifier rejects substandard products; the repair loop extends from what exists).
+
+    Every idea must carry: non-empty research_question / mechanism_hypothesis / difference_from_prior_art,
+    causal_chain with >=2 links, and — for mechanism_invention/method_invention tier — a non-null
+    invention_claim. Defects are raised as a TargetedGateBlock on the idea-merger (the single writer of
+    the IDEATE bundle), so the repair loop re-runs the merger with the defect list, not a fresh
+    single-proposer pass. The gate verdict is persisted as an artifact for the report."""
+    b = _inbox(run_dir, "IDEATE", required=False)
+    if b is None:
+        return None
+    ideas = [i for i in (b.get("ideas") or []) if isinstance(i, dict)]
+    defects = []
+    for idx, idea in enumerate(ideas):
+        iid = idea.get("idea_id", f"#{idx}")
+        checks = [
+            ("research_question", bool((idea.get("research_question") or "").strip())),
+            ("mechanism_hypothesis", bool((idea.get("mechanism_hypothesis") or "").strip())),
+            ("causal_chain", len(idea.get("causal_chain") or []) >= 2),
+            ("difference_from_prior_art", bool((idea.get("difference_from_prior_art") or "").strip())),
+        ]
+        if idea.get("contribution_tier") in ("mechanism_invention", "method_invention"):
+            checks.append(("invention_claim", bool((idea.get("invention_claim") or "").strip())))
+        for field, ok in checks:
+            if not ok:
+                defects.append(f"{iid}: missing/weak {field}")
+    verdict = {
+        "n_ideas": len(ideas),
+        "n_defective": len(defects),
+        "defects": defects,
+        "gate": "PASS" if not defects else "BLOCK",
+    }
+    path = _write_or_block(run_dir, "IDEATE", "idea-quality-gate.artifact.json",
+                           "idea_quality_gate", "quality-controller", verdict, ts)
+    if defects:
+        _local_supplement(
+            f"idea-quality gate: {len(defects)} defective idea(s) in the merged bundle — "
+            f"re-run the merger with this defect list (preserve every unaffected idea):\n"
+            + "\n".join(f"- {d}" for d in defects[:40]),
+            agent="idea-merger",
+            location="inbox/IDEATE.bundle.json",
+            defect_id="idea-quality-gate",
+        )
+    return path
+
+
+def _produce_novelty_verification_gate(run_dir, ts) -> Optional[str]:
+    """Deterministic novelty-verification gate over the COLLISION bundle (director lock 2026-08-09:
+    novelty verification is the run's hard requirement — a menu where most ideas are UNVERIFIED is
+    not a menu).
+
+    Verdicts: collision / adjacent / clear count as VERIFIED; `unverified` counts against. If fewer
+    than 70% of audited ideas are VERIFIED, the gate BLOCKs the stage with a targeted repair on the
+    novelty-collision-checker (extend retrieval, then re-audit the unverified subset). The verdict is
+    persisted so the report can cite it."""
+    b = _inbox(run_dir, "COLLISION", required=False)
+    if b is None:
+        return None
+    findings = [f for f in (b.get("findings") or []) if isinstance(f, dict)]
+    n = len(findings)
+    verified = [f for f in findings if f.get("verdict") in ("collision", "adjacent", "clear")]
+    n_verified = len(verified)
+    ratio = (n_verified / n) if n else 0.0
+    verdict = {
+        "n_audited": n,
+        "n_verified": n_verified,
+        "n_unverified": n - n_verified,
+        "verified_ratio": round(ratio, 3),
+        "floor": 0.7,
+        "gate": "PASS" if n and ratio >= 0.7 else "BLOCK",
+    }
+    path = _write_or_block(run_dir, "IDEATE", "novelty-verification-gate.artifact.json",
+                           "novelty_verification_gate", "quality-controller", verdict, ts)
+    if n and ratio < 0.7:
+        unverified_ids = [f.get("idea_id") for f in findings if f.get("verdict") == "unverified"]
+        _local_supplement(
+            f"novelty-verification gate: {n_verified}/{n} ideas VERIFIED (floor 70%) — "
+            f"extend retrieval and re-audit these ideas with full-text reading: "
+            + ", ".join(str(i) for i in unverified_ids[:30]),
+            agent="novelty-collision-checker",
+            location="inbox/COLLISION.bundle.json",
+            defect_id="novelty-verification-gate",
+        )
+    return path
+
+
 def deep_ideate_producers(run_dir, ts, *, required: bool) -> Tuple[List[str], dict]:
-    """The deep IDEATE producer sequence (experiment sketches + idea lineage), shared by deep_ideation
-    (required=True) and new_direction (required=False). idea_lineage is always assembled from whatever
-    artifacts exist (it degrades to a backlog-only lineage when no upstream deep artifacts are present)."""
+    """The deep IDEATE producer sequence, shared by deep_ideation (required=True) and new_direction
+    (required=False).
+
+    The supervisor gates (idea quality + novelty verification floor) are STRICT-only: they run for
+    deep_ideation (required=True) and are skipped for new_direction's lighter chain, whose legacy
+    bundle shape predates the multi-view panel contract. idea_lineage is always assembled from
+    whatever artifacts exist."""
+    quality = novelty = None
+    if required:
+        quality = _produce_idea_quality_gate(run_dir, ts)
+        novelty = _produce_novelty_verification_gate(run_dir, ts)
     sketches = produce_experiment_sketches(run_dir, ts, required=required)
     lin = produce_idea_lineage(run_dir, ts)
-    paths = list(sketches) + ([lin] if lin else [])
-    frag = {"deep_ideate": {"experiment_sketches": len(sketches), "idea_lineage": bool(lin)}}
+    paths = list(filter(None, [quality, novelty])) + list(sketches) + ([lin] if lin else [])
+    frag = {"deep_ideate": {"idea_quality_gate": bool(quality), "novelty_verification_gate": bool(novelty),
+                            "experiment_sketches": len(sketches), "idea_lineage": bool(lin)}}
     return paths, frag
 
 

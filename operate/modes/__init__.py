@@ -34,6 +34,7 @@ from . import (
     ingest_paper,
     m2_accept,
     manuscript_authoring,
+    manuscript_reconstruction,
     manuscript_review,
     new_direction,
     power_analysis_review,
@@ -58,6 +59,7 @@ REGISTRY = {
     "read_paper_deep": read_paper_deep,
     # Paper authoring and independent review are deliberately separate operated products.
     "manuscript_authoring": manuscript_authoring,
+    "manuscript_reconstruction": manuscript_reconstruction,
     "manuscript_review": manuscript_review,
     # ------------------------------------------------------------------ wave 2 (2026-08-04)
     # The director's call: every mode that is not STRUCTURALLY manual becomes one-button. Nothing
@@ -86,5 +88,5 @@ __all__ = ["REGISTRY", "aers_enhanced_research_pack", "analysis_audit_panel", "c
            "deep_ideation", "deep_research", "design_experiment", "evidence_deep",
            "evidence_review", "full_new_direction", "full_rigor_minimal", "gap_breadth",
            "gap_scan", "ideate_ring", "ingest_paper", "m2_accept", "manuscript_authoring",
-           "manuscript_review", "new_direction", "power_analysis_review", "read_paper_deep",
+           "manuscript_reconstruction", "manuscript_review", "new_direction", "power_analysis_review", "read_paper_deep",
            "repo_code_audit", "venue_readiness", "verify_result"]

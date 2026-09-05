@@ -235,12 +235,13 @@ materially contradicted. Never bet, select, approve, or write a director decisio
 
 COVERAGE-DISTRIBUTION ADVISORY (signal, never a defect)
 Report the distribution of the evidence the panel actually used across three dimensions — publication
-year, method family, and venue/community — as `distribution_advisory`. Where one bucket holds >=80% of
-the sources, name the concentration with its fraction and state the SEARCH RESPONSE that would balance
-it (e.g. backward citation chaining to the foundational work, adding a qualitative/mechanistic query,
-querying a different community's vocabulary). This is a coverage-distribution signal, not a defect:
-the evidence base stays valid and nothing is blocked. The question it asks is only whether the corpus
-distribution matches the question being asked.
+year, method family, and venue/community — as `distribution_advisory` INSIDE the `dimensions` object
+(top-level `distribution_advisory` is rejected by the schema — put it in dimensions only). Where one
+bucket holds >=80% of the sources, name the concentration with its fraction and state the SEARCH
+RESPONSE that would balance it (e.g. backward citation chaining to the foundational work, adding a
+qualitative/mechanistic query, querying a different community's vocabulary). This is a
+coverage-distribution signal, not a defect: the evidence base stays valid and nothing is blocked. The
+question it asks is only whether the corpus distribution matches the question being asked.
 
 Write ONLY JSON to `{out}`:
 {{"audits":[{{
@@ -255,9 +256,6 @@ Write ONLY JSON to `{out}`:
   }},
   "strongest_objection":"<best reason not to spend research budget>",
   "required_repairs":["<repair or missing evidence>"],
-  "distribution_advisory":{{"publication_year":"<the concentration + its fraction, or 'balanced'>",
-    "method_family":"<...>","venue_community":"<...>",
-    "search_response":"<the query that would balance the corpus, when one bucket holds >=80%>"}},
   "evidence_ref":["<real predecessor/source ref>"]
 }}]}}"""
 
@@ -278,10 +276,11 @@ def _worker_model(model_policy: str, agent: str = "") -> str:
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
                sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
-               queries=None) -> str:
+               queries=None, **funnel_kwargs) -> str:
     """Live-retrieval pre-step (audit H5/M1)."""
     return _shared.pre_search(run_dir, request, ts, transport=transport,
-                              sources=sources, limit_per_source=limit_per_source, queries=queries)
+                              sources=sources, limit_per_source=limit_per_source, queries=queries,
+                              **funnel_kwargs)
 
 
 def _bundle_path(run_dir, agent: str) -> Path:

@@ -4,6 +4,11 @@
 # Dynamic routing picks an entry_stage + agent_subset; gated stages cannot be skipped (see router).
 known_artifact_types:
   - task_frame
+  # 2026-08-20 team upgrade payloads
+  - search_channel_health
+  - extraction_reliability_report
+  - external_review_decomposition
+  - claim_check_concurrence
   - domain_profile
   - run_manifest
   - ledger_event
@@ -17,17 +22,24 @@ known_artifact_types:
   - result_summary
   - review_report
   - report_note
+  - research_dossier_review
+  - research_convergence_verdict
+  - research_delivery_boundary
+  - project_state_snapshot
   - aers_skill_integration_plan
   - numeric_benchmark_report
 
 stages:
   DISCOVER:
-    allowed_agents: [lit-scout, direction-grounding-scout, model-dataset-scout, evidence-verifier, repo-code-verifier,
+    allowed_agents: [external-review-decomposer,  # 2026-08-20 team upgrade
+                     lit-scout, direction-grounding-scout, model-dataset-scout, evidence-verifier, repo-code-verifier,
                      literature-ingest, paper-note-extractor, source-claim-verifier,
                      source-quality-ranker, evidence-search-moderator, claim-extractor, claim-evidence-linker,
                      citation-coverage-auditor,
                      contradiction-miner, dataset-card-builder, staleness-auditor, citation-integrity-auditor,
-                     landscape-mapper, paper-appraiser, method-teardown-extractor, figure-reader,
+                     landscape-mapper, research-dossier-method-reviewer,
+                     research-dossier-implementation-reviewer, research-dossier-evidence-reviewer,
+                     research-convergence-chair, paper-appraiser, method-teardown-extractor, figure-reader,
                      paper-structure-mapper, paper-reading-planner, result-table-auditor,
                      math-algorithm-verifier, paper-relations-mapper, trend-card-builder,
                      project-context-aligner, domain-transfer-critic,
@@ -47,7 +59,10 @@ stages:
     allowed_agents: [hypothesis-generator, idea-tournament-ranker, idea-evolver, feasibility-reranker,
                      novelty-collision-checker, experiment-planner,
                      # 2026-08-07 registry HANDOFF: new_direction/deep_ideation's B1 six-operator seat.
-                     divergence-operator-runner]
+                     divergence-operator-runner,
+                     # 2026-08-09 director lock: multi-view IDEATE panel seats.
+                     proposer-mechanism, proposer-tension, proposer-analogy, proposer-corpus,
+                     idea-merger]
     blocking_gates: []
     exit_artifacts: [idea_backlog]
     next: DESIGN
@@ -96,7 +111,7 @@ stages:
                      manuscript-introduction-author,
                      manuscript-related-work-author, manuscript-methods-author,
                      manuscript-results-author, manuscript-section-author,
-                     manuscript-figure-table-engineer, manuscript-integrator,
+                     manuscript-figure-table-engineer, manuscript-synthesis-editor,
                      # wave-2 backlog closed (2026-08-07): aers_enhanced_research_pack's ANALYZE
                      # stage (submission/bibliography half of audit_benchmarks_and_submission) is
                      # where these two actually run, never VERIFY where they were mis-registered
@@ -108,8 +123,7 @@ stages:
   VERIFY:
     allowed_agents: [review-configurator, methodology-reviewer, domain-reviewer, adversarial-reviewer,
                      verify-synthesizer,
-                     scientific-critic, review-synthesizer, synthesis-writer, contribution-ledger-builder,
-                     threats-to-validity-writer, review-response-simulator, venue-review-configurator,
+                     scientific-critic, review-synthesizer, venue-review-configurator,
                      venue-selector, venue-reviewer-persona, venue-reviewer-methodology,
                      venue-reviewer-domain, venue-reviewer-adversarial, area-chair-synthesizer,
                      baseline-scout, sub-domain-historian, submission-guideline-scout,
@@ -128,7 +142,7 @@ stages:
     next: REPORT
   REPORT:
     allowed_agents: [quality-controller, integrity-refusal-recommender, manuscript-polish-editor,
-                     manuscript-submission-packager, hypothesis-compiler,
+                     hypothesis-compiler,
                      # 2026-08-07 registry HANDOFF: new_direction/deep_ideation's B5 advisory-recommender seat.
                      direction-decision-advisor]   # RAT-2 Wave-3: deep_ideation REPORT aggregation 鈥?closes audit A2 (quality-controller scorecard route placed at REPORT) + A3 (integrity-refusal-recommender given a real FSM-stage home; ADVISORY-only, decision stays the director's)
     blocking_gates: []

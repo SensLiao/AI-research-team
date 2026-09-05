@@ -1056,7 +1056,7 @@ def _scope_section(audit: dict, findings: list, plan: dict, auth: Optional[dict]
 def _findings_section(findings: list) -> str:
     if not findings:
         return ("无 —— verifier 报告了零个 finding。这是「没找到」，不是「没查」：仓库 scope 与真正走过的 "
-                "surface 数量见上一节；空清单只在 verifier 的 bundle 落盘、且经过 schema 与证据校验后才会渲染成这一行。\n\n"
+                "surface 数量见上一节；空清单只在 verifier 的 bundle 写进文件、且经过 schema 与证据校验后才会渲染成这一行。\n\n"
                 "None found — the verifier reported zero findings. This row is rendered only after its "
                 "bundle passed shape and evidence validation, so it means 'nothing found', not "
                 "'nothing looked at'.")
@@ -1106,7 +1106,7 @@ def _applied_section(plan: dict, auth: Optional[dict], record: Optional[dict],
     if record is None:
         return (f"**未授权 —— 只出了计划，没有改动任何文件。** 本次 run 的 inbox 里没有 "
                 f"`{AUTHORIZATION_REL}`，所以 `code-implementer` / `unit-test-writer` / "
-                f"`sandbox-runner` / `repro-runner` 四个席位一个都没派，仓库里零个文件被写过。"
+                f"`sandbox-runner` / `repro-runner` 四个 agent 一个都没派，仓库里零个文件被写过。"
                 f"上一节的 {len(plan['changes'])} 条是**提议**，不是改动。\n\n"
                 f"三道改动边界守卫（preflight / change-boundary / plan-vs-applied parity）标记为 "
                 f"**NOT_APPLICABLE**：它们没有东西可查，所以没有写出任何 verdict artifact —— "

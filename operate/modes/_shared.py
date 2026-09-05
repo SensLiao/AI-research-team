@@ -44,6 +44,16 @@ from ...tools.paper_search import (
     write_search_bundle,
 )
 from ...tools.schema_normalizer import normalize_payload, write_report
+from ...tools.scholar_clients import sanitize_scholar_error
+from ...tools.search_funnel import (
+    FUNNEL_VERSION,
+    combine_funnel_results,
+    combine_related_queries,
+    funnel as run_funnel,
+    merge_funnel_into_search_result,
+    recursive_search,
+    write_funnel_bundle,
+)
 from ...tools.scope_guard import discover_vault_root
 from ...tools.validate_artifact import PROFILE_DIR, validate_payload
 
@@ -55,6 +65,14 @@ EXISTENCE_TRANSPORT = None
 # None (production) -> discover the real two-repo layout; a path -> force that vault;
 # False -> force 'no vault reachable' (slug checks degrade to warnings — the offline-safe state).
 VAULT_ROOT_OVERRIDE = None
+
+# Four-stage funnel inside pre-search (director decision 2026-09-05: ON by default). Depth 1 runs
+# the four stages over the plan's queries; deep_research passes funnel_depth=2 so one round of
+# machine-proposed related queries follows. `funnel=False` (CLI `--no-funnel`) skips it.
+FUNNEL_DEPTH = 1
+FUNNEL_BREADTH = 2
+FUNNEL_LIMIT_BROAD = 20      # per source at stage 1 (the facade's own plan keeps limit_per_source)
+FUNNEL_LIMIT_FINAL = 10      # per query after stage 4
 
 
 def resolve_vault_root(default_vault=None):
@@ -291,6 +309,34 @@ def _control_field_name(name: str) -> bool:
     )
 
 
+def _attach_at_pointer(document, pointer: str, value) -> bool:
+    """Set `value` at a JSON Pointer inside `document` (in place). Returns False
+    when the pointer's parent target does not exist — the caller then escalates.
+    Only dict/list structural walking; no scientific judgment is applied."""
+    if not pointer or pointer == "/":
+        return False
+    parts = [
+        str(part).replace("~1", "/").replace("~0", "~")
+        for part in pointer.lstrip("/").split("/")
+    ]
+    node = document
+    for part in parts[:-1]:
+        if isinstance(node, dict):
+            node = node.get(part)
+        elif isinstance(node, list) and part.isdigit() and int(part) < len(node):
+            node = node[int(part)]
+        else:
+            return False
+    last = parts[-1]
+    if isinstance(node, dict):
+        node[last] = value
+        return True
+    if isinstance(node, list) and last.isdigit() and int(last) < len(node):
+        node[int(last)] = value
+        return True
+    return False
+
+
 def normalize_worker_payload(
     run_dir,
     stage: str,
@@ -342,17 +388,33 @@ def normalize_worker_payload(
     )
     report["representation_advisories"] = conflict_advisories
     report["blocking_representation_conflicts"] = blocking_conflicts
+    # Director lock 2026-08-16: a trust/scientific control field carried as an extra is
+    # RE-ATTACHED into the canonical payload and recorded as an advisory — it no longer
+    # triggers a repair wave. Bookkeeping classes (provenance hints, hash bindings) must
+    # not loop the machine when the science is verified; the advisories stay visible in
+    # the normalization report for the director.
     unsafe_extras = []
+    kept_control_fields = []
     for row in report.get("preserved_extras") or []:
         pointer = str(row.get("pointer") or "")
         leaf = pointer.rsplit("/", 1)[-1].replace("~1", "/").replace("~0", "~").casefold()
         if _control_field_name(leaf):
             unsafe_extras.append(row)
-            errors.append(
-                f"trust/scientific control field {leaf!r} at {pointer or '<root>'} "
-                "cannot be removed as formatting"
-            )
+            value = row.get("value")
+            if _attach_at_pointer(normalized, pointer, value):
+                kept_control_fields.append({"pointer": pointer, "value": value})
+            else:
+                errors.append(
+                    f"trust/scientific control field {leaf!r} at {pointer or '<root>'} "
+                    "could not be re-attached (pointer target missing)"
+                )
     report["unsafe_preserved_extras"] = unsafe_extras
+    report["kept_control_fields"] = kept_control_fields
+    if kept_control_fields:
+        post_errors = validate_payload(artifact_type, normalized)
+        for err in post_errors:
+            if err not in errors:
+                errors.append(err)
     report.update({
         "stage": str(stage),
         "agent": str(agent),
@@ -488,7 +550,17 @@ def run_existence_gate(run_dir, stage: str, ts: str, refs: List[str]) -> Tuple[s
     clean = [r for r in dict.fromkeys(str(r).strip() for r in refs) if r]
     cache = ExistenceCache(str(Path(run_dir) / "inbox" / "citation-cache.sqlite"))
     try:
-        verdict = build_existence_verdict(clean, ts, transport=EXISTENCE_TRANSPORT, cache=cache)
+        # Local, hash-bound refs are evidence pointers, not paper titles.  Permit only files that
+        # resolve inside this run or the machine workspace; citation_existence re-reads and hashes
+        # them on every call, while DOI/arXiv/title refs retain the existing live lookup path.
+        workspace_root = Path(__file__).resolve().parents[3]
+        verdict = build_existence_verdict(
+            clean,
+            ts,
+            transport=EXISTENCE_TRANSPORT,
+            cache=cache,
+            local_roots=(Path(run_dir).resolve(), workspace_root),
+        )
     finally:
         cache.close()
     status = {"BLOCK": "blocked", "UNVERIFIED": "draft"}.get(str(verdict["verdict"]), "approved")
@@ -545,7 +617,8 @@ def check_referential_integrity(refs: Iterable[str], known_ids: Set[str],
 
 def pre_search(run_dir, request: str, ts: str, transport=None,
                sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
-               queries=None) -> str:
+               queries=None, funnel: bool = True, funnel_depth: int = FUNNEL_DEPTH,
+               funnel_breadth: int = FUNNEL_BREADTH) -> str:
     """Deterministic live-retrieval pre-step: drop inbox/search-results.json for the worker AND
     the novelty grounding signal. A dead network degrades to an empty-records bundle with
     source_errors recorded — the run proceeds vault-only and the report says so; nothing is
@@ -596,7 +669,51 @@ def pre_search(run_dir, request: str, ts: str, transport=None,
         res["task_request"] = request
     except Exception as e:  # total failure (e.g. bad query) -> recorded, never invented
         res = {"query": request, "records": [], "source_errors": {"all": str(e)}}
+        return write_search_bundle(run_dir, request, res, ts)
+    if funnel:
+        run_funnel_step(run_dir, res, list(queries or [request]), ts, transport=transport,
+                        sources=sources, depth=funnel_depth, breadth=funnel_breadth)
     return write_search_bundle(run_dir, request, res, ts)
+
+
+def run_funnel_step(run_dir, res: dict, queries: List[str], ts: str, *, transport=None,
+                    sources=("arxiv", "openalex", "crossref", "s2"), depth: int = FUNNEL_DEPTH,
+                    breadth: int = FUNNEL_BREADTH) -> dict:
+    """The AgentSearch-pattern four-stage funnel (tools/search_funnel) over the same query plan,
+    folded into the pre-search bundle IN PLACE.
+
+    - the full result (passage snippets, per-stage counts, rounds) is written to
+      ``inbox/search-funnel.json``; the metadata bundle only gains ``funnel_rank`` /
+      ``funnel_score`` on its records, funnel-only records as metadata rows, the
+      ``related_queries`` menu and a ``funnel`` summary;
+    - never raises: a failure is recorded as ``funnel.status == "failed"`` and the facade's
+      own records / ``source_errors`` stand exactly as ``search_many`` produced them.
+    """
+    summary = {"status": "ok", "version": FUNNEL_VERSION, "depth": int(depth),
+               "breadth": int(breadth), "bundle": "inbox/search-funnel.json"}
+    try:
+        per_query = []
+        for q in queries:
+            kw = dict(sources=sources, limit_broad=FUNNEL_LIMIT_BROAD, limit_final=FUNNEL_LIMIT_FINAL,
+                      transport=transport)
+            per_query.append(recursive_search(q, depth=int(depth), breadth=int(breadth), **kw)
+                             if int(depth) > 1 else run_funnel(q, **kw))
+        combined = combine_funnel_results(per_query)
+        write_funnel_bundle(run_dir, {"funnel_version": FUNNEL_VERSION, "queries": list(queries),
+                                      "depth": int(depth), "breadth": int(breadth),
+                                      "results": per_query, "records": combined}, ts)
+        summary["stage_counts"] = [r.get("stage_counts") for r in per_query if r.get("stage_counts")]
+        summary["expansion_stop_reasons"] = [r["expansion_stop_reason"] for r in per_query
+                                             if r.get("expansion_stop_reason")]
+        summary["channels_lost"] = sorted({c for r in per_query for c in (r.get("channels_lost") or [])})
+        summary["source_errors"] = {f"q{i}:{k}": sanitize_scholar_error(v)
+                                    for i, r in enumerate(per_query, 1)
+                                    for k, v in (r.get("source_errors") or {}).items()}
+        merge_funnel_into_search_result(res, combined, summary=summary)
+        res["related_queries"] = combine_related_queries(per_query)
+    except Exception as e:
+        res["funnel"] = dict(summary, status="failed", error=sanitize_scholar_error(e))
+    return res
 
 
 def search_records(run_dir) -> List[dict]:

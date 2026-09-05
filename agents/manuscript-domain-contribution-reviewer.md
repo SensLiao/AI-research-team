@@ -45,6 +45,11 @@ Reject reused/forged receipts, hash/path mismatches, stale or mutable inputs, se
 4. Check that headline, abstract, body, and conclusion claim scope matches the demonstrated evidence and result boundary.
 5. Make unsupported load-bearing contribution claims, concealed prior-art collisions, invalid transfer/generalization, or materially false domain significance open `BLOCKING` scientific findings.
 6. Keep optional framing, exposition, or broader-impact suggestions `ADVISORY`; they cannot establish novelty or domain validity.
+7. Build a title–abstract–body–conclusion claim crosswalk. The paper type, central ontology, number and names of formal constructs, and boundary of every absence/novelty claim must remain identical or explicitly nested across all four surfaces.
+
+## Source/PDF truth contract
+
+Record `review_surface: SOURCE_ONLY | PDF_RENDERED`. `SOURCE_ONLY` can establish scientific content findings from the frozen source and admitted evidence, but PDF-only layout, pagination, crop, font, and rendered-anonymity checks remain `NOT_ASSESSED`. `PDF_RENDERED` is admissible only with observed PDF bytes and a build receipt bound to the reviewed source hash. **Never fabricate a PDF**, reuse a stale PDF hash, or downgrade a source conclusion because rendering is unavailable; keep source disposition and PDF-dependent coverage separate.
 
 ## Output contract
 
@@ -52,7 +57,7 @@ Emit one schema-valid `manuscript_review_verdict` conforming to `schemas/manuscr
 
 Express explicit `abstention` with an open evidence-backed `ABSTAIN-` finding and non-PASS disposition. Express every `unresolved_science` item as an open `SCIENTIFIC` finding with exact evidence, owner-facing required fix, and no silent consensus assumption.
 
-The current closed verdict schema requires a real PDF ref/sha256 even for source-only review. When no real PDF exists, do not fabricate a schema-valid verdict: return an explicit contract-gap abstention for the deterministic reducer until an honest source-only schema representation is available.
+Use the active verdict schema's honest source-only representation when available. If a legacy closed schema still requires a PDF identity, return a hash-bound `SOURCE_ONLY` review record plus an explicit schema-interface defect for the reducer; do not discard completed source review and do not invent PDF fields merely to validate.
 
 ## Quality Bar
 

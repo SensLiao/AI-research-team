@@ -10,7 +10,7 @@ workers*. Measuring first (2026-08-04) changed both halves of that:
     dispatch of dormant workers" half solves a problem this tree does not have.
   - What is real is a **roster-versus-dispatch gap**: 15 seats are declared in an operated mode's
     `agent_subset` yet never named by that mode's recipe — they fire only on the mechanism-council
-    path. So "35 席" for `full_rigor_minimal` is a ceiling, not a plan, and this module is what lets
+    path. So "35 个 agent" for `full_rigor_minimal` is a ceiling, not a plan, and this module is what lets
     a card say so honestly (`docs/03-WORKFLOWS.md` §1 discipline).
   - And a **scalability fact**: only ONE of the twelve operated modes (`deep_research`) has a real
     depth knob in `plan_catalog.yaml`. For the other eleven the team is fixed, so a policy that
@@ -210,7 +210,7 @@ def team_plan(mode: str) -> dict[str, Any]:
                     "scalable": bool(knob),
                     "note": (f"团队规模可缩：用 `{knob['key']}`（{'/'.join(knob['options'])}）"
                              if knob else
-                             "这个模式的团队是固定的 —— 没有 depth 旋钮，不能只派一部分席位")}
+                             "这个模式的团队是固定的 —— 没有 depth 旋钮，不能只派一部分 agent")}
     raise KeyError(f"{mode!r} is not an operated mode")
 
 
@@ -265,12 +265,12 @@ def render_report() -> str:
     data = census()
     teams = mode_teams()
     t = data["totals"]
-    lines = ["# 团队席位盘点", "",
-             f"- **在册**：{t['rostered']} 席 = {t['control']} 控制席 + {t['workers']} 工人席",
-             f"- **被一键模式声明**：{t['declared_by_operated']} 席；"
-             f"**只在未接线模式里**：{t['spec_only']} 席",
-             f"- **无处可达的席位**：{t['unreachable']} 席"
-             + ("（没有闲置席位 —— 每一席都有地方能派它）" if not t["unreachable"] else "（⚠️ 有闲置席位）"),
+    lines = ["# 团队 agent 盘点", "",
+             f"- **在册**：{t['rostered']} 个 agent = {t['control']} 个控制 agent + {t['workers']} 个工人 agent",
+             f"- **被一键模式声明**：{t['declared_by_operated']} 个 agent；"
+             f"**只在未接线模式里**：{t['spec_only']} 个 agent",
+             f"- **无处可达的 agent**：{t['unreachable']} 个 agent"
+             + ("（没有闲置 agent —— 每一个 agent 都有地方能派它）" if not t["unreachable"] else "（⚠️ 有闲置 agent）"),
              ""]
     lines += ["## 每个一键模式：名单上限 vs 真正派发", "",
               "| 模式 | 可上场 | recipe 真派 | 只在 council 路径 | 能不能缩规模 |",
@@ -282,11 +282,11 @@ def render_report() -> str:
                      f"| {len(team['council_only'])} | {scale} |")
     tt = teams["totals"]
     lines += ["",
-              f"合计：可上场 {tt['ceiling']} 席次，recipe 真派 {tt['recipe_floor']} 席次，"
-              f"{tt['council_only']} 席次只在 council 路径上场。"
+              f"合计：可上场 {tt['ceiling']} 个名额，recipe 真派 {tt['recipe_floor']} 个名额，"
+              f"{tt['council_only']} 个名额只在 council 路径上场。"
               f"{tt['scalable_modes']}/{tt['modes']} 个模式有真的深浅旋钮。", "",
               "> 「可上场」是 registry 允许调用的名单上限，不是承诺会派这么多。"
-              "看起来多余的席位多半是**独立性机制**（互盲猎手、独立审计、不能自己查自己的查重员）——"
+              "看起来多余的 agent 多半是**独立性机制**（互相独立的搜索 agent 、独立审计、不能自己查自己的查重员）——"
               "为省预算砍掉它们，等于砍掉结论可信的理由。缩规模只能由 recipe 自己的旋钮来做。", ""]
     return "\n".join(lines).rstrip() + "\n"
 
@@ -298,7 +298,7 @@ def _emit(payload: Any) -> None:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m research_agent_teams.tools.worker_census",
-        description="席位盘点：谁在册、谁真被派、哪个模式能缩规模（只读）")
+        description="agent 盘点：谁在册、谁真被派、哪个模式能缩规模（只读）")
     sub = parser.add_subparsers(dest="verb", required=True)
     for verb, helptext in (("census", "the roster + where each seat is reachable from"),
                            ("teams", "per operated mode: ceiling / dispatch floor / council-only"),

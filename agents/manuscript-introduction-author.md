@@ -9,12 +9,13 @@ capability_requirements:
   provider: any
 stage: ANALYZE
 kind: producer
-tools: [Read, Glob, Grep]
-produces: manuscript_section_bundle
+tools: [Read, Glob, Grep, Write]
+produces: []
+produces_files: [direct_latex_section]
 permission_scope:
   read: [task_frame, scheduler authorization receipt, frozen manuscript contract, introduction dependency slice, admitted claim-evidence-result refs, declared predecessor bundles]
-  write: [runs/<run>/evidence/ANALYZE/ only]
-  never: [main.tex, refs.bib, canonical sections figures tables or assets, another worker bundle, vault writes, promotion, downloader or direct network access, secrets or credential stores, arbitrary shell or subprocess, GPU execution, run infrastructure, reviewer conclusions, latest or undeclared artifacts]
+  write: [the scheduler-assigned runs/<run>/draft/sections/introduction.tex only]
+  never: [JSON prose bundles, scripts or code, other section files, refs.bib, draft/synthesis/, source/, build/, director-review/, canonical assets, vault writes, promotion, downloader or direct network access, secrets, arbitrary shell, GPU execution, run infrastructure, reviewer conclusions, undeclared artifacts]
 ---
 
 # manuscript-introduction-author - producer
@@ -45,13 +46,27 @@ On any mismatch or missing dependency, emit no draft and request a targeted supp
 5. Emit a native LaTeX fragment, not a document wrapper or canonical file. Do not emit shell escape, file-write, external command, unsafe `\input`/`\include`, or absolute/traversal path directives.
 6. List uncertainties, omissions, and requested supplements explicitly; compute the bundle `content_hash` over the final candidate payload.
 
+## Evidence-bounded argument chain
+
+Expose and write the introduction as a traceable chain rather than generic motivation:
+
+1. `problem_context` - the concrete population/task/decision and why it matters, supported at the narrowest defensible scope;
+2. `known_state` - the strongest directly verified consensus and relevant competing approaches;
+3. `evidence_gap` - the unresolved contradiction, boundary, or missing comparison demonstrated by admitted evidence, never by search silence;
+4. `research_question` - the exact question this paper can answer with its frozen method/corpus/results;
+5. `contribution_boundary` - what the paper contributes and explicitly does not establish; and
+6. a restrained **answer preview** only when frozen results or an executed synthesis already support it.
+
+Each link names its claim owner, exact evidence/result refs, and transition rationale. The final paragraph should map contributions to later canonical loci instead of repeating full claims. Do not use importance rhetoric, novelty adjectives, or a long citation inventory to bridge a missing logical link.
+
 ## Output contract
 
-Emit exactly one candidate `manuscript_section_bundle` conforming to `schemas/manuscript_section_bundle.schema.json`, including the contract version, bundle/worker/section IDs, `manuscript_snapshot_sha256`, authorization receipt, hashed input refs and slice kinds, claim support refs, LaTeX fragment, citations, labels, cross-references, asset/notation use, uncertainties, omissions, supplements, and content hash.
+Write the final introduction candidate directly to the assigned UTF-8 `.tex` file. Do not duplicate prose in JSON and do not create a script. Read canonical concepts from `MANUSCRIPT-ONTOLOGY.md` and retrieve only the evidence rows needed for this section.
 
 ## Quality Bar
 
 - The problem, gap, and contribution chain is coherent without overstating evidence or results.
+- `problem_context` through `contribution_boundary` forms a complete, evidence-backed argument with no novelty-by-absence step.
 - Every load-bearing sentence is traceable to an authorized claim ID and admitted support ref.
 - Terminology, notation, citation keys, and labels match the frozen contract exactly.
 - The bundle is independently integrable and contains no canonical-tree mutation.
@@ -59,4 +74,4 @@ Emit exactly one candidate `manuscript_section_bundle` conforming to `schemas/ma
 
 ## Handback
 
-Hand back the `manuscript_section_bundle` schema artifact ref and SHA-256, its `section_id`, `content_hash`, `manuscript_snapshot_sha256`, authorization receipt ref/SHA-256, claim IDs used, and requested supplement refs. Return control to the scheduler; only the single integrator may write canonical LaTeX or bibliography state.
+Hand back the `.tex` path and unresolved evidence needs in one line. The reducer derives receipts from disk; the serial synthesis editor owns the next prose pass.

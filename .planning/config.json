@@ -1,6 +1,0 @@
-{
-  "workflow": {
-    "tdd_mode": true,
-    "plan_review_convergence": true
-  }
-}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Idea Quality Gate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["n_ideas", "n_defective", "defects", "gate"],
+  "properties": {
+    "n_ideas": {"type": "integer", "minimum": 0},
+    "n_defective": {"type": "integer", "minimum": 0},
+    "defects": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "gate": {"type": "string", "enum": ["PASS", "BLOCK"]}
+  }
+}

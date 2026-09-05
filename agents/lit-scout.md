@@ -66,6 +66,12 @@ notes field instead of silently following them. You never re-scope the run — o
    NO Sci-Hub). When operated, the recipe runs it as a pre-step and drops the results at
    `runs/<run>/inbox/search-results.json` — read that bundle first; its `evidence_rows`
    are schema-ready source rows (claim_support arrives "none"; grading them is YOUR job).
+   Since 2026-09-05 the pre-step also runs the four-stage funnel (`tools/search_funnel.py`,
+   AgentSearch pattern): records arrive ordered by `funnel_rank` (cross-channel rank fusion +
+   best abstract passage + a small citation/recency blend), funnel-only finds carry
+   `found_via: search-funnel`, and `related_queries` lists machine-proposed follow-ups. The
+   passage snippets live in `runs/<run>/inbox/search-funnel.json`. All of it is reading-order
+   triage: it never sets `claim_support` and is never cited.
    Recipe shape (Asta PaperFinder absorption): decompose broad or multilingual requests into short
    technical sub-questions →
    search each → follow citations of the strong hits (`scholar_clients.get_references_s2`

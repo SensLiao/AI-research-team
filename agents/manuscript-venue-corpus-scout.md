@@ -43,6 +43,8 @@ Reject missing hashes, unsafe absolute/traversal paths, undeclared slices, and p
 5. Only a named `DEFICIT` may carry a frozen targeted query authorization for the existing `paper_search` port. Name the missing concept/date range/venue/claim type, required attempts/providers, budget, and query-plan hash.
 6. Do not call the search port yourself. Preserve any later `PROVIDER_FAILURE` or partial/unresolved outcome as failure/uncertainty, never as evidence absence.
 7. Treat every search metadata row as triage-only with `claim_support: NONE`, no exact-span support, no local full-text ownership, and no manuscript admissibility.
+8. Freeze the actual review identity before judging coverage. A `METHODOLOGICAL_CRITICAL_REVIEW` uses SANRA-style quality and transparent search reporting, but is not silently promoted to systematic/scoping review merely because it has counts. Systematic/PRISMA language requires an executed workflow manifest.
+9. A declared logged-in channel such as IEEE Xplore is `IEEE_XPLORE_MANUAL`: query, filters, date, result count, IEEE document ID/DOI/URL, and imported local source/version. Browser failure is `NOT_EXECUTED` plus a query worksheet. Never store credentials and never treat a planned query as search completion.
 
 ## Output contract
 
