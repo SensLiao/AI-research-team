@@ -1,0 +1,95 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://research-os/schemas/search_channel_health.schema.json",
+ "title": "Search Channel Health",
+ "description": "DISCOVER-stage gate artifact. Output of search-channel-auditor. Verifies every declared retrieval channel contributed, failure semantics are truthfully classed (BUDGET_EXHAUSTED/THROTTLED/AUTH/DOWN/PARSE), citation-chase receipts exist per seed when declared, harvests are checkpointed, and the records->deduped->papers->pool count chain is single-sourced. BLOCKs on: a declared channel with 0 yield and no named failure; a misassigned failure class; a declared chase arm with no receipts; an uncheckpointed multi-query harvest; two irreconcilable counts for one population. Failure-catalog items A1/A2/A5/A6/B1 (2026-08-20 team upgrade).",
+ "type": "object",
+ "required": [
+  "verdict",
+  "channels",
+  "count_chain"
+ ],
+ "properties": {
+  "verdict": {
+   "type": "string",
+   "enum": [
+    "PASS",
+    "BLOCK"
+   ]
+  },
+  "violations": {
+   "type": "array",
+   "items": {
+    "type": "object"
+   }
+  },
+  "channels": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "name",
+     "queries",
+     "returned",
+     "after_dedup"
+    ],
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "queries": {
+      "type": "integer"
+     },
+     "returned": {
+      "type": "integer"
+     },
+     "after_dedup": {
+      "type": "integer"
+     },
+     "failure_class": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "BUDGET_EXHAUSTED",
+       "THROTTLED",
+       "AUTH",
+       "DOWN",
+       "PARSE",
+       null
+      ]
+     }
+    }
+   }
+  },
+  "zero_yield_queries": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "chase_coverage": {
+   "type": [
+    "object",
+    "null"
+   ]
+  },
+  "checkpoint_receipts": {
+   "type": [
+    "object",
+    "null"
+   ]
+  },
+  "count_chain": {
+   "type": "object"
+  },
+  "notes": {
+   "type": [
+    "string",
+    "null"
+   ]
+  }
+ },
+ "additionalProperties": true
+}

@@ -214,7 +214,7 @@ def test_clean_panel_passes_and_renders_every_required_section(tmp_path):
         assert f"## {section}" in text
         body = text.split(f"## {section}", 1)[1].split("\n## ", 1)[0].strip()
         assert body, f"required section {section!r} rendered empty"
-    assert "无 —— 已检查 11 个独立诊断席位的产出，没有阻断项。" in text
+    assert "无 —— 已检查 11 个独立诊断 agent 的产出，没有阻断项。" in text
     assert "Panel independence and coverage" in text
 
     report_paths, _ = mode.run_dets(run_dir, "REPORT", TS)
@@ -414,7 +414,7 @@ def test_opposing_seats_produce_a_rendered_unresolved_disagreement(tmp_path):
     assert "the analysis calls the result 'stable'" in text
     assert "declared the figures clean" in text and "axis truncation flagged" in text
     assert "figure-vlm-critic" in text and "raised no concern" in text
-    assert "已检查 11 个独立诊断席位的产出，没有阻断项" not in text
+    assert "已检查 11 个独立诊断 agent 的产出，没有阻断项" not in text
 
 
 def test_declared_stability_that_the_seed_count_denies_is_reported(tmp_path):

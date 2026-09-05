@@ -21,8 +21,8 @@
 #   - DERIVED, NEVER DECLARED: team size, hop budget, human gates and the deliverable file path are
 #     read from mode_registry.yaml + plan_catalog.yaml at render time. They are deliberately absent
 #     from this file so a stale number here cannot mislead the director. This applies to PROSE too —
-#     writing "20 席深读报告" into a `deliverable` line is the same defect wearing a sentence, and
-#     validate_all rejects a seat count in prose. A number that is NOT derivable (e.g. "3 个互盲
+#     writing "20 个 agent 深读报告" into a `deliverable` line is the same defect wearing a sentence, and
+#     validate_all rejects a seat count in prose. A number that is NOT derivable (e.g. "3 个互相独立
 #     审稿人", a structural property of the mode's own recipe) is allowed and matches plan_catalog.
 #   - Chains are non-decreasing in `plan_catalog.yaml::phase_rank` (no venue before ideate).
 #   - `ceiling` is mandatory and rule-checked: a recipe containing `full_rigor_minimal` MUST state the
@@ -46,7 +46,7 @@ recipes:
       - id: survey
         label: "最省 · 先看有哪些空白，还不下注"
         modes: [gap_scan, full_new_direction]
-        why: "两个互盲猎人扫出候选空白（每条带出处），再把它们收敛成几条方向论纲。这条路刻意停在下注之前。"
+        why: "两个互相独立的搜索 agent 扫出候选空白（每条带出处），再把它们收敛成几条方向论纲。这条路刻意停在下注之前。"
       - id: quick
         label: "快 · 直接产点子"
         modes: [new_direction]
@@ -79,7 +79,7 @@ recipes:
         label: "标准 · 推荐"
         recommended: true
         modes: [read_paper_deep]
-        why: "20 席分工深读：主张、证据位置、方法拆解、结果复核、图表与数学、可复现材料。"
+        why: "20 个 agent 分工深读：主张、证据位置、方法拆解、结果复核、图表与数学、可复现材料。"
       - id: deep
         label: "最深 · 读完再放回文献里"
         modes: [read_paper_deep, evidence_deep]
@@ -145,7 +145,7 @@ recipes:
     want: "我想要一份稿子，外加一份专门挑毛病的独立审稿意见"
     deliverable: "稿件（分节草稿）+ 一份完全独立的审稿报告：主张、统计、图表、引用逐项挑问题"
     for_you_when: "结果已经成立，要把它写成能投的东西，并且先自己被审一遍。"
-    covers_intents: [write_manuscript]
+    covers_intents: [write_manuscript, write_review_article]
     variants:
       - id: quick
         label: "快 · 只审不写"
@@ -165,9 +165,33 @@ recipes:
       - "写稿模式不投稿、不发表、不进库——它只生产稿件。"
 
   # --------------------------------------------------------------------------------------------------
+  review-response-closed:
+    want: "我收到真实审稿意见，要逐条核验、直接修稿并复审最终版本"
+    deliverable: "旧意见—当前稿 crosswalk + 直接修改后的 LaTeX/PDF + closure 表 + 一份不看旧意见的最终盲审"
+    for_you_when: "导师、编辑或外部审稿意见已经到达，而且部分问题可能已在当前稿中解决。"
+    covers_intents: [respond_to_review]
+    variants:
+      - id: quick
+        label: "快 · 只核验不改"
+        modes: [manuscript_reconstruction]
+        why: "只生成逐条 current-status/owner/acceptance crosswalk。"
+      - id: default
+        label: "标准 · 推荐"
+        recommended: true
+        modes: [manuscript_reconstruction, manuscript_authoring, manuscript_review]
+        why: "closure audit 看旧意见；authoring 直接改 LaTeX；fresh blind review 只看最终稿。"
+      - id: deep
+        label: "最深 · 加投稿体检"
+        modes: [manuscript_reconstruction, manuscript_authoring, manuscript_review, venue_readiness]
+        why: "标准闭环后再按目标期刊规则检查。"
+    ceiling:
+      - "ALREADY_SATISFIED 不重复返工；OPEN/BLOCKED 不得伪装为关闭。"
+      - "最终盲审不读取旧审稿文本，且必须绑定最终 source tree/PDF。"
+
+  # --------------------------------------------------------------------------------------------------
   submit-or-not:
     want: "我想知道这个结果够不够投、该投哪里"
-    deliverable: "冻结的就绪度评分表 + 3 个互盲模拟审稿人的意见 + 元评审结论 + 目标会议候选"
+    deliverable: "冻结的就绪度评分表 + 3 个互相独立的模拟审稿人的意见 + 元评审结论 + 目标会议候选"
     for_you_when: "手上有结果，在纠结现在投、还是再补一轮实验。"
     covers_intents: [prep_submission]
     variants:
@@ -203,7 +227,7 @@ recipes:
       - id: quick
         label: "快 · 只审分析"
         modes: [analysis_audit_panel]
-        why: "诊断席位各自独立跑完再综合;两个席位判断打架时,分歧原样给你看,不挑赢家。"
+        why: "诊断 agent 各自独立跑完再综合;两个 agent 判断打架时,分歧原样给你看,不挑赢家。"
       - id: default
         label: "标准 · 推荐"
         recommended: true
@@ -226,7 +250,7 @@ recipes:
       - id: quick
         label: "快 · 只看一眼"
         modes: [check_run]
-        why: "观察席位只报观察到的,独立分诊席位才给可能原因和干预选项 —— 看的人不兼判断的人。"
+        why: "观察 agent 只报观察到的,独立分诊 agent 才给可能原因和干预选项 —— 看的人不兼判断的人。"
       - id: default
         label: "标准 · 推荐"
         recommended: true
@@ -294,7 +318,7 @@ recipes:
         label: "标准 · 唯一档"
         recommended: true
         modes: [aers_enhanced_research_pack]
-        why: "八席分两半:检索与 AERS 参考包适用性独立跑;数据协议审计有反泄漏硬门;复现材料与基准证据分别审计;投稿清单与独立文献核验互不看对方;最后稿件润色标出哪些改动需要作者确认。"
+        why: "八个 agent 分两半:检索与 AERS 参考包适用性独立跑;数据协议审计有反泄漏硬门;复现材料与基准证据分别审计;投稿清单与独立文献核验互不看对方;最后稿件润色标出哪些改动需要作者确认。"
     ceiling:
       - "**EXECUTE 环节只做打包与审计,不代表任何实验真的跑过。** own_measured_metrics 结构上强制为空,数值化复算的 verdict 是机检事实,不是散文声称。"
       - "这是引用为准的材料包,不是就绪度判决——要不要投、投哪里仍是 /venue-pick、/venue-decide 你自己定。"

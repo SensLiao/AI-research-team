@@ -35,7 +35,7 @@ from research_agent_teams.tools.formal_problem_schema import (
 # --------------------------------------------------------------------------- schema (loaded direct)
 
 _SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent / "schemas" / "problem_abstraction.schema.json"
+    Path(__file__).resolve().parents[2] / "research_agent_teams" / "schemas" / "problem_abstraction.schema.json"
 )
 
 

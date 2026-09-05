@@ -27,7 +27,7 @@ from research_agent_teams.tools.validate_artifact import validate_against
 
 SCHEMA = "paper_appraisal.schema.json"
 _SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent / "schemas" / SCHEMA
+    Path(__file__).resolve().parents[2] / "research_agent_teams" / "schemas" / SCHEMA
 )
 
 

@@ -17,7 +17,7 @@ import pytest
 from research_agent_teams.operate.artifacts import write_artifact
 from research_agent_teams.operate.modes import manuscript_authoring as authoring
 from research_agent_teams.tools.validate_artifact import validate_artifact
-from tests.test_manuscript_predraft_schemas import (
+from .test_manuscript_predraft_schemas import (
     valid_local_literature_coverage,
     valid_manuscript_contract,
 )
@@ -62,6 +62,7 @@ def _contract(*, sections: list[str]) -> dict:
             }
         )
         slices.append(_slice(slice_id, role))
+    slices.append(_slice("slice-assets", "manuscript-figure-table-engineer"))
     return {
         "run_id": "run-001",
         "paper_type": "EMPIRICAL",
@@ -211,7 +212,15 @@ def _prepare_design_slice_run(
     )
     _write_json(
         run_dir / authoring.ARCHITECT_REL,
-        {"payload": {"manuscript_contract_draft": {}}},
+        {
+            "payload": {
+                "manuscript_contract_draft": {
+                    key: copy.deepcopy(value)
+                    for key, value in frozen.items()
+                    if key != "manuscript_snapshot_sha256"
+                }
+            }
+        },
     )
     admission = {
         "claim_evidence_map": _claim_evidence_map(),
@@ -225,13 +234,16 @@ def _prepare_design_slice_run(
         run_dir / authoring.EVIDENCE_STEWARD_REL,
         {"payload": {"manuscript_evidence_admission": admission}},
     )
-    monkeypatch.setattr(
-        authoring,
-        "freeze_manuscript_contract",
-        lambda *_args, **_kwargs: copy.deepcopy(frozen),
-    )
+    freeze_input = {}
+
+    def fake_freeze(contract_draft, *_args, **_kwargs):
+        freeze_input["contract_draft"] = copy.deepcopy(contract_draft)
+        return copy.deepcopy(frozen)
+
+    monkeypatch.setattr(authoring, "freeze_manuscript_contract", fake_freeze)
     return {
         "frozen": frozen,
+        "freeze_input": freeze_input,
         "venue_receipt_rel": venue_receipt_rel,
         "evidence_receipt_rel": evidence_receipt_rel,
     }
@@ -288,6 +300,223 @@ def test_adaptive_section_assignments_preserve_specialists_and_parameterize_rema
     }
 
 
+@pytest.mark.parametrize("with_asset", [False, True])
+@pytest.mark.parametrize("revision", [False, True])
+def test_design_reducer_freezes_one_asset_slice_for_all_authoring_shapes(
+    with_asset, revision, monkeypatch
+):
+    draft = _contract(sections=["abstract"])
+    draft.update(
+        contract_id="manuscript-contract/run-001",
+        asset_plan=[],
+        result_refs=[],
+        source_hashes=[
+            {
+                "ref": "contracts/manuscript-contract.json",
+                "sha256": "a" * 64,
+                "kind": "VENUE_RULE",
+            }
+        ],
+    )
+    if with_asset:
+        draft["asset_plan"] = [
+            {
+                "asset_id": "fig-overview",
+                "kind": "FIGURE",
+                "label": "fig:overview",
+                "planned_path": "figures/overview.pdf",
+                "source_refs": ["inputs/overview.svg"],
+                "result_refs": [],
+            }
+        ]
+        draft["source_hashes"].append(
+            {
+                "ref": "inputs/overview.svg",
+                "sha256": "b" * 64,
+                "kind": "ASSET",
+            }
+        )
+    if revision:
+        draft["revision_requirements"] = [
+            {
+                "issue_id": "R1",
+                "review_sha256": "c" * 64,
+                "review_quote": "Keep the overview aligned with the revised abstract.",
+                "lane": "prose_repair",
+                "target_section": "abstract",
+                "acceptance_criterion": "The revised abstract and overview agree.",
+            }
+        ]
+
+    reduced = authoring._with_deterministic_asset_slice(draft)
+
+    asset_slices = [
+        row
+        for row in reduced["dependency_slices"]
+        if row["worker_role"] == "manuscript-figure-table-engineer"
+    ]
+    assert len(asset_slices) == 1
+    asset_slice = asset_slices[0]
+    assert asset_slice["slice_id"] == "slice-assets"
+    assert asset_slice["slice_sha256"] == authoring._hash(
+        asset_slice, omit="slice_sha256"
+    )
+    assert asset_slice["input_refs"][0]["ref"] == (
+        "contracts/manuscript-contract.json"
+    )
+    assert asset_slice["input_refs"][0]["slice_kind"] == "GLOBAL_CONTRACT"
+    visible = asset_slice["input_refs"][1:]
+    if with_asset:
+        assert visible == [
+            {
+                "ref": "inputs/overview.svg",
+                "sha256": "b" * 64,
+                "slice_kind": "ASSET",
+            }
+        ]
+    else:
+        assert visible == []
+
+    # Scheduling consumes the same helper through the frozen contract; its
+    # asset lookup must now be unambiguous for both ordinary and revision runs.
+    assert authoring._slice_for_assignment(
+        reduced, "assets", "manuscript-figure-table-engineer"
+    ) == asset_slice
+    monkeypatch.setattr(authoring, "load_frozen_contract", lambda _run_dir: reduced)
+    panel = authoring._author_panel(".", "author or revise")
+    asset_workers = [
+        row
+        for row in panel["workers"]
+        if row["label"] == "manuscript-figure-table-engineer"
+    ]
+    assert len(asset_workers) == 1
+    assert (
+        "inputs/overview.svg"
+        in asset_workers[0]["input_contract"]["allowed_inputs"]
+    ) is with_asset
+    assert draft["dependency_slices"][-1]["input_refs"][0]["ref"] == (
+        "contracts/manuscript-contract.json"
+    )
+
+
+def test_asset_slice_reuses_declared_results_without_minting_receipts():
+    draft = _contract(sections=["abstract"])
+    result = {
+        "ref": "results/frozen.json",
+        "sha256": "d" * 64,
+        "status": "FROZEN",
+        "receipt_ref": "receipts/executor.json",
+        "receipt_sha256": "e" * 64,
+    }
+    draft.update(
+        contract_id="manuscript-contract/run-001",
+        asset_plan=[
+            {
+                "asset_id": "tab-result",
+                "kind": "TABLE",
+                "label": "tab:result",
+                "planned_path": "tables/result.tex",
+                "source_refs": [],
+                "result_refs": [result["ref"]],
+            }
+        ],
+        result_refs=[copy.deepcopy(result)],
+        source_hashes=[
+            {
+                "ref": "contracts/manuscript-contract.json",
+                "sha256": "a" * 64,
+                "kind": "VENUE_RULE",
+            },
+            {"ref": result["ref"], "sha256": result["sha256"], "kind": "RESULT"},
+        ],
+    )
+
+    reduced = authoring._with_deterministic_asset_slice(draft)
+    asset_slice = next(
+        row
+        for row in reduced["dependency_slices"]
+        if row["worker_role"] == "manuscript-figure-table-engineer"
+    )
+
+    assert reduced["result_refs"] == [result]
+    assert asset_slice["input_refs"][1:] == [
+        {
+            "ref": result["ref"],
+            "sha256": result["sha256"],
+            "slice_kind": "RESULT",
+        }
+    ]
+    assert all("receipt" not in row for row in asset_slice["input_refs"])
+
+
+def test_asset_slice_refuses_an_unfrozen_planned_source():
+    draft = _contract(sections=["abstract"])
+    draft.update(
+        contract_id="manuscript-contract/run-001",
+        asset_plan=[
+            {
+                "asset_id": "fig-missing",
+                "kind": "FIGURE",
+                "label": "fig:missing",
+                "planned_path": "figures/missing.pdf",
+                "source_refs": ["inputs/missing.svg"],
+                "result_refs": [],
+            }
+        ],
+        result_refs=[],
+        source_hashes=[
+            {
+                "ref": "contracts/manuscript-contract.json",
+                "sha256": "a" * 64,
+                "kind": "VENUE_RULE",
+            }
+        ],
+    )
+
+    with pytest.raises(
+        authoring.ManuscriptAuthoringError, match="ASSET_SOURCE_HASH_MISSING"
+    ):
+        authoring._with_deterministic_asset_slice(draft)
+
+
+def test_design_evidence_steward_can_read_hash_bound_upstream_handoff(tmp_path):
+    panel = authoring.llm_step(str(tmp_path), "DESIGN", "write the review")
+    steward = next(
+        worker
+        for worker in panel["workers"]
+        if worker["label"] == "manuscript-evidence-steward"
+    )
+
+    assert "inbox/upstream-grounding.json" in steward["input_contract"]["allowed_inputs"]
+    assert (
+        "inbox/upstream-citation-handoff/**"
+        in steward["input_contract"]["allowed_inputs"]
+    )
+    assert "inbox/manuscript-inputs/**" in steward["input_contract"]["allowed_inputs"]
+    architect = next(
+        worker for worker in panel["workers"] if worker["label"] == "manuscript-architect"
+    )
+    assert "inbox/manuscript-inputs/**" in architect["input_contract"]["allowed_inputs"]
+
+
+def test_worker_prompt_embeds_the_publication_grade_role_contract():
+    methods_prompt = authoring._prompt(
+        "manuscript-methods-author", "ANALYZE", "write the full review"
+    )
+    section_prompt = authoring._prompt(
+        "manuscript-section-author", "ANALYZE", "write the full review"
+    )
+    integrator_contract = (
+        Path(__file__).resolve().parents[2]
+        / "research_agent_teams" / "agents" / "manuscript-integrator.md"
+    ).read_text(encoding="utf-8")
+
+    assert "workflow_execution_manifest" in methods_prompt
+    assert "synthesis_question" in section_prompt
+    assert "claim_surface_owner" in integrator_contract
+    assert "not an LLM seat" in integrator_contract
+
+
 @pytest.mark.parametrize("mutation", ["missing", "duplicate", "wrong_id", "wrong_role"])
 def test_exact_bundle_closure_rejects_all_invalid_sets_before_integration(mutation):
     contract = _contract(sections=["abstract", "introduction"])
@@ -325,7 +554,18 @@ def test_author_panel_is_sparse_adaptive_and_auditors_are_blind(tmp_path, monkey
     assert {worker["assignment"]["section_id"] for worker in generic} == {"abstract", "venue_checklist"}
     assert "manuscript-introduction-author" in labels
     assert "manuscript-related-work-author" in labels
-    assert "manuscript-integrator" in labels
+    assert "manuscript-synthesis-editor" in labels
+    assert "manuscript-integrator" not in labels
+    for worker in panel["workers"]:
+        if worker["label"] in authoring.SECTION_AUTHOR_ROLES:
+            assert worker["output"].endswith(".tex")
+            assert "Do not write JSON" in worker["prompt"]
+            assert authoring.CONTRACT_REL in worker["input_contract"]["allowed_inputs"]
+            assert "draft/MANUSCRIPT-ONTOLOGY.md" in worker["input_contract"]["allowed_inputs"]
+            assert (
+                "inbox/manuscript-authoring/admitted-evidence.json"
+                not in worker["input_contract"]["allowed_inputs"]
+            )
 
     review = authoring.llm_step(str(tmp_path), "VERIFY", "audit")
     assert review["group_barriers"] is False
@@ -333,6 +573,30 @@ def test_author_panel_is_sparse_adaptive_and_auditors_are_blind(tmp_path, monkey
         assert worker["input_contract"]["blind"] is True
         assert "evidence/VERIFY/**" in worker["input_contract"]["forbidden_inputs"]
         assert "source/**" in worker["input_contract"]["allowed_inputs"]
+
+
+def test_revision_dispatches_only_affected_section_and_preserves_other_latex(tmp_path, monkeypatch):
+    contract = _contract(sections=["abstract", "introduction"])
+    contract["revision_requirements"] = [{
+        "issue_id": "R1",
+        "review_sha256": "a" * 64,
+        "review_quote": "Fix the abstract terminology.",
+        "lane": "prose_repair",
+        "target_section": "abstract",
+        "acceptance_criterion": "Abstract uses the ontology term.",
+    }]
+    _write_contract(tmp_path, contract)
+    current = tmp_path / "inbox" / "manuscript-inputs" / "current-source" / "sections"
+    current.mkdir(parents=True)
+    (current / "abstract.tex").write_text("old abstract", encoding="utf-8")
+    (current / "introduction.tex").write_text("unchanged introduction", encoding="utf-8")
+    monkeypatch.setattr(authoring, "load_frozen_contract", lambda _run_dir: contract)
+
+    panel = authoring.llm_step(str(tmp_path), "ANALYZE", "revise")
+    section_workers = [row for row in panel["workers"] if row["label"] in authoring.SECTION_AUTHOR_ROLES]
+
+    assert [row["assignment"]["section_id"] for row in section_workers] == ["abstract"]
+    assert (tmp_path / "draft/sections/introduction.tex").read_text(encoding="utf-8") == "unchanged introduction"
 
 
 def test_integration_wrapper_never_calls_integrator_when_closure_is_invalid():
@@ -359,6 +623,297 @@ def test_integration_wrapper_never_calls_integrator_when_closure_is_invalid():
     assert called is False
 
 
+def test_bundle_loader_accepts_direct_schema_object_without_redundant_wrapper(
+    tmp_path,
+):
+    contract = _contract(sections=["abstract"])
+    ref = authoring._worker_rel("manuscript-section-author", section_id="abstract")
+    payload = _bundle(
+        "abstract",
+        "manuscript-section-author",
+        contract["manuscript_snapshot_sha256"],
+    )
+    _write_json(tmp_path / ref, payload)
+
+    loaded = authoring._bundle_payloads(tmp_path, contract)
+
+    assert loaded[ref] == payload
+
+
+def test_run_authorization_verifier_reopens_scheduler_and_contract(tmp_path):
+    contract = _contract(sections=["abstract"])
+    _write_contract(tmp_path, contract)
+    bundle_ref = authoring._worker_rel(
+        "manuscript-section-author", section_id="abstract"
+    )
+    row = {
+        "worker_id": f"0:manuscript-section-author:{bundle_ref}",
+        "agent": "manuscript-section-author",
+        "source_label": "manuscript-section-author",
+        "output": bundle_ref,
+        "logical_output": bundle_ref,
+        "cycle": 0,
+        "wave": 1,
+        "authorized_at": "2026-07-22T00:00:00Z",
+        "authorization_kind": "initial",
+        "dispatch_instance_id": "dispatch-test",
+    }
+    _write_json(
+        tmp_path / "inbox/panel-scheduler/ANALYZE.json",
+        {
+            "contract_version": "panel-dispatch/v1",
+            "stage": "ANALYZE",
+            "authorizations": [row],
+            "waves": [],
+        },
+    )
+    dependency_slice = next(
+        item
+        for item in contract["dependency_slices"]
+        if item["slice_id"] == "slice-abstract"
+    )
+    facts = {
+        "run_id": contract["run_id"],
+        "manuscript_snapshot_sha256": contract["manuscript_snapshot_sha256"],
+        "stage": "ANALYZE",
+        "section_id": "abstract",
+        "worker_role": "manuscript-section-author",
+        "dependency_slice_id": "slice-abstract",
+        "dependency_slice_sha256": dependency_slice["slice_sha256"],
+        "bundle_ref": bundle_ref,
+        "authorization_sha256": _sha(row),
+    }
+    verifier = authoring._run_authorization_verifier(tmp_path)
+
+    assert verifier(facts) == {"verified": True, **facts}
+    assert verifier({**facts, "authorization_sha256": "f" * 64})["verified"] is False
+
+
+def test_audit_facts_are_derived_from_frozen_bundles_not_integrator_summary():
+    contract = _contract(sections=["abstract"])
+    contract.update(
+        claim_ledger=[],
+        evidence_refs=[],
+        result_refs=[],
+        bibliography={
+            "style": "plain",
+            "entries": [
+                {
+                    "citation_key": "FrozenKey",
+                    "source_ref": "evidence/frozen",
+                    "source_sha256": "c" * 64,
+                    "identity_status": "VERIFIED",
+                }
+            ],
+        },
+        glossary={"terms": [], "notation": []},
+    )
+    bundle = _bundle(
+        "abstract", "manuscript-section-author", contract["manuscript_snapshot_sha256"]
+    )
+    bundle["citation_keys"] = ["FrozenKey"]
+
+    facts = authoring._derive_manuscript_audit_facts(
+        contract=contract,
+        bundle_payloads={"inbox/abstract.json": bundle},
+        claim_map={"mappings": []},
+        integration={"source_tree_sha256": "d" * 64},
+        request={"preserved_warnings": []},
+    )
+
+    assert facts["manuscript_sha256"] == "d" * 64
+    assert facts["sections"] == [
+        {"section_id": "abstract", "claim_ids": ["CLM-1"], "citation_keys": ["FrozenKey"]}
+    ]
+    assert facts["bibliography_keys"] == ["FrozenKey"]
+    assert facts["anonymity_violations"] == []
+    assert facts["official_rule_violations"] == []
+
+
+def _aggregate_evidence_fact_inputs():
+    """Synthetic unit-test inputs; no research audit was executed for these claims."""
+    contract = _contract(sections=["methods"])
+    contract.update(
+        claim_ledger=[
+            {
+                "claim_id": "CLM-1",
+                "importance": "LOAD_BEARING",
+                "claim_text": "A protocol-level claim.",
+                "evidence_refs": ["evidence/extraction.json"],
+                "result_refs": [],
+            }
+        ],
+        evidence_refs=[
+            {
+                "ref": "evidence/extraction.json",
+                "sha256": "c" * 64,
+                "source_kind": "LOCAL_FULL_TEXT",
+                "claim_support": "CLAIM_LEVEL",
+            }
+        ],
+        result_refs=[],
+        bibliography={
+            "style": "author-year",
+            "entries": [
+                {
+                    "citation_key": "Verified2026",
+                    "source_ref": "evidence/bibliography.json",
+                    "source_sha256": "d" * 64,
+                    "identity_status": "VERIFIED",
+                }
+            ],
+        },
+        glossary={"terms": [], "notation": []},
+    )
+    bundle = _bundle(
+        "methods", "manuscript-methods-author", contract["manuscript_snapshot_sha256"]
+    )
+    bundle["citation_keys"] = ["Verified2026"]
+    mapping = {
+        "mappings": [
+            {
+                "claim_id": "CLM-1",
+                "overall_support": "supported",
+                "loci": [
+                    {
+                        "locus_id": "L-UNIT-1",
+                        "source_ref": "arXiv:2601.00001",
+                        "snapshot_ref": "evidence/fulltext.txt",
+                        "exact_quote": "The directly inspected full text supports the claim.",
+                        "supports_claim": True,
+                        "support_relation": "entails",
+                    }
+                ],
+            }
+        ]
+    }
+
+    return {
+        "contract": contract,
+        "bundle_payloads": {"inbox/methods.json": bundle},
+        "claim_map": mapping,
+        "integration": {"source_tree_sha256": "e" * 64},
+        "request": {
+            "citation_closure": {
+                "section_citation_keys": ["Verified2026"],
+                "verified_identity_count": 1,
+                "unverified_identity_count": 0,
+            },
+            "preserved_warnings": [],
+        },
+    }
+
+
+def test_audit_facts_project_verified_aggregate_evidence_chain(tmp_path):
+    # Match the citation-coverage-auditor bundle read by the projection. This
+    # record simulates that input interface only; it is not execution evidence.
+    audit = {
+        "citation_audit": {
+            "contract_version": "citation-attribution/v1",
+            "independent_of_linker": True,
+            "claim_results": [
+                {
+                    "claim_id": "CLM-1",
+                    "verdict": "entails",
+                    "locator_verified": True,
+                    "verified_locus_ids": ["L-UNIT-1"],
+                    "unsupported_locus_ids": [],
+                    "notes": "Synthetic unit-test audit input; no external audit was executed.",
+                }
+            ],
+        }
+    }
+    audit_path = (
+        tmp_path / "inbox" / "manuscript-inputs" / "evidence"
+        / "DISCOVER.citation-coverage-auditor.bundle.json"
+    )
+    audit_path.parent.mkdir(parents=True)
+    audit_path.write_text(json.dumps(audit), encoding="utf-8")
+    facts = authoring._derive_manuscript_audit_facts(
+        **_aggregate_evidence_fact_inputs(), run_root=tmp_path,
+    )
+
+    assert facts["claim_evidence"] == [
+        {
+            "claim_id": "CLM-1",
+            "evidence_ref": "evidence/extraction.json",
+            "source_sha256": "c" * 64,
+            "citation_key": "Verified2026",
+            "observed_citation_key": "Verified2026",
+            "exact_span": "The directly inspected full text supports the claim.",
+            "entailment": "ENTAILED",
+            "metadata_only": False,
+            "independent_audit": True,
+            "evidence_chain_verified": True,
+            "citation_identity_verified": True,
+        }
+    ]
+
+
+def test_audit_facts_without_independent_citation_audit_remain_partial(tmp_path):
+    # Linker support and verified bibliography identities alone cannot stand in
+    # for the independent auditor's locator/entailment record.
+    facts = authoring._derive_manuscript_audit_facts(
+        **_aggregate_evidence_fact_inputs(), run_root=tmp_path,
+    )
+    link = facts["claim_evidence"][0]
+    assert link["citation_identity_verified"] is True
+    assert link["entailment"] == "PARTIAL"
+    assert link["independent_audit"] is False
+    assert link["evidence_chain_verified"] is False
+
+
+def test_table_asset_normalization_preserves_realized_csv_bytes(tmp_path):
+    csv_ref = "inbox/manuscript-inputs/tables/protocol-matrix.csv"
+    csv_path = tmp_path / csv_ref
+    csv_path.parent.mkdir(parents=True)
+    csv_path.write_bytes(b"id,class\nP1,O0\n")
+    csv_sha = hashlib.sha256(csv_path.read_bytes()).hexdigest()
+    source_ref = "inbox/manuscript-inputs/tables/protocol-matrix.json"
+    source_path = tmp_path / source_ref
+    source_path.write_text('{"rows":[]}', encoding="utf-8")
+    source_sha = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    manifest = {
+        "assets": [
+            {
+                "asset_id": "prompt-provenance-matrix",
+                "asset_type": "TABLE",
+                "source_inputs": [
+                    {"ref": source_ref, "sha256": source_sha, "kind": "EXTERNAL_EVIDENCE", "immutable": True}
+                ],
+                "output": {
+                    "path": csv_ref,
+                    "sha256": csv_sha,
+                    "byte_size": csv_path.stat().st_size,
+                },
+                "provenance": {"kind": "EXTERNAL", "created_at": "2026-08-17T00:00:00Z"},
+            }
+        ]
+    }
+
+    normalized = authoring._normalize_asset_manifest_for_integration(tmp_path, manifest)
+    asset = normalized["assets"][0]
+
+    assert asset["output"]["path"] == "tables/prompt-provenance-matrix.csv"
+    assert asset["output"]["sha256"] == csv_sha
+    assert asset["output"]["byte_size"] == csv_path.stat().st_size
+    assert asset["source_inputs"][0]["ref"] == source_ref
+    assert asset["provenance"]["external_source"]["source_ref"] == csv_ref
+
+
+def test_section_bundle_inventory_note_exposes_every_frozen_section_bundle():
+    contract = _contract(sections=["abstract", "introduction"])
+
+    note = authoring._section_bundle_inventory_note(contract)
+
+    assert note["summary"].startswith("Frozen direct-LaTeX section inventory")
+    assert note["references"] == [
+        "draft/synthesis/sections/abstract.tex",
+        "draft/synthesis/sections/introduction.tex",
+    ]
+    assert note["produced_artifacts"] == note["references"]
+
+
 def test_recipe_caps_schema_supplements_at_two(tmp_path):
     _write_contract(tmp_path, _contract(sections=["abstract"]))
 
@@ -371,6 +926,18 @@ def test_design_stage_writes_hash_bound_venue_and_evidence_slices(tmp_path, monk
     fixture = _prepare_design_slice_run(tmp_path, monkeypatch)
 
     paths, details = authoring.run_dets(str(tmp_path), "DESIGN", "2026-07-22T00:00:00Z")
+
+    freeze_input = fixture["freeze_input"]["contract_draft"]
+    frozen_asset_slices = [
+        row
+        for row in freeze_input["dependency_slices"]
+        if row["worker_role"] == "manuscript-figure-table-engineer"
+    ]
+    assert len(frozen_asset_slices) == 1
+    assert frozen_asset_slices[0]["slice_id"] == "slice-assets"
+    assert frozen_asset_slices[0]["slice_sha256"] == authoring._hash(
+        frozen_asset_slices[0], omit="slice_sha256"
+    )
 
     assert details["venue_profile_slice"] == authoring.DESIGN_VENUE_PROFILE_SLICE_ARTIFACT
     assert details["evidence_slice"] == authoring.DESIGN_EVIDENCE_SLICE_ARTIFACT
@@ -404,6 +971,32 @@ def test_design_stage_writes_hash_bound_venue_and_evidence_slices(tmp_path, monk
     assert evidence["evidence_slice_sha256"] == authoring._hash(
         evidence, omit="evidence_slice_sha256"
     )
+
+
+def test_provisional_authoring_skips_false_official_venue_slice(
+    tmp_path, monkeypatch
+):
+    fixture = _prepare_design_slice_run(tmp_path, monkeypatch)
+    frozen = fixture["frozen"]
+    frozen["venue_profile"]["requires_pdf"] = False
+    frozen["venue_profile"]["hard_field_policy"]["requires_pdf"].update(
+        classification="ADVISORY",
+        weakenable=True,
+    )
+
+    paths, details = authoring.run_dets(
+        str(tmp_path), "DESIGN", "2026-07-22T00:00:00Z"
+    )
+
+    assert not any(
+        path.endswith("manuscript-venue-profile-slice.artifact.json")
+        for path in paths
+    )
+    assert any(
+        path.endswith("manuscript-evidence-slice.artifact.json")
+        for path in paths
+    )
+    assert details["venue_profile_slice"] is None
 
 
 def test_design_slices_fail_closed_on_missing_worker_bundle(tmp_path, monkeypatch):

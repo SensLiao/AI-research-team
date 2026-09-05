@@ -44,8 +44,8 @@ _FORBIDDEN_KEYS = frozenset({
 
 #: A seat count written into prose is the "declared, not derived" defect wearing a sentence: the
 #: number is right the day it is typed and wrong the day the registry changes. Structural counts that
-#: are NOT derivable from the registry (e.g. "3 个互盲审稿人", owned by the mode's own recipe) are fine.
-_SEAT_COUNT_IN_PROSE = re.compile(r"\d+\s*席")
+#: are NOT derivable from the registry (e.g. "3 个互相独立的审稿人", owned by the mode's own recipe) are fine.
+_SEAT_COUNT_IN_PROSE = re.compile(r"\d+\s*(?:席|个\s*agent)")
 
 #: A mode whose presence FORCES an honesty statement in the recipe's `ceiling`, and the substring
 #: that statement must contain. The point is not the wording — it is that a future recipe cannot
@@ -89,6 +89,7 @@ def mode_facts(mode: str) -> dict[str, Any]:
     # the mechanism-council path. Measured 2026-08-04: 15 seats across 3 modes. Showing a ceiling
     # without this split would read as a dispatch promise (see worker_census).
     council_only = [s for s in seats if not worker_census.dispatched_by_recipe(s)]
+    ceiling = (spec.get("budget") or {}).get("max_agent_hops")
     return {
         "mode": mode,
         "operated": bool(spec.get("operated")),
@@ -96,7 +97,7 @@ def mode_facts(mode: str) -> dict[str, Any]:
         "recipe_seats": len(seats) - len(council_only),
         "council_only": len(council_only),
         "seat_names": seats,
-        "hops": int((spec.get("budget") or {}).get("max_agent_hops") or 0),
+        "hops": research_plan.UNBOUNDED_HOP_COST if ceiling is None else int(ceiling),
         "entry_stage": entry,
         "stage_path": list(spec.get("stage_path") or []),
         "gate_stages": list(spec.get("director_gate_stages") or []),

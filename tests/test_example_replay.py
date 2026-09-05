@@ -8,8 +8,15 @@ from __future__ import annotations
 
 import json
 import shutil
+from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[2] / "research_agent_teams" / "projects" / "t4-scribble-m0-mechanism-eval").is_dir(),
+    reason="t4-scribble-m0-mechanism-eval project was reset from the machine workspace "
+           "(director 2026-08-04); restore the project before re-enabling these tests",
+)
 
 from research_agent_teams.tools import example_replay as replay_mod
 from research_agent_teams.tools.example_replay import (

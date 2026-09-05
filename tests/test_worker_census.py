@@ -69,18 +69,21 @@ def test_every_declared_seat_is_a_real_agent():
 def test_the_memo_split_is_verified_not_assumed(data):
     """"157 workers, 120 used by operated modes, 37 spec-only" — checked in code, and it holds."""
     totals = data["totals"]
-    assert totals["rostered"] == 166
-    assert totals["control"] == 6
-    assert totals["workers"] == 160
+    # Roster is the truth (2026-08-09: +5 multi-view IDEATE panel seats); the memo numbers are
+    # re-derived from the live census, never pinned by hand.
+    assert totals["rostered"] == len(data["agents"])
+    assert totals["control"] == 7
+    assert totals["workers"] == len(data["agents"]) - 7
     # Wave 2 (2026-08-04) moved 27 seats from hand-driven to one-button; the 2026-08-07 backlog
     # close (ideate_ring, aers_enhanced_research_pack) moved 8 more; the same-day registry HANDOFF
     # (B1 divergence-operator-runner + B5 direction-decision-advisor into new_direction/deep_ideation,
-    # B4 research-trajectory-extractor into read_paper_deep) added 3 rostered seats, all reachable.
+    # B4 research-trajectory-extractor into read_paper_deep) added 3 rostered seats; 2026-08-09
+    # added the 5 multi-view IDEATE panel seats — all reachable.
     # These are REACHABILITY numbers only — how many seats a director could dispatch with one
     # command. How many have ever actually run is a different axis with a different source
     # (governance census over run bundles), pinned separately in
     # test_agent_connectivity::test_reachable_is_never_reported_as_exercised.
-    assert totals["declared_by_operated"] == 158
+    assert totals["declared_by_operated"] == totals["workers"] - totals["spec_only"]
     assert totals["spec_only"] == 2
     assert totals["in_no_subset"] == 0
     assert totals["workers"] == totals["declared_by_operated"] + totals["spec_only"]
@@ -108,7 +111,8 @@ def test_the_council_only_gap_is_named_seat_by_seat(teams):
     genuinely reachable-but-not-recipe-dispatched.
     """
     gap = {t["mode"]: t["council_only"] for t in teams["teams"] if t["council_only"]}
-    assert {"full_rigor_minimal", "manuscript_review"} <= set(gap)
+    assert "full_rigor_minimal" in gap
+    assert "manuscript_review" not in gap  # all six declared manuscript reviewers are recipe-dispatched
     assert sum(len(v) for v in gap.values()) == teams["totals"]["council_only"] > 0
     for mode, seats in gap.items():
         assert seats == sorted(seats), mode
@@ -160,4 +164,4 @@ def test_the_report_states_the_ceiling_is_not_a_promise():
     report = census.render_report()
     assert "不是承诺会派这么多" in report
     assert "独立性机制" in report
-    assert "没有闲置席位" in report
+    assert "没有闲置 agent" in report

@@ -1,0 +1,92 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://research-os/schemas/extraction_reliability_report.schema.json",
+ "title": "Extraction Reliability Report",
+ "description": "DISCOVER-stage artifact. Output of extraction-reliability-auditor: the corpus-level extraction reproducibility number, per field. Sample drawn by declared mechanical rule; vocabulary normalised via the schema's pinned alias table before comparison; fields classified reliable/redesign/demote; observation-only rule violations (derived labels) flagged. No overall score is valid without the per-field table. Failure-catalog items C1/C2/C3 (2026-08-20 team upgrade).",
+ "type": "object",
+ "required": [
+  "sample_rule",
+  "n_units",
+  "per_field",
+  "overall_agreement_pct"
+ ],
+ "properties": {
+  "sample_rule": {
+   "type": "string"
+  },
+  "n_units": {
+   "type": "integer"
+  },
+  "alias_table_ref": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "per_field": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "field",
+     "n",
+     "agreement_pct",
+     "classification"
+    ],
+    "properties": {
+     "field": {
+      "type": "string"
+     },
+     "n": {
+      "type": "integer"
+     },
+     "agreement_pct": {
+      "type": "number"
+     },
+     "chance_corrected": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "classification": {
+      "type": "string",
+      "enum": [
+       "reliable",
+       "redesign",
+       "demote"
+      ]
+     },
+     "repair": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    }
+   }
+  },
+  "overall_agreement_pct": {
+   "type": "number"
+  },
+  "derived_label_violations": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "caveat": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "notes": {
+   "type": [
+    "string",
+    "null"
+   ]
+  }
+ },
+ "additionalProperties": true
+}

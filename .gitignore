@@ -23,6 +23,10 @@ projects/*
 # would produce a diff on every reindex. `projectors.py::write_home_pages` regenerates it on demand.
 projects/*/PROJECT-HOME.md
 
+# Research deliverables (manuscript PDFs, submission packages) — outputs, not code; hundreds of MB.
+# They belong with the project workspaces above, never in the machine's git history.
+deliverables/
+
 # Secrets — NEVER commit real credentials. Only .env.example (placeholders) is tracked.
 .env
 .env.*

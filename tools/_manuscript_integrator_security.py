@@ -59,7 +59,7 @@ _SAFE_SVG_ATTRIBUTES = {
     "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset",
     "opacity", "transform", "id", "class", "clip-path", "mask", "offset",
     "stop-color", "stop-opacity", "gradientUnits", "gradientTransform",
-    "spreadMethod", "fx", "fy", "font-family", "font-size", "font-weight",
+    "spreadMethod", "fx", "fy", "font-family", "font-size", "font-weight", "font-style",
     "text-anchor", "dominant-baseline", "aria-label", "role", "href",
 }
 _DANGEROUS_SVG_VALUE = re.compile(r"(?:javascript|vbscript|data|file|https?):|expression\s*\(", re.I)
@@ -242,8 +242,9 @@ def receipt_row(bundle: dict[str, Any], *, bundle_ref: str, run_root: Path,
     receipt_path = safe_run_file(
         authorization["ref"], run_root=run_root, owned_roots=(run_root / "inbox",), fail=fail
     )
+    receipt_bytes = stable_bytes(receipt_path, fail=fail)
     try:
-        receipt = json.loads(stable_bytes(receipt_path, fail=fail).decode("utf-8"))
+        receipt = json.loads(receipt_bytes.decode("utf-8"))
     except (UnicodeError, ValueError):
         fail(
             "AUTHORIZATION_RECEIPT_INVALID",
@@ -263,7 +264,8 @@ def receipt_row(bundle: dict[str, Any], *, bundle_ref: str, run_root: Path,
         fail("AUTHORIZATION_MISMATCH", "authorization role does not match bundle worker", bundle_ref)
     if row.get("authorization_kind") not in {"initial", "supplement"}:
         fail("AUTHORIZATION_MISMATCH", "authorization kind is invalid", bundle_ref)
-    if _canonical_hash(row) != authorization["sha256"]:
+    declared_hash = authorization["sha256"]
+    if declared_hash not in {_canonical_hash(row), _bytes_hash(receipt_bytes)}:
         fail("AUTHORIZATION_HASH_MISMATCH", "immutable authorization row hash does not verify", bundle_ref)
     return row
 
@@ -353,6 +355,8 @@ def validate_svg(data: bytes, asset_ref: str, *, fail: Callable[..., None]) -> N
             if name.lower().startswith("on") or name not in _SAFE_SVG_ATTRIBUTES:
                 fail("UNSAFE_ASSET_CONTENT", f"SVG attribute {name!r} is not allowed", asset_ref)
             stripped = value.strip()
+            if name == "font-style" and stripped not in {"normal", "italic", "oblique"}:
+                fail("UNSAFE_ASSET_CONTENT", "SVG font-style must be a static style keyword", asset_ref)
             if _DANGEROUS_SVG_VALUE.search(stripped):
                 fail("UNSAFE_ASSET_CONTENT", "SVG contains an active or external value", asset_ref)
             if name == "href" and not stripped.startswith("#"):

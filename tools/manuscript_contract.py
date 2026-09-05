@@ -298,14 +298,23 @@ def resolve_paper_design_tokens(
                 if layer != "venue":
                     _fail(
                         "REQUIRES_PDF_AUTHORITY",
-                        "requires_pdf must originate in the official venue layer",
+                        "requires_pdf must originate in the venue profile layer",
                     )
                 if not isinstance(entry["value"], bool):
                     _fail("REQUIRES_PDF_TYPE", "requires_pdf must be a boolean")
-                if entry["classification"] != "HARD" or entry["weakenable"]:
+                valid_official = (
+                    entry["classification"] == "HARD"
+                    and entry["weakenable"] is False
+                )
+                valid_provisional = (
+                    entry["classification"] == "ADVISORY"
+                    and entry["weakenable"] is True
+                )
+                if not (valid_official or valid_provisional):
                     _fail(
                         "REQUIRES_PDF_AUTHORITY",
-                        "requires_pdf must be non-weakenable HARD venue policy",
+                        "requires_pdf must be either non-weakenable HARD official "
+                        "venue policy or weakenable ADVISORY provisional venue policy",
                     )
 
             if previous and previous["classification"] == "HARD":

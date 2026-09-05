@@ -3,9 +3,17 @@ from __future__ import annotations
 import runpy
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[2] / "research_agent_teams" / "projects" / "t4-scribble-m0-mechanism-eval").is_dir(),
+    reason="t4-scribble-m0-mechanism-eval project was reset from the machine workspace "
+           "(director 2026-08-04); restore the project before re-enabling these tests",
+)
+
 
 SCRIPT = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[2] / "research_agent_teams"
     / "projects"
     / "t4-scribble-m0-mechanism-eval"
     / "scripts"

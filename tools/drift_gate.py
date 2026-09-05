@@ -142,7 +142,25 @@ def check_drift(north_star: dict, texts: Iterable[str]) -> dict:
         if not norm:
             continue
         toks = norm.split()
-        present = (toks[0] in out_tokens) if len(toks) == 1 else (norm in norm_joined)
+        if len(toks) == 1:
+            present = toks[0] in out_tokens
+        else:
+            # A scope boundary must not punish an explicit refusal such as
+            # "no journal submission", "absence of new experiments", or
+            # "rather than a demand for new experiments".  The old substring
+            # test treated those safety/limitation statements as the very drift
+            # they deny.  Ignore only occurrences with a nearby, explicit
+            # negation marker; affirmative occurrences remain hard failures.
+            present = False
+            for match in re.finditer(re.escape(norm), norm_joined):
+                prefix = norm_joined[max(0, match.start() - 64):match.start()]
+                if any(marker in prefix for marker in (
+                    "no ", "not ", "never ", "without ", "absence of ",
+                    "rather than ", "do not ", "does not ", "must not ",
+                )):
+                    continue
+                present = True
+                break
         if present:
             hits.append(str(phrase))
     for h in hits:

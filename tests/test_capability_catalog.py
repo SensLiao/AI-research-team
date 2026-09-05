@@ -170,9 +170,9 @@ def test_manuscript_modes_are_distinct_operated_contracts_with_no_phantom_review
         assert catalog_modes[name]["operate_recipe_present"] is True
     assert authoring["stage_path"] == ["DISCOVER", "DESIGN", "ANALYZE", "VERIFY", "REPORT"]
     assert review["stage_path"] == ["VERIFY", "REPORT"]
-    assert authoring["handoff"]["product_version"] == "manuscript-authoring/v1"
+    assert authoring["handoff"]["product_version"] == "manuscript-authoring/v2"
     assert review["handoff"]["product_version"] == "manuscript-review/v1"
-    assert review["handoff"]["accepts"] == ["manuscript-authoring/v1"]
+    assert review["handoff"]["accepts"] == ["manuscript-authoring/v1", "manuscript-authoring/v2"]
     assert authoring["handoff"]["evidence_namespace"] != review["handoff"]["evidence_namespace"]
     assert set(authoring["handoff"]["reusable_artifacts"]).isdisjoint(
         review["handoff"]["reusable_artifacts"]
@@ -206,16 +206,16 @@ def test_manuscript_authoring_contract_is_sparse_adaptive_and_section_complete()
     }
     assert contract["specialized_owners"] == specialized
     assert contract["remaining_required_section_owner"] == "manuscript-section-author"
-    assert contract["candidate_artifact_type"] == "manuscript_section_bundle"
-    assert contract["candidate_bundles_per_required_section"] == 1
-    assert contract["integrator"] == "manuscript-integrator"
+    assert contract["candidate_artifact_type"] == "direct_latex_section"
+    assert contract["direct_files_per_required_section"] == 1
+    assert contract["integrator"] == "deterministic tools/manuscript_integrator.py"
     assert contract["integrator_may_author_missing_prose"] is False
     assert contract["generation_evidence_eligible_as_independent_review"] is False
     assert contract["instance_isolation"]["cross_mode_instance_or_receipt_reuse"] == "forbidden"
     assert scheduler["dependency_model"] == "sparse_dag"
     assert scheduler["adaptive_instances"]["fixed_section_worker_count"] is False
     assert fixture_contract["fixed_section_count"] is False
-    assert set(fixtures) == {"empirical", "theory", "dataset", "survey", "system"}
+    assert set(fixtures) == {"empirical", "theory", "dataset", "survey", "methodological_critical_review", "system"}
 
     section_lengths = set()
     for fixture in fixtures.values():
@@ -243,9 +243,10 @@ def test_manuscript_authoring_contract_is_sparse_adaptive_and_section_complete()
     groups = {row["id"]: row for row in scheduler["parallel_groups"]}
     assert len(groups) == len(scheduler["parallel_groups"])
     assert "manuscript-section-author" in groups["author_candidates"]["workers"]
-    assert groups["integrate_canonical_tree"]["depends_on"] == ["author_candidates"]
+    assert groups["serial_synthesis_handoff"]["depends_on"] == ["author_candidates"]
+    assert groups["serial_synthesis_handoff"]["workers"] == ["manuscript-synthesis-editor"]
     assert groups["independent_authoring_audits"]["depends_on"] == [
-        "integrate_canonical_tree"
+        "serial_synthesis_handoff"
     ]
 
 
@@ -299,9 +300,7 @@ def test_manuscript_review_contract_requires_blind_capability_closure_and_join()
         "authorization_receipt_scope"
     ]
     assert authoring_isolation["blind_scope"] != review_isolation["blind_scope"]
-    assert groups["deterministic_reconciliation_and_meta_review"]["depends_on"] == [
-        "blind_capability_reviews"
-    ]
+    assert set(groups) == {"blind_capability_reviews"}
 
 
 def test_aers_pack_and_m2_accept_keep_execution_claims_honest():

@@ -86,7 +86,7 @@ def test_the_real_run_history_measures_all_four_axes():
         pytest.skip("runs/ is gitignored — no history on this checkout")
     assert report["runs_measured"] >= 1
     axes = {axis["axis"]: axis for axis in report["axes"]}
-    assert set(axes) == {"一键模式", "席位", "人工关卡（gates/ 里的 5 个）"}
+    assert set(axes) == {"一键模式", "agent", "导演决定点（gates/ 里的 5 个）"}
     for axis in axes.values():
         assert axis["used_but_not_in_the_inventory"] == [], \
             f"{axis['axis']} used something the inventory does not know about: " \
@@ -157,7 +157,7 @@ def test_the_census_authorizes_nothing_and_says_so():
     rendered = gc.render_census(report)
     if report["telemetry"] == gc.TELEMETRY_PRESENT:
         assert "只报数" in rendered
-        assert "不删除、不停用、不弱化任何关卡或检查" in rendered
+        assert "不删除、不停用、不弱化任何检查点或检查" in rendered
         assert "「没被用过」不等于「可以砍」" in "".join(report["does_not_authorize"])
 
 
@@ -190,7 +190,7 @@ def _run_with_gate_names_in_its_artifacts(root):
 def test_the_named_gate_axis_refuses_to_infer_a_firing_from_a_text_mention(tmp_path):
     """Negative control for the axis below: naming a gate is not firing it."""
     _run_with_gate_names_in_its_artifacts(tmp_path)
-    gates = next(a for a in gc.census(tmp_path)["axes"] if a["axis"].startswith("人工关卡"))
+    gates = next(a for a in gc.census(tmp_path)["axes"] if a["axis"].startswith("导演决定点"))
     assert gates["exercised"] == [], \
         "a gate name appearing inside an artifact is not a gate firing — this axis must stay empty"
     assert sorted(gates["never_exercised"]) == sorted(gc.named_gates())
@@ -209,7 +209,7 @@ def test_promote_to_vault_counts_as_exercised_only_from_its_own_record_file(tmp_
         encoding="utf-8")
 
     report = gc.census(tmp_path)
-    gates = next(a for a in report["axes"] if a["axis"].startswith("人工关卡"))
+    gates = next(a for a in report["axes"] if a["axis"].startswith("导演决定点"))
     assert gates["exercised"] == ["promote-to-vault"]
     assert "promote-to-vault" not in gates["never_exercised"], "a fired gate cannot also be never-used"
     assert len(gates["never_exercised"]) == len(gc.named_gates()) - 1, \
@@ -232,7 +232,7 @@ def test_a_rejected_admission_is_a_gate_firing_but_not_a_vault_write(tmp_path):
     report = gc.census(tmp_path)
     admissions = report["usage"]["document_admissions"]
     assert admissions["records"] == 1 and admissions["admitted"] == 0 and admissions["vault_slugs"] == []
-    gates = next(a for a in report["axes"] if a["axis"].startswith("人工关卡"))
+    gates = next(a for a in report["axes"] if a["axis"].startswith("导演决定点"))
     assert gates["exercised"] == ["promote-to-vault"], "a rejection still proves the gate ran"
     ids = {f["id"] for f in report["findings"]}
     assert "the-vault-write-path-has-never-been-exercised" in ids, \
@@ -273,7 +273,9 @@ def test_platform_facts_counts_are_re_derived_not_typed_in():
     # so a number that happens to appear in a different row cannot satisfy it.
     derived = [
         ("Deterministic tools", len(list(tools_dir.glob("*.py")))),
-        ("Test files", len(list((tools_dir.parents[0] / "tests").glob("test_*.py")))),
+        # count the directory THIS test lives in, so the check holds in both layouts (workspace
+        # tests/machine/ and the machine repo's own tests/)
+        ("Test files", len(list(Path(__file__).resolve().parent.glob("test_*.py")))),
         ("`workbench` verbs", len(verbs)),
         ("Human gates", len(inventory["named_human_gates"])),
         ("Modes", len(inventory["operated_modes"])),

@@ -1,6 +1,8 @@
 """bounded_repair — in-stage repair loop: caps, persistence, escalation semantics (wave 1)."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from research_agent_teams.operate.artifacts import GateBlock, TargetedGateBlock
@@ -91,6 +93,43 @@ def test_cap_one_permits_exactly_one_retry(tmp_path):
     assert attempt_with_repair(tmp_path, "DISCOVER", budget1, TS, dets)[0] == "retry"  # the 1 retry
     with pytest.raises(GateBlock):
         attempt_with_repair(tmp_path, "DISCOVER", budget1, TS, dets)  # 2nd failure escalates
+
+
+def test_director_can_extend_one_run_repair_budget_without_mutating_task_frame(tmp_path):
+    budget1 = {"max_agent_hops": 6, "max_debug_retries_per_run": 1}
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "director-repair-budget-extension.json").write_text(json.dumps({
+        "contract_version": "director-repair-extension/v1",
+        "authorized_by": "director",
+        "dimension": "max_debug_retries_per_run",
+        "base_limit": 1,
+        "extended_limit": 3,
+        "reason": "Two control-plane repairs exposed later substantive review defects.",
+    }), encoding="utf-8")
+    dets = FlakyDets(99)
+
+    assert attempt_with_repair(tmp_path, "DISCOVER", budget1, TS, dets)[0] == "retry"
+    assert attempt_with_repair(tmp_path, "DISCOVER", budget1, TS, dets)[0] == "retry"
+    assert attempt_with_repair(tmp_path, "DISCOVER", budget1, TS, dets)[0] == "retry"
+    with pytest.raises(GateBlock):
+        attempt_with_repair(tmp_path, "DISCOVER", budget1, TS, dets)
+
+
+def test_director_repair_extension_fails_closed_on_wrong_base(tmp_path):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "director-repair-budget-extension.json").write_text(json.dumps({
+        "contract_version": "director-repair-extension/v1",
+        "authorized_by": "director",
+        "dimension": "max_debug_retries_per_run",
+        "base_limit": 999,
+        "extended_limit": 1000,
+        "reason": "invalid stale extension",
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="bind the current base limit"):
+        attempt_with_repair(tmp_path, "DISCOVER", BUDGET, TS, FlakyDets(99))
 
 
 def test_missing_budget_key_uses_safe_default_never_unbounded(tmp_path):

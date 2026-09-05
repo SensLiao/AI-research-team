@@ -147,16 +147,13 @@ def test_strict_map_without_exact_locator_blocks(tmp_path):
     assert any("no exact char span" in row for row in report["violations"])
 
 
-def test_document_hash_mismatch_alone_no_longer_blocks(tmp_path):
-    """R3 A1/B1 (2026-08-07): document_hash re-verification is torn down — the field is still
-    written but no longer compared against the snapshot's recomputed sha256. What still gates
-    the locus is the actual content check: exact_quote must match the snapshot bytes (see
-    test_recomputed_span_quote_mismatch_blocks, unaffected by this change)."""
+def test_document_hash_mismatch_blocks_at_source_freeze(tmp_path):
+    """The source snapshot is one of the three load-bearing freeze boundaries."""
     claims, claim_map, audit = _inputs(tmp_path)
     claim_map["mappings"][0]["loci"][0]["document_hash"] = "0" * 64
     report = build_attribution_report(claims, claim_map, audit, run_dir=tmp_path)
-    assert report["verdict"] == "PASS"
-    assert report["mechanical_verification"]["n_verified"] == 1
+    assert report["verdict"] == "BLOCK"
+    assert report["mechanical_verification"]["n_blocked"] == 1
 
 
 def test_recomputed_span_quote_mismatch_blocks(tmp_path):

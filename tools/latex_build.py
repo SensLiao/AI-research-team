@@ -205,7 +205,34 @@ def _source_snapshot(run: Path, source: Path) -> tuple[str, dict[str, str], dict
                 raise LatexBuildError("SOURCE_ENCODING", f"{relative} is not UTF-8") from exc
     if "main.tex" not in tex_sources:
         raise LatexBuildError("MAIN_TEX_MISSING", "source/main.tex is required")
-    return _digest_bytes(_canonical(inventory)), tex_sources, source_files
+    physical_hash = _digest_bytes(_canonical(inventory))
+    manifest_ref = "manifests/manuscript-integration.json"
+    manifest_bytes = source_files.get(manifest_ref)
+    if manifest_bytes is None:
+        return physical_hash, tex_sources, source_files
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+        canonical_inventory = manifest["canonical_file_inventory"]
+        canonical_hash = manifest["source_tree_sha256"]
+    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise LatexBuildError(
+            "SOURCE_CHANGED", "integration manifest is malformed"
+        ) from exc
+    expected = {
+        str(row["path"]): str(row["sha256"])
+        for row in canonical_inventory
+        if isinstance(row, Mapping) and row.get("path") and row.get("sha256")
+    }
+    if len(expected) != len(canonical_inventory):
+        raise LatexBuildError("SOURCE_CHANGED", "integration inventory is malformed")
+    actual_paths = set(source_files) - {manifest_ref}
+    if actual_paths != set(expected):
+        raise LatexBuildError("SOURCE_CHANGED", "source files differ from integration inventory")
+    if any(_digest_bytes(source_files[path]) != digest for path, digest in expected.items()):
+        raise LatexBuildError("SOURCE_CHANGED", "source file hash differs from integration inventory")
+    if _digest_bytes(_canonical(canonical_inventory)) != canonical_hash:
+        raise LatexBuildError("SOURCE_CHANGED", "integration source-tree hash does not verify")
+    return canonical_hash, tex_sources, source_files
 
 
 def _asset_exists(source: Path, kind: str, raw: str) -> bool:
@@ -347,6 +374,7 @@ def detect_latex_toolchain(
     runner: Callable[..., Mapping[str, Any]] | None = None,
     platform_name: str | None = None,
     runtime_candidates: str | None = None,
+    prefer_direct: bool = False,
     timeout: int = _PROBE_TIMEOUT,
     output_limit: int = _OUTPUT_LIMIT,
 ) -> dict[str, Any]:
@@ -386,7 +414,7 @@ def detect_latex_toolchain(
         return found
 
     latexmk = discover("latexmk")
-    if latexmk and perl:
+    if latexmk and perl and not prefer_direct:
         probe = invoke_runner(
             runner, (latexmk, "-v"), cwd=run, environment=clean,
             timeout=timeout, output_limit=output_limit,
@@ -400,8 +428,10 @@ def detect_latex_toolchain(
                 "diagnostics": diagnostics,
             }
         diagnostics.append("LATEXMK_READINESS_FAILED")
-    elif latexmk:
+    elif latexmk and not prefer_direct:
         diagnostics.append("LATEXMK_RUNTIME_UNAVAILABLE")
+    elif latexmk and prefer_direct:
+        diagnostics.append("LATEXMK_SKIPPED_DIRECT_PREFERENCE")
 
     pdflatex = discover("pdflatex")
     if pdflatex:
@@ -524,6 +554,7 @@ def build_latex_project(
     runner: Callable[..., Mapping[str, Any]] | None = None,
     platform_name: str | None = None,
     runtime_candidates: str | None = None,
+    prefer_direct: bool = False,
     timeout: int = _BUILD_TIMEOUT,
     output_limit: int = _OUTPUT_LIMIT,
     secret_sentinels: Mapping[str, str] | None = None,
@@ -584,6 +615,7 @@ def build_latex_project(
     selected = detect_latex_toolchain(
         run, environment=environment, which=which, runner=runner,
         platform_name=platform_name, runtime_candidates=runtime_candidates,
+        prefer_direct=prefer_direct,
         output_limit=output_limit,
     )
     if selected["state"] != "READY":
@@ -621,7 +653,7 @@ def build_latex_project(
     pdf_bytes = b""
     recorder_bytes = b""
 
-    with private_workspace(build) as (_workspace, staged_source, private_output):
+    with private_workspace(build, platform_name=host) as (_workspace, staged_source, private_output):
         stage_files(staged_source, source_files)
         deadline = time.monotonic() + max(0.001, float(timeout))
         last_command_timeout = float("inf")
@@ -678,6 +710,9 @@ def build_latex_project(
             engine = selected["executables"]["pdflatex"]
             bib_name = selected["bibliography"]
             bib = selected["executables"][bib_name]
+            bibliography_source = staged_source / "refs.bib"
+            if bibliography_source.is_file():
+                shutil.copyfile(bibliography_source, private_output / "refs.bib")
             engine_guard = _miktex_installer_guard(engine)
             bibliography_guard = _miktex_installer_guard(bib)
             engine_args = [
@@ -685,7 +720,13 @@ def build_latex_project(
                 "-recorder", "-no-shell-escape", f"-output-directory={private_output}",
                 "main.tex",
             ]
-            passes = [[engine, *engine_args], [bib, *bibliography_guard, "main"], [engine, *engine_args], [engine, *engine_args]]
+            passes = [
+                [engine, *engine_args],
+                [bib, *bibliography_guard, "main"],
+                [engine, *engine_args],
+                [engine, *engine_args],
+                [engine, *engine_args],
+            ]
             for index, command in enumerate(passes):
                 result = run_command(command, private_output if index == 1 else staged_source)
                 if result["returncode"] != 0 or result["timed_out"] or failure_code:
@@ -693,7 +734,8 @@ def build_latex_project(
             executable = "direct-pipeline"
             portable_argv = [
                 executable, "-norc", "-recorder", "-halt-on-error", "-no-shell-escape",
-                *engine_guard, "pdflatex", *bibliography_guard, bib_name, "pdflatex", "pdflatex",
+                *engine_guard, "pdflatex", *bibliography_guard, bib_name,
+                "pdflatex", "pdflatex", "pdflatex",
             ]
             aggregate = {
                 "returncode": int(result["returncode"]),

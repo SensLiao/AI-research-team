@@ -10,14 +10,14 @@ from research_agent_teams.tools.validate_artifact import (
     SCHEMA_DIR,
     validate_payload,
 )
-from tests.test_manuscript_delivery_schemas import (
+from .test_manuscript_delivery_schemas import (
     _asset_manifest,
     _compiled_build,
     _compiled_quality,
     _review_verdict,
     _toolchain_missing_build,
 )
-from tests.test_manuscript_predraft_schemas import (
+from .test_manuscript_predraft_schemas import (
     _deficit_with_outcome,
     valid_integration,
     valid_local_literature_coverage,

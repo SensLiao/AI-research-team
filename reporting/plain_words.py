@@ -31,6 +31,7 @@ _LABEL: dict[str, str] = {
     "venue_readiness": "投稿前体检",
     "manuscript_authoring": "写稿",
     "manuscript_review": "独立审稿",
+    "manuscript_reconstruction": "逐条核验并返修",
     # design-only modes the director may still hear named
     "design_experiment": "设计实验（简版）",
     "design_experiment_minimal": "设计实验（最小版）",
@@ -151,7 +152,7 @@ _GLOSS: dict[str, str] = {
     "novelty": "新颖性：这件事到底有没有人做过",
     "falsifier": "推翻条件：什么结果出现就说明这个想法是错的",
     "kill_criteria": "止损条件：什么情况下应该停手别做了",
-    "human_gate": "人类关卡：机器不能自己决定，必须你点头",
+    "human_gate": "导演决定点：机器不能自己决定，必须你点头",
     "vault": "知识库：只放已经核实过的东西，是永久资产",
     "run_store": "草稿区：每次跑任务的中间产物，可以随时丢",
     "spec_only": "只有设计、还没做成一键按钮，得手动一步步驱动",

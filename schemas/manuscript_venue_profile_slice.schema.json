@@ -168,10 +168,11 @@
           "additionalProperties": false,
           "properties": {
             "classification": {
-              "const": "OFFICIAL_HARD"
+              "type": "string",
+              "enum": ["OFFICIAL_HARD", "ADVISORY"]
             },
             "weakenable": {
-              "const": false
+              "type": "boolean"
             },
             "source_ref": {
               "$ref": "#/$defs/safe_ref"
@@ -179,7 +180,17 @@
             "source_sha256": {
               "$ref": "#/$defs/sha256"
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {"classification": {"const": "OFFICIAL_HARD"}},
+                "required": ["classification"]
+              },
+              "then": {"properties": {"weakenable": {"const": false}}},
+              "else": {"properties": {"weakenable": {"const": true}}}
+            }
+          ]
         }
       }
     }

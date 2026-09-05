@@ -65,6 +65,14 @@ CAPABILITY_ROLES = {
     "citation": "EXACT_CITATION",
     "venue_style_latex": "VENUE",
 }
+CAPABILITY_FOCUS = {
+    "domain_contribution": "headline/abstract/body/conclusion scope, novelty, contribution, and domain validity",
+    "methods_reproducibility": "review method, eligibility/search truth, protocol versus execution, appraisal, and reproducibility",
+    "figure_table": "every rendered figure/table, caption, visible number, permission, accessibility, and prose interpretation",
+    "factual": "every load-bearing fact, numerator/denominator, derived value origin, unit, condition, and attribution",
+    "citation": "every used BibTeX identity, version, exact source locus, sentence adjacency, and citation stack",
+    "venue_style_latex": "actual LaTeX/PDF, terminology aliases, cross-references, metadata, language consistency, and official rules",
+}
 CAPABILITY_WORKER_LABELS = {
     "domain_contribution": "manuscript-domain-contribution-reviewer",
     "methods_reproducibility": "manuscript-methods-reproducibility-reviewer",
@@ -76,10 +84,24 @@ CAPABILITY_WORKER_LABELS = {
 _CAPABILITY_RE = re.compile(r"^[a-z_]+$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+AGENT_SPEC_DIR = Path(__file__).resolve().parents[2] / "agents"
 
 
 class ManuscriptReviewError(ValueError):
     """Stable error for a malformed or untrusted review boundary."""
+
+
+def _agent_spec(role: str) -> str:
+    if not _IDENTIFIER_RE.fullmatch(role):
+        _fail(f"unsafe review worker role: {role!r}")
+    path = AGENT_SPEC_DIR / f"{role}.md"
+    try:
+        spec = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        _fail(f"cannot read {role} review contract: {type(exc).__name__}")
+    if not spec:
+        _fail(f"empty review contract for {role}")
+    return spec
 
 
 def _canonical(value: Any) -> bytes:
@@ -234,13 +256,7 @@ def _source_run(review_dir: Path, payload: Mapping[str, Any]) -> tuple[str, Path
 
 
 def _bound_source_file(source_dir: Path, descriptor: Mapping[str, Any], label: str) -> tuple[str, str]:
-    """Resolve a descriptor to a safe, existing in-run file.
-
-    2026-08-07 de-governance: no longer re-hashes the file and compares it against the descriptor's
-    declared sha256 (that was tamper-evidence, not the safety property) — path safety + existence
-    (via _safe_source_path) is what still gates this. The returned sha256 is the descriptor's
-    declared value, still shape-checked, just not verified against the file's actual bytes.
-    """
+    """Resolve a descriptor and bind it to the actual bytes at the review freeze boundary."""
     ref = descriptor.get("ref")
     expected = descriptor.get("sha256")
     if not isinstance(ref, str) or not isinstance(expected, str) or not _SHA256_RE.fullmatch(expected):
@@ -248,8 +264,72 @@ def _bound_source_file(source_dir: Path, descriptor: Mapping[str, Any], label: s
     portable = ref.replace("\\", "/")
     if portable.startswith("/") or ".." in portable.split("/") or ":" in portable:
         _fail(f"{label} reference is unsafe")
-    _safe_source_path(source_dir, portable, label)
+    path = _safe_source_path(source_dir, portable, label)
+    if _file_hash(path) != expected:
+        _fail(f"{label} SHA-256 does not match its current bytes")
     return portable, expected
+
+
+def _verify_source_tree(source_dir: Path, integration: Mapping[str, Any]) -> str:
+    inventory = integration.get("canonical_file_inventory")
+    source_root = source_dir / "source"
+    try:
+        resolved_root = source_root.resolve(strict=True)
+    except OSError as exc:
+        _fail(f"canonical source tree is unavailable: {type(exc).__name__}")
+    if resolved_root.parent != source_dir.resolve() or not resolved_root.is_dir() or source_root.is_symlink():
+        _fail("canonical source tree is unsafe or not a directory")
+    source_root = resolved_root
+    if not isinstance(inventory, list) or not inventory:
+        # Historical manuscript-authoring/v1 runs froze only main.tex. Rebuild a
+        # review-local tree identity once from the actual source bytes so resume
+        # still detects any later mutation without pretending the old artifact
+        # carried a complete inventory.
+        actual_inventory = [
+            {
+                "path": path.relative_to(source_root).as_posix(),
+                "sha256": _file_hash(path),
+            }
+            for path in sorted(item for item in source_root.rglob("*") if item.is_file())
+        ]
+        if not actual_inventory:
+            _fail("canonical source tree is empty")
+        return _hash(actual_inventory)
+    actual_inventory = []
+    expected_paths = set()
+    for row in inventory:
+        if not isinstance(row, Mapping):
+            _fail("canonical source-tree inventory contains a malformed row")
+        relative = str(row.get("path") or "")
+        sha256 = str(row.get("sha256") or "")
+        if not relative or not _SHA256_RE.fullmatch(sha256):
+            _fail("canonical source-tree inventory contains an unsafe path/hash")
+        path = _safe_source_path(source_root, relative, f"source tree file {relative}")
+        actual_sha = _file_hash(path)
+        if actual_sha != sha256:
+            _fail(f"source tree changed after authoring freeze: {relative}")
+        expected_paths.add(relative.replace("\\", "/"))
+        actual_inventory.append(dict(row))
+    actual_files = {
+        path.relative_to(source_root).as_posix()
+        for path in source_root.rglob("*") if path.is_file()
+    }
+    self_manifest_ref = "manifests/manuscript-integration.json"
+    if actual_files - expected_paths == {self_manifest_ref}:
+        self_manifest = _read_json(
+            _safe_source_path(source_root, self_manifest_ref, "integration self-manifest"),
+            "integration self-manifest",
+        )
+        if self_manifest != dict(integration):
+            _fail("canonical source-tree integration self-manifest changed after authoring freeze")
+        actual_files.remove(self_manifest_ref)
+    if actual_files != expected_paths:
+        _fail("canonical source tree file set changed after authoring freeze")
+    # The historical and current integrators use different aggregate-hash
+    # encodings. File-set and per-file hashes above are the safety property;
+    # derive one review-local identity from the actual frozen inventory for
+    # mutation invalidation rather than re-hashing an already hashed manifest.
+    return _hash(actual_inventory)
 
 
 def _source_ledger_is_intact(source_dir: Path) -> bool:
@@ -442,6 +522,7 @@ def _load_input(review_dir: Path) -> tuple[dict[str, Any], str, Path, dict[str, 
     _bound_source_file(source_dir, manuscript, "manuscript")
     quality = artifacts["quality_report"]["payload"]
     build = artifacts["build_receipt"]["payload"]
+    source_tree_sha256 = _verify_source_tree(source_dir, artifacts["integration"]["payload"])
     pdf = payload.get("pdf")
     if build.get("build_state") == "COMPILED":
         if not isinstance(pdf, Mapping):
@@ -460,6 +541,7 @@ def _load_input(review_dir: Path) -> tuple[dict[str, Any], str, Path, dict[str, 
         "build": build,
         "authoring_ledger_verified": ledger_verified,
         "build_verified": build_verified,
+        "source_tree_sha256": source_tree_sha256,
         "artifact_verification": {
             key: {
                 "envelope_verified": value["envelope_verified"],
@@ -471,7 +553,8 @@ def _load_input(review_dir: Path) -> tuple[dict[str, Any], str, Path, dict[str, 
     }
 
 
-def _frozen_inputs(payload: Mapping[str, Any], authoring_run_id: str, source_only: bool) -> dict[str, str]:
+def _frozen_inputs(payload: Mapping[str, Any], authoring_run_id: str, source_only: bool,
+                   source_tree_sha256: str) -> dict[str, str]:
     contract = payload["contract"]
     manuscript = payload["manuscript"]
     if source_only:
@@ -488,6 +571,8 @@ def _frozen_inputs(payload: Mapping[str, Any], authoring_run_id: str, source_onl
         "contract_sha256": str(contract["sha256"]),
         "manuscript_ref": f"runs/{authoring_run_id}/{manuscript['ref']}",
         "manuscript_sha256": str(manuscript["sha256"]),
+        "source_tree_ref": f"runs/{authoring_run_id}/source",
+        "source_tree_sha256": source_tree_sha256,
         "pdf_ref": pdf_ref,
         "pdf_sha256": pdf_sha,
     }
@@ -502,18 +587,21 @@ def prepare_review_precommit(run_dir: str | Path, timestamp: str) -> dict[str, A
         # Resume does not mint a new timestamp or receipt set.  Still reopen
         # the immutable authoring descriptors so a later source mutation is
         # detected before any reviewer can reuse the old precommit.
-        _load_input(review_dir)
+        _payload, _authoring_run_id, _source_dir, current_details = _load_input(review_dir)
         existing = _read_json(existing_path, "review precommit")
         if existing.get("review_run_id") != review_dir.name:
             _fail("precommit belongs to another review run")
         if existing.get("independence_verified") is not False:
             _fail("precommit lacks the required external-independence caveat")
+        current_source_tree = str(current_details["source_tree_sha256"])
+        if (existing.get("frozen_inputs") or {}).get("source_tree_sha256") != current_source_tree:
+            _fail("canonical source tree changed after review precommit")
         return existing
     payload, authoring_run_id, _source_dir, details = _load_input(review_dir)
     # A caller-provided COMPILED JSON/PDF is reviewable context, never build
     # truth.  Only the pre-existing signed build verifier may lift source-only.
     source_only = not bool(details["build_verified"])
-    frozen = _frozen_inputs(payload, authoring_run_id, source_only)
+    frozen = _frozen_inputs(payload, authoring_run_id, source_only, str(details["source_tree_sha256"]))
     blind_scope_sha = _hash(
         {"review_run_id": review_dir.name, "forbidden": ["authoring-self-audit", "sibling reviewer"]}
     )
@@ -571,9 +659,12 @@ def llm_step(
         precommit = prepare_review_precommit(run_dir, "scheduler-precommit") if input_path.is_file() else None
         workers = []
         for capability in REQUIRED_CAPABILITY_IDS:
+            worker_label = CAPABILITY_WORKER_LABELS[capability]
+            role_contract = _agent_spec(worker_label)
+            role_contract_sha256 = hashlib.sha256(role_contract.encode("utf-8")).hexdigest()
             workers.append(
                 {
-                    "label": CAPABILITY_WORKER_LABELS[capability],
+                    "label": worker_label,
                     "capability_id": capability,
                     "role": CAPABILITY_ROLES[capability],
                     "model": "opus",
@@ -586,7 +677,12 @@ def llm_step(
                     "prompt": (
                         f"NORTH STAR: assess the frozen manuscript for {request}. "
                         f"Blind {capability} reviewer: sibling reviewer conclusions are forbidden; "
-                        "external scheduler independence is not yet verified."
+                        "external scheduler independence is not yet verified. Read the actual final source tree "
+                        "and bound PDF, not author summaries. Inspect the whole assigned surface and emit only "
+                        "actionable findings with exact loci; record review_surface as SOURCE_ONLY or PDF_RENDERED; "
+                        "do not edit the manuscript. FOCUS: "
+                        f"{CAPABILITY_FOCUS[capability]}. ROLE CONTRACT REF: agents/{worker_label}.md "
+                        f"sha256={role_contract_sha256}."
                     ),
                 }
             )
@@ -596,17 +692,6 @@ def llm_step(
             "workers": workers,
             "precommit": PRECOMMIT_REL if precommit else None,
         }
-    if stage == "REPORT":
-        worker = {
-            "label": "manuscript-submission-packager",
-            "model": "opus",
-            "output": "inbox/manuscript-review/manuscript-submission-packager.bundle.json",
-            "prompt": (
-                f"NORTH STAR: present the advisory reconciled review for {request}; "
-                "never submit, merge fixes, or present advisory rebuttal text as applied."
-            ),
-        }
-        return {"label": "manuscript-review-report", "group_barriers": False, "workers": [worker]}
     return None
 
 
@@ -656,7 +741,14 @@ def _quality_rows(quality: Mapping[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(raw, Mapping):
             continue
         finding_id = str(raw.get("finding_id") or "quality-finding")
-        severity = "BLOCKING" if raw.get("finding_class") == "HARD" else "ADVISORY"
+        finding_class = str(raw.get("finding_class") or "")
+        severity = (
+            "BLOCKING"
+            if finding_class == "HARD"
+            else "MAJOR"
+            if finding_class == "MAJOR"
+            else "ADVISORY"
+        )
         rows.append(
             {
                 "finding_id": finding_id,
@@ -672,6 +764,13 @@ def _quality_rows(quality: Mapping[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def _submission_blocking(row: Mapping[str, Any]) -> bool:
+    return row.get("status") == "OPEN" and row.get("severity") in {
+        "BLOCKING",
+        "MAJOR",
+    }
 
 
 def _reconcile(bundles: Mapping[str, Mapping[str, Any]], quality: Mapping[str, Any], source_only: bool) -> dict[str, Any]:
@@ -723,7 +822,7 @@ def _advisory_status_note(reconciliation: Mapping[str, Any]) -> dict[str, Any]:
     """Represent review progress without minting a false independent verdict."""
 
     blocking = any(
-        row.get("severity") == "BLOCKING" and row.get("status") == "OPEN"
+        _submission_blocking(row)
         for row in reconciliation.get("rows", [])
         if isinstance(row, Mapping)
     )
@@ -861,7 +960,7 @@ def _cross_run_tree_reference(
 
 
 def _check_state(rows: list[Mapping[str, Any]], *, default: str = "UNVERIFIED") -> str:
-    if any(row.get("status") == "OPEN" and row.get("severity") == "BLOCKING" for row in rows):
+    if any(_submission_blocking(row) for row in rows):
         return "BLOCK"
     if any(row.get("status") == "OPEN" for row in rows):
         return "CAVEAT"
@@ -898,15 +997,15 @@ def _reconciliation_findings(
         finding_id = _require_identifier(raw.get("finding_id"), "reconciled finding id")
         severity = str(raw.get("severity") or "ADVISORY")
         status = str(raw.get("status") or "OPEN")
-        if severity not in {"BLOCKING", "ADVISORY"} or status not in {"OPEN", "RESOLVED"}:
+        if severity not in {"BLOCKING", "MAJOR", "ADVISORY"} or status not in {"OPEN", "RESOLVED"}:
             _fail(f"reconciliation finding {finding_id} has an unsupported status/severity")
-        hard_open = severity == "BLOCKING" and status == "OPEN"
+        hard_open = severity in {"BLOCKING", "MAJOR"} and status == "OPEN"
         findings.append(
             {
                 "finding_id": finding_id,
                 "source_ref": reconciliation_ref["ref"],
                 "source_sha256": reconciliation_ref["sha256"],
-                "finding_class": "HARD" if severity == "BLOCKING" else "ADVISORY",
+                "finding_class": "HARD" if severity in {"BLOCKING", "MAJOR"} else "ADVISORY",
                 "status": status,
                 "disposition": "UNRESOLVED" if status == "OPEN" else "RECONCILED",
                 "daily_effect": "NONE" if status == "RESOLVED" else ("BLOCK" if hard_open else "CAVEAT"),
@@ -931,6 +1030,26 @@ def _reconciliation_findings(
                 }
             )
     return findings, blockers
+
+
+def _source_bindings_consistent(
+    *,
+    snapshot: str,
+    integration: Mapping[str, Any],
+    build: Mapping[str, Any],
+    quality: Mapping[str, Any],
+) -> bool:
+    """Bind the canonical integration inventory and build-time snapshot separately."""
+
+    quality_build = quality.get("build")
+    return bool(
+        isinstance(quality_build, Mapping)
+        and integration.get("manuscript_snapshot_sha256") == snapshot
+        and build.get("manuscript_snapshot_sha256") == snapshot
+        and quality.get("manuscript_sha256")
+        == integration.get("source_tree_sha256")
+        and quality_build.get("source_sha256") == build.get("source_tree_sha256")
+    )
 
 
 def _submission_checklist_payload(
@@ -967,11 +1086,11 @@ def _submission_checklist_payload(
     snapshot = contract.get("manuscript_snapshot_sha256")
     if not isinstance(snapshot, str) or not _SHA256_RE.fullmatch(snapshot):
         _fail("submission checklist lacks the frozen manuscript snapshot")
-    if (
-        integration.get("manuscript_snapshot_sha256") != snapshot
-        or build.get("manuscript_snapshot_sha256") != snapshot
-        or build.get("source_tree_sha256") != integration.get("source_tree_sha256")
-        or quality.get("manuscript_sha256") != integration.get("source_tree_sha256")
+    if not _source_bindings_consistent(
+        snapshot=snapshot,
+        integration=integration,
+        build=build,
+        quality=quality,
     ):
         _fail("submission checklist found inconsistent authoring snapshot bindings")
     venue = contract.get("venue_profile")
@@ -1028,7 +1147,8 @@ def _submission_checklist_payload(
         "evidence_index": precommit_ref,
     }
     pdf_truth: dict[str, Any]
-    if build_state == "COMPILED":
+    review_source_only = precommit.get("source_only") is True
+    if build_state == "COMPILED" and not review_source_only:
         pdf_descriptor = input_payload.get("pdf")
         build_pdf = build.get("pdf")
         if not isinstance(pdf_descriptor, Mapping) or not isinstance(build_pdf, Mapping):
@@ -1038,6 +1158,24 @@ def _submission_checklist_payload(
             _fail("compiled submission checklist PDF does not match the build receipt")
         evidence_links["pdf"] = pdf_ref
         pdf_truth = {"available": True, "ref": pdf_ref["ref"], "sha256": pdf_ref["sha256"]}
+    elif review_source_only:
+        # The authoring run may contain a compiled candidate, but this review
+        # deliberately froze SOURCE_ONLY because no external build verifier
+        # attested that candidate.  Preserve the descriptor as non-authorizing
+        # context and do not compare it to, or mint it from, the old build
+        # receipt.
+        pdf_descriptor = input_payload.get("pdf")
+        if not isinstance(pdf_descriptor, Mapping):
+            _fail("source-only review of a compiled authoring run lacks its candidate PDF descriptor")
+        pdf_ref = _cross_run_descriptor_reference(
+            source_dir, authoring_run_id, pdf_descriptor, "unattested compiled PDF candidate"
+        )
+        evidence_links["pdf"] = pdf_ref
+        pdf_truth = {
+            "available": True,
+            "ref": pdf_ref["ref"],
+            "sha256": pdf_ref["sha256"],
+        }
     else:
         if input_payload.get("pdf") is not None:
             _fail("noncompiled submission checklist cannot carry a PDF")
@@ -1047,7 +1185,7 @@ def _submission_checklist_payload(
     capability_coverage: dict[str, dict[str, str]] = {}
     for capability in REQUIRED_CAPABILITY_IDS:
         capability_rows = [row for row in rows if row.get("origin_capability") == capability]
-        if any(row.get("status") == "OPEN" and row.get("severity") == "BLOCKING" for row in capability_rows):
+        if any(_submission_blocking(row) for row in capability_rows):
             state = "BLOCK"
         elif any(row.get("status") == "OPEN" for row in capability_rows):
             state = "NEEDS_REPAIR"
@@ -1070,7 +1208,13 @@ def _submission_checklist_payload(
     ]
     asset_rows = [row for row in rows if row.get("origin_capability") == "figure_table"]
     cross_reference_rows = [row for row in rows if row.get("origin_capability") == "venue_style_latex"]
-    if build_state == "COMPILED":
+    if build_state == "COMPILED" and review_source_only:
+        build_check_state = "UNVERIFIED"
+        build_summary = (
+            "A compiled candidate exists, but the review precommit is SOURCE_ONLY because "
+            "no external verifier attested the final PDF/build binding."
+        )
+    elif build_state == "COMPILED":
         build_check_state = "CLEAR" if details.get("build_verified") is True else "UNVERIFIED"
         build_summary = (
             "The compiled PDF bytes are hash-bound, but the build receipt is not externally verified."
@@ -1247,7 +1391,7 @@ def _report_dets(review_dir: Path, timestamp: str) -> tuple[list[str], dict[str,
     if reconciliation.get("independence_verified") is not False:
         _fail("REPORT refuses a reconciliation without the external-independence caveat")
     blocking = any(
-        row.get("severity") == "BLOCKING" and row.get("status") == "OPEN"
+        _submission_blocking(row)
         for row in reconciliation.get("rows", []) if isinstance(row, Mapping)
     )
     result = {
@@ -1297,6 +1441,12 @@ def run_dets(run_dir: str | Path, stage: str, timestamp: str) -> tuple[list[str]
     precommit = prepare_review_precommit(review_dir, timestamp)
     _payload, _authoring_id, _source_dir, details = _load_input(review_dir)
     bundles = {capability: _read_bundle(review_dir, capability, precommit) for capability in REQUIRED_CAPABILITY_IDS}
+    reviewer_ids = [
+        str((bundle.get("reviewer_identity") or {}).get("reviewer_id") or "")
+        for bundle in bundles.values()
+    ]
+    if any(not value for value in reviewer_ids) or len(set(reviewer_ids)) != len(reviewer_ids):
+        _fail("all six blind capabilities require distinct non-empty reviewer_instance_ids")
     reconciliation = _reconcile(bundles, details["quality"], bool(precommit["source_only"]))
     _write_json_once(review_dir, RECONCILIATION_REL, reconciliation)
     status_path = write_artifact(
@@ -1308,7 +1458,7 @@ def run_dets(run_dir: str | Path, stage: str, timestamp: str) -> tuple[list[str]
         _advisory_status_note(reconciliation),
         timestamp,
     )
-    blocking = any(row["severity"] == "BLOCKING" and row["status"] == "OPEN" for row in reconciliation["rows"])
+    blocking = any(_submission_blocking(row) for row in reconciliation["rows"])
     result = {
         "review_run_id": review_dir.name,
         "independence_verified": False,

@@ -98,6 +98,17 @@ def _walk(value, schema: dict, pointer: str, changes: list[dict], extras: list[d
     accepts_array = expected_type == "array" or (
         isinstance(expected_type, list) and "array" in expected_type
     )
+    if accepts_array and isinstance(value, str):
+        # Director lock 2026-08-16: a string where the contract wants an array is a
+        # representation-only wrap — the full text survives as the single item, no
+        # content is dropped, and the change is recorded for the normalization report.
+        changes.append({
+            "pointer": pointer,
+            "rule": "string-to-single-item-array",
+            "before": value,
+            "after": [value],
+        })
+        return [value]
     if isinstance(value, dict) and accepts_object:
         properties = schema.get("properties") or {}
         out = {}

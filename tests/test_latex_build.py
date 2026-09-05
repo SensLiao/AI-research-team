@@ -15,10 +15,26 @@ from research_agent_teams.tools.latex_build import (
     build_latex_project,
     detect_latex_toolchain,
 )
+from research_agent_teams.tools._latex_sandbox import private_workspace
 from research_agent_teams.tools.validate_artifact import validate_payload
 
 
 HEX = {letter: letter * 64 for letter in "abcdef0123456789"}
+
+
+def test_private_workspace_uses_short_system_temp_for_long_windows_build_path(tmp_path):
+    build_root = tmp_path
+    while len(str(build_root.absolute())) < 230:
+        build_root = build_root / ("long-segment-" + "x" * 32)
+    build_root.mkdir(parents=True)
+
+    with private_workspace(build_root, platform_name="nt") as (workspace, source, output):
+        assert workspace.parent != build_root
+        assert len(str(source)) < 260
+        assert source.is_dir()
+        assert output.is_dir()
+
+    assert not workspace.exists()
 
 
 def _source_tree(run_root: Path, main: str | None = None) -> Path:
@@ -36,6 +52,45 @@ def _source_tree(run_root: Path, main: str | None = None) -> Path:
         encoding="utf-8",
     )
     return source
+
+
+def test_build_binds_integrator_canonical_inventory_hash(tmp_path):
+    source = _source_tree(tmp_path)
+    main = source / "main.tex"
+    inventory = [
+        {
+            "path": "main.tex",
+            "sha256": hashlib.sha256(main.read_bytes()).hexdigest(),
+            "kind": "MAIN_TEX",
+        }
+    ]
+    canonical = json.dumps(
+        inventory, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    source_hash = hashlib.sha256(canonical).hexdigest()
+    manifest = {
+        "canonical_file_inventory": inventory,
+        "source_tree_sha256": source_hash,
+    }
+    manifest_path = source / "manifests" / "manuscript-integration.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    tools = _fake_tools(tmp_path, "pdflatex", "bibtex")
+    receipt = build_latex_project(
+        tmp_path,
+        source,
+        run_id="build-run-001",
+        manuscript_snapshot_sha256=HEX["a"],
+        requires_pdf=True,
+        environment={"PATH": "", "LOCALAPPDATA": str(tmp_path / "local app")},
+        which=_which(tools),
+        runner=FakeRunner(tmp_path),
+        platform_name="nt" if os.name == "nt" else "posix",
+        prefer_direct=True,
+    )
+
+    assert receipt["source_tree_sha256"] == source_hash
 
 
 def _fake_tools(root: Path, *names: str) -> dict[str, str]:
@@ -79,7 +134,11 @@ class FakeRunner:
         self.calls: list[dict] = []
 
     def __call__(self, argv, **kwargs):
-        call = {"argv": list(argv), **kwargs}
+        call = {
+            "argv": list(argv),
+            "refs_bib_present": (Path(kwargs["cwd"]) / "refs.bib").is_file(),
+            **kwargs,
+        }
         self.calls.append(call)
         name = _basename(str(argv[0]))
         probe = any(arg in {"-v", "--version"} for arg in argv[1:])
@@ -197,6 +256,10 @@ def test_driver_readiness_uses_build_sanitized_environment(tmp_path):
 def test_latexmk_present_without_perl_falls_back_to_direct_pipeline(tmp_path):
     run_root = tmp_path / "run"
     run_root.mkdir()
+    (run_root / "source").mkdir()
+    (run_root / "source" / "refs.bib").write_text(
+        "@misc{Fixture, title={Fixture}}\n", encoding="utf-8"
+    )
     tools = _fake_tools(tmp_path, "latexmk", "pdflatex", "bibtex")
     runner = FakeRunner(run_root)
 
@@ -212,9 +275,35 @@ def test_latexmk_present_without_perl_falls_back_to_direct_pipeline(tmp_path):
         for call in runner.calls
         if not any(arg in {"-v", "--version"} for arg in call["argv"][1:])
     ]
-    assert actual == ["pdflatex", "bibtex", "pdflatex", "pdflatex"]
+    assert actual == ["pdflatex", "bibtex", "pdflatex", "pdflatex", "pdflatex"]
+    bib_call = next(
+        call
+        for call in runner.calls
+        if _basename(call["argv"][0]) == "bibtex"
+        and "--version" not in call["argv"]
+    )
+    assert bib_call["refs_bib_present"] is True
     log = (run_root / receipt["log_ref"]).read_text(encoding="utf-8")
     assert "LATEXMK_RUNTIME_UNAVAILABLE" in log
+
+
+def test_prefer_direct_avoids_latexmk_wrapper_on_unicode_windows_path(tmp_path):
+    run_root = tmp_path / "run-廖"
+    run_root.mkdir()
+    tools = _fake_tools(tmp_path, "latexmk", "perl", "pdflatex", "bibtex")
+    runner = FakeRunner(run_root)
+
+    receipt = _build(
+        run_root,
+        tools,
+        runner,
+        runtime_candidates=str(Path(tools["perl"]).parent),
+        prefer_direct=True,
+    )
+
+    _assert_valid(receipt)
+    assert receipt["build_state"] == "COMPILED"
+    assert receipt["process_receipt"]["executable"] == "direct-pipeline"
 
 
 def test_fake_latexmk_success_binds_fresh_pdf_source_and_receipts(tmp_path):
@@ -639,7 +728,7 @@ def test_direct_pipeline_uses_one_decreasing_build_deadline(tmp_path):
         call["timeout"] for call in runner.calls
         if not any(arg in {"-v", "--version"} for arg in call["argv"][1:])
     ]
-    assert len(compile_timeouts) == 4
+    assert len(compile_timeouts) == 5
     assert all(later < earlier for earlier, later in zip(compile_timeouts, compile_timeouts[1:]))
 
 

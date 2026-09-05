@@ -17,7 +17,7 @@ import pytest
 import yaml
 
 from research_agent_teams.tools import _manuscript_contract_validation
-from research_agent_teams.tests.test_manuscript_predraft_schemas import (
+from .test_manuscript_predraft_schemas import (
     valid_manuscript_contract,
 )
 from research_agent_teams.tools.manuscript_contract import (
@@ -32,7 +32,7 @@ from research_agent_teams.tools.manuscript_contract import (
 from research_agent_teams.tools.validate_artifact import validate_payload
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2] / "research_agent_teams"
 PROFILE_ROOT = ROOT / "profiles" / "paper_design_tokens"
 NOW = datetime(2026, 7, 21, 12, 0, tzinfo=timezone.utc)
 MAX_OFFICIAL_AGE = timedelta(days=45)
@@ -298,6 +298,34 @@ def test_official_requires_pdf_boolean_is_preserved(official_value: bool):
     assert token["weakenable"] is False
 
 
+@pytest.mark.parametrize("draft_value", [True, False])
+def test_provisional_venue_can_declare_advisory_requires_pdf(draft_value: bool):
+    """A venue-unselected authoring draft must not forge an official hard rule."""
+
+    layers = {
+        "venue": _layer_document(
+            "venue",
+            {
+                "requires_pdf": _entry(
+                    draft_value,
+                    layer="venue",
+                    classification="ADVISORY",
+                    weakenable=True,
+                )
+            },
+        ),
+        "run": _layer_document("run", {"voice": _entry("direct", layer="run")}),
+    }
+
+    result = resolve_paper_design_tokens(layers)
+    token = next(row for row in result["tokens"] if row["token"] == "requires_pdf")
+
+    assert token["value"] is draft_value
+    assert token["classification"] == "ADVISORY"
+    assert token["resolved_layer"] == "venue"
+    assert token["weakenable"] is True
+
+
 def test_requires_pdf_cannot_be_declared_outside_official_venue_layer():
     layers = {
         "project": _layer_document(
@@ -390,6 +418,7 @@ def test_profiles_keep_small_hard_core_and_style_as_advisory():
         "SYSTEMS",
         "THEORY",
         "POSITION_SURVEY",
+        "METHODOLOGICAL_CRITICAL_REVIEW",
     }
     assert all(
         token["classification"] == "ADVISORY"
@@ -463,6 +492,34 @@ def test_freeze_validates_complete_contract_and_writes_canonical_snapshot(
     )
     assert requires_pdf_token["value"] is requires_pdf
     assert not (tmp_path / "state" / "contract.json.tmp").exists()
+
+
+def test_freeze_accepts_provisional_advisory_pdf_policy_for_authoring_draft(
+    tmp_path: Path,
+):
+    payload = _valid_frozen_contract(requires_pdf=False)
+    policy = payload["venue_profile"]["hard_field_policy"]["requires_pdf"]
+    policy.update(classification="ADVISORY", weakenable=True)
+    layers = copy.deepcopy(payload["resolved_tokens"]["source_layers"])
+    layers["venue"]["tokens"]["requires_pdf"] = {
+        "value": False,
+        "classification": "ADVISORY",
+        "weakenable": True,
+        "source_ref": policy["source_ref"],
+        "source_sha256": policy["source_sha256"],
+    }
+    payload["resolved_tokens"] = resolve_paper_design_tokens(layers)
+
+    frozen = _freeze(payload, tmp_path, name="provisional-draft.json")
+
+    token = next(
+        row
+        for row in frozen["resolved_tokens"]["tokens"]
+        if row["token"] == "requires_pdf"
+    )
+    assert token["classification"] == "ADVISORY"
+    assert token["weakenable"] is True
+    assert validate_payload("manuscript_contract", frozen) == []
 
 
 @pytest.mark.parametrize("missing", ["paper_type", "north_star", "source_hashes"])

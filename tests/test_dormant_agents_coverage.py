@@ -55,7 +55,7 @@ from research_agent_teams.tools.validate_artifact import (
 # Paths
 # ---------------------------------------------------------------------------
 
-AGENTS_DIR = Path(__file__).resolve().parent.parent / "agents"
+AGENTS_DIR = Path(__file__).resolve().parents[2] / "research_agent_teams" / "agents"
 SPEC_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 
@@ -95,9 +95,12 @@ def _assert_valid_payload(artifact_type: str, payload: dict) -> None:
     )
 
 
-def _assert_spec_exists(agent_name: str) -> None:
-    """Assert that the agent spec file exists and has parseable YAML frontmatter."""
-    spec_path = AGENTS_DIR / f"{agent_name}.md"
+def _assert_spec_exists(agent_name: str, parked: bool = False) -> None:
+    """Assert that the agent spec file exists and has parseable YAML frontmatter.
+
+    parked=True looks in agents/_parked/ — the seat was de-wired (2026-08-20 team
+    upgrade, director-authorised) but its spec and tool core remain covered."""
+    spec_path = (AGENTS_DIR / "_parked" / f"{agent_name}.md") if parked else (AGENTS_DIR / f"{agent_name}.md")
     assert spec_path.exists(), f"Agent spec file not found: {spec_path}"
 
     content = spec_path.read_text(encoding="utf-8")
@@ -518,7 +521,7 @@ class TestReviewResponseSimulator:
         _assert_valid_envelope("response_simulation", payload)
 
     def test_spec_exists_and_is_parseable(self) -> None:
-        _assert_spec_exists("review-response-simulator")
+        _assert_spec_exists("review-response-simulator", parked=True)
 
     def test_empty_attacks_is_valid(self) -> None:
         """attacks[] has no minItems — an empty simulation is permitted."""
@@ -789,7 +792,7 @@ class TestSynthesisWriter:
         _assert_valid_envelope("synthesis_text", payload)
 
     def test_spec_exists_and_is_parseable(self) -> None:
-        _assert_spec_exists("synthesis-writer")
+        _assert_spec_exists("synthesis-writer", parked=True)
 
     def test_missing_structured_verdict_is_invalid(self) -> None:
         payload = {"prose_verdict_word": "approve", "body": "body"}
@@ -870,7 +873,7 @@ class TestThreatsToValidityWriter:
         _assert_valid_envelope("threats_report", payload)
 
     def test_spec_exists_and_is_parseable(self) -> None:
-        _assert_spec_exists("threats-to-validity-writer")
+        _assert_spec_exists("threats-to-validity-writer", parked=True)
 
     def test_invalid_validity_dimension_enum_is_invalid(self) -> None:
         payload = {

@@ -1006,7 +1006,7 @@ def test_read_paper_deep_rereads_the_snapshot_and_blocks_a_quote_that_is_not_the
         "tampered after linker output", encoding="utf-8")
     with pytest.raises(GateBlock) as exc:
         read_paper_deep.run_dets(run_dir, "DISCOVER", TS)
-    assert "exact_quote mismatch" in str(exc.value)
+    assert "document_hash does not match" in str(exc.value)
 
 
 def test_read_paper_deep_quote_locator_mismatch_blocks_truth_claim(tmp_path):

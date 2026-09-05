@@ -102,7 +102,7 @@ def test_existence_gate_offline_is_unverified_never_a_false_block(tmp_path):
 def test_existence_gate_blocks_on_confirmed_not_found(tmp_path, monkeypatch):
     rd = _run(tmp_path)
     monkeypatch.setattr(_shared, "build_existence_verdict",
-                        lambda refs, ts, transport=None, cache=None: {
+                        lambda refs, ts, transport=None, cache=None, local_roots=None: {
                             "checked": [{"ref": "doi:10.1/ghost", "kind": "doi",
                                          "state": "not_found", "detail": "confirmed not found"}],
                             "n_verified": 0, "n_not_found": 1, "n_lookup_error": 0,

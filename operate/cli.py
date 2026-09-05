@@ -344,7 +344,14 @@ def cmd_pre_search(a) -> None:
     if fn is None:
         _emit({"run_id": a.run_id, "error": f"mode {_mode_from_run(a.runs_dir, a.run_id)!r} has no pre_search step"})
         sys.exit(2)
-    bundle_path = fn(rd, request, ts, queries=a.query)
+    funnel_kwargs = {}
+    if getattr(a, "no_funnel", False):
+        funnel_kwargs["funnel"] = False
+    if getattr(a, "funnel_depth", None) is not None:
+        funnel_kwargs["funnel_depth"] = a.funnel_depth
+    if getattr(a, "funnel_breadth", None) is not None:
+        funnel_kwargs["funnel_breadth"] = a.funnel_breadth
+    bundle_path = fn(rd, request, ts, queries=a.query, **funnel_kwargs)
     bundle = json.loads(Path(bundle_path).read_text(encoding="utf-8"))
     # C1 (2026-08-07): a non-Latin request with no explicit --query is refused before any live call —
     # search engines silently mistranslate/misparse a raw CJK etc. sentence, which is retrieval
@@ -362,6 +369,8 @@ def cmd_pre_search(a) -> None:
            "relevance_filter": bundle.get("relevance_filter") or {},
            "retrieval_channels": bundle.get("retrieval_channels") or {},
            "source_errors": bundle.get("source_errors") or {},
+           "funnel": bundle.get("funnel") or {},
+           "related_queries": bundle.get("related_queries") or [],
            "note": "live-retrieval bundle written; the DISCOVER worker reads it by reference. "
                    "Zero records + source_errors = offline degrade (honest, vault-only run)."})
 
@@ -470,6 +479,8 @@ def cmd_run_dets(a) -> None:
             gate, delivery, run_status = "STAGE_HALTED", "USABLE_WITH_CAVEATS", "running"
         _emit({"run_id": a.run_id, "stage": a.stage, "halted": True,
                "gate": gate, "reason": str(gb),
+               "stop_reason": getattr(gb, "stop_reason", None),
+               "state_summary": getattr(gb, "state_summary", None),
                "delivery_status": delivery,
                "run_status": run_status,
                "director_review_packet": str(packet),
@@ -1005,6 +1016,13 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--query", action="append", default=None,
                     help="explicit scholarly retrieval query (repeatable); keeps the pinned request "
                          "unchanged while decomposing broad or multilingual tasks")
+    ps.add_argument("--funnel-depth", type=int, default=None,
+                    help="four-stage funnel rounds: 1 = the four stages only, N>1 follows N-1 rounds of "
+                         "machine-proposed related queries (default: the mode's own; deep_research 2)")
+    ps.add_argument("--funnel-breadth", type=int, default=None,
+                    help="related queries followed per query in each expansion round (default 2)")
+    ps.add_argument("--no-funnel", action="store_true",
+                    help="skip the four-stage funnel (plain facade search only)")
     ps.set_defaults(func=cmd_pre_search)
 
     fp = sub.add_parser("fulltext-pre", parents=[common],
@@ -1080,7 +1098,7 @@ def build_parser() -> argparse.ArgumentParser:
     plp.set_defaults(func=cmd_plan_propose)
 
     br = sub.add_parser("brief", parents=[common],
-                        help="开工前计划卡：扫知识库/项目/资源，用大白话给出打算怎么做 + 会在哪停下来问你（只读，不启动任何运行）")
+                        help="开工前计划摘要：扫知识库/项目/资源，用大白话给出打算怎么做 + 会在哪停下来问你（只读，不启动任何运行）")
     br.add_argument("--request", required=True)
     br.add_argument("--project", default=None, help="the registered project this work belongs to")
     br.add_argument("--intent", default=None, help="force an intent id (else the request is matched)")

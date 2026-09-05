@@ -1,37 +1,39 @@
 # Platform Facts - Research Agent Teams
 
+**Scientific figures, scoped update 2026-09-05:** `tools/scientific_figure.py` and `tools/journal_render.py` are implemented offline adapters. The authoring path consumes a compact scientific figure plan and v2 realized assets; it can reuse unchanged, hash-checked figures. Journal questions/default recommendations, the three reused agent roles, actual rule provenance and custom-TeX limits are documented in `docs/SCIENTIFIC-FIGURES.md`. The buckwheat run `runs/tartary-buckwheat-germplasm-review/figure-upgrade-20260905/` contains three actual reviewed figures, an exercised automatic/reuse path, and **196 passing scoped tests**. This row is a feature-specific verification, not a recount or a full-suite green claim for the historical inventory below.
+
 This file is the fact source for what the machine can do today. It separates
 one-button operated modes, routable/spec-only modes, and work that still waits
 for the director's GPU server.
 
-## 0. Machine Inventory (re-derived from code on 2026-08-03)
+## 0. Machine Inventory (re-derived from code on 2026-09-06)
 
 Every number below is computed from the registries and the file tree, never quoted from memory.
 
 | Part | Count | Source of truth |
 |---|---:|---|
-| Rostered agents | **166** (6 control + 160 workers) | `orchestrator/roster.yaml` == `agents/*.md` |
-| Modes | **26** (23 operated / 3 spec-only) | `orchestrator/mode_registry.yaml`; operated mirrored by `operate/modes/__init__.py::REGISTRY` |
+| Rostered agents | **172** (7 control + 165 workers) | `orchestrator/roster.yaml` == `agents/*.md` |
+| Modes | **27** (24 operated / 3 spec-only) | `orchestrator/mode_registry.yaml`; operated mirrored by `operate/modes/__init__.py::REGISTRY` |
 | Stage graph | **7** stages | `orchestrator/graph.yaml`: DISCOVER IDEATE DESIGN EXECUTE ANALYZE VERIFY REPORT |
-| Deterministic tools | **146** modules | `tools/*.py` (140 + `council_template` + `example_replay` + `governance_census` + `research_map` + `upstream_catalog`, 2026-08-04; + `local_data_availability`, 2026-08-07) |
-| Artifact schemas | **167** JSON (167/167 parse) | `schemas/*.json` |
+| Deterministic tools | **163** modules | `tools/*.py` (re-derived 2026-09-05; `search_funnel.py` added) |
+| Artifact schemas | **181** JSON | `schemas/*.json`; parse/contract validity is test-derived |
 | Human gates | **5** | `gates/` — idea-bet, promote-to-vault, venue-pick, venue-decide, aers-reference-approve |
 | Enforcement hooks | **2** | `hooks/` — artifact-contract-enforcer, permission-scope-guard |
 | Domain profiles | **7** | `profiles/*.yaml` (medical-segmentation is one profile, never a hardcoded domain) |
-| `operate` subcommands | **32** | `operate/cli.py` — counted from the built argparse, not by hand; the previous **31** here was stale |
-| `workbench` verbs | **14** | `workbench/cli.py` — read-only navigation; only `reindex` writes, and only inside `.workbench/` + one generated `PROJECT-HOME.md` per workspace. Three added 2026-08-04, all index-free: **`gates`** 现在该按哪个命令 + 每个人工关卡的触发条件（`/gates` 也可以）· **`map`** 研究链条断在哪一环（哪个点子还没有实验）· **`capabilities`** 8 个来源 358 份上游 skill 原文（只读原文，**不是能力**） |
-| Outcome recipes | **9** | `orchestrator/outcome_recipes.yaml` — the "你想得到什么" menu above the mode table; a test pins that EVERY operated mode stays reachable from it |
+| `operate` subcommands | **33** | `operate/cli.py` — counted from the built argparse, not by hand |
+| `workbench` verbs | **14** | `workbench/cli.py` — read-only navigation; only `reindex` writes, and only inside `.workbench/` + one generated `PROJECT-HOME.md` per workspace. Three added 2026-08-04, all index-free: **`gates`** 现在该按哪个命令 + 每个导演决定点的触发条件（`/gates` 也可以）· **`map`** 研究链条断在哪一环（哪个点子还没有实验）· **`capabilities`** 8 个来源 358 份上游 skill 原文（只读原文，**不是能力**） |
+| Outcome recipes | **12** | `orchestrator/outcome_recipes.yaml` — the "你想得到什么" menu above the mode table; a test pins that EVERY operated mode stays reachable from it |
 | Vendored upstream text | **8** sources / **358** skill bundles | `vendor/upstream-research-skills/MANIFEST.json` — third-party markdown, READ-ONLY reference. Not capability, not indexed, structurally unrunnable (markdown + license notices only). `drawio-scientific-illustrator` excluded on safety grounds |
-| Seat accounting | **168** seat-slots declared / **153** recipe-dispatched / **15** council-only | `tools/worker_census.py` — `agent_subset` is the roster CEILING, not a dispatch promise; 0 orphan seats, and only `deep_research` has a real depth knob (1/12 modes can be scaled) |
-| Governance usage (measured) | **8/12** modes · **50/166** seats ever dispatched in **32** real runs | `tools/governance_census.py` — REACHABLE (P4, all 166) and EXERCISED (P7, 50) are different axes. Per-check firing is recorded nowhere, so guard tools are `unmeasurable`, never "unused" |
+| Seat accounting | **260** seat-slots declared / **254** recipe-dispatched / **6** council-only | `tools/worker_census.py teams --json` — `agent_subset` is the roster CEILING, not a dispatch promise; 0 orphan seats, and only `deep_research` has a real depth knob (1/24 modes can be scaled) |
+| Governance usage (measured) | **6/24** modes · **20/172** seats seen in **23** retained runs | `tools/governance_census.py --json` — only the currently retained `runs/` tree is measurable; REACHABLE and EXERCISED are different axes |
 | Recorded example | **86** files tracked (of 87 on disk), replayable | `projects/t4-scribble-m0-mechanism-eval/` — the only copy of the three honesty records; now tracked (was gitignored while 8 tests required it). The untracked 87th is the generated `PROJECT-HOME.md`. `tools/example_replay.py` re-derives it: 22 checks, 0 executions |
-| Slash commands / skills | **19 / 2** | `.claude/commands/`, `.claude/skills/` |
-| Test files | **245** | `tests/test_*.py` — re-derived every round, never typed from memory (pinned by `tests/test_governance_census.py`; the row has drifted before) |
+| Slash commands / skills | **20 Claude commands / 2 Claude skills / 19 Codex skills** | `.claude/commands/`, `.claude/skills/`, `.agents/skills/` |
+| Test files | **259** | `tests/machine/test_*.py` — re-derived 2026-09-05, never typed from memory (pinned by `tests/machine/test_governance_census.py`; the row has drifted before) |
 
-Worker roster by stage group: discover 38 · gap_hunting 10 · ideate 7 · design 24 · execute 20 ·
-analyze 24 · verify 29 · report 5.
+Worker roster by stage group (census 2026-09-06): discover 44 · gap_hunting 10 · ideate 13 · design 24 ·
+execute 20 · analyze 24 · verify 25 · report 5 · control 7.
 
-### Operated-mode contract table (authoritative)
+### Selected operated-mode contract rows
 
 `agent_subset` = the roster names a mode may use. `hops` = `budget.max_agent_hops`, the real ceiling on
 dispatched LLM workers. Neither is a concurrency number.
@@ -39,13 +41,13 @@ dispatched LLM workers. Neither is a concurrency number.
 | Mode | stage_path | subset | hops | gate_level | product_version |
 |---|---|---:|---:|---|---|
 | `ingest_paper` | DISCOVER→REPORT | 2 | 4 | record_only | `ingest-paper/v1` |
-| `read_paper_deep` | DISCOVER→REPORT | 20 | 20 | record_only | `paper-reading/v3` |
+| `read_paper_deep` | DISCOVER→REPORT | 21 | 20 | record_only | `paper-reading/v3` |
 | `evidence_review` | DISCOVER→REPORT | 8 | 6 | director_signoff | `evidence-brief/v2` |
 | `evidence_deep` | DISCOVER→REPORT | 12 | 10 | director_signoff | `evidence-deep/v2` |
-| `deep_research` | DISCOVER→REPORT | 14 | 12 | record_only | `research-brief/v2` |
+| `deep_research` | DISCOVER→REPORT | 18 | 20 | record_only | `research-brief/v2` |
 | `gap_breadth` | DISCOVER→REPORT | 10 | 10 | record_only | `gap-dossier/v1` |
-| `new_direction` | DISCOVER→IDEATE→REPORT | 13 | 10 | director_signoff @ IDEATE | `idea-investment-memo/v2` |
-| `deep_ideation` | DISCOVER→IDEATE→REPORT | 18 | 9 | director_signoff @ IDEATE | `idea-investment-memo/v2` |
+| `new_direction` | DISCOVER→IDEATE→REPORT | 15 | 10 | director_signoff @ IDEATE | `idea-investment-memo/v2` |
+| `deep_ideation` | DISCOVER→IDEATE→REPORT | 25 | unbounded initial panel; bounded repair | director_signoff @ IDEATE | `idea-investment-memo/v2` |
 | `full_rigor_minimal` | DESIGN→EXECUTE→ANALYZE→VERIFY→REPORT | 35 | 24 | director_signoff | `full-rigor/v2` |
 | `venue_readiness` | VERIFY→REPORT | 11 | 6 | director_signoff | `venue-readiness/v2` |
 | `manuscript_authoring` | DISCOVER→DESIGN→ANALYZE→VERIFY→REPORT | 13 | 12 | record_only | `manuscript-authoring/v1` |
@@ -58,24 +60,24 @@ dispatched LLM workers. Neither is a concurrency number.
 The operated surface is exactly the modes present in `operate/modes/__init__.py::REGISTRY`
 and mirrored by `orchestrator/mode_registry.yaml` with `operated: true`.
 
-There are currently 21 operated modes. Wave 2 (2026-08-04) added nine — `gap_scan`,
+There are currently 23 operated modes. Wave 2 (2026-08-04) added nine — `gap_scan`,
 `full_new_direction`, `design_experiment`, `power_analysis_review`, `m2_accept`,
 `analysis_audit_panel`, `verify_result`, `check_run`, `repo_code_audit` — all built on
 `operate/modes/_panel_recipe.py`, which compiles each mode's registry-declared worker
 pipeline and director-Markdown contract onto the same spine wave 1 uses. Nothing that was
-manual became automatic: the four human gates, GPU submission and code-patch application
+manual became automatic: the five human gates, GPU submission and code-patch application
 are unchanged, and the wave-2 recipes stop AT those boundaries.
 
 Wave-1 modes:
 
 | Mode | Shape | Honest use |
 |---|---|---|
-| `new_direction` | `DISCOVER -> IDEATE -> REPORT` | Eight-seat grounding/proposal/ranking/collision/planning path. Current runs require an `idea-investment-memo/v2`; missing prior-art coverage is `UNVERIFIED`, never silently clear. Human product: `director-review/ideas/idea-bet-menu.md`. |
-| `deep_ideation` | `DISCOVER -> IDEATE -> REPORT` | Nine-seat extension with formalization and cross-domain mechanism/analogy work, followed by the same independent investment pipeline and `/idea-bet` product. |
+| `new_direction` | `DISCOVER -> IDEATE -> REPORT` | Registry-bounded grounding/proposal/ranking/collision/planning path. Current runs require an `idea-investment-memo/v2`; missing prior-art coverage is `UNVERIFIED`, never silently clear. Human product: `director-review/ideas/idea-bet-menu.md`. |
+| `deep_ideation` | `DISCOVER -> IDEATE -> REPORT` | Multi-view formalization, mechanism, analogy, saturation, merger, collision, and experiment path. The initial panel is not hop-capped; repair remains bounded and targeted. It ends at the same human `/idea-bet` boundary. |
 | `gap_breadth` | `DISCOVER -> REPORT` | Five blind hunters, then gap prosecutor, mechanism synthesizer, and quality auditor. A gap can be `CLOSED` only from hash-bound exact full-text scope/result spans. |
 | `evidence_review` | `DISCOVER -> REPORT` | Six workers: source set, methodology-derived source quality and claims, semantic search moderator, exact-span linker, and independent citation auditor. |
 | `evidence_deep` | `DISCOVER -> REPORT` | Ten workers in a seven-wave sparse DAG add contradiction, dataset, staleness, and landscape analysis to strict source methodology, search trace, and citation attribution. Human product: `director-review/evidence/evidence-deep-brief.md`. |
-| `deep_research` | `DISCOVER -> REPORT` | Twelve workers in eight waves: frozen source set, source-quality audit, four independent perspectives, semantic search moderation, claims/spans, parallel independent citation/contradiction audits, and synthesis. Human product: `director-review/research/research-brief.md`. |
+| `deep_research` | `DISCOVER -> REPORT` | Sixteen explicitly dispatched research/review seats in ten waves; the declared subset also includes the shared `evidence-verifier` and `citation-integrity-auditor` gate roles. The path freezes sources, gathers four perspectives, runs the evidence/citation chain, uses one dossier author, three mutually blind reviewers, and an H-Max chair. CRITICAL/MAJOR targets only the author; all reviewers/chair refresh blind on the revised hash. Human product: `director-review/research/research-brief.md`. |
 | `venue_readiness` | `VERIFY -> REPORT` | Six seats: venue profile, rubric/precommit freeze, three blind reviewers, and post-hoc meta-review. Verdict is advisory; venue gates remain human. |
 | `full_rigor_minimal` | `DESIGN -> EXECUTE -> ANALYZE -> VERIFY -> REPORT` | Sixteen seats across DESIGN 5, EXECUTE 3, ANALYZE 4, VERIFY 4 when real results exist. Real metrics require a non-LLM Ed25519 executor receipt and receipt-bound raw results. Scripts-only runs use eight scientific seats, then deterministically skip result-only ANALYZE/VERIFY panels. |
 | `ingest_paper` | `DISCOVER -> REPORT` | Two workers: quick extractor plus independent source/claim verifier. No local reopenable snapshot means `NEEDS_DEEP_READ`; promotion requires a later explicit top-level user `/promote-to-vault` command. |
@@ -183,23 +185,17 @@ not a scientific result or real GPU operation.
 
 ### Bucket B - Routable / Spec-Only, Not One-Button Operated
 
-These modes are defined in the registry and route cleanly, but they do not yet
-have an `operate/modes/*.py` recipe. Do not present them as push-button operated.
+The live catalog currently has exactly three spec-only modes: `debug_failed_run`,
+`design_experiment_minimal`, and `tree_explore`. They route cleanly but have no
+registered `operate/modes/*.py` recipe, so they must not be presented as push-button
+operated. All other current modes, including the former coverage-closure modes
+`power_analysis_review`, `repo_code_audit`, `analysis_audit_panel`, and
+`aers_enhanced_research_pack`, are now in the operated registry.
 
-`check_run`, `gap_scan`, `design_experiment`, `design_experiment_minimal`,
-`power_analysis_review`, `verify_result`, `full_new_direction`, `m2_accept`,
-`ideate_ring`, `debug_failed_run`, `tree_explore`, `repo_code_audit`,
-`analysis_audit_panel`, `aers_enhanced_research_pack`.
-
-The coverage-closure modes exist so every non-control agent is reachable through
-the router:
-
-| Mode | Covers |
-|---|---|
-| `power_analysis_review` | Statistical power/design adequacy audit. |
-| `repo_code_audit` | Repo inspection, patch planning, implementation, tests, sandbox/repro support. |
-| `analysis_audit_panel` | Result diagnostics, fairness/variance/compliance/visualization/claim-strength audits. |
-| `aers_enhanced_research_pack` | AERS-informed SOP, literature-search, data-wrangling, reproducibility, benchmark, venue, bibliography, and manuscript polish pack; routable only, not one-button operated. |
+Do not maintain another hand-written mode inventory here. Recompute the current
+23 operated / 3 spec-only split with `python -m research_agent_teams.operate brief
+--request "capability inventory" --json`; `operate.modes.REGISTRY` and
+`orchestrator/mode_registry.yaml` are the machine truth.
 
 ### Bucket C - Waits For The GPU Server
 
@@ -251,12 +247,12 @@ RAT_SERVER_HOST         = canonical SSH identity used for pinned host-key verifi
 The direct endpoint is omitted from normal config summaries. Paramiko still receives the canonical
 hostname and `RejectPolicy`; an unknown/mismatched canonical key remains a hard refusal.
 
-The machine has 166 rostered agents (6 control/infrastructure + 160 scientific workers):
+The machine has 175 rostered agents (6 control/infrastructure + 169 scientific workers):
 
 ```text
-166 total
+175 total
   6 control / infrastructure agents
-  160 non-control research worker agents
+  169 non-control research worker agents
 ```
 
 The current contract is:
@@ -281,7 +277,11 @@ The model never self-decides these:
 - `/venue-pick`: choose a target venue.
 - `/venue-decide`: submit, iterate, change method, pivot, or re-review.
 - `/promote-to-vault`: only a top-level user's explicit source-command invocation lets the primary assistant promote either (a) a vetted, frozen experiment result through the audit-derived result lane, or (b) a director-reviewed final Markdown copy through the SHA-bound document-admission lane. Workers, modes, schedules, and subagents cannot invoke it. The latter never creates a result, `can-cite-thesis`, or an experimental claim.
-- Live server mutation (upload/submit): the primary assistant must first present the exact remote path,
+- `/aers-reference-approve`: approve or reject a staged AERS candidate as reference-only run-inbox
+  input. It never grants external skill execution, project approval, job submission, or vault write.
+
+Live server mutation is a separate execution authorization, not one of the five research lifecycle/reference
+gates. For upload/submit, the primary assistant must first present the exact remote path,
   file/command scope and non-goals, then ask the director in chat. A fresh confirmation is passed through
   the execution library as `explicit-director-command` and recorded in the live receipt. The director is
   not asked to set PowerShell variables. The ordinary CLI keeps the exact per-run
@@ -309,6 +309,21 @@ remain the stronger reading channel. A `lit-scout` may use agent Web Search when
 missing or API recall is empty/off-topic, but only original papers, official publisher/project pages,
 or authors' official repositories may enter the common existence/citation gates. Search snippets and
 aggregators are leads, never evidence.
+
+`tools/search_funnel.py` (added 2026-09-05; SciPhi AgentSearch retrieval pattern, Apache-2.0 source,
+clean-room re-implementation, no package installed because the hosted service was unreachable) layers
+four stages over the same providers: per-source broad recall, Reciprocal Rank Fusion of each provider's
+own ranking (`paper_search.search` now returns `channel_rankings`), best-passage reranking from one
+batched OpenAlex abstract request (or local full text), and an authority blend (0.9 relevance +
+0.1 log-citations/recency). `--depth/--breadth` add a recursive related-query expansion whose stop is an
+expansion stop, never a saturation verdict; the evidence-search-moderator still owns
+`evidence-search-trace/v1`. Scores and the ≤ 400-char `text` snippet are triage only and never enter
+evidence rows. Director decision 2026-09-05: `operate pre-search` runs the funnel by default in every
+DISCOVER-entry mode (depth 1) and with one round of related queries in `deep_research` (depth 2,
+breadth 2); `search-results.json` gains `funnel_rank` / `funnel_score`, funnel-only records as
+metadata rows, `related_queries` and a `funnel` summary, while `search-funnel.json` holds the
+snippets and per-stage counts. `--funnel-depth`, `--funnel-breadth`, `--no-funnel` override it; a
+funnel failure is recorded as `funnel.status: failed` and never blocks the facade bundle.
 
 The CLI and direct paper-search entry point force UTF-8 for process I/O and child commands; scholarly
 client URL encoding and JSON writes use explicit strict UTF-8. On Windows, manual inspection must use
@@ -341,16 +356,19 @@ work into a new atomic evidence review instead.
 Run the self-tests **with `research_agent_teams/` as the working directory** — this is not optional:
 
 ```powershell
-cd research_agent_teams
 python -m pytest tests/ -q
 ```
 
-Running `python -m pytest research_agent_teams/tests/ -q` from the parent directory fails with three
-collection errors (`test_manuscript_schema_contracts.py`, `test_operate_manuscript_authoring.py`,
-`test_operate_manuscript_review.py` use `from tests....` absolute imports, which need `tests` importable
-at top level). That is a wrong cwd, not a red suite.
+The suite was consolidated into the workspace `tests/` home on 2026-08-13 (director's order):
+`tests/machine/` is the machine's core harness, `tests/projects/petct-residual-correction/` the project
+suite, `tests/database/` the vault gate tests. `tests/__init__.py` + per-home `conftest.py` files wire
+the paths; run from the workspace root. Any other cwd is a wrong cwd, not a red suite.
 
-Current Phase 01 release verification on 2026-07-22:
+### Historical verification snapshot (2026-07-22 through 2026-08-03; not current truth)
+
+The following block is retained only as historical release evidence. It must not be used for current
+mode counts, seat counts, test counts, run-store state, or readiness; recompute those from §0 and the
+live commands. Phase 01 release verification on 2026-07-22 used:
 the current full-suite JUnit plus matching before/after source SHA-256 snapshots.
 
 The evidence bundle additionally contains a real Windows `COMPILED` PDF receipt,
@@ -359,7 +377,7 @@ and director-route/completion gates. These prove the concrete operated recipes a
 their boundaries; they do not claim a real research-paper run, GPU execution,
 autonomous submission, or externally verified independent review.
 
-Deterministic re-verification on 2026-08-03 (this checkout, all read-only):
+Historical deterministic re-verification on 2026-08-03 (that checkout, all read-only):
 
 ```text
 pytest (cwd = research_agent_teams/): 3914 passed, 4 skipped, exit 0, 440s

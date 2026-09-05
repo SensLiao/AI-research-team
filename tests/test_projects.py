@@ -328,7 +328,7 @@ def test_begin_validates_against_mode_default_vault(tmp_path, capsys, monkeypatc
 def test_engine_run_with_project(tmp_path):
     """The FSM engine drives a project-grouped run exactly like a flat one."""
     from research_agent_teams.orchestrator import engine
-    from research_agent_teams.tests.test_engine import _approve, _note_agent  # reuse the proven stubs
+    from .test_engine import _approve, _note_agent  # reuse the proven stubs
 
     runs = tmp_path / "runs"
     m = engine.run_task(runs, "eng-p1", "design the ablation", "design_experiment", TS,

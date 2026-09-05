@@ -14,7 +14,7 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
 
-SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
+SCHEMA_DIR = Path(__file__).resolve().parents[2] / "research_agent_teams" / "schemas"
 SHA_A = "a" * 64
 SHA_B = "b" * 64
 SHA_C = "c" * 64

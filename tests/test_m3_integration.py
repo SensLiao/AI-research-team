@@ -23,7 +23,7 @@ from research_agent_teams.tools.validate_artifact import (
     validate_payload,
 )
 
-PKG_ROOT = Path(__file__).resolve().parent.parent
+PKG_ROOT = Path(__file__).resolve().parents[2] / "research_agent_teams"
 AGENTS_DIR = PKG_ROOT / "agents"
 GATES_DIR = PKG_ROOT / "gates"
 SCHEMA_DIR = PKG_ROOT / "schemas"

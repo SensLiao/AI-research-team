@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-os/schemas/research_delivery_boundary.schema.json",
+  "title": "Research Delivery Boundary",
+  "description": "Machine-derived boundary separating content convergence from evidence, citation, novelty, and project approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version", "delivery_id", "reviewed_artifact_ref", "reviewed_artifact_sha256",
+    "convergence_artifact_ref", "convergence_artifact_sha256", "content_convergence",
+    "scientific_gates", "novelty", "external_blockers", "delivery_status",
+    "claim_boundaries", "rationale"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "properties": {
+    "contract_version": {"const": "research-delivery-boundary/v1"},
+    "delivery_id": {"type": "string", "minLength": 1},
+    "reviewed_artifact_ref": {"type": "string", "minLength": 1},
+    "reviewed_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "convergence_artifact_ref": {"type": "string", "minLength": 1},
+    "convergence_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "content_convergence": {
+      "enum": ["REVISE", "CONTENT_CONVERGED", "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS", "NOT_REVIEWED"]
+    },
+    "scientific_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "citation", "citation_attribution", "existence"],
+      "properties": {
+        "evidence": {"type": "string", "minLength": 1},
+        "citation": {"type": "string", "minLength": 1},
+        "citation_attribution": {"type": "string", "minLength": 1},
+        "existence": {"type": "string", "minLength": 1}
+      }
+    },
+    "novelty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "independent_hash_bound_gate_pass", "gate_artifact_ref", "gate_artifact_sha256", "reasons"],
+      "properties": {
+        "status": {"enum": ["VERIFIED_PASS", "UNVERIFIED"]},
+        "independent_hash_bound_gate_pass": {"type": "boolean"},
+        "gate_artifact_ref": {"type": ["string", "null"]},
+        "gate_artifact_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "reasons": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "external_blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["blocker_id", "source_review_id", "chair_blocker_id", "kind", "description", "required_input", "evidence_refs"],
+        "properties": {
+          "blocker_id": {"type": "string", "minLength": 1},
+          "source_review_id": {"type": "string", "minLength": 1},
+          "chair_blocker_id": {"type": "string", "minLength": 1},
+          "kind": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "required_input": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "delivery_status": {"enum": ["USABLE", "USABLE_WITH_CAVEATS"]},
+    "claim_boundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_convergence_only", "novelty_claim_allowed", "project_approval"],
+      "properties": {
+        "content_convergence_only": {"const": true},
+        "novelty_claim_allowed": {"type": "boolean"},
+        "project_approval": {"const": false}
+      }
+    },
+    "rationale": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"novelty": {"properties": {"status": {"const": "VERIFIED_PASS"}}}}},
+      "then": {
+        "properties": {
+          "novelty": {
+            "properties": {
+              "independent_hash_bound_gate_pass": {"const": true},
+              "gate_artifact_ref": {"type": "string", "minLength": 1},
+              "gate_artifact_sha256": {"$ref": "#/$defs/sha256"},
+              "reasons": {"maxItems": 0}
+            }
+          },
+          "content_convergence": {"const": "CONTENT_CONVERGED"},
+          "scientific_gates": {
+            "properties": {
+              "evidence": {"const": "PASS"},
+              "citation": {"const": "PASS"},
+              "citation_attribution": {"const": "PASS"},
+              "existence": {"const": "PASS"}
+            }
+          },
+          "external_blockers": {"maxItems": 0},
+          "claim_boundaries": {"properties": {"novelty_claim_allowed": {"const": true}}}
+        }
+      },
+      "else": {
+        "properties": {
+          "claim_boundaries": {"properties": {"novelty_claim_allowed": {"const": false}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"external_blockers": {"minItems": 1}}},
+      "then": {"properties": {"delivery_status": {"const": "USABLE_WITH_CAVEATS"}}}
+    }
+  ]
+}

@@ -63,3 +63,13 @@ paper_types:
         value: source-coverage-contradictions-open-questions
         classification: ADVISORY
         weakenable: true
+  METHODOLOGICAL_CRITICAL_REVIEW:
+    tokens:
+      section_shape:
+        value: review-method-conceptual-architecture-evidence-synthesis-methodological-appraisal-implications
+        classification: ADVISORY
+        weakenable: true
+      evidence_emphasis:
+        value: search-transparency-source-version-loci-contradictions-boundaries-denominators
+        classification: ADVISORY
+        weakenable: true

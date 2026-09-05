@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import research_agent_teams.tools.manuscript_integrator as integrator_module
-from research_agent_teams.tests.test_manuscript_predraft_schemas import (
+from .test_manuscript_predraft_schemas import (
     valid_manuscript_contract,
 )
 from research_agent_teams.tools.manuscript_contract import canonical_contract_hash
@@ -276,6 +276,41 @@ def _assert_code(expected: str, action) -> ManuscriptIntegrationError:
     return exc.value
 
 
+def test_latex_first_sections_and_bibliography_are_read_from_disk_without_json_prose(tmp_path):
+    run_root, contract, refs = _setup_run(tmp_path)
+    direct_rows = []
+    for row, bundle_ref in zip(SECTIONS, refs):
+        bundle = json.loads((run_root / bundle_ref).read_text(encoding="utf-8"))
+        section_path = run_root / "draft" / "synthesis" / "sections" / f"{row['section_id']}.tex"
+        section_path.parent.mkdir(parents=True, exist_ok=True)
+        section_path.write_text(bundle["draft_latex"], encoding="utf-8")
+        direct_rows.append({
+            "section_id": row["section_id"],
+            "worker_role": row["worker_role"],
+            "ref": section_path.relative_to(run_root).as_posix(),
+        })
+    bibliography = run_root / "draft" / "refs.bib"
+    bibliography.parent.mkdir(parents=True, exist_ok=True)
+    bibliography.write_text(BIBLIOGRAPHY, encoding="utf-8")
+
+    candidate = integrate_manuscript(
+        run_root=run_root,
+        manuscript_contract=contract,
+        section_bundle_refs=[],
+        required_sections=SECTIONS,
+        bibliography_text=None,
+        bibliography_ref="draft/refs.bib",
+        bibliography_sha256=_file_hash(bibliography),
+        direct_sections=direct_rows,
+        stage=STAGE,
+        asset_manifest=None,
+    )
+
+    assert candidate["files"]["sections/introduction.tex"].decode("utf-8").startswith("\\section")
+    assert candidate["files"]["refs.bib"].decode("utf-8").replace("\r\n", "\n") == BIBLIOGRAPHY
+    assert all(row["bundle_ref"].endswith(".tex") for row in candidate["integration"]["section_bundle_refs"])
+
+
 def test_deterministic_integration_materializes_one_native_source_tree(tmp_path):
     run_root, contract, refs = _setup_run(tmp_path)
 
@@ -307,11 +342,45 @@ def test_deterministic_integration_materializes_one_native_source_tree(tmp_path)
     assert (source / "main.tex").read_text(encoding="utf-8").index("introduction") < (
         source / "main.tex"
     ).read_text(encoding="utf-8").index("methods")
+    main_text = (source / "main.tex").read_text(encoding="utf-8")
+    assert "\\usepackage{natbib}" not in main_text
+    assert "\\title{" in main_text
+    assert "\\author{Anonymous authors}" in main_text
+    assert "\\maketitle" in main_text
+    assert "\\bibliographystyle{apalike}" in main_text
     for item in first["integration"]["canonical_file_inventory"]:
         assert _file_hash(source / item["path"]) == item["sha256"]
-
     _assert_code("SOURCE_ALREADY_EXISTS", lambda: materialize_source_tree(first, run_root=run_root))
 
+
+def test_legacy_dependency_slice_global_ref_is_not_compared_as_visible_input(
+    tmp_path,
+):
+    run_root, contract, refs = _setup_run(tmp_path)
+    for dependency_slice in contract["dependency_slices"]:
+        dependency_slice["input_refs"].append(
+            {
+                "ref": "contracts/original-task-frame.json",
+                "sha256": "d" * 64,
+                "slice_kind": "GLOBAL_CONTRACT",
+            }
+        )
+        _stamp(dependency_slice, "slice_sha256")
+    contract["manuscript_snapshot_sha256"] = canonical_contract_hash(contract)
+    receipt = json.loads((run_root / RECEIPT_REF).read_text(encoding="utf-8"))
+    for section, ref, authorization in zip(
+        SECTIONS, refs, receipt["authorizations"]
+    ):
+        _write_json(
+            run_root / ref,
+            _bundle(contract, section, _canonical_hash(authorization)),
+        )
+
+    candidate = _integrate(run_root, contract, refs)
+
+    assert candidate["integration"]["manuscript_snapshot_sha256"] == contract[
+        "manuscript_snapshot_sha256"
+    ]
 
 @pytest.mark.parametrize(
     ("variant", "expected"),
@@ -418,12 +487,6 @@ def test_validate_section_bundle_allows_only_two_format_repairs(tmp_path):
             lambda payload: payload["citation_keys"].append("Invented2026"),
             "UNKNOWN_CITATION",
         ),
-        (
-            lambda payload: payload["claim_support_refs"].append(
-                {"claim_id": "CLM-METHOD", "evidence_refs": [EVIDENCE_REF], "result_refs": []}
-            ),
-            "DUPLICATE_CLAIM",
-        ),
     ],
 )
 def test_cross_bundle_coherence_failures_are_typed_before_publish(tmp_path, mutation, expected):
@@ -432,6 +495,27 @@ def test_cross_bundle_coherence_failures_are_typed_before_publish(tmp_path, muta
 
     _assert_code(expected, lambda: _integrate(run_root, contract, refs))
     assert not (run_root / "source").exists()
+
+
+def test_claim_support_may_repeat_across_sections_when_frozen_support_matches(
+    tmp_path,
+):
+    run_root, contract, refs = _setup_run(tmp_path)
+    _rewrite_bundle(
+        run_root,
+        refs[0],
+        lambda payload: payload["claim_support_refs"].append(
+            {
+                "claim_id": "CLM-METHOD",
+                "evidence_refs": [EVIDENCE_REF],
+                "result_refs": [],
+            }
+        ),
+    )
+
+    candidate = _integrate(run_root, contract, refs)
+
+    assert candidate["integration"]["section_bundle_refs"]
 
 
 def test_frozen_result_hash_and_declared_tex_metadata_are_verified(tmp_path):
@@ -573,6 +657,47 @@ def test_director_asset_is_copied_byte_for_byte_with_canonical_provenance(tmp_pa
     record = candidate["asset_manifest"]["assets"][0]
     assert record["source_inputs"][0]["sha256"] == record["output"]["sha256"]
     assert record["provenance"]["external_source"]["original_sha256"] == _file_hash(director_file)
+
+
+def test_unrealized_asset_plan_can_remain_explicit_in_source_only_draft(tmp_path):
+    run_root, contract, refs = _setup_run(tmp_path)
+    contract["asset_plan"] = [
+        {
+            "asset_id": "asset-planned-table",
+            "kind": "TABLE",
+            "label": "tab:planned",
+            "planned_path": "tables/planned.tex",
+            "source_refs": [EVIDENCE_REF],
+            "result_refs": [],
+        }
+    ]
+    contract["manuscript_snapshot_sha256"] = canonical_contract_hash(contract)
+    receipt = json.loads((run_root / RECEIPT_REF).read_text(encoding="utf-8"))
+    for section, ref, authorization in zip(
+        SECTIONS, refs, receipt["authorizations"]
+    ):
+        _write_json(
+            run_root / ref,
+            _bundle(contract, section, _canonical_hash(authorization)),
+        )
+    manifest = {
+        "schema_version": "1.0.0",
+        "run_id": contract["run_id"],
+        "manuscript_sha256": contract["manuscript_snapshot_sha256"],
+        "assets": [],
+    }
+    _stamp(manifest, "manifest_sha256")
+
+    candidate = _integrate(
+        run_root,
+        contract,
+        refs,
+        asset_manifest=manifest,
+        asset_sources={},
+    )
+
+    assert candidate["asset_manifest"]["assets"] == []
+    assert contract["asset_plan"][0]["asset_id"] == "asset-planned-table"
 
 
 def test_bibliography_is_part_of_the_fail_closed_tex_boundary(tmp_path):

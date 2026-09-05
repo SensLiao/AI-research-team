@@ -34,7 +34,7 @@ from research_agent_teams.tools.integrity_scan import (
 )
 
 # Load the schema straight from disk (no PAYLOAD_SCHEMAS registration dependency).
-SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "integrity_recommendation.schema.json"
+SCHEMA_PATH = Path(__file__).resolve().parents[2] / "research_agent_teams" / "schemas" / "integrity_recommendation.schema.json"
 _SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 _VALIDATOR = Draft202012Validator(_SCHEMA)
 

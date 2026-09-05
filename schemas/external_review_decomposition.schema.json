@@ -1,0 +1,138 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://research-os/schemas/external_review_decomposition.schema.json",
+ "title": "External Review Decomposition",
+ "description": "DISCOVER-stage artifact. Output of external-review-decomposer, the entry of manuscript_reconstruction: an external review atomised into typed points, each verified against frozen artifacts (verified-true/verified-false/partially-true/unverifiable-here) and assigned exactly one lane (mechanical_recompute/prose_repair/evidence_supplement/registered_decision/rebuttal_only/director_decision). Lossless: points plus non-actionable spans reconstruct the review. Failure-catalog item E4 (2026-08-20 team upgrade).",
+ "type": "object",
+ "required": [
+  "frozen_inputs",
+  "points",
+  "lane_totals"
+ ],
+ "properties": {
+  "frozen_inputs": {
+   "type": "object",
+   "required": [
+    "review_sha256"
+   ],
+   "properties": {
+    "review_sha256": {
+     "type": "string"
+    },
+    "manuscript_tree_sha256": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "bib_sha256": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "points": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "quote",
+     "claim_check",
+     "lane"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "quote": {
+      "type": "string"
+     },
+     "claim_check": {
+      "type": "string",
+      "enum": [
+       "verified-true",
+       "verified-false",
+       "partially-true",
+       "unverifiable-here"
+      ]
+     },
+     "evidence_refs": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "lane": {
+      "type": "string",
+      "enum": [
+       "mechanical_recompute",
+       "prose_repair",
+       "evidence_supplement",
+       "registered_decision",
+       "rebuttal_only",
+       "director_decision"
+      ]
+     },
+     "owner": {
+      "type": [
+       "string",
+      "null"
+     ]
+     },
+     "source_segment_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+     },
+     "current_status": {
+      "type": "string",
+      "enum": ["OPEN", "ALREADY_SATISFIED", "CONTESTED", "NOT_CHECKABLE"]
+     },
+     "current_loci": {
+      "type": "array",
+      "items": {"type": "string"}
+     },
+     "required_change": {"type": "string"},
+     "acceptance_criterion": {"type": "string"},
+     "target_refs": {
+      "type": "array",
+      "items": {"type": "string"}
+     }
+    }
+   }
+  },
+  "non_actionable_spans": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "non_actionable_segment_ids": {
+   "type": "array",
+   "items": {"type": "string"}
+  },
+  "review_segments": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": ["segment_id", "text"],
+    "properties": {
+     "segment_id": {"type": "string"},
+     "text": {"type": "string"}
+    }
+   }
+  },
+  "lane_totals": {
+   "type": "object"
+  },
+  "notes": {
+   "type": [
+    "string",
+    "null"
+   ]
+  }
+ },
+ "additionalProperties": true
+}

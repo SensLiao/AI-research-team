@@ -57,7 +57,7 @@ def test_every_declared_accept_is_a_product_some_mode_actually_emits():
                 for s in _registry().values()}
     produced.discard("")
     # Historical product versions stay acceptable so an older completed run can still be chained in.
-    legacy = {"paper-reading/v2", "idea-investment-memo/v1"}
+    legacy = {"paper-reading/v2", "idea-investment-memo/v1", "manuscript-authoring/v1"}
     for mode, spec in _operated().items():
         for accepted in (spec.get("handoff") or {}).get("accepts") or []:
             assert accepted in produced or accepted in legacy, (

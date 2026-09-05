@@ -182,6 +182,10 @@ def search(query: str, sources=DEFAULT_SOURCES, limit_per_source: int = 10,
 
     merged: Dict[str, dict] = {}
     errors: Dict[str, str] = {}
+    # Each provider's OWN result order, as dedup keys (additive, 2026-09-05 AgentSearch absorption):
+    # the merge below sorts by citations and would otherwise throw the per-channel ranking away,
+    # and cross-channel rank fusion (tools/search_funnel.py) needs it. An errored source has [].
+    channel_rankings: Dict[str, List[str]] = {}
 
     def run_source(src: str):
         try:
@@ -197,11 +201,14 @@ def search(query: str, sources=DEFAULT_SOURCES, limit_per_source: int = 10,
 
     for src in sources:
         recs, error = outcomes[src]
+        channel_rankings[src] = []
         if error is not None:
             errors[src] = sanitize_scholar_error(error)
             continue
         for r in recs:
             key = _dedup_key(r)
+            if key not in channel_rankings[src]:
+                channel_rankings[src].append(key)
             if key in merged:
                 if src not in merged[key]["found_in"]:
                     merged[key]["found_in"].append(src)
@@ -214,7 +221,8 @@ def search(query: str, sources=DEFAULT_SOURCES, limit_per_source: int = 10,
 
     records = sorted(merged.values(),
                      key=lambda r: (-(r.get("cited_by_count") or 0), _norm_title(r.get("title", ""))))
-    return {"query": query, "records": records, "source_errors": errors}
+    return {"query": query, "records": records, "source_errors": errors,
+            "channel_rankings": channel_rankings}
 
 
 def search_many(queries: Sequence[str], sources=DEFAULT_SOURCES, limit_per_source: int = 10,
@@ -243,13 +251,24 @@ def search_many(queries: Sequence[str], sources=DEFAULT_SOURCES, limit_per_sourc
     n_rejected = 0
     n_merged_duplicates = 0
     n_cross_script_rejected = 0
+    # Channel-yield watchdog (failure catalog A1/A6; hard boundary §6): a declared source
+    # that errors on every query or contributes zero raw records across the whole plan must
+    # be NAMED, never silently degraded around. Raw (pre-relevance-filter) counts — the A6
+    # tripwire is "+0 (raw 0)", not "filtered to 0".
+    source_yield: Dict[str, int] = {src: 0 for src in sources}
+    _source_error_counts: Dict[str, int] = {src: 0 for src in sources}
     for query_index, query in enumerate(clean_queries, start=1):
         result = search(query, sources=sources, limit_per_source=limit_per_source,
                         transport=transport)
         query_script = script_of(query)
         for source, detail in result.get("source_errors", {}).items():
             errors[f"q{query_index}:{source}"] = sanitize_scholar_error(detail)
+            if source in _source_error_counts:
+                _source_error_counts[source] += 1
         for record in result.get("records", []):
+            for source in record.get("found_in") or []:
+                if source in source_yield:
+                    source_yield[source] += 1
             n_candidates += 1
             title = str(record.get("title") or "").strip()
             # Metadata APIs can return component DOIs for figures/tables/media supplements. Those
@@ -295,6 +314,14 @@ def search_many(queries: Sequence[str], sources=DEFAULT_SOURCES, limit_per_sourc
         "queries": clean_queries,
         "records": records,
         "source_errors": errors,
+        # Additive keys (2026-08-20 hardening): per-source raw yield + loud channel loss.
+        # channels_lost is ALWAYS present (empty = healthy); a listed channel's coverage
+        # claims are UNVERIFIED. channels_zero_yield names the stricter A6 case: zero raw
+        # records AND zero errors on every query (the "+0 (raw 0)" tripwire).
+        "source_yield": source_yield,
+        "channels_lost": [src for src in sources if source_yield[src] == 0],
+        "channels_zero_yield": [src for src in sources
+                                if source_yield[src] == 0 and _source_error_counts[src] == 0],
         "relevance_filter": {
             "kind": "multilingual_query_title_lexical/v1",
             "min_score": min_relevance,
@@ -400,6 +427,17 @@ def write_search_bundle(run_dir, query: str, result: dict, ts: str) -> str:
     # set it are unaffected — the key is only added when present.
     if "query_language_block" in result:
         payload["query_language_block"] = result["query_language_block"]
+    # Channel-yield watchdog passthrough (2026-08-20 hardening, hard boundary §6): when the
+    # search result carries per-source yield / channel-loss accounting, the bundle must keep
+    # it — a lost channel buried at write time is a silently-degraded retrieval channel.
+    for key in ("source_yield", "channels_lost", "channels_zero_yield"):
+        if key in result:
+            payload[key] = result[key]
+    # Four-stage funnel passthrough (2026-09-05): the operated pre-search folds the funnel's
+    # ranks/scores and its related-query proposals into the same bundle (tools/search_funnel).
+    for key in ("funnel", "related_queries"):
+        if key in result:
+            payload[key] = result[key]
     p.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     return str(p)
 

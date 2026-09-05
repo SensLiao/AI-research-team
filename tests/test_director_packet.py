@@ -6,7 +6,7 @@ from pathlib import Path
 from research_agent_teams.operate import spine
 from research_agent_teams.operate.artifacts import write_artifact
 from research_agent_teams.operate.modes import venue_readiness as vr
-from research_agent_teams.tests.test_operate_venue_readiness import (
+from .test_operate_venue_readiness import (
     _profile,
     _reviews_with_fired_trigger,
     _stage_bundles,
@@ -47,6 +47,8 @@ def _write_review_verdict(
                     "frozen_inputs": {
                         "manuscript_ref": manuscript_ref,
                         "manuscript_sha256": manuscript_sha256,
+                        "source_tree_ref": "runs/paper-001/manuscript",
+                        "source_tree_sha256": manuscript_sha256,
                     },
                     "verdict_sha256": "b" * 64,
                 },
@@ -454,7 +456,7 @@ def test_manuscript_review_packet_requires_distinct_verified_verdict_before_link
 
     text = write_packet(rd, generated_at=TS).read_text(encoding="utf-8")
 
-    assert "[reviewer-report.md](./manuscript/reviewer-report.md)" in text
+    assert "Frozen blind-review product: [reviewer-report.md](./manuscript/reviewer-report.md)" in text
     assert "review run `review-001`" in text
     assert "runs/paper-001/manuscript/main.tex" in text
     assert "`" + ("b" * 64) + "`" in text

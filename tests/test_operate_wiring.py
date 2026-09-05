@@ -37,7 +37,7 @@ EXPECTED_WIRED = {"new_direction", "deep_ideation", "evidence_review", "evidence
                   "repo_code_audit",
                   # wave-2 backlog closed (2026-08-07): the last two modules had recipes written
                   # but no tests, so they were deliberately left unregistered until now.
-                  "ideate_ring", "aers_enhanced_research_pack"}
+                  "ideate_ring", "aers_enhanced_research_pack", "manuscript_reconstruction"}
 
 
 def test_operated_flags_mirror_the_registry_exactly():
@@ -79,6 +79,10 @@ def test_every_wired_mode_resolves_routes_and_carries_the_north_star(mode, tmp_p
     plan = spine.begin(str(runs), f"w-{mode}", "study canal segmentation prompts", mode, TS)
     mod = REGISTRY[mode]
     assert hasattr(mod, "run_dets") and hasattr(mod, "run_dets_with_repair")
+    if mode == "manuscript_reconstruction":
+        path = Path(plan["run_dir"]) / mod.INPUT_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"review_text": "Please clarify the title."}), encoding="utf-8")
     spec = mod.llm_step(plan["run_dir"], stages[0], "study canal segmentation prompts")
     if spec is not None:
         assert validate_worker_spec_connectivity(mode, stages[0], spec) == []
@@ -105,6 +109,10 @@ def test_every_actual_llm_step_label_is_connected_for_every_pure_stage(mode, tmp
     runs.mkdir()
     plan = spine.begin(str(runs), f"labels-{mode}", "audit actual worker labels", mode, TS)
     mod = REGISTRY[mode]
+    if mode == "manuscript_reconstruction":
+        path = Path(plan["run_dir"]) / mod.INPUT_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"review_text": "Please clarify the title."}), encoding="utf-8")
     for stage in plan["stages"]:
         # venue_readiness intentionally reveals later waves only after frozen receipts;
         # its dynamic builders are checked separately below.

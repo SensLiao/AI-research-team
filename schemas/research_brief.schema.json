@@ -32,8 +32,9 @@
         "additionalProperties": false,
         "properties": {
           "perspective_id": {"type": "string", "minLength": 1},
-          "summary": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "Compressed (<=2000 chars) — never a raw dump."},
-          "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "DOI / arXiv / URL / [[slug]] references only."}
+          "summary": {"type": "string", "minLength": 1, "maxLength": 4000, "description": "Compressed finding text (director lock 2026-08-16: cap raised from 2000 so evidence density is not cut; still never a raw dump)."},
+          "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "DOI / arXiv / URL / [[slug]] references only."},
+          "status": {"type": "string", "description": "Repair/verification status marker (director lock 2026-08-16); advisory, never a scientific verdict"}
         }
       }
     },

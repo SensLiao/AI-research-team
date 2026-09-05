@@ -1,6 +1,6 @@
 schema_version: 1
-# Command palette — the director-facing slash commands (.claude/commands/*.md) and the operate CLI verb
-# each one drives. Single source of truth for what the palette offers. Slash names are FROZEN
+# Command palette registry — the director-facing slash commands and the operate CLI verb each drives.
+# It is not the mode registry: live one-button mode truth comes only from operate/modes/REGISTRY. Slash names are FROZEN
 # (build-contract Naming Freeze). `handler` = the `python -m research_agent_teams.operate <verb>` it
 # wraps (or a human gate in gates/*.md, or the server-query skill). Destructive commands set
 # disable_model_invocation: true — only the director runs them, with a typed confirmation.
@@ -36,7 +36,7 @@ commands:
     handler: "operate project-restore"
     args: [--project]
   - command: run-mode
-    description: "Start a full operated mode run (10 modes: new_direction / deep_ideation / gap_breadth / evidence_* / deep_research / venue_readiness / full_rigor_minimal / ingest_paper / read_paper_deep)"
+    description: "Start a full operated mode selected from the live operate/modes/REGISTRY"
     handler: "operate begin"
     args: [--mode, --project, --request]
   - command: run-stage

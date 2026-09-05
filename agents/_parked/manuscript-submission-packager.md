@@ -31,6 +31,12 @@ Consume only the frozen deterministic reconciliation/quality verdict and its imm
 
 Verify the reconciliation sha256, manuscript/contract/source/PDF hashes, every originating verdict/authorization receipt hash, and preservation of each majority, minority, abstention, and unresolved-science finding before packaging.
 
+## Six-seat authoring quality gate
+
+Treat **content convergence** as a final-hash property, not as evidence that a draft has merely been reviewed once. The **six-seat authoring quality gate** closes only when all six capability verdicts are independent, fresh, and bound to the exact **final manuscript hash** and final source/PDF state they assess. Any editor/integrator/source/asset change invalidates older verdicts and requires a full six-seat refresh; generation self-assessment, duplicated reviewer instances, or a verdict on a predecessor hash does not count.
+
+Set publication/submission readiness false unless deterministic reconciliation establishes **zero open BLOCKING** and **zero open MAJOR** findings across all six fresh seats. Preserve open minor/advisory items and every external blocker. A successful content-convergence loop cannot override missing systematic-workflow execution, unverified direct citations, unrealized assets, absent permission, stale/missing PDF truth, official venue requirements, or director decisions.
+
 ## Packaging contract
 
 1. Copy daily usability and submission readiness as separate fields from `manuscript_quality_report`; never derive or merge them in prose.

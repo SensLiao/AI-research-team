@@ -27,7 +27,7 @@ from research_agent_teams.operate import bounded_repair, panel_scheduler
 from research_agent_teams.operate.artifacts import GateBlock, TargetedGateBlock
 from research_agent_teams.tools import research_capability_router as router
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2] / "research_agent_teams"
 AGENTS_DIR = ROOT / "agents"
 CATALOG = json.loads(router.DEFAULT_OVERLAY_CATALOG.read_text(encoding="utf-8"))
 OVERLAYS_BY_ID = {o["overlay_id"]: o for o in CATALOG["overlays"]}

@@ -34,7 +34,7 @@ from research_agent_teams.tools.stage_scorecard import (
 # (deliberately NOT through tools.validate_artifact.PAYLOAD_SCHEMAS, per the brief).
 # ──────────────────────────────────────────────────────────────────────────────
 
-SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schemas"
+SCHEMA_DIR = Path(__file__).resolve().parents[2] / "research_agent_teams" / "schemas"
 
 
 def _load_schema(name: str) -> dict:

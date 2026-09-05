@@ -1,7 +1,7 @@
 {
   "schema_version": "external-research-skill-sources/v1",
   "review_date": "2026-07-31",
-  "review_root": "<local-workspace>/.tmp/research-agent-skills-review/2026-07-31",
+  "review_root": "C:/Users/廖神/Desktop/Honor degree/.tmp/research-agent-skills-review/2026-07-31",
   "path_semantics": "source_artifacts paths are POSIX-style repository-relative paths at the pinned commit",
   "review_root_status": "DELETED — the 2026-07-31 out-of-repo review root no longer exists on disk (checked 2026-08-04). The pinned commits below remain the authority; tools/vendor_upstream_skills.py re-fetches from them and re-checks every source_artifacts receipt.",
   "text_vendoring": {

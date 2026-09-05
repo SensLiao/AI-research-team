@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from research_agent_teams.tests.test_manuscript_predraft_schemas import (
+from .test_manuscript_predraft_schemas import (
     valid_manuscript_contract,
 )
 from research_agent_teams.tools.manuscript_contract import canonical_contract_hash
@@ -375,6 +375,39 @@ def test_report_set_is_complete_and_honest_without_a_local_toolchain(tmp_path: P
     assert "related comparison" in (report_dir / "local-literature-coverage.md").read_text(
         encoding="utf-8"
     )
+
+
+def test_precontract_coverage_anchor_is_accepted_when_frozen_as_task_frame_source(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    task_frame_sha = "9" * 64
+    fixture["coverage"]["manuscript_snapshot_sha256"] = task_frame_sha
+    fixture["contract"]["source_hashes"].append(
+        {
+            "ref": "task_frame.artifact.json",
+            "sha256": task_frame_sha,
+            "kind": "TEMPLATE",
+        }
+    )
+
+    outputs = _render(fixture)
+
+    assert outputs["overview"].is_file()
+
+
+def test_quality_may_bind_full_build_receipt_hash_from_deterministic_audit(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["quality"]["build"]["receipt_sha256"] = hashlib.sha256(
+        _canonical_bytes(fixture["build"])
+    ).hexdigest()
+    _seal(fixture["quality"], "quality_report_sha256")
+
+    outputs = _render(fixture)
+
+    assert outputs["overview"].is_file()
 
 
 def test_projection_is_byte_equivalent_and_rerender_is_deterministic(tmp_path: Path) -> None:

@@ -13,6 +13,14 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[2] / "research_agent_teams" / "projects" / "t4-scribble-m0-mechanism-eval").is_dir(),
+    reason="t4-scribble-m0-mechanism-eval project was reset from the machine workspace "
+           "(director 2026-08-04); restore the project before re-enabling these tests",
+)
+
 from research_agent_teams.tools import native_dispatch_trace as native
 from research_agent_teams.tools.mechanism_council import load_contract
 from research_agent_teams.tools.research_capability_router import (
@@ -21,7 +29,7 @@ from research_agent_teams.tools.research_capability_router import (
 from research_agent_teams.tools.validate_artifact import validate_payload
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2] / "research_agent_teams"
 PROJECT = ROOT / "projects" / "t4-scribble-m0-mechanism-eval"
 NATIVE = PROJECT / "native-eval"
 WORK_ORDERS = NATIVE / "work-orders"

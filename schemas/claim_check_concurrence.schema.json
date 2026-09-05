@@ -1,0 +1,36 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://research-os/schemas/claim_check_concurrence.schema.json",
+ "title": "Claim-Check Concurrence",
+ "description": "VERIFY-stage artifact of manuscript_reconstruction. manuscript-factual-auditor's independent re-check of every verified claim_check in the external review decomposition. Dissents are contested points for the director; nothing is auto-resolved. 2026-08-20 team upgrade.",
+ "type": "object",
+ "required": [
+  "n_audited",
+  "n_concur",
+  "n_dissent"
+ ],
+ "properties": {
+  "n_audited": {
+   "type": "integer"
+  },
+  "n_concur": {
+   "type": "integer"
+  },
+  "n_dissent": {
+   "type": "integer"
+  },
+  "dissents": {
+   "type": "array",
+   "items": {
+    "type": "object"
+   }
+  },
+  "notes": {
+   "type": [
+    "string",
+    "null"
+   ]
+  }
+ },
+ "additionalProperties": true
+}

@@ -546,7 +546,7 @@ def test_unapproved_or_linked_vault_roots_fail_before_recall(
 
 
 def test_module_has_no_write_promotion_download_or_direct_provider_surface():
-    module_path = Path(__file__).resolve().parents[1] / "tools" / "manuscript_literature.py"
+    module_path = Path(__file__).resolve().parents[2] / "research_agent_teams" / "tools" / "manuscript_literature.py"
     source = module_path.read_text(encoding="utf-8")
     tree = ast.parse(source)
     imported_modules = {

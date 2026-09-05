@@ -40,6 +40,20 @@ Reject reused/forged receipts, unsafe or mutable paths, symlink/reparse escapes,
 4. Check ours/baseline identity, omitted conditions, axis ranges, truncation, aggregation, color/accessibility, caption claims, and consistency with manuscript interpretation.
 5. Make fabricated/missing assets, permission/path violations, false or mismatched values, deceptive axes, unsupported captions, or load-bearing unread visuals open `BLOCKING` asset/scientific/numeric findings.
 6. Keep optional visual polish, spacing, or non-mandatory styling `ADVISORY`; aesthetics cannot manufacture evidence or scientific truth.
+7. Cross-check every table/figure number and continued caption against the compiled PDF and all source references. Compare headline denominators and taxonomy labels in visuals with the abstract/body ontology; duplicate or shifted numbering is blocking for final delivery.
+8. Visible method/system names must use official reader-facing spellings, not repository IDs or inconsistent aliases. External excerpts require a licence/permission record before final delivery.
+
+## Type-specific realization audit
+
+For scientific illustrations, also apply `docs/SCIENTIFIC-FIGURES.md`. Verify the actual export preserves proposed/indirect dashed relationships; an SVG dash attribute alone is not proof. Check gene versus protein, substrate/product versus enzyme, phenotype direction, compartment/transport orientation and experimental species/tissue. A generic seedling or cell illustration is context, never independent evidence. Check labels against shapes and arrows at the final printed size, including fully clipped text. Review only relevant source slices and changed panels after repair, with the new bytes/hashes; never convert automatic geometry PASS into scientific approval.
+
+For each planned item, verify its declared `asset_type`, `realization_status`, accountable owner, manuscript locus, and type-specific closure evidence. `REALIZED` requires the actual **realized bytes**, run-owned output hash, open/render validation, final label/caption/accessibility text, and provenance/permission; a placeholder, plan, generating prompt, or missing output remains a blocker when the asset is required.
+
+For `EXTERNAL_SOURCE_EXCERPT`, reopen the verified work identity, source PDF hash, **exact page** plus figure/table and crop/object locus, extraction receipt, extracted hash, attribution, copyright/licence basis, and reuse permission. For generated/result assets, reopen source cells and render receipts; for conceptual originals, reopen proposition/evidence inputs and editable/rendered hashes; for tables, sample cells across every evidence/result source class. Never infer any of these from the caption.
+
+## Source/PDF truth contract
+
+Record `review_surface: SOURCE_ONLY | PDF_RENDERED`. A `SOURCE_ONLY` audit can verify asset files, source references, captions, and provenance, but final placement, legibility, crop, font size, page overflow, and rendered cross-reference behavior are `NOT_ASSESSED`. `PDF_RENDERED` requires the actual observed PDF/page render and a build receipt bound to the reviewed source and asset hashes. **Never fabricate a PDF**, screenshot, or placement fact; keep source/asset disposition separate from PDF-dependent coverage.
 
 ## Output contract
 
@@ -47,13 +61,14 @@ Emit one schema-valid `manuscript_review_verdict` conforming to `schemas/manuscr
 
 Express explicit `abstention` as an open `ABSTAIN-` finding when required visual bytes, provenance, or result cells are unavailable; disposition cannot be PASS. Express every `unresolved_science` interpretation or value mismatch as an open evidence-backed finding rather than a prose-only reservation.
 
-The current closed verdict schema requires a real PDF ref/sha256 even for source-only review. When no real PDF exists, do not fabricate a schema-valid verdict: return an explicit contract-gap abstention for the deterministic reducer until an honest source-only schema representation is available.
+Use the active verdict schema's honest source-only representation when available. If a legacy closed schema still requires a PDF identity, return a hash-bound `SOURCE_ONLY` review record plus an explicit schema-interface defect for the reducer; do not discard completed source/asset review and do not invent PDF fields merely to validate.
 
 ## Quality Bar
 
 - Every visual/table judgment cites the asset and source/result locus actually inspected.
 - Caption, labels, visible values, uncertainty, and prose interpretation agree.
 - Permission and non-overwrite provenance are complete before a visible asset can pass.
+- Asset type and realization status match type-specific evidence and actual realized bytes.
 - The reviewer cannot render, edit, or replace the asset under review.
 
 ## Handback

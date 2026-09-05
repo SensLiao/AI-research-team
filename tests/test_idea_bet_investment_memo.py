@@ -19,7 +19,7 @@ from research_agent_teams.operate.output_versions import (
     physical_output,
     prepare_plan,
 )
-from research_agent_teams.tests.test_operate_deep_ideation import (
+from .test_operate_deep_ideation import (
     COLLISION_BUNDLE,
     EXPERIMENT_BUNDLE,
     IDEATE_BUNDLE,

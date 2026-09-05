@@ -52,3 +52,12 @@ def test_visual_router_never_enables_external_execution_or_network():
         route = route_visual(kind, **kwargs)
         assert set(route["safety"].values()) == {False}
 
+
+def test_scientific_diagram_routes_to_the_implemented_offline_adapter():
+    from research_agent_teams.tools.scientific_figure import render_figure
+    route = route_visual("scientific_diagram")
+    assert route["implementation_status"] == "IMPLEMENTED_OFFLINE_SVG_ADAPTER"
+    assert route["renderer_ref"] == "research_agent_teams/tools/scientific_figure.py"
+    assert callable(render_figure) and route["may_render_now"] is True
+    assert route["final_delivery_journal_question"] is True
+    assert route["delivery_status"] == "DESIGN_ONLY_NON_RESULT"

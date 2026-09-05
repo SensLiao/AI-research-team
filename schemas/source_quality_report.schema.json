@@ -135,7 +135,8 @@
           "type": "array",
           "items": {"$ref": "#/$defs/evidenceRef"}
         },
-        "limitations": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        "limitations": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "oracle_ladder_hint": {"type": "string", "description": "Trust-control provenance hint (director lock 2026-08-16): O0-O5 ladder rung or 'undisclosed'; advisory, never a scientific verdict"}
       }
     },
     "currentRankedSource": {

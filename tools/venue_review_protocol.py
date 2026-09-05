@@ -187,7 +187,7 @@ def _forbidden_inputs() -> List[str]:
         "inbox/VERIFY.review.*.bundle.json",
         "inbox/VERIFY.reviews.receipt.json",
         "inbox/VERIFY.meta.bundle.json",
-        "evidence/VERIFY/review-*.artifact.json",
+        *[f"evidence/VERIFY/review-{persona}.artifact.json" for persona in PERSONAS],
     ]
 
 

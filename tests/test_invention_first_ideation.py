@@ -28,7 +28,7 @@ from research_agent_teams.tools.idea_quality_eval import build_quality_eval
 from research_agent_teams.tools.scientific_investment_score import rank_scientific_investments
 from research_agent_teams.tools.validate_artifact import validate_payload
 
-from research_agent_teams.tests.test_operate_deep_ideation import TS, _begin
+from .test_operate_deep_ideation import TS, _begin
 
 
 # --------------------------------------------------------------------------- packets

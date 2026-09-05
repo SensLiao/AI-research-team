@@ -23,14 +23,16 @@ LANES: dict[str, dict[str, Any]] = {
     },
     "scientific_diagram": {
         "accepts": {"mechanism_graph", "method_architecture", "workflow", "scientific_diagram"},
-        "source_contract": "reviewed declarative graph + node/edge semantics + claim boundary",
-        "outputs": ["SVG", "PDF", "PNG", "diagram-spec.json"],
-        "implementation_status": "PLANNED_ADAPTER",
+        "source_contract": "authored inert SVG + compact scientific spec + reviewed relationships + item-level artwork permission",
+        "outputs": ["SVG", "PDF", "PNG", "manuscript_asset_manifest/v2"],
+        "implementation_status": "IMPLEMENTED_OFFLINE_SVG_ADAPTER",
+        "renderer_ref": "research_agent_teams/tools/scientific_figure.py",
         "qa": [
             "semantic node and edge coverage",
             "reading order and visual hierarchy",
             "method-to-caption consistency",
             "no quantitative claim encoded without data",
+            "final journal choice, real publication width, exported glyphs and dash semantics",
         ],
     },
     "editable_canvas": {
@@ -120,6 +122,8 @@ def route_visual(
         "source_contract": spec["source_contract"],
         "outputs": list(spec["outputs"]),
         "implementation_status": spec["implementation_status"],
+        "renderer_ref": spec.get("renderer_ref"),
+        "final_delivery_journal_question": True,
         "qa": list(spec["qa"]),
         "delivery_status": delivery,
         "may_render_now": may_render,
@@ -132,4 +136,3 @@ def route_visual(
             "external_skill_execution": False,
         },
     }
-

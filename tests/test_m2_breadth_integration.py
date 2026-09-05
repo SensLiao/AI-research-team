@@ -29,7 +29,7 @@ from research_agent_teams.tools.validate_artifact import (
     validate_payload,
 )
 
-PKG = Path(__file__).resolve().parent.parent
+PKG = Path(__file__).resolve().parents[2] / "research_agent_teams"
 AGENTS_DIR = PKG / "agents"
 VALID_MODELS = {"opus", "sonnet", "haiku"}
 # control / hook agents (artifact-contract-enforcer, permission-scope-guard, ...) are not LLM agents;
@@ -68,9 +68,9 @@ BREADTH_AGENTS = [
     "baseline-comparison-auditor", "variance-analyzer", "fairness-auditor", "compliance-auditor",
     "goal-alignment-checker", "failure-case-miner", "figure-generator", "visualization-auditor",
     "claim-strength-calibrator",
-    # 2.5 (9)
+    # 2.5 (5 active review roles; obsolete prose-only writers are parked)
     "review-configurator", "methodology-reviewer", "domain-reviewer", "scientific-critic", "review-synthesizer",
-    "synthesis-writer", "contribution-ledger-builder", "threats-to-validity-writer", "review-response-simulator",
+    # 2026-08-20 park: contribution-ledger-builder / threats-to-validity-writer moved to agents/_parked/
 ]
 
 
@@ -107,10 +107,10 @@ def test_no_duplicate_schema_filenames():
 
 # --------------------------------------------------------------------------- 2 + 3. agent-spec consistency
 
-def test_all_41_breadth_agents_have_specs():
+def test_all_registered_breadth_agents_have_specs():
     for name in BREADTH_AGENTS:
         assert (AGENTS_DIR / f"{name}.md").exists(), f"missing agent spec: {name}.md"
-    assert len(BREADTH_AGENTS) == 41
+    assert len(BREADTH_AGENTS) == 37
 
 
 def test_every_agent_spec_is_wellformed():
@@ -177,15 +177,14 @@ def test_all_noncontrol_agents_produce_registered_types():
 
 def test_breadth_runtime_model_tiers_match_the_plan():
     # §9 default-mode tiers: the depth layer is judgment-heavy (auditors/gates/reviewers = opus).
-    # synthesis-writer joined the opus tier 2026-06-13 (audit M7): it renders the director-facing
-    # final verdict prose — a softened BLOCK narrative is a high-cost failure, so judgment tier.
+    # Director-facing prose is now rendered deterministically; only active judgment seats remain.
     expected_opus = {
         "rq-architect", "baseline-fairness-planner", "metric-implementation-auditor", "statistics-power-auditor",
         "source-quality-ranker", "contradiction-miner", "staleness-auditor", "citation-integrity-auditor",
         "baseline-comparison-auditor", "variance-analyzer", "fairness-auditor", "compliance-auditor",
         "goal-alignment-checker", "visualization-auditor", "claim-strength-calibrator",
         "review-configurator", "methodology-reviewer", "domain-reviewer", "scientific-critic",
-        "review-synthesizer", "synthesis-writer", "threats-to-validity-writer", "review-response-simulator",
+        "review-synthesizer",
     }
     for name in BREADTH_AGENTS:
         fm = _frontmatter(AGENTS_DIR / f"{name}.md")

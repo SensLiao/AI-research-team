@@ -128,7 +128,7 @@ def test_implemented_native_surfaces_are_mapped_without_overclaiming_adapters() 
     }
     expected_implemented = {
         "single_entry_research_orchestrator": (
-            ".agents/skills/research-orchestrator/SKILL.md",
+            "research_agent_teams/agents/research-orchestrator.md",
             "native_contract",
         ),
         "mechanism_council": (

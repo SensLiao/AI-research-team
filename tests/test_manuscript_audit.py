@@ -385,6 +385,27 @@ def test_pdf_optional_without_build_is_usable_and_submission_ready(tmp_path):
     assert "BUILD_REQUIRED_UNAVAILABLE" not in _codes(report)
 
 
+def test_provisional_venue_policy_blocks_submission_not_daily_use(tmp_path):
+    contract = _contract(requires_pdf=False)
+    contract["venue_profile"]["hard_field_policy"]["requires_pdf"].update(
+        classification="ADVISORY",
+        weakenable=True,
+    )
+    token = next(
+        row
+        for row in contract["resolved_tokens"]["tokens"]
+        if row["token"] == "requires_pdf"
+    )
+    token.update(classification="ADVISORY", weakenable=True)
+
+    report = _audit(tmp_path, contract=contract, manuscript=_manuscript())
+
+    assert "PROVISIONAL_VENUE_PROFILE" in _codes(report)
+    assert "OFFICIAL_HARD_RULE_OVERRIDE" not in _codes(report)
+    assert report["daily_state"] != "BLOCK"
+    assert report["submission_ready"] is False
+
+
 @pytest.mark.parametrize(
     ("variant", "expected_code"),
     [

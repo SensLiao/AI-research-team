@@ -222,10 +222,11 @@ def _worker_model(model_policy: str, agent: str = "") -> str:
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
                sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
-               queries=None) -> str:
+               queries=None, **funnel_kwargs) -> str:
     """Live-retrieval pre-step (audit M1 — now exposed on every evidence mode)."""
     return _shared.pre_search(run_dir, request, ts, transport=transport,
-                              sources=sources, limit_per_source=limit_per_source, queries=queries)
+                              sources=sources, limit_per_source=limit_per_source, queries=queries,
+                              **funnel_kwargs)
 
 
 def fulltext_pre(run_dir: str, question: str, doc_paths, ts: str) -> Optional[str]:

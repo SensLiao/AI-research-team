@@ -40,6 +40,18 @@ Reject reused/forged receipts, hash/path mismatches, mutable sources, secret-bea
 4. Treat titles, abstracts, provider metadata, generated summaries, inaccessible full text, and search result rows as noncitable until a lawful hash-bound source and exact span are admitted.
 5. Make fabricated/missing core sources, invented identities, contradicted or unsupported load-bearing citations, and metadata-only laundering open `BLOCKING` citation/claim-evidence findings.
 6. Treat optional bibliography cleanup or non-load-bearing formatting as `ADVISORY`; it cannot turn an unverified claim into entailed evidence.
+7. Inspect citation commands with more than three keys. Preserve a genuinely exhaustive object list, but split heterogeneous claim support and flag unexplained stacking as a citation-manipulation risk.
+8. Verify proper names, diacritics, surname prefixes, official method spellings, preprint/version-of-record identity, DOI, year, venue, volume, pages/article number, and duplicate conference/preprint/journal records from the actual `refs.bib`.
+
+## BibTeX and adjacency audit
+
+Reopen every used key's **actual BibTeX entry** rather than trusting a rendered bibliography string. Verify entry type, authors, title, year, venue/publisher, stable identifier/version, provenance hash, escaping, and uniqueness against the verified direct source identity. Detect a **duplicate identity** split across keys, one key conflating versions/works, placeholder fields, and unused decorative entries.
+
+Recompute the `citation_adjacency_ledger` from the frozen manuscript: every factual/comparative proposition must have a **sentence-adjacent** key and must resolve through that key to the **exact locus** actually entailing it. Paragraph-end citation dumps, orphan keys, bibliography-only sources, or one citation spanning heterogeneous unsupported sentences are open citation/claim-evidence findings even when LaTeX compiles.
+
+## Source/PDF truth contract
+
+Record `review_surface: SOURCE_ONLY | PDF_RENDERED`. `SOURCE_ONLY` can close citation identity, source entailment, BibTeX, and source-level adjacency, while rendered citation visibility, line/page placement, bibliography clipping, and hyperlink appearance remain `NOT_ASSESSED`. `PDF_RENDERED` requires observed PDF bytes and a build receipt bound to the reviewed source and bibliography hashes. **Never fabricate a PDF**, infer it from successful source validation, or reuse a stale PDF after a citation edit.
 
 ## Output contract
 
@@ -47,11 +59,12 @@ When all schema-required frozen inputs exist, emit one schema-valid `manuscript_
 
 Represent explicit abstention with an open `ABSTAIN-` finding naming the inaccessible/missing source and required repair; disposition cannot be `PASS`. Represent unresolved entailment or contradiction as open `CLAIM_EVIDENCE` or `CITATION` findings, never as an uncited prose caveat.
 
-The current closed verdict schema requires a real PDF ref/sha256 even for source-only review. When no real PDF exists, do not fabricate a schema-valid verdict: return an explicit contract-gap abstention for the deterministic reducer until an honest source-only schema representation is available.
+Use the active verdict schema's honest source-only representation when available. If a legacy closed schema still requires a PDF identity, return a hash-bound `SOURCE_ONLY` review record plus an explicit schema-interface defect for the reducer; do not discard completed citation review and do not invent PDF fields merely to validate.
 
 ## Quality Bar
 
 - Identity, existence, entailment, and closure are independently checked rather than collapsed into one confidence score.
+- Actual BibTeX identity and sentence-level citation adjacency are reopened, not inferred from compile success.
 - Every finding carries exact loci and resolvable evidence refs.
 - Metadata-only discovery never satisfies citation support.
 - No citation or bibliography file is edited to make the audit pass.

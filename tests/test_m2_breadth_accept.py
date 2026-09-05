@@ -25,7 +25,7 @@ from research_agent_teams.tools.citation_checker import build_report as citation
 from research_agent_teams.tools.compare_metric_impls import build_report as metric_build
 from research_agent_teams.tools.ledger import read_events, verify_chain
 from research_agent_teams.tools.runstore import classify_status
-from research_agent_teams.tests.test_m2_spine_slice import (
+from .test_m2_spine_slice import (
     PROFILE,
     TS,
     GateBlock,

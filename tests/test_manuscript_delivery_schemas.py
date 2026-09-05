@@ -9,7 +9,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2] / "research_agent_teams"
 SCHEMA_DIR = ROOT / "schemas"
 SCHEMA_FILES = {
     "build": "manuscript_build_receipt.schema.json",

@@ -10,6 +10,7 @@ from research_agent_teams.operate.output_versions import (
     physical_output,
     prepare_plan,
     resolve_effective_output,
+    sha256,
 )
 
 
@@ -118,6 +119,166 @@ def test_duplicate_canonical_labels_get_isolated_supplement_lineage(tmp_path):
     assert json.loads(mechanism_out.read_text(encoding="utf-8"))["kind"] == (
         "mechanism-corrected"
     )
+
+
+def test_v1_finalized_output_hash_drift_is_not_silently_accepted(tmp_path):
+    run_dir = tmp_path / "run"
+    inbox = run_dir / "inbox"
+    inbox.mkdir(parents=True)
+    logical = inbox / "legacy.bundle.json"
+    logical.write_text(json.dumps({"version": 1}), encoding="utf-8")
+    node = _node(0, "legacy-worker", logical, run_dir)
+    plan = prepare_plan(
+        run_dir,
+        "DESIGN",
+        1,
+        [node],
+        {"legacy-worker"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    corrected = physical_output(run_dir, plan, node["id"])
+    assert corrected is not None
+    corrected.parent.mkdir(parents=True, exist_ok=True)
+    corrected.write_text(json.dumps({"version": 2}), encoding="utf-8")
+    finalize_output(run_dir, "DESIGN", 1, node["id"], TS)
+
+    plan_file = run_dir / "inbox/supplements/DESIGN/repair-001/repair-plan.json"
+    finalized_plan = json.loads(plan_file.read_text(encoding="utf-8"))
+    finalized_plan["contract_version"] = "supplement-lineage/v1"
+    plan_file.write_text(json.dumps(finalized_plan), encoding="utf-8")
+    corrected.write_text(json.dumps({"version": 3}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="finalized repair output hash drift"):
+        resolve_effective_output(run_dir, "DESIGN", logical)
+
+
+def test_finalize_cannot_redefine_a_finalized_output_in_same_cycle(tmp_path):
+    run_dir = tmp_path / "run"
+    inbox = run_dir / "inbox"
+    inbox.mkdir(parents=True)
+    logical = inbox / "worker.bundle.json"
+    logical.write_text(json.dumps({"version": 1}), encoding="utf-8")
+    node = _node(0, "worker", logical, run_dir)
+    plan = prepare_plan(
+        run_dir,
+        "DESIGN",
+        1,
+        [node],
+        {"worker"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    corrected = physical_output(run_dir, plan, node["id"])
+    assert corrected is not None
+    corrected.parent.mkdir(parents=True, exist_ok=True)
+    corrected.write_text(json.dumps({"version": 2}), encoding="utf-8")
+    finalize_output(run_dir, "DESIGN", 1, node["id"], TS)
+    plan_file = run_dir / "inbox/supplements/DESIGN/repair-001/repair-plan.json"
+    first = json.loads(plan_file.read_text(encoding="utf-8"))["outputs"][0]
+
+    corrected.write_text(json.dumps({"version": 3}), encoding="utf-8")
+    with pytest.raises(ValueError, match="finalized repair output hash drift"):
+        finalize_output(run_dir, "DESIGN", 1, node["id"], TS)
+
+    second = json.loads(plan_file.read_text(encoding="utf-8"))["outputs"][0]
+    assert second["output_sha256"] == first["output_sha256"]
+    assert second["completed_at"] == first["completed_at"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "logical_output",
+        "physical_output",
+        "original_snapshot",
+        "supersedes_ref",
+        "repair_scope.target_artifact_ref",
+    ],
+)
+def test_tampered_plan_cannot_resolve_any_row_path_outside_run(
+        tmp_path, field):
+    run_dir = tmp_path / "run"
+    inbox = run_dir / "inbox"
+    inbox.mkdir(parents=True)
+    logical = inbox / "worker.bundle.json"
+    logical.write_text(json.dumps({"version": 1}), encoding="utf-8")
+    node = _node(0, "worker", logical, run_dir)
+    prepare_plan(
+        run_dir,
+        "DESIGN",
+        1,
+        [node],
+        {"worker"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    outside = tmp_path / "outside-secret.json"
+    outside.write_text(json.dumps({"secret": "outside-run"}), encoding="utf-8")
+    outside_before = outside.read_bytes()
+    plan_file = run_dir / "inbox/supplements/DESIGN/repair-001/repair-plan.json"
+    tampered = json.loads(plan_file.read_text(encoding="utf-8"))
+    row = tampered["outputs"][0]
+    if field == "repair_scope.target_artifact_ref":
+        row["repair_scope"]["target_artifact_ref"] = str(outside.resolve())
+    else:
+        row[field] = str(outside.resolve())
+    row["output_sha256"] = sha256(outside)
+    row["completed_at"] = TS
+    plan_file.write_text(json.dumps(tampered), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be a normalized run-relative path"):
+        resolve_effective_output(run_dir, "DESIGN", logical)
+    with pytest.raises(ValueError, match="must be a normalized run-relative path"):
+        physical_output(run_dir, tampered, node["id"])
+    with pytest.raises(ValueError, match="must be a normalized run-relative path"):
+        finalize_output(run_dir, "DESIGN", 1, node["id"], TS)
+    assert outside.read_bytes() == outside_before
+
+
+def test_plan_physical_output_is_confined_to_current_corrected_lane(tmp_path):
+    run_dir = tmp_path / "run"
+    inbox = run_dir / "inbox"
+    inbox.mkdir(parents=True)
+    logical = inbox / "worker.bundle.json"
+    logical.write_text(json.dumps({"version": 1}), encoding="utf-8")
+    node = _node(0, "worker", logical, run_dir)
+    plan = prepare_plan(
+        run_dir,
+        "DESIGN",
+        1,
+        [node],
+        {"worker"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    plan["outputs"][0]["physical_output"] = "inbox/worker.bundle.json"
+
+    with pytest.raises(ValueError, match="unsafe repair plan physical_output"):
+        physical_output(run_dir, plan, node["id"])
+
+
+def test_plan_physical_output_rejects_linked_corrected_lane(tmp_path):
+    run_dir = tmp_path / "run"
+    inbox = run_dir / "inbox"
+    inbox.mkdir(parents=True)
+    logical = inbox / "worker.bundle.json"
+    logical.write_text(json.dumps({"version": 1}), encoding="utf-8")
+    node = _node(0, "worker", logical, run_dir)
+    plan = prepare_plan(
+        run_dir,
+        "DESIGN",
+        1,
+        [node],
+        {"worker"},
+        {"verdict": "NEEDS_SUPPLEMENT", "defects": []},
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    corrected_lane = run_dir / "inbox/supplements/DESIGN/repair-001/corrected"
+    _link_directory_or_skip(corrected_lane, outside)
+
+    with pytest.raises(
+        ValueError,
+        match="unsafe repair plan physical_output.*(?:SYMLINK_PATH|REPARSE_PATH)",
+    ):
+        physical_output(run_dir, plan, node["id"])
 
 
 def test_repair_plan_write_rejects_linked_parent_before_touching_outside(tmp_path):

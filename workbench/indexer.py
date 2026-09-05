@@ -67,6 +67,12 @@ _TASK_WORK_STATE = {
     "READY": WorkState.READY,
     "BLOCKED": WorkState.BLOCKED,
     "FORBIDDEN": WorkState.BLOCKED,
+    # Controlled task-layer vocabulary (tasks/README.md status set, 2026-08-09).
+    "INBOX": WorkState.BACKLOG,
+    "SCOPED": WorkState.BACKLOG,
+    "WAITING": WorkState.BLOCKED,
+    "REVIEW": WorkState.BLOCKED,  # execution done, waiting on the human reviewer
+    "CANCELLED": WorkState.BACKLOG,
 }
 # Words that name a HUMAN as the thing being waited on → a decision is owed.
 _NEEDS_DECISION_HINTS = ("PENDING_DIRECTOR", "AWAITING_DIRECTOR", "MUST_FREEZE", "NEEDS_DECISION")

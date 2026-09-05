@@ -159,7 +159,7 @@ def build_state(project: Optional[str] = None, *, runs_root: Optional[Path | str
                 "state": NOW,
                 "prerequisite": "跑完 " + " / ".join(blocked_on),
                 "why": "运行 `%s` 停在「%s」等你%s" % (
-                    hits[0]["run_id"], hits[0]["stage_words"] or "关卡", queued),
+                    hits[0]["run_id"], hits[0]["stage_words"] or "检查点", queued),
                 "runs": [row["run_id"] for row in hits],
             }
         else:
@@ -167,7 +167,7 @@ def build_state(project: Optional[str] = None, *, runs_root: Optional[Path | str
             due[gate] = {
                 "state": NOT_YET,
                 "prerequisite": "跑完 " + " / ".join(blocked_on) if blocked_on else "—",
-                "why": ("跑过 %s 但没有停在关卡上" % "、".join(ran)) if ran
+                "why": ("跑过 %s 但没有停在决定点上" % "、".join(ran)) if ran
                        else ("要先跑一次 " + " 或 ".join(blocked_on) if blocked_on else "没有前置模式"),
                 "runs": [],
             }
@@ -233,7 +233,7 @@ def render_gates(state: dict[str, Any]) -> str:
     if state["waiting"]:
         lines += ["## 停着等你的运行", ""]
         for row in state["waiting"]:
-            gates = "、".join(row["gates"]) or "（这个模式没有声明人工关卡）"
+            gates = "、".join(row["gates"]) or "（这个模式没有声明导演决定点）"
             lines.append(f"- `{row['run_id']}`（{row['mode']}）停在「{row['stage_words']}」→ {gates}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"

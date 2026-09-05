@@ -31,7 +31,7 @@ from research_agent_teams.tools.saturation_meter import (
 # Schema loaded DIRECTLY from the file (the prompt forbids relying on PAYLOAD_SCHEMAS
 # registration). This is the strict 2020-12 validator over the report payload.
 SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent
+    Path(__file__).resolve().parents[2] / "research_agent_teams"
     / "schemas"
     / "evidence_saturation_report.schema.json"
 )

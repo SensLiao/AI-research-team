@@ -97,7 +97,12 @@ def test_seat_counts_equal_the_registry_agent_subsets():
 def test_the_hop_budget_equals_the_registry_budget():
     registry = research_plan.load_mode_registry()["modes"]
     for view in recipes.resolve_all():
-        expected = sum(int(registry[m]["budget"]["max_agent_hops"]) for m in view["modes"])
+        expected = sum(
+            research_plan.UNBOUNDED_HOP_COST
+            if registry[m]["budget"]["max_agent_hops"] is None
+            else int(registry[m]["budget"]["max_agent_hops"])
+            for m in view["modes"]
+        )
         assert view["cost"]["agent_hops"] == expected, view["id"]
 
 
@@ -187,7 +192,7 @@ def test_the_roster_is_never_presented_as_a_dispatch_promise(render):
     """`docs/03-WORKFLOWS.md` §1: agent_subset is the roster, max_agent_hops the ceiling, and the
     real dispatch count sits between them. Reading either as "this many will run" is an overclaim."""
     card = render()
-    assert "席可上场" in card
+    assert "agent 可上场" in card
     assert "真正派出去的在两者之间" in card
     assert "席 sub-agent" not in card
 
@@ -223,6 +228,7 @@ def test_two_recommended_depths_are_rejected(tmp_path):
 def test_losing_coverage_of_a_mode_is_rejected(tmp_path):
     def drop_manuscripts(data):
         data["recipes"].pop("manuscript-and-review")
+        data["recipes"].pop("review-response-closed")
     text = _violations(tmp_path, drop_manuscripts)
     assert "reachable from NO outcome" in text
     assert "manuscript_authoring" in text

@@ -45,6 +45,25 @@
                   "type": ["string", "null"],
                   "description": "The actual value or statement found at this locus. The claim-evidence-linker READS this to decide supports_claim for the locus (true = supports the claim, false = contradicts it). There is NO automatic numeric comparison: contradiction detection is the linker's explicit supports_claim decision, enforced deterministically by the gate. Always populate this for table cells, figures, and code comments so the linker can judge support correctly."
                 },
+                "version_read": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Exact report version inspected (version of record, accepted manuscript, or dated preprint version)."
+                },
+                "value_origin": {
+                  "type": "string",
+                  "enum": ["SOURCE_REPORTED", "RE_DERIVED", "REVIEWER_COUNT", "ILLUSTRATIVE"],
+                  "description": "Who produced the value. Equal numbers never erase attribution provenance."
+                },
+                "derivation": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Formula and input loci for a re-derived value or reviewer count."
+                },
+                "suspected_source_error": {
+                  "type": ["string", "null"],
+                  "description": "A separate annotation; exact_quote remains verbatim even when the source appears erroneous."
+                },
                 "page": {
                   "type": ["integer", "null"],
                   "minimum": 1,
@@ -110,7 +129,13 @@
                   "enum": ["direct", "indirect", "proxy", "assumed"],
                   "description": "OPTIONAL. How this evidence locus relates to the claim: direct = measures exactly what the claim asserts; indirect = a related quantity that implies it; proxy = a stand-in metric/surrogate; assumed = not actually shown, taken on faith. Advisory only — does not affect citation-checking."
                 }
-              }
+              },
+              "allOf": [
+                {
+                  "if": {"properties": {"value_origin": {"enum": ["RE_DERIVED", "REVIEWER_COUNT"]}}, "required": ["value_origin"]},
+                  "then": {"required": ["derivation"]}
+                }
+              ]
             }
           },
           "overall_support": {

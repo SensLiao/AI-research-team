@@ -201,7 +201,7 @@ def test_plan_is_offline_and_leaks_no_secret(fake_env):
 def test_etiquette_refuses_paths_outside_workdir(fake_env):
     cfg = config.load_config(fake_env)
     assert_in_workdir(cfg, "/mnt/HDD4/tester/research-runs/exp-1")   # inside -> ok
-    for bad in ("/etc/passwd", "/mnt/HDD3/shared/private", "/home/other/x"):
+    for bad in ("/etc/passwd", "/mnt/HDD3/Zhenghong/private", "/home/other/x"):
         with pytest.raises(PermissionError):
             assert_in_workdir(cfg, bad)
 

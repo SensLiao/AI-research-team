@@ -177,10 +177,11 @@ def _worker_model(stage: str, model_policy: str) -> str:
 
 def pre_search(run_dir: str, request: str, ts: str, transport=None,
                sources=("arxiv", "openalex", "crossref", "s2"), limit_per_source: int = 8,
-               queries=None) -> str:
+               queries=None, **funnel_kwargs) -> str:
     """Live-retrieval pre-step (audit H5): grounds DISCOVER + novelty in real literature."""
     return _shared.pre_search(run_dir, request, ts, transport=transport,
-                              sources=sources, limit_per_source=limit_per_source, queries=queries)
+                              sources=sources, limit_per_source=limit_per_source, queries=queries,
+                              **funnel_kwargs)
 
 
 def discover_worker(run_dir: str, request: str, vault: str = DEFAULT_VAULT,
@@ -544,14 +545,33 @@ _BACKLOG_IDEA_FIELDS = {
 }
 
 
+#: The closed origin_operator vocabulary the idea_backlog schema enforces. The merger may write a
+#: longer provenance string (e.g. "negation (...); merged from {...}") — the deterministic producer
+#: normalizes to the first legal token instead of BLOCKing a real upstream bundle.
+_ORIGIN_OPERATORS = ("gap", "constraint", "negation", "reformulation", "cross_product",
+                     "enabler", "tension")
+
+
+def _normalize_origin_operator(value) -> str:
+    if isinstance(value, str):
+        for op in _ORIGIN_OPERATORS:
+            if value.strip().startswith(op):
+                return op
+    return "gap"
+
+
 def _backlog_candidate(idea: dict) -> dict:
     """Project a rich proposal onto the stable typed ``idea_backlog`` contract.
 
     Investment-memo fields remain in worker bundles and the Markdown review
     layer. This keeps machine artifacts schema-valid and avoids turning the
-    human decision surface into a new database contract.
+    human decision surface into a new database contract. `origin_operator` is
+    normalized to its closed vocabulary (merger provenance strings accepted).
     """
-    return {key: value for key, value in idea.items() if key in _BACKLOG_IDEA_FIELDS}
+    out = {key: value for key, value in idea.items() if key in _BACKLOG_IDEA_FIELDS}
+    if "origin_operator" in out:
+        out["origin_operator"] = _normalize_origin_operator(out["origin_operator"])
+    return out
 
 
 # --------------------------------------------------------------------------- deterministic producers (WORK)
@@ -769,10 +789,19 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
     if gc_path.exists():
         gc = json.loads(gc_path.read_text(encoding="utf-8"))["payload"]
         gap_ids = {str(g.get("gap_id")) for g in (gc.get("gaps") or []) if g.get("gap_id")}
+    # DISCOVER claim ids (c1..cN) are real upstream ids too — the multi-view proposers may cite
+    # them directly (director lock 2026-08-09); a claim id produced by the grounding bundle must
+    # never be judged a fabrication.
+    claim_ids = set()
+    disc_path = Path(run_dir) / "inbox" / "DISCOVER.bundle.json"
+    if disc_path.exists():
+        disc = json.loads(disc_path.read_text(encoding="utf-8"))
+        claim_ids = {str(c.get("claim_id")) for c in ((disc.get("claim_list") or {}).get("claims") or [])
+                     if c.get("claim_id")}
     ih_ids = {str(h.get("hypothesis_id")) for h in hypotheses if h.get("hypothesis_id")}
     idea_ids = {str(i.get("idea_id")) for i in ideas if i.get("idea_id")}
     ev_ids = {str(e.get("idea_id")) for e in evolved if e.get("idea_id")}
-    known = gap_ids | ih_ids | idea_ids | ev_ids
+    known = gap_ids | claim_ids | ih_ids | idea_ids | ev_ids
     slug_set, vault_root = _vault_slug_set()
 
     refs = []
@@ -804,6 +833,18 @@ def _ideate_dets(run_dir, ts, b) -> tuple:
     # Dedup (AI-Researcher 0.8 pattern) then the round-robin Elo tournament (audit B3).
     dd = dedupe_ideas(ideas)
     kept_ids = {str(i["idea_id"]) for i in dd["kept"]}
+    # Killed ideas (director lock 2026-08-09: the ranker's kill filters) do not participate in the
+    # tournament — no pairing is required for an idea that will not be ranked; it still appears on
+    # the menu with its kill reason.
+    ranking_path = Path(run_dir) / "inbox" / "RANKING.bundle.json"
+    if ranking_path.is_file():
+        try:
+            rk = json.loads(ranking_path.read_text(encoding="utf-8"))
+            killed = {str(a.get("idea_id")) for a in (rk.get("investment_assessments") or [])
+                      if isinstance(a, dict) and a.get("killed")}
+            kept_ids -= killed
+        except (OSError, ValueError):
+            pass  # unreadable ranking = treat as no kills (the tournament gate still enforces pairs)
     bundle_ref = "inbox/IDEATE.bundle.json"
     ranking_ref = ("inbox/RANKING.bundle.json"
                    if (Path(run_dir) / "inbox" / "RANKING.bundle.json").is_file()

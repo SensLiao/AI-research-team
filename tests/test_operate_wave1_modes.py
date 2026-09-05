@@ -2,7 +2,7 @@
 
 evidence_deep is now a real staged evidence panel. evidence_review remains a
 small honest single-worker review, and deep_research is now a true staged
-10-worker perspective panel.
+16-seat perspective, author, and convergence panel.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from research_agent_teams.operate.artifacts import GateBlock, TargetedGateBlock
+from research_agent_teams.operate.artifacts import GateBlock, TargetedGateBlock, envelope
 from research_agent_teams.operate.bounded_repair import load_state
 from research_agent_teams.operate import spine
 from research_agent_teams.operate.modes import REGISTRY, deep_research, evidence_deep, evidence_review
@@ -825,6 +825,273 @@ def _good_deep_research_panel(iterations_wo_new=1, fulltext_reads=4):
     return b
 
 
+_DOSSIER_CHECKS = {
+    "method-and-paper": [
+        "prior-art-boundary", "comparator-identity", "intervention-legality",
+        "representation-attribution", "venue-claim-scope",
+    ],
+    "implementation-and-project-state": [
+        "source-of-truth", "live-state-freshness", "leakage-firewall",
+        "implementation-feasibility", "experiment-budget", "seed-chain",
+    ],
+    "evidence-and-completeness": [
+        "citation-readiness", "coverage-completeness", "status-truth",
+        "internal-consistency", "formal-gate-separation",
+    ],
+}
+
+
+def _sha256_ref(path):
+    return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _run_relative_ref(run_dir, path):
+    return Path(path).resolve().relative_to(Path(run_dir).resolve()).as_posix()
+
+
+def _review_id(lens, round_no=0):
+    return f"review-{lens}-round-{round_no}"
+
+
+def _dispatch_id(agent, round_no=0):
+    seed = hashlib.sha256(f"{agent}|{round_no}".encode("utf-8")).hexdigest()[:32]
+    return f"dispatch-{seed}"
+
+
+def _dossier_finding(finding_id, severity="MAJOR"):
+    author_ref = "inbox/DISCOVER.landscape-mapper.bundle.json"
+    return {
+        "finding_id": finding_id,
+        "severity": severity,
+        "category": "internal-consistency",
+        "anchor": "research_brief.bottom_line",
+        "evidence": f"{finding_id} identifies a concrete internal dossier defect.",
+        "evidence_refs": [author_ref],
+        "responsible_agent": "landscape-mapper",
+        "target_artifact_ref": author_ref,
+        "repair_action": "Correct the conflicting statement in the frozen author bundle.",
+        "acceptance_check": "A fresh blind reviewer finds no remaining conflict.",
+        "allowed_json_pointers": ["/research_brief/bottom_line"],
+        "status": "OPEN",
+    }
+
+
+def _consolidated_finding(finding_id, severity, source_findings):
+    return {
+        "finding_id": f"consolidated-{finding_id}",
+        "severity": severity,
+        "category": "internal-consistency",
+        "source_findings": source_findings,
+        "anchor": "research_brief.bottom_line",
+        "evidence": f"H-Max consolidation for {finding_id}.",
+        "responsible_agent": "landscape-mapper",
+        "repair_action": "Correct the conflicting statement in the frozen author bundle.",
+        "acceptance_check": "Fresh blind reviewers find no remaining conflict.",
+        "allowed_json_pointers": ["/research_brief/bottom_line"],
+        "status": "OPEN",
+    }
+
+
+def _install_deep_research_tail_receipt(run_dir, round_no=0):
+    receipt_path = run_dir / "inbox" / "panel-scheduler" / "DISCOVER.json"
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    agents = [
+        "landscape-mapper", *deep_research.DOSSIER_REVIEWER_NAMES,
+        deep_research.CONVERGENCE_CHAIR,
+    ]
+    for index, agent in enumerate(agents):
+        path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+        if not path.is_file():
+            continue
+        rows.append({
+            "worker_id": f"test:{agent}:{round_no}",
+            "agent": agent,
+            "source_label": agent,
+            "output": _run_relative_ref(run_dir, path),
+            "logical_output": f"inbox/DISCOVER.{agent}.bundle.json",
+            "cycle": round_no,
+            "wave": index + 1,
+            "authorized_at": TS,
+            "authorization_kind": "initial" if round_no == 0 else "supplement",
+            "dispatch_instance_id": _dispatch_id(agent, round_no),
+        })
+    receipt = {
+        "contract_version": "panel-dispatch/v1",
+        "stage": "DISCOVER",
+        "authorizations": rows,
+        "waves": [],
+    }
+    receipt_path.write_text(json.dumps(receipt, ensure_ascii=False), encoding="utf-8")
+
+
+def _write_deep_research_review_bundles(
+        run_dir, *, findings_by_lens=None, consolidated_findings=None,
+        round_no=0, skip_agents=(), wrapped=False):
+    """Write the hash-bound reviewer/chair tail after the author bundle is frozen."""
+    skip = set(skip_agents)
+    author_path = run_dir / "inbox" / "DISCOVER.landscape-mapper.bundle.json"
+    if not author_path.is_file():
+        return
+    author_ref = _run_relative_ref(run_dir, author_path)
+    author_hash = _sha256_ref(author_path)
+    project_source = run_dir / "inbox" / "project-state" / "sources" / "live-manifest.json"
+    project_source.parent.mkdir(parents=True, exist_ok=True)
+    project_source.write_text(
+        json.dumps({"project": "test-project", "state": "current"}), encoding="utf-8")
+    project_source_ref = _run_relative_ref(run_dir, project_source)
+    project_snapshot = (
+        run_dir / "inbox" / "project-state" / "project-state-snapshot.artifact.json"
+    )
+    project_snapshot.parent.mkdir(parents=True, exist_ok=True)
+    project_snapshot.write_text(
+        json.dumps({
+            "artifact_id": "project_state_snapshot",
+            "artifact_type": "project_state_snapshot",
+            "schema_version": "1.0.0",
+            "created_by": "project-state-capture",
+            "created_at": TS,
+            "status": "approved",
+            "input_artifact_hashes": [
+                _sha256_ref(run_dir / "task_frame.artifact.json")
+            ],
+            "payload": {
+                "contract_version": "project-state-snapshot/v1",
+                "project_id": "test-project",
+                "source_of_truth_id": "test-live-manifest",
+                "captured_at": TS,
+                "valid_until": "2026-06-11T12:00:00Z",
+                "sources": [{
+                    "source_ref": project_source_ref,
+                    "source_sha256": _sha256_ref(project_source),
+                    "role": "LIVE_MANIFEST",
+                }],
+                "facts": [{
+                    "fact_id": "state-current",
+                    "statement": "The test project state is current for this review fixture.",
+                    "source_refs": [project_source_ref],
+                }],
+            },
+        }, ensure_ascii=False), encoding="utf-8")
+    findings_by_lens = findings_by_lens or {}
+    review_rows = []
+    missing_review = False
+    for agent, lens in deep_research.DOSSIER_REVIEWERS:
+        if agent in skip:
+            missing_review = True
+            continue
+        findings = list(findings_by_lens.get(lens) or [])
+        severe = any(row["severity"] in {"CRITICAL", "MAJOR"} for row in findings)
+        review = {
+            "contract_version": "research-dossier-review/v1",
+            "review_id": _review_id(lens, round_no),
+            "reviewer_lens": lens,
+            "reviewer_instance_id": _dispatch_id(agent, round_no),
+            "independent_of_author": True,
+            "author_agent": "landscape-mapper",
+            "reviewed_artifact_ref": author_ref,
+            "reviewed_artifact_sha256": author_hash,
+            "review_round": round_no,
+            "coverage_checks": [
+                {"check_id": check_id, "status": "PASS",
+                 "evidence": f"Checked {check_id} against the frozen author bundle.",
+                 "finding_refs": [], "external_blocker_refs": []}
+                for check_id in _DOSSIER_CHECKS[lens]
+            ],
+            "findings": findings,
+            "external_blockers": [],
+            "recommendation": "REVISE" if severe else "PASS",
+            "summary": f"Independent {lens} review of the frozen dossier.",
+        }
+        if lens == "implementation-and-project-state":
+            review["project_state_assessment"] = {
+                "status": "CURRENT_HASH_BOUND",
+                "snapshot_ref": _run_relative_ref(run_dir, project_snapshot),
+                "snapshot_sha256": _sha256_ref(project_snapshot),
+                "rationale": "The run-local test project snapshot is hash-bound and current.",
+            }
+        bundle = {"research_dossier_review": review}
+        if wrapped:
+            bundle = {"payload": bundle}
+        review_path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+        review_path.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+        review_rows.append({
+            "review_id": review["review_id"],
+            "reviewer_lens": lens,
+            "reviewer_instance_id": review["reviewer_instance_id"],
+            "artifact_ref": _run_relative_ref(run_dir, review_path),
+            "artifact_sha256": _sha256_ref(review_path),
+        })
+
+    if missing_review or deep_research.CONVERGENCE_CHAIR in skip:
+        return
+    if consolidated_findings is None:
+        consolidated_findings = []
+        for lens, findings in findings_by_lens.items():
+            for finding in findings:
+                consolidated_findings.append(_consolidated_finding(
+                    finding["finding_id"], finding["severity"],
+                    [{"review_id": _review_id(lens, round_no),
+                      "finding_id": finding["finding_id"]}],
+                ))
+    counts = {
+        "critical": sum(row["severity"] == "CRITICAL" for row in consolidated_findings),
+        "major": sum(row["severity"] == "MAJOR" for row in consolidated_findings),
+        "minor": sum(row["severity"] == "MINOR" for row in consolidated_findings),
+        "external_blockers": 0,
+    }
+    disposition = (
+        "REVISE" if counts["critical"] or counts["major"] else "CONTENT_CONVERGED"
+    )
+    verdict = {
+        "contract_version": "research-dossier-convergence/v1",
+        "convergence_id": f"convergence-round-{round_no}",
+        "chair_instance_id": _dispatch_id(deep_research.CONVERGENCE_CHAIR, round_no),
+        "review_round": round_no,
+        "reviewed_artifact_ref": author_ref,
+        "reviewed_artifact_sha256": author_hash,
+        "review_refs": review_rows,
+        "hmax_policy": True,
+        "counts": counts,
+        "consolidated_findings": list(consolidated_findings),
+        "external_blockers": [],
+        "disposition": disposition,
+        "status_boundaries": {
+            "content_convergence_only": True,
+            "novelty_clearance": False,
+            "project_approval": False,
+            "formal_citation_gate": "PENDING",
+        },
+        "rationale": "All source findings are reconciled under H-Max without granting external gates.",
+    }
+    bundle = {"research_convergence_verdict": verdict}
+    if wrapped:
+        bundle = {"payload": bundle}
+    (run_dir / "inbox" / f"DISCOVER.{deep_research.CONVERGENCE_CHAIR}.bundle.json").write_text(
+        json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+    _install_deep_research_tail_receipt(run_dir, round_no)
+
+
+def _rebind_chair_to_current_reviews(run_dir):
+    """Keep a deliberately mutated review frozen while updating only the chair's bundle hashes."""
+    chair_path = run_dir / "inbox" / f"DISCOVER.{deep_research.CONVERGENCE_CHAIR}.bundle.json"
+    chair_bundle = json.loads(chair_path.read_text(encoding="utf-8"))
+    chair = chair_bundle["research_convergence_verdict"]
+    refs = []
+    for agent, lens in deep_research.DOSSIER_REVIEWERS:
+        path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+        review = json.loads(path.read_text(encoding="utf-8"))["research_dossier_review"]
+        refs.append({
+            "review_id": review["review_id"],
+            "reviewer_lens": lens,
+            "reviewer_instance_id": review["reviewer_instance_id"],
+            "artifact_ref": _run_relative_ref(run_dir, path),
+            "artifact_sha256": _sha256_ref(path),
+        })
+    chair["review_refs"] = refs
+    chair_path.write_text(json.dumps(chair_bundle, ensure_ascii=False), encoding="utf-8")
+
+
 def _write_deep_research_bundles(run_dir, payload, skip_agents=()):
     payload = _with_strict_attribution(payload, run_dir)
     skip = set(skip_agents)
@@ -852,23 +1119,545 @@ def _write_deep_research_bundles(run_dir, payload, skip_agents=()):
             continue
         (run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json").write_text(
             json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+    _write_deep_research_review_bundles(run_dir, skip_agents=skip)
 
 
 def test_deep_research_happy_path_emits_brief(tmp_path):
-    run_dir = _mk_run(tmp_path, budget={"max_agent_hops": 10,
+    run_dir = _mk_run(tmp_path, budget={"max_agent_hops": 16,
                                         "max_iterations_without_new_evidence": 3,
                                         "max_fulltext_reads": 20,
                                         "max_debug_retries_per_run": 3})
     _write_deep_research_bundles(run_dir, _good_deep_research_panel())
     paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
     assert report["n_perspectives"] == 4 and report["saturation_reached"] is True
+    assert report["content_convergence"] == "CONTENT_CONVERGED"
+    assert report["open_content_critical"] == report["open_content_major"] == 0
     assert any("research-brief" in p for p in paths)
+    assert any("research-convergence-verdict" in p for p in paths)
     assert any("research-markdown-brief" in p for p in paths)
     assert Path(report["director_markdown_brief"]).is_file()
     md = Path(report["director_markdown_brief"]).read_text(encoding="utf-8")
     assert "Perspective Synthesis" in md and "Evidence Grade And Source Quality" in md
     assert "Belief Update" in md and "Next Most Valuable Evidence" in md
     _validate_written(paths)
+
+
+def test_deep_research_zero_critical_major_findings_pass_content_convergence(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+
+    result = deep_research._convergence_checks(
+        run_dir, deep_research._load_worker_bundles(run_dir))
+
+    assert result["disposition"] == "CONTENT_CONVERGED"
+    assert result["critical"] == result["major"] == result["minor"] == 0
+    assert len(result["reviewer_instances"]) == 3
+
+
+def test_deep_research_reviewers_must_bind_exact_frozen_author_hash(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    author_path = run_dir / "inbox" / "DISCOVER.landscape-mapper.bundle.json"
+    expected_ref = _run_relative_ref(run_dir, author_path)
+    expected_hash = _sha256_ref(author_path)
+    for agent, _lens in deep_research.DOSSIER_REVIEWERS:
+        path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+        review = json.loads(path.read_text(encoding="utf-8"))["research_dossier_review"]
+        assert (review["reviewed_artifact_ref"], review["reviewed_artifact_sha256"]) == (
+            expected_ref, expected_hash)
+
+    method_path = run_dir / "inbox" / "DISCOVER.research-dossier-method-reviewer.bundle.json"
+    method_bundle = json.loads(method_path.read_text(encoding="utf-8"))
+    method_bundle["research_dossier_review"]["reviewed_artifact_sha256"] = "sha256:" + "0" * 64
+    method_path.write_text(json.dumps(method_bundle, ensure_ascii=False), encoding="utf-8")
+    _rebind_chair_to_current_reviews(run_dir)
+
+    with pytest.raises(TargetedGateBlock) as exc_info:
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+    defects = {row["defect_id"]: row for row in exc_info.value.defects}
+    assert "review-author-binding-method-and-paper" in defects
+    assert defects["review-author-binding-method-and-paper"]["target_agents"] == [
+        "research-dossier-method-reviewer"]
+
+
+def test_deep_research_reviewer_instance_must_equal_scheduler_receipt(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    method_path = run_dir / "inbox" / "DISCOVER.research-dossier-method-reviewer.bundle.json"
+    bundle = json.loads(method_path.read_text(encoding="utf-8"))
+    bundle["research_dossier_review"]["reviewer_instance_id"] = "dispatch-" + "f" * 32
+    method_path.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+    _rebind_chair_to_current_reviews(run_dir)
+
+    with pytest.raises(TargetedGateBlock) as exc_info:
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+    assert any(row["defect_id"] == "review-dispatch-binding-method-and-paper"
+               for row in exc_info.value.defects)
+
+
+def test_deep_research_tail_receipt_ids_are_globally_unique(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    receipt_path = run_dir / "inbox" / "panel-scheduler" / "DISCOVER.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["authorizations"][1]["dispatch_instance_id"] = \
+        receipt["authorizations"][0]["dispatch_instance_id"]
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(GateBlock, match="globally unique"):
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+
+def test_deep_research_receipt_ids_are_unique_across_non_tail_rows(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    receipt_path = run_dir / "inbox" / "panel-scheduler" / "DISCOVER.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    duplicate = dict(receipt["authorizations"][1])
+    duplicate.update({
+        "worker_id": "test:lit-scout:0",
+        "agent": "lit-scout",
+        "source_label": "lit-scout",
+        "output": "inbox/DISCOVER.lit-scout.bundle.json",
+        "logical_output": "inbox/DISCOVER.lit-scout.bundle.json",
+    })
+    receipt["authorizations"].append(duplicate)
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(GateBlock, match="globally unique"):
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+
+def test_deep_research_project_snapshot_rejects_task_frame_replay(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    snapshot = (
+        run_dir / "inbox" / "project-state" / "project-state-snapshot.artifact.json"
+    )
+    task_frame = run_dir / "task_frame.artifact.json"
+    current = json.loads(task_frame.read_text(encoding="utf-8"))
+    current["payload"]["request_text"] = "a different task with the same project"
+    task_frame.write_text(json.dumps(current), encoding="utf-8")
+    defects = []
+
+    accepted = deep_research._validate_current_project_snapshot(
+        run_dir,
+        _run_relative_ref(run_dir, snapshot),
+        _sha256_ref(snapshot),
+        TS,
+        lambda defect_id, message: defects.append((defect_id, message)),
+    )
+
+    assert accepted is False
+    assert defects[0][0] == "current-snapshot-task-frame-binding"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_defect"),
+    [
+        ("duplicate", "review-coverage-method-and-paper"),
+        ("unmapped-fail", "review-fail-unmapped-method-and-paper-prior-art-boundary"),
+        ("illegal-na", "review-na-not-allowed-evidence-and-completeness-formal-gate-separation"),
+    ],
+)
+def test_deep_research_coverage_checks_are_exact_and_accountable(
+        tmp_path, mutation, expected_defect):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    if mutation == "illegal-na":
+        agent = "research-dossier-evidence-reviewer"
+        target_id = "formal-gate-separation"
+    else:
+        agent = "research-dossier-method-reviewer"
+        target_id = "prior-art-boundary"
+    path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+    bundle = json.loads(path.read_text(encoding="utf-8"))
+    checks = bundle["research_dossier_review"]["coverage_checks"]
+    target = next(row for row in checks if row["check_id"] == target_id)
+    if mutation == "duplicate":
+        checks.append(dict(target))
+    elif mutation == "unmapped-fail":
+        target["status"] = "FAIL"
+    else:
+        target["status"] = "NOT_APPLICABLE"
+    path.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+    _rebind_chair_to_current_reviews(run_dir)
+
+    with pytest.raises(TargetedGateBlock) as exc_info:
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+    assert any(row["defect_id"] == expected_defect for row in exc_info.value.defects)
+
+
+def test_deep_research_missing_project_snapshot_stays_external_blocker(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    agent = "research-dossier-implementation-reviewer"
+    path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+    bundle = json.loads(path.read_text(encoding="utf-8"))
+    review = bundle["research_dossier_review"]
+    review["project_state_assessment"] = {
+        "status": "MISSING", "snapshot_ref": None, "snapshot_sha256": None,
+        "rationale": "No hash-bound current project snapshot was supplied.",
+    }
+    blocker = {
+        "blocker_id": "PROJECT-STATE-MISSING", "kind": "MISSING_PROJECT_STATE",
+        "description": "No current hash-bound project-state input is available.",
+        "evidence_refs": ["task_frame.artifact.json"],
+        "required_input": "A run-local current project snapshot and SHA-256 binding.",
+    }
+    review["external_blockers"] = [blocker]
+    review["recommendation"] = "PASS_WITH_EXTERNAL_BLOCKERS"
+    for check in review["coverage_checks"]:
+        if check["check_id"] in {"source-of-truth", "live-state-freshness"}:
+            check["status"] = "FAIL"
+            check["external_blocker_refs"] = [blocker["blocker_id"]]
+    path.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+    _rebind_chair_to_current_reviews(run_dir)
+
+    chair_path = run_dir / "inbox" / f"DISCOVER.{deep_research.CONVERGENCE_CHAIR}.bundle.json"
+    chair_bundle = json.loads(chair_path.read_text(encoding="utf-8"))
+    chair = chair_bundle["research_convergence_verdict"]
+    chair["external_blockers"] = [{
+        "blocker_id": "CONSOLIDATED-PROJECT-STATE-MISSING",
+        "kind": "MISSING_PROJECT_STATE",
+        "description": blocker["description"],
+        "source_blockers": [{"review_id": review["review_id"],
+                              "blocker_id": blocker["blocker_id"]}],
+        "required_input": blocker["required_input"],
+    }]
+    chair["counts"]["external_blockers"] = 1
+    chair["disposition"] = "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS"
+    chair_path.write_text(json.dumps(chair_bundle, ensure_ascii=False), encoding="utf-8")
+
+    result = deep_research._convergence_checks(
+        run_dir, deep_research._load_worker_bundles(run_dir))
+    assert result["disposition"] == "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS"
+    assert result["external_blockers"] == 1
+
+
+def test_deep_research_rejects_arbitrary_run_file_as_current_project_snapshot(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    agent = "research-dossier-implementation-reviewer"
+    path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+    bundle = json.loads(path.read_text(encoding="utf-8"))
+    review = bundle["research_dossier_review"]
+    task_frame = run_dir / "task_frame.artifact.json"
+    review["project_state_assessment"] = {
+        "status": "CURRENT_HASH_BOUND",
+        "snapshot_ref": _run_relative_ref(run_dir, task_frame),
+        "snapshot_sha256": _sha256_ref(task_frame),
+        "rationale": "A matching hash alone must not turn the task frame into project state.",
+    }
+    path.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+    _rebind_chair_to_current_reviews(run_dir)
+
+    with pytest.raises(TargetedGateBlock) as exc_info:
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+    assert any(
+        row["defect_id"] == "review-project-state-current-snapshot-contract-path"
+        for row in exc_info.value.defects
+    )
+
+
+def test_deep_research_project_snapshot_source_cannot_traverse_out_of_source_lane(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    snapshot = (
+        run_dir / "inbox" / "project-state" / "project-state-snapshot.artifact.json"
+    )
+    artifact = json.loads(snapshot.read_text(encoding="utf-8"))
+    escaped = "inbox/project-state/sources/../../../task_frame.artifact.json"
+    artifact["payload"]["sources"][0]["source_ref"] = escaped
+    artifact["payload"]["sources"][0]["source_sha256"] = _sha256_ref(
+        run_dir / "task_frame.artifact.json"
+    )
+    artifact["payload"]["facts"][0]["source_refs"] = [escaped]
+    snapshot.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
+    defects = []
+
+    accepted = deep_research._validate_current_project_snapshot(
+        run_dir,
+        _run_relative_ref(run_dir, snapshot),
+        _sha256_ref(snapshot),
+        TS,
+        lambda defect_id, summary: defects.append((defect_id, summary)),
+    )
+
+    assert accepted is False
+    assert defects
+    assert defects[0][0] == "current-snapshot-schema"
+
+
+def test_deep_research_chair_cannot_rewrite_source_blocker_contract(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    agent = "research-dossier-implementation-reviewer"
+    path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+    bundle = json.loads(path.read_text(encoding="utf-8"))
+    review = bundle["research_dossier_review"]
+    review["project_state_assessment"] = {
+        "status": "MISSING", "snapshot_ref": None, "snapshot_sha256": None,
+        "rationale": "No governed project-state snapshot was supplied.",
+    }
+    blocker = {
+        "blocker_id": "PROJECT-STATE-MISSING", "kind": "MISSING_PROJECT_STATE",
+        "description": "No governed current project-state input is available.",
+        "evidence_refs": ["task_frame.artifact.json"],
+        "required_input": "A valid project_state_snapshot artifact and source bindings.",
+    }
+    review["external_blockers"] = [blocker]
+    review["recommendation"] = "PASS_WITH_EXTERNAL_BLOCKERS"
+    for check in review["coverage_checks"]:
+        if check["check_id"] in {"source-of-truth", "live-state-freshness"}:
+            check["status"] = "FAIL"
+            check["external_blocker_refs"] = [blocker["blocker_id"]]
+    path.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+    _rebind_chair_to_current_reviews(run_dir)
+
+    chair_path = run_dir / "inbox" / f"DISCOVER.{deep_research.CONVERGENCE_CHAIR}.bundle.json"
+    chair_bundle = json.loads(chair_path.read_text(encoding="utf-8"))
+    chair = chair_bundle["research_convergence_verdict"]
+    chair["external_blockers"] = [{
+        "blocker_id": "CONSOLIDATED-PROJECT-STATE-MISSING",
+        "kind": blocker["kind"],
+        "description": blocker["description"],
+        "source_blockers": [{"review_id": review["review_id"],
+                              "blocker_id": blocker["blocker_id"]}],
+        "required_input": "Rewrite the dossier instead of supplying project state.",
+    }]
+    chair["counts"]["external_blockers"] = 1
+    chair["disposition"] = "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS"
+    chair_path.write_text(json.dumps(chair_bundle, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(TargetedGateBlock) as exc_info:
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+    assert any(
+        row["defect_id"].endswith("required-input")
+        and row["target_agents"] == [deep_research.CONVERGENCE_CHAIR]
+        for row in exc_info.value.defects
+    )
+
+
+def test_deep_research_chair_only_repair_keeps_unaffected_review_receipt_cycles(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    agent = "research-dossier-implementation-reviewer"
+    review_path = run_dir / "inbox" / f"DISCOVER.{agent}.bundle.json"
+    review_bundle = json.loads(review_path.read_text(encoding="utf-8"))
+    review = review_bundle["research_dossier_review"]
+    review["project_state_assessment"] = {
+        "status": "MISSING", "snapshot_ref": None, "snapshot_sha256": None,
+        "rationale": "No governed project-state snapshot was supplied.",
+    }
+    blocker = {
+        "blocker_id": "PROJECT-STATE-MISSING", "kind": "MISSING_PROJECT_STATE",
+        "description": "No governed current project-state input is available.",
+        "evidence_refs": ["task_frame.artifact.json"],
+        "required_input": "A valid project_state_snapshot artifact and source bindings.",
+    }
+    review["external_blockers"] = [blocker]
+    review["recommendation"] = "PASS_WITH_EXTERNAL_BLOCKERS"
+    for check in review["coverage_checks"]:
+        if check["check_id"] in {"source-of-truth", "live-state-freshness"}:
+            check["status"] = "FAIL"
+            check["external_blocker_refs"] = [blocker["blocker_id"]]
+    review_path.write_text(json.dumps(review_bundle, ensure_ascii=False), encoding="utf-8")
+    _rebind_chair_to_current_reviews(run_dir)
+
+    chair_agent = deep_research.CONVERGENCE_CHAIR
+    chair_logical = run_dir / "inbox" / f"DISCOVER.{chair_agent}.bundle.json"
+    chair_bundle = json.loads(chair_logical.read_text(encoding="utf-8"))
+    chair = chair_bundle["research_convergence_verdict"]
+    chair["external_blockers"] = [{
+        "blocker_id": "CONSOLIDATED-PROJECT-STATE-MISSING",
+        "kind": blocker["kind"],
+        "description": blocker["description"],
+        "source_blockers": [{"review_id": review["review_id"],
+                              "blocker_id": blocker["blocker_id"]}],
+        "required_input": "Rewrite prose instead of supplying the missing snapshot.",
+    }]
+    chair["counts"]["external_blockers"] = 1
+    chair["disposition"] = "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS"
+    chair_logical.write_text(json.dumps(chair_bundle, ensure_ascii=False), encoding="utf-8")
+
+    first = deep_research.run_dets_with_repair(run_dir, "DISCOVER", TS)
+    assert first[0] == "retry"
+    attempt = load_state(run_dir)["attempts"][-1]
+    assert attempt["target_agents"] == [chair_agent]
+
+    node = {
+        "id": chair_agent,
+        "label": chair_agent,
+        "output_path": chair_logical,
+        "output_rel": _run_relative_ref(run_dir, chair_logical),
+    }
+    plan = prepare_plan(run_dir, "DISCOVER", 1, [node], {chair_agent}, attempt)
+    corrected_path = physical_output(run_dir, plan, chair_agent)
+    corrected_bundle = json.loads(chair_logical.read_text(encoding="utf-8"))
+    corrected = corrected_bundle["research_convergence_verdict"]
+    corrected["chair_instance_id"] = _dispatch_id(chair_agent, 1)
+    corrected["review_round"] = 1
+    corrected["external_blockers"][0]["required_input"] = blocker["required_input"]
+    corrected_path.parent.mkdir(parents=True, exist_ok=True)
+    corrected_path.write_text(
+        json.dumps(corrected_bundle, ensure_ascii=False), encoding="utf-8"
+    )
+    finalize_output(run_dir, "DISCOVER", 1, chair_agent, TS)
+
+    receipt_path = run_dir / "inbox" / "panel-scheduler" / "DISCOVER.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["authorizations"].append({
+        "worker_id": f"test:{chair_agent}:1",
+        "agent": chair_agent,
+        "source_label": chair_agent,
+        "output": _run_relative_ref(run_dir, corrected_path),
+        "logical_output": _run_relative_ref(run_dir, chair_logical),
+        "cycle": 1,
+        "wave": len(receipt.get("waves") or []) + 1,
+        "authorized_at": TS,
+        "authorization_kind": "supplement",
+        "dispatch_instance_id": _dispatch_id(chair_agent, 1),
+    })
+    receipt_path.write_text(json.dumps(receipt, ensure_ascii=False), encoding="utf-8")
+
+    second = deep_research.run_dets_with_repair(run_dir, "DISCOVER", TS)
+    assert second[0] == "ok"
+    _paths, report = second[1]
+    assert report["content_convergence"] == "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS"
+
+
+def test_deep_research_author_schema_repair_receives_bounded_pointer_scope(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    logical = run_dir / "inbox" / "DISCOVER.landscape-mapper.bundle.json"
+    bundle = json.loads(logical.read_text(encoding="utf-8"))
+    bundle["research_brief"].pop("bottom_line")
+    logical.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+
+    outcome = deep_research.run_dets_with_repair(run_dir, "DISCOVER", TS)
+    assert outcome[0] == "retry"
+    attempt = load_state(run_dir)["attempts"][-1]
+    defect = next(row for row in attempt["defects"]
+                  if row["defect_id"] == "deep-research-schema-research-brief")
+    assert defect["allowed_json_pointers"] == ["/research_brief"]
+    node = {
+        "id": "schema-repair:landscape-mapper",
+        "label": "landscape-mapper",
+        "output_path": logical,
+        "output_rel": _run_relative_ref(run_dir, logical),
+    }
+    plan = prepare_plan(
+        run_dir, "DISCOVER", 1, [node], {"landscape-mapper"}, attempt,
+    )
+    assert plan["outputs"][0]["repair_scope"]["allowed_json_pointers"] == [
+        "/research_brief"
+    ]
+
+
+def test_deep_research_hmax_chair_cannot_lower_source_severity(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    source = _dossier_finding("METHOD-CRITICAL", "CRITICAL")
+    lowered = _consolidated_finding(
+        source["finding_id"], "MAJOR",
+        [{"review_id": _review_id("method-and-paper"),
+          "finding_id": source["finding_id"]}],
+    )
+    _write_deep_research_review_bundles(
+        run_dir,
+        findings_by_lens={"method-and-paper": [source]},
+        consolidated_findings=[lowered],
+    )
+
+    with pytest.raises(TargetedGateBlock) as exc_info:
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+    assert any(row["defect_id"] == "chair-hmax-consolidated-METHOD-CRITICAL"
+               and "expected CRITICAL" in row["summary"]
+               for row in exc_info.value.defects)
+
+
+def test_deep_research_hmax_chair_cannot_omit_source_finding(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    source = _dossier_finding("EVIDENCE-MINOR", "MINOR")
+    _write_deep_research_review_bundles(
+        run_dir,
+        findings_by_lens={"evidence-and-completeness": [source]},
+        consolidated_findings=[],
+    )
+
+    with pytest.raises(TargetedGateBlock) as exc_info:
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+    assert any(row["defect_id"] == "chair-finding-coverage"
+               for row in exc_info.value.defects)
+
+
+def test_deep_research_hmax_chair_cannot_widen_repair_pointers(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    source = _dossier_finding("METHOD-MAJOR", "MAJOR")
+    consolidated = _consolidated_finding(
+        source["finding_id"], "MAJOR",
+        [{"review_id": _review_id("method-and-paper"),
+          "finding_id": source["finding_id"]}],
+    )
+    consolidated["allowed_json_pointers"].append("/research_brief")
+    _write_deep_research_review_bundles(
+        run_dir, findings_by_lens={"method-and-paper": [source]},
+        consolidated_findings=[consolidated])
+
+    with pytest.raises(TargetedGateBlock) as exc_info:
+        deep_research._convergence_checks(
+            run_dir, deep_research._load_worker_bundles(run_dir))
+
+    assert any(row["defect_id"] == "chair-pointer-union-consolidated-METHOD-MAJOR"
+               for row in exc_info.value.defects)
+
+
+def test_deep_research_critical_major_routes_author_repair_and_blind_panel_refresh(tmp_path):
+    run_dir = _mk_run(tmp_path, budget={
+        "max_agent_hops": 16,
+        "max_iterations_without_new_evidence": 3,
+        "max_fulltext_reads": 20,
+        "max_debug_retries_per_run": 3,
+    })
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    source = _dossier_finding("METHOD-MAJOR", "MAJOR")
+    _write_deep_research_review_bundles(
+        run_dir, findings_by_lens={"method-and-paper": [source]})
+
+    outcome = deep_research.run_dets_with_repair(run_dir, "DISCOVER", TS)
+
+    assert outcome[0] == "retry"
+    attempt = load_state(run_dir)["attempts"][-1]
+    assert attempt["target_agents"] == ["landscape-mapper"]
+    assert attempt["refresh_agents"] == []
+    assert set(attempt["blind_refresh_agents"]) == {
+        *deep_research.DOSSIER_REVIEWER_NAMES,
+        deep_research.CONVERGENCE_CHAIR,
+    }
+    assert any("METHOD-MAJOR" in row["summary"] for row in attempt["defects"])
+    severe_defect = next(row for row in attempt["defects"]
+                         if row["defect_id"] == "dossier-consolidated-METHOD-MAJOR")
+    assert severe_defect["allowed_json_pointers"] == ["/research_brief/bottom_line"]
+    assert severe_defect["target_artifact_sha256"].startswith("sha256:")
 
 
 def test_deep_research_accepts_one_unambiguous_bundle_wrapper(tmp_path):
@@ -885,6 +1674,7 @@ def test_deep_research_accepts_one_unambiguous_bundle_wrapper(tmp_path):
             continue
         raw = json.loads(path.read_text(encoding="utf-8"))
         path.write_text(json.dumps({"payload": raw}), encoding="utf-8")
+    _write_deep_research_review_bundles(run_dir, wrapped=True)
 
     paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
 
@@ -931,6 +1721,7 @@ def test_deep_research_missing_worker_markdown_uses_rendered_brief_for_typed_art
     mapper_bundle = json.loads(mapper_path.read_text(encoding="utf-8"))
     mapper_bundle.pop("research_markdown_brief")
     mapper_path.write_text(json.dumps(mapper_bundle, ensure_ascii=False), encoding="utf-8")
+    _write_deep_research_review_bundles(run_dir)
 
     paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
 
@@ -953,6 +1744,133 @@ def test_deep_research_normalizes_foundation_model_source_to_repo():
     deep_research._normalize_compat_enums(bundle)
 
     assert bundle["evidence_table"]["sources"][0]["kind"] == "repo"
+
+
+def test_deep_research_normalizes_moderate_perspective_confidence_and_preserves_long_summary():
+    """The prompt promises uncapped mid-pipeline text; representation aliases must not spend repairs."""
+    long_summary = "Evidence-bounded finding. " * 420
+    note = {
+        "perspective_id": "P4",
+        "angle": "failure modes",
+        "questions": ["What fails?", "What evidence would reverse the decision?"],
+        "finding_summary": long_summary,
+        "source_refs": ["doi:10.1000/x"],
+        "coverage_limits": ["bounded frozen source set"],
+        "actionable_opportunities": ["run the falsifying test"],
+        "confidence": "moderate",
+    }
+    bundle = {"perspective_notes": [note]}
+
+    deep_research._normalize_compat_enums(bundle)
+
+    normalized = bundle["perspective_notes"][0]
+    assert normalized["confidence"] == "medium"
+    assert normalized["finding_summary"] == long_summary
+    assert len(long_summary) > 8000
+    assert validate_artifact(
+        envelope("research_perspective_note", "test", normalized, TS)
+    ) == []
+
+
+def test_deep_research_normalizes_study_design_vocabulary_before_schema_gate():
+    """Project-record study-design labels are representation-only; normalize, never replay."""
+    bundle = {
+        "source_quality_report": {
+            "ranked_sources": [
+                {"id": "r1", "study_design": "challenge-overview"},
+                {"id": "r2", "study_design": "dataset-card"},
+                {"id": "r3", "study_design": "decision-record"},
+                {"id": "r4", "study_design": "experiment-design"},
+                {"id": "r5", "study_design": "randomized-controlled-trial"},
+                {"id": "r6", "study_design": "benchmark", "directness": "partial"},
+                {"id": "r7", "study_design": "benchmark", "directness": "direct"},
+            ]
+        }
+    }
+
+    deep_research._normalize_compat_enums(bundle)
+
+    designs = {
+        row["id"]: row["study_design"]
+        for row in bundle["source_quality_report"]["ranked_sources"]
+    }
+    assert designs == {
+        "r1": "benchmark",
+        "r2": "documentation",
+        "r3": "documentation",
+        "r4": "methods-paper",
+        "r5": "randomized-controlled-trial",
+        "r6": "benchmark",
+        "r7": "benchmark",
+    }
+    directness = {
+        row["id"]: row["directness"]
+        for row in bundle["source_quality_report"]["ranked_sources"]
+        if "directness" in row
+    }
+    assert directness == {"r6": "indirect", "r7": "direct"}
+
+
+def test_deep_research_reconciles_ranked_refs_to_anchored_table_refs():
+    """A bare [[slug]] / doi:-prefixed ranked ref is the same frozen source the
+    table anchors — representation-only reconciliation, never a panel replay."""
+    bundle = {
+        "evidence_table": {
+            "sources": [
+                {"id": "s1", "ref": "[[papers/foo]]+sha256:abc123"},
+                {"id": "s2", "ref": "10.1007/s00371-026-04560-5"},
+            ]
+        },
+        "source_quality_report": {
+            "ranked_sources": [
+                {"id": "r1", "source_ref": "[[papers/foo]]"},
+                {"id": "r2", "source_ref": "doi:10.1007/s00371-026-04560-5"},
+                {"id": "r3", "source_ref": "[[papers/absent]]"},
+            ]
+        },
+    }
+
+    deep_research._normalize_compat_enums(bundle)
+
+    refs = {
+        row["id"]: row["source_ref"]
+        for row in bundle["source_quality_report"]["ranked_sources"]
+    }
+    assert refs == {
+        "r1": "[[papers/foo]]+sha256:abc123",
+        "r2": "10.1007/s00371-026-04560-5",
+        "r3": "[[papers/absent]]",
+    }
+
+
+def test_deep_research_verifies_local_trace_provenance_without_treating_it_as_literature(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    payload = _good_deep_research_panel()
+    provenance = run_dir / "inbox/supplements/DISCOVER/repair-001/corrected/lit-scout.bundle.json"
+    provenance.parent.mkdir(parents=True)
+    provenance.write_bytes(b"frozen evidence-table input")
+    ref = "inbox/supplements/DISCOVER/repair-001/corrected/lit-scout.bundle.json"
+    payload["evidence_search_trace"]["rounds"][0]["source_hits"].append({
+        "source_ref": ref,
+        "source_hash": hashlib.sha256(provenance.read_bytes()).hexdigest(),
+    })
+
+    deep_research._consistency_checks(run_dir, payload, TS)
+
+
+def test_deep_research_blocks_invalid_local_trace_provenance_hash(tmp_path):
+    run_dir = _mk_run(tmp_path)
+    payload = _good_deep_research_panel()
+    provenance = run_dir / "inbox/supplements/DISCOVER/repair-001/corrected/lit-scout.bundle.json"
+    provenance.parent.mkdir(parents=True)
+    provenance.write_bytes(b"frozen evidence-table input")
+    payload["evidence_search_trace"]["rounds"][0]["source_hits"].append({
+        "source_ref": "inbox/supplements/DISCOVER/repair-001/corrected/lit-scout.bundle.json",
+        "source_hash": "0" * 64,
+    })
+
+    with pytest.raises(TargetedGateBlock, match="invalid run-local provenance"):
+        deep_research._consistency_checks(run_dir, payload, TS)
 
 
 def test_deep_research_normalizes_sourcebound_rich_json_before_truth_gates(tmp_path):
@@ -1002,6 +1920,18 @@ def test_deep_research_normalizes_sourcebound_rich_json_before_truth_gates(tmp_p
     assert "figure-caption-char-span-to-text-locus" in {
         row["rule"] for row in claim_sidecar["changes"]
     }
+    boundary_path = next(Path(path) for path in paths if "research-delivery-boundary" in path)
+    boundary = json.loads(boundary_path.read_text(encoding="utf-8"))["payload"]
+    chair = json.loads((
+        run_dir / "inbox" / "DISCOVER.research-convergence-chair.bundle.json"
+    ).read_text(encoding="utf-8"))["research_convergence_verdict"]
+    assert boundary["reviewed_artifact_ref"] == chair["reviewed_artifact_ref"]
+    assert boundary["reviewed_artifact_sha256"] == chair["reviewed_artifact_sha256"]
+    assert boundary["novelty"]["status"] == "UNVERIFIED"
+    assert boundary["claim_boundaries"]["novelty_claim_allowed"] is False
+    assert report["delivery_boundary"] == boundary
+    rendered = Path(report["director_markdown_brief"]).read_text(encoding="utf-8")
+    assert "Effective novelty status: `UNVERIFIED`" in rendered
     assert not (run_dir / "inbox" / "repair-state.json").exists()
 
 
@@ -1016,7 +1946,10 @@ def test_deep_research_never_normalizes_away_control_or_truth_fields(tmp_path):
     assert outcome[0] == "retry"
     attempt = load_state(run_dir)["attempts"][-1]
     assert attempt["target_agents"] == ["lit-scout"]
-    assert "cannot be removed as formatting" in attempt["reason"]
+    # Director lock 2026-08-16: trust/control extras are re-attached into the canonical payload,
+    # never silently dropped. The retry reason must name the offending control field so it
+    # cannot vanish as formatting noise.
+    assert "selected" in attempt["reason"]
 
 
 def test_deep_research_resolves_local_source_ids_to_citable_refs():
@@ -1074,6 +2007,165 @@ def test_deep_research_strength_shortfall_delivers_caveated_landscape(tmp_path):
     assert verdict["status"] == "draft"
     assert all(json.loads(Path(path).read_text(encoding="utf-8"))["status"] != "blocked"
                for path in paths)
+
+
+def _committed_clean_deep_research(
+        tmp_path, task_id="report-boundary-test", before_commit=None):
+    plan = spine.begin(
+        str(tmp_path / "runs"), task_id, "scan a research field", "deep_research", TS)
+    run_dir = Path(plan["run_dir"])
+    _write_deep_research_bundles(run_dir, _good_deep_research_panel())
+    spine.open_stage(run_dir, "DISCOVER", TS)
+    paths, report = deep_research.run_dets(run_dir, "DISCOVER", TS)
+    if before_commit is not None:
+        before_commit(run_dir, paths, report)
+    assert spine.commit_stage(run_dir, "DISCOVER", paths, TS)["next_stage"] == "REPORT"
+    return run_dir, report
+
+
+def _run_deep_research_report(run_dir):
+    spine.open_stage(run_dir, "REPORT", TS)
+    paths, _ = deep_research.run_dets(run_dir, "REPORT", TS)
+    return json.loads(Path(paths[0]).read_text(encoding="utf-8"))["payload"]
+
+
+def _make_checkpoint_boundary_usable(run_dir, _paths, _report):
+    boundary = (
+        run_dir / "evidence" / "DISCOVER" /
+        "research-delivery-boundary.artifact.json"
+    )
+    artifact = json.loads(boundary.read_text(encoding="utf-8"))
+    payload = artifact["payload"]
+    payload["scientific_gates"]["existence"] = "PASS"
+    payload["novelty"]["reasons"] = [
+        reason for reason in payload["novelty"]["reasons"]
+        if reason != "EXISTENCE_GATE_NOT_PASS"
+    ]
+    payload["delivery_status"] = "USABLE"
+    assert validate_artifact(artifact) == []
+    boundary.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
+
+
+def test_deep_research_report_rejects_malformed_delivery_boundary(tmp_path):
+    run_dir, _report = _committed_clean_deep_research(tmp_path)
+    boundary = (
+        run_dir / "evidence" / "DISCOVER" /
+        "research-delivery-boundary.artifact.json"
+    )
+    boundary.write_text(
+        json.dumps({"payload": {"delivery_status": "USABLE"}}), encoding="utf-8")
+
+    note = _run_deep_research_report(run_dir)
+
+    assert note["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert any("delivery boundary artifact schema validation failed" in reason
+               for reason in note["delivery_caveats"])
+
+
+def test_deep_research_report_rejects_checkpoint_replaced_delivery_boundary(tmp_path):
+    run_dir, _report = _committed_clean_deep_research(tmp_path)
+    boundary = (
+        run_dir / "evidence" / "DISCOVER" /
+        "research-delivery-boundary.artifact.json"
+    )
+    artifact = json.loads(boundary.read_text(encoding="utf-8"))
+    artifact["payload"]["rationale"] += " Replaced after the DISCOVER checkpoint."
+    assert validate_artifact(artifact) == []
+    boundary.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
+
+    note = _run_deep_research_report(run_dir)
+
+    assert note["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert any("delivery boundary artifact no longer matches its DISCOVER checkpoint hash" in reason
+               for reason in note["delivery_caveats"])
+
+
+def test_deep_research_report_revalidates_convergence_and_author_hashes(tmp_path):
+    run_dir, _report = _committed_clean_deep_research(tmp_path)
+    convergence = (
+        run_dir / "evidence" / "DISCOVER" /
+        "research-convergence-verdict.artifact.json"
+    )
+    convergence_artifact = json.loads(convergence.read_text(encoding="utf-8"))
+    convergence_artifact["payload"]["rationale"] += " Replaced after convergence."
+    assert validate_artifact(convergence_artifact) == []
+    convergence.write_text(
+        json.dumps(convergence_artifact, ensure_ascii=False), encoding="utf-8")
+
+    author = run_dir / "inbox" / "DISCOVER.landscape-mapper.bundle.json"
+    author_bundle = json.loads(author.read_text(encoding="utf-8"))
+    author_bundle["research_brief"]["bottom_line"] += " Drifted after review."
+    author.write_text(json.dumps(author_bundle, ensure_ascii=False), encoding="utf-8")
+
+    note = _run_deep_research_report(run_dir)
+
+    assert note["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert any("convergence artifact hash no longer matches the delivery boundary" in reason
+               for reason in note["delivery_caveats"])
+    assert any("reviewed author bundle no longer matches the delivery boundary" in reason
+               for reason in note["delivery_caveats"])
+
+
+def test_deep_research_report_preserves_markdown_fallback_caveat(
+        tmp_path, monkeypatch):
+    def renderer_failure(*_args, **_kwargs):
+        raise ValueError("forced deterministic renderer failure")
+
+    monkeypatch.setattr(deep_research, "write_research_brief_markdown", renderer_failure)
+    run_dir, discover_report = _committed_clean_deep_research(
+        tmp_path, before_commit=_make_checkpoint_boundary_usable)
+    boundary = json.loads((
+        run_dir / "evidence" / "DISCOVER" /
+        "research-delivery-boundary.artifact.json"
+    ).read_text(encoding="utf-8"))["payload"]
+    assert boundary["delivery_status"] == "USABLE"
+    assert discover_report["markdown_delivery_status"] == "USABLE_WITH_CAVEATS"
+
+    note = _run_deep_research_report(run_dir)
+
+    assert note["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert any("deterministic Markdown fallback used: forced deterministic renderer failure" in reason
+               for reason in note["delivery_caveats"])
+
+
+def test_deep_research_report_rejects_replaced_primary_markdown(tmp_path):
+    run_dir, _report = _committed_clean_deep_research(
+        tmp_path, before_commit=_make_checkpoint_boundary_usable)
+    primary = run_dir / "director-review" / "research" / "research-brief.md"
+    primary.write_text(
+        "# Replaced delivery\n\nNovelty PASS.\n", encoding="utf-8")
+
+    note = _run_deep_research_report(run_dir)
+
+    assert note["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert any(
+        "primary research Markdown content does not exactly match the checkpointed "
+        "research Markdown brief artifact" in reason
+        for reason in note["delivery_caveats"]
+    )
+
+
+def test_deep_research_report_rejects_render_policy_boundary_mismatch(tmp_path):
+    def force_full_policy(run_dir, _paths, _report):
+        markdown = (
+            run_dir / "evidence" / "DISCOVER" /
+            "research-markdown-brief.artifact.json"
+        )
+        artifact = json.loads(markdown.read_text(encoding="utf-8"))
+        artifact["payload"]["render_policy"] = "FULL_VERIFIED"
+        assert validate_artifact(artifact) == []
+        markdown.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
+
+    run_dir, _report = _committed_clean_deep_research(
+        tmp_path, before_commit=force_full_policy)
+
+    note = _run_deep_research_report(run_dir)
+
+    assert note["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert any(
+        "research Markdown render policy does not match the trusted delivery boundary" in reason
+        for reason in note["delivery_caveats"]
+    )
 
 
 def test_caveated_deep_research_can_complete_and_record_its_caveat(tmp_path):
@@ -1223,24 +2315,56 @@ def test_deep_research_llm_step_is_panel(tmp_path):
     run_dir = str(_mk_run(tmp_path))
     spec = deep_research.llm_step(run_dir, "DISCOVER", "scan topic", model_policy="default")
     assert spec["label"] == "deep-research-panel"
-    assert len(spec["workers"]) == 12
+    assert len(spec["workers"]) == 16
     assert spec["worker_order"][0] == "lit-scout"
-    assert spec["worker_order"][-1] == "landscape-mapper"
+    assert spec["worker_order"][-1] == deep_research.CONVERGENCE_CHAIR
     assert all(w["output"].endswith(f"inbox/DISCOVER.{w['label']}.bundle.json") for w in spec["workers"])
     assert "parallel/blind" in spec["panel_note"]
-    by_label = {worker["label"]: worker["prompt"] for worker in spec["workers"]}
+    workers = {worker["label"]: worker for worker in spec["workers"]}
+    by_label = {label: worker["prompt"] for label, worker in workers.items()}
     assert "what changed in belief" in by_label["model-dataset-scout"]
     assert "DISCOVER.future-work-miner.bundle.json" not in by_label["model-dataset-scout"]
     assert "DISCOVER.model-dataset-scout.bundle.json" not in by_label["future-work-miner"]
     assert "independently audit claim support" in by_label["citation-coverage-auditor"]
     assert "highest expected" in by_label["landscape-mapper"]
     assert spec["parallel_groups"] == deep_research.DEEP_RESEARCH_PARALLEL_GROUPS
-    assert len(spec["parallel_groups"]) == 8
-    workers = {worker["label"]: worker for worker in spec["workers"]}
+    assert len(spec["parallel_groups"]) == 10
+    assert spec["parallel_groups"][-2:] == [
+        deep_research.DOSSIER_REVIEWER_NAMES,
+        [deep_research.CONVERGENCE_CHAIR],
+    ]
     assert workers["citation-coverage-auditor"]["depends_on"] == [
         "lit-scout", "claim-extractor", "claim-evidence-linker",
     ]
     assert "citation-coverage-auditor" not in workers["contradiction-miner"]["depends_on"]
+    for reviewer in deep_research.DOSSIER_REVIEWER_NAMES:
+        assert "landscape-mapper" in workers[reviewer]["depends_on"]
+        assert not (set(workers[reviewer]["depends_on"]) &
+                    (set(deep_research.DOSSIER_REVIEWER_NAMES) - {reviewer}))
+        forbidden = set(workers[reviewer]["input_contract"]["forbidden_inputs"])
+        expected_forbidden = {
+            (Path(run_dir) / "inbox" / f"DISCOVER.{agent}.bundle.json").as_posix()
+            for agent in [*deep_research.DOSSIER_REVIEWER_NAMES,
+                          deep_research.CONVERGENCE_CHAIR]
+            if agent != reviewer
+        }
+        expected_forbidden.update({
+            (
+                Path(run_dir) / "inbox" / "supplements" / "DISCOVER" /
+                "repair-*" / location / f"{agent}.bundle.json"
+            ).as_posix()
+            for agent in [*deep_research.DOSSIER_REVIEWER_NAMES,
+                          deep_research.CONVERGENCE_CHAIR]
+            for location in ("originals", "corrected")
+        })
+        assert forbidden == expected_forbidden
+        assert all(f"DISCOVER.{sibling}.bundle.json" not in by_label[reviewer]
+                   for sibling in deep_research.DOSSIER_REVIEWER_NAMES
+                   if sibling != reviewer)
+    assert workers[deep_research.CONVERGENCE_CHAIR]["depends_on"] == [
+        "landscape-mapper", *deep_research.DOSSIER_REVIEWER_NAMES,
+    ]
+    assert "H-Max" in by_label[deep_research.CONVERGENCE_CHAIR]
     assert deep_research.llm_step(run_dir, "REPORT", "q") is None
 
 

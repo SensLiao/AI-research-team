@@ -159,6 +159,18 @@ MODE_OUTPUT_CONTRACTS: dict[str, OutputContract] = {
             "decision_boundary": ("unapplied", "does not submit", "director"),
         },
     ),
+    "manuscript_reconstruction": OutputContract(
+        ("director-review/manuscript/reconstruction-report.md",),
+        600,
+        {
+            "review_decomposition": ("review decomposition", "reviewer point", "current_status"),
+            "lossless_coverage": ("segment", "coverage", "non-actionable"),
+            "claim_verification": ("claim verification", "verified-true", "unverifiable-here"),
+            "repair_lanes": ("repair lanes and owners", "prose_repair", "mechanical_recompute"),
+            "closure_criteria": ("acceptance", "already_satisfied", "current locus"),
+            "decision_boundary": ("decisions for the director", "director_decision", "does not edit"),
+        },
+    ),
     # ---- wave 2 (2026-08-04) -----------------------------------------------------------------
     # Every operated mode must declare what BUSINESS content its director Markdown has to carry —
     # the eval harness treats a missing contract as a critical failure, because a mode with no

@@ -29,7 +29,7 @@ from research_agent_teams.operate import spine
 from research_agent_teams.operate.modes import new_direction
 from research_agent_teams.tools.validate_artifact import validate_artifact
 # Import the clean fixtures from the deep_ideation test (offline operate harness).
-from research_agent_teams.tests.test_operate_deep_ideation import (
+from .test_operate_deep_ideation import (
     COLLISION_BUNDLE,
     CONTRADICTION_BUNDLE,
     DISCOVER_BUNDLE,

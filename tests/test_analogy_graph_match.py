@@ -26,7 +26,7 @@ from research_agent_teams.tools.analogy_graph_match import match_mechanisms, ove
 # Load mechanism_mapping.schema.json DIRECTLY off disk (the prompt forbids relying on the
 # PAYLOAD_SCHEMAS registry for this artifact).
 SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent / "schemas" / "mechanism_mapping.schema.json"
+    Path(__file__).resolve().parents[2] / "research_agent_teams" / "schemas" / "mechanism_mapping.schema.json"
 )
 
 

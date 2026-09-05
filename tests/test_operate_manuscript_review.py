@@ -18,11 +18,12 @@ import pytest
 from research_agent_teams.operate import spine
 from research_agent_teams.operate.artifacts import GateBlock, write_artifact
 from research_agent_teams.operate.modes import manuscript_review as review
+from research_agent_teams.tools.validate_artifact import validate_payload
 from research_agent_teams.tools.manuscript_contract import canonical_contract_hash
 from research_agent_teams.tools.research_output_quality import audit_run_output
 from research_agent_teams.tools.validate_artifact import validate_artifact
-from tests.test_manuscript_delivery_schemas import _compiled_build, _compiled_quality
-from tests.test_manuscript_predraft_schemas import valid_integration, valid_manuscript_contract
+from .test_manuscript_delivery_schemas import _compiled_build, _compiled_quality
+from .test_manuscript_predraft_schemas import valid_integration, valid_manuscript_contract
 
 
 TS = "2026-07-22T00:00:00Z"
@@ -229,6 +230,24 @@ def _finding(capability: str, *, scientific: bool = False, advisory: bool = Fals
     }
 
 
+def test_source_binding_accepts_distinct_integration_and_build_hash_algorithms():
+    assert review._source_bindings_consistent(
+        snapshot="a" * 64,
+        integration={
+            "manuscript_snapshot_sha256": "a" * 64,
+            "source_tree_sha256": "b" * 64,
+        },
+        build={
+            "manuscript_snapshot_sha256": "a" * 64,
+            "source_tree_sha256": "c" * 64,
+        },
+        quality={
+            "manuscript_sha256": "b" * 64,
+            "build": {"source_sha256": "c" * 64},
+        },
+    )
+
+
 def _bundle(run_dir: Path, capability: str, precommit: dict, *, findings: list[dict] | None = None,
             suffix: str = "primary") -> Path:
     auth = precommit["authorization_receipts"][capability]
@@ -287,6 +306,19 @@ def test_review_precommit_freezes_inputs_and_dispatches_exact_blind_capabilities
         assert worker["input_contract"]["blind"] is True
         assert "authoring-self-audit" in " ".join(worker["input_contract"]["forbidden_inputs"])
         assert "sibling reviewer" in worker["prompt"].lower()
+        assert "review_surface" in worker["prompt"]
+
+
+def test_open_major_is_schema_legal_and_blocks_submission_state(tmp_path):
+    _authoring, review_run = _source_and_review(tmp_path)
+    precommit = review.prepare_review_precommit(review_run, TS)
+    finding = _finding("citation", advisory=True)
+    finding["severity"] = "MAJOR"
+    path = _bundle(review_run, "citation", precommit, findings=[finding])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert validate_payload("manuscript_review_verdict", payload) == []
+    assert review._check_state([finding]) == "BLOCK"
 
 
 def test_review_reconciles_all_findings_and_renders_advisory_status_only(tmp_path):
@@ -378,6 +410,33 @@ def test_review_rejects_leakage_and_cross_run_reuse(tmp_path, mutation):
 
     with pytest.raises(GateBlock):
         review.run_dets(str(review_run), "VERIFY", TS)
+
+
+def test_review_rejects_duplicate_reviewer_instance_ids(tmp_path):
+    _authoring, review_run = _source_and_review(tmp_path)
+    precommit = review.prepare_review_precommit(review_run, TS)
+    _all_bundles(review_run, precommit)
+    paths = [
+        review_run / review.capability_bundle_rel(capability)
+        for capability in review.REQUIRED_CAPABILITY_IDS
+    ]
+    first = json.loads(paths[0].read_text(encoding="utf-8"))
+    second = json.loads(paths[1].read_text(encoding="utf-8"))
+    second["reviewer_identity"]["reviewer_id"] = first["reviewer_identity"]["reviewer_id"]
+    paths[1].write_text(json.dumps(second), encoding="utf-8")
+
+    with pytest.raises(GateBlock, match="distinct"):
+        review.run_dets(str(review_run), "VERIFY", TS)
+
+
+def test_source_mutation_invalidates_existing_review_precommit(tmp_path):
+    authoring, review_run = _source_and_review(tmp_path)
+    review.prepare_review_precommit(review_run, TS)
+    source = authoring / "source" / "main.tex"
+    source.write_text(source.read_text(encoding="utf-8") + "% changed\n", encoding="utf-8")
+
+    with pytest.raises(GateBlock, match="SHA-256|source tree"):
+        review.prepare_review_precommit(review_run, TS)
 
 
 def test_source_only_review_is_caveated_without_false_pdf_claim(tmp_path):
@@ -583,7 +642,7 @@ def test_submission_checklist_fails_closed_on_missing_or_tampered_evidence(tmp_p
         # conformance instead (an emptied {} fails _require_schema_bound_authoring's shape check).
         quality = authoring / "evidence/ANALYZE/manuscript-quality-report.artifact.json"
         quality.write_text("{}", encoding="utf-8")
-        match = "schema-bound, hash-verified authoring quality_report"
+        match = "quality_report SHA-256 does not match its current bytes"
 
     with pytest.raises(GateBlock, match=match):
         review.run_dets(str(review_run), "REPORT", TS)

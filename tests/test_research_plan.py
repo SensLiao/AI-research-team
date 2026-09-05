@@ -77,7 +77,15 @@ def test_estimate_cost_sums_registry_hops():
     one = rp.estimate_cost(["new_direction"])
     assert one["agent_hops"] == 10 and one["n_modes"] == 1 and one["band"] == "medium"
     two = rp.estimate_cost(["new_direction", "deep_research"])
-    assert two["agent_hops"] == 22 and two["n_modes"] == 2 and two["band"] == "heavy"
+    modes = rp.load_mode_registry()["modes"]
+    # max_agent_hops: null means UNBOUNDED (2026-08-09 director lock) — production counts it
+    # as UNBOUNDED_HOP_COST, never 0; the expectation mirrors that documented rule.
+    expected = sum(
+        rp.UNBOUNDED_HOP_COST
+        if modes[name]["budget"]["max_agent_hops"] is None
+        else modes[name]["budget"]["max_agent_hops"]
+        for name in ("new_direction", "deep_research"))
+    assert two["agent_hops"] == expected and two["n_modes"] == 2 and two["band"] == "heavy"
 
 
 def test_gates_in_chain_surfaces_human_gates():
@@ -129,6 +137,51 @@ def test_validate_chain_rejects_backwards_phase_order():
 def test_within_phase_order_is_free():
     """Scanning a gap before OR after deep-reading evidence is both fine (same phase rank)."""
     assert rp.validate_chain(["gap_breadth", "deep_research"])["ok"]
+
+
+def test_methodological_review_routes_through_evidence_latex_and_fresh_review():
+    proposal = rp.propose_for_request("写一篇 methodological critical review")
+    intent = next(row for row in proposal["intents"] if row["intent"] == "write_review_article")
+    recommended = next(row for row in intent["tiers"] if row.get("recommended"))
+    assert recommended["modes"] == ["evidence_deep", "manuscript_authoring", "manuscript_review"]
+    assert recommended["validation"]["ok"]
+
+
+def test_control_plane_skill_maintenance_does_not_route_to_manuscript_review():
+    ranked = rp.match_intents("audit and improve the manuscript authoring control plane skill and router tests")
+    scores = dict(ranked)
+    assert scores["audit_code"] > scores["write_manuscript"]
+    assert scores["audit_code"] > scores["write_review_article"]
+
+
+def test_external_review_chain_has_real_adjacent_handoffs():
+    assert rp.validate_chain([
+        "manuscript_reconstruction", "manuscript_authoring", "manuscript_review"
+    ])["ok"]
+
+
+def test_reconstruction_handoff_stages_direct_latex_without_copying_secrets(tmp_path):
+    upstream = tmp_path / "runs" / "reconstruction-001"
+    source = tmp_path / "current-source"
+    source.mkdir(parents=True)
+    (source / "main.tex").write_text("\\documentclass{article}", encoding="utf-8")
+    (source / "refs.bib").write_text("@article{x, title={X}}", encoding="utf-8")
+    (source / ".env").write_text("SECRET=never-copy", encoding="utf-8")
+    review_input = upstream / "inbox" / "manuscript-reconstruction" / "external-review-input.json"
+    review_input.parent.mkdir(parents=True)
+    review_input.write_text(json.dumps({"manuscript_dir": str(source)}), encoding="utf-8")
+    downstream = tmp_path / "runs" / "authoring-002"
+    downstream.mkdir(parents=True)
+
+    rp._stage_reconstruction_manuscript(
+        str(downstream),
+        {"upstream_runs": [{"mode": "manuscript_reconstruction", "run_dir": str(upstream)}]},
+    )
+
+    staged = downstream / "inbox" / "manuscript-inputs" / "current-source"
+    assert (staged / "main.tex").is_file()
+    assert (staged / "refs.bib").is_file()
+    assert not (staged / ".env").exists()
     assert rp.validate_chain(["deep_research", "gap_breadth"])["ok"]
 
 
@@ -281,6 +334,25 @@ def test_gap_breadth_handoff_declares_the_artifact_the_mode_actually_writes(tmp_
     )
     assert rp._mode_handoff("gap_breadth")["accepts_delivery_statuses"] == [
         "USABLE", "USABLE_WITH_CAVEATS"
+    ]
+
+
+def test_evidence_deep_can_deepen_prior_research_evidence_and_gap_products():
+    contract = rp._mode_handoff("evidence_deep")
+    accepts = set(contract["accepts"])
+
+    # evidence-deep/v2 removed from its own accepts 2026-08-20: a mode that accepts its
+    # own product is a chain link that adds nothing (test_no_mode_accepts_its_own_product
+    # enforces the invariant; the registry entry carries the same comment).
+    assert {
+        "research-brief/v2",
+        "gap-dossier/v1",
+    } <= accepts
+    assert "evidence-deep/v2" not in accepts
+    assert contract["accepts_delivery_statuses"] == [
+        "USABLE",
+        "USABLE_WITH_CAVEATS",
+        "NEEDS_SUPPLEMENT",
     ]
 
 

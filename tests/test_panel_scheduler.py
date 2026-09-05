@@ -10,6 +10,7 @@ import pytest
 from research_agent_teams.operate.panel_scheduler import (
     PanelContractError,
     _infer_plain_repair_targets,
+    _normal_pattern,
     _normalize_nodes,
     capability_overlay_block,
     canonical_agent_label,
@@ -17,6 +18,7 @@ from research_agent_teams.operate.panel_scheduler import (
 )
 from research_agent_teams.operate.artifacts import TargetedGateBlock
 from research_agent_teams.operate.bounded_repair import attempt_with_repair
+from research_agent_teams.operate.modes import deep_research
 from research_agent_teams.tools.budget_tracker import BudgetExceeded
 
 
@@ -50,6 +52,50 @@ def _worker(run_dir: Path, label: str, filename: str, **extra) -> dict:
         "output": str(run_dir / "inbox" / filename),
         **extra,
     }
+
+
+def _deep_research_convergence_run(tmp_path: Path) -> tuple[Path, dict]:
+    run_dir = tmp_path / "deep-research-run"
+    (run_dir / "inbox").mkdir(parents=True)
+    labels = [
+        "landscape-mapper",
+        *deep_research.DOSSIER_REVIEWER_NAMES,
+        deep_research.CONVERGENCE_CHAIR,
+    ]
+    (run_dir / "task_frame.artifact.json").write_text(json.dumps({"payload": {
+        "mode": "deep_research",
+        "budget": {
+            "max_agent_hops": len(labels),
+            "max_supplement_agent_hops": len(labels),
+            "max_debug_retries_per_run": 2,
+        },
+        "agent_subset": labels,
+    }}), encoding="utf-8")
+    author = _worker(
+        run_dir, "landscape-mapper", "DISCOVER.landscape-mapper.bundle.json")
+    reviewers = [
+        _worker(
+            run_dir, reviewer, f"DISCOVER.{reviewer}.bundle.json",
+            depends_on=["landscape-mapper"],
+        )
+        for reviewer in deep_research.DOSSIER_REVIEWER_NAMES
+    ]
+    chair = _worker(
+        run_dir, deep_research.CONVERGENCE_CHAIR,
+        f"DISCOVER.{deep_research.CONVERGENCE_CHAIR}.bundle.json",
+        depends_on=["landscape-mapper", *deep_research.DOSSIER_REVIEWER_NAMES],
+    )
+    panel = {
+        "label": "deep-research-convergence-tail",
+        "workers": [author, *reviewers, chair],
+        "worker_order": labels,
+        "parallel_groups": [
+            ["landscape-mapper"],
+            deep_research.DOSSIER_REVIEWER_NAMES,
+            [deep_research.CONVERGENCE_CHAIR],
+        ],
+    }
+    return run_dir, panel
 
 
 def _write_output(worker: dict, payload: dict | None = None) -> None:
@@ -254,6 +300,37 @@ def test_director_extension_expands_only_targeted_supplement_budget(tmp_path):
     assert supplement["status"] == "wave_ready"
 
 
+def test_director_extension_expands_initial_budget_without_mutating_task_frame(
+    tmp_path,
+):
+    run_dir = _run(tmp_path, budget=1)
+    (run_dir / "inbox" / "director-initial-budget-extension.json").write_text(
+        json.dumps({
+            "contract_version": "director-initial-extension/v1",
+            "authorized_by": "director",
+            "dimension": "max_agent_hops",
+            "base_limit": 1,
+            "extended_limit": 2,
+            "reason": "finish the already-frozen adaptive panel without replaying prior work",
+        }),
+        encoding="utf-8",
+    )
+    panel = {
+        "workers": [
+            _worker(run_dir, "baseline-fairness-critic", "a.bundle.json"),
+            _worker(run_dir, "protocol-critic", "b.bundle.json"),
+        ],
+        "parallel_groups": [["baseline-fairness-critic", "protocol-critic"]],
+    }
+
+    decision = schedule_next_wave(run_dir, "DESIGN", panel, ts=TS)
+
+    assert decision["status"] == "wave_ready"
+    assert decision["authorized_initial_hops"] == 2
+    task = json.loads((run_dir / "task_frame.artifact.json").read_text())
+    assert task["payload"]["budget"]["max_agent_hops"] == 1
+
+
 def test_group_order_can_avoid_inventing_unrelated_freshness_dependencies(tmp_path):
     run_dir = _run(tmp_path)
     unrelated = _worker(run_dir, "protocol-critic", "unrelated.bundle.json")
@@ -295,6 +372,42 @@ def test_scheduler_refuses_forbidden_read_scope_overlap(tmp_path):
     )
     with pytest.raises(PanelContractError, match="allowed.*forbidden"):
         schedule_next_wave(run_dir, "DESIGN", worker, ts=TS)
+
+
+def test_normal_pattern_keeps_glob_suffix_on_absolute_path(tmp_path):
+    # Windows Path.resolve() rejects '*' (WinError 123); normalization must
+    # resolve only the literal head and keep the wildcard suffix relative.
+    run_dir = _run(tmp_path)
+    pattern = str(
+        run_dir / "inbox" / "supplements" / "DISCOVER"
+        / "repair-*" / "originals" / "x.bundle.json"
+    )
+    assert _normal_pattern(run_dir, pattern) == (
+        "inbox/supplements/DISCOVER/repair-*/originals/x.bundle.json"
+    )
+
+
+def test_scheduler_accepts_absolute_forbidden_glob_without_resolve_crash(tmp_path):
+    run_dir = _run(tmp_path)
+    forbidden_glob = str(
+        run_dir / "inbox" / "supplements" / "DISCOVER"
+        / "repair-*" / "originals" / "other.bundle.json"
+    )
+    worker = _worker(
+        run_dir,
+        "baseline-fairness-critic",
+        "baseline.bundle.json",
+        input_contract={
+            "allowed_inputs": [
+                "inbox/supplements/DISCOVER/repair-001/corrected/baseline.bundle.json"
+            ],
+            "allowed_bundle_agents": [],
+            "forbidden_inputs": [forbidden_glob],
+            "blind": True,
+        },
+    )
+    decision = schedule_next_wave(run_dir, "DESIGN", worker, ts=TS)
+    assert decision["workers"][0]["label"] == "baseline-fairness-critic"
 
 
 def test_scheduler_enforces_real_worker_hop_budget_atomically(tmp_path):
@@ -454,6 +567,29 @@ def test_preexisting_outputs_complete_the_stage_with_an_unreceipted_diagnostic(t
     assert "baseline-fairness-critic" in decision["unreceipted_agents"]
 
 
+def test_strict_deep_research_rejects_prewritten_output_without_dispatch_receipt(tmp_path):
+    run_dir, panel = _deep_research_convergence_run(tmp_path)
+    _write_output(panel["workers"][0], {"prewritten": True})
+
+    with pytest.raises(PanelContractError, match="prewritten output is rejected"):
+        schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)
+
+
+def test_scheduler_dispatch_instance_is_receipted_and_idempotent(tmp_path):
+    run_dir = _run(tmp_path)
+    worker = _worker(run_dir, "baseline-fairness-critic", "dispatch.bundle.json")
+
+    first = schedule_next_wave(run_dir, "DESIGN", worker, ts=TS)
+    second = schedule_next_wave(run_dir, "DESIGN", worker, ts=TS)
+    first_id = first["workers"][0]["scheduler_contract"]["dispatch_instance_id"]
+    second_id = second["workers"][0]["scheduler_contract"]["dispatch_instance_id"]
+
+    assert first_id == second_id
+    assert first_id.startswith("dispatch-") and len(first_id) == len("dispatch-") + 32
+    receipt = json.loads(Path(first["scheduler_receipt"]).read_text(encoding="utf-8"))
+    assert receipt["authorizations"][0]["dispatch_instance_id"] == first_id
+
+
 def test_stateful_mode_completes_without_all_worker_receipts_but_names_them(tmp_path):
     """Same de-governance for the no-spec resume path: the stage is complete even though none of
     these agents were ever authorized in this run — `unreceipted_agents` names every one of them
@@ -541,6 +677,87 @@ def test_targeted_repair_preserves_originals_and_refreshes_only_named_consumers(
     plan = json.loads(next((run_dir / "inbox" / "supplements").rglob("repair-plan.json")).read_text())
     assert all(row["output_sha256"] for row in plan["outputs"])
     assert all(row["changed_paths"] for row in plan["outputs"])
+
+
+def test_blind_convergence_refresh_hides_prior_findings_but_binds_new_author(tmp_path):
+    run_dir, panel = _deep_research_convergence_run(tmp_path)
+
+    initial_author = schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)
+    _write_output(initial_author["workers"][0], {"version": 1, "agent": "landscape-mapper"})
+    initial_reviewers = schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)
+    assert [row["label"] for row in initial_reviewers["workers"]] == \
+        deep_research.DOSSIER_REVIEWER_NAMES
+    for worker in initial_reviewers["workers"]:
+        _write_output(worker, {"version": 1, "agent": worker["label"]})
+    initial_chair = schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)
+    _write_output(initial_chair["workers"][0], {"version": 1, "agent": "chair"})
+    assert schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)["status"] == "complete"
+
+    prior_finding = "PRIOR_FINDING_MUST_NOT_ANCHOR_BLIND_REVIEWERS"
+
+    def content_block():
+        raise TargetedGateBlock(
+            "dossier has one MAJOR content defect",
+            [{
+                "defect_id": "DOSSIER-MAJOR-1",
+                "location": "research_brief.bottom_line",
+                "summary": prior_finding,
+                "target_agents": ["landscape-mapper"],
+                "refresh_agents": [],
+                "allowed_json_pointers": ["/version"],
+                "blind_refresh_agents": [
+                    *deep_research.DOSSIER_REVIEWER_NAMES,
+                    deep_research.CONVERGENCE_CHAIR,
+                ],
+            }],
+        )
+
+    assert attempt_with_repair(
+        run_dir, "DISCOVER", {"max_debug_retries_per_run": 2}, TS, content_block
+    )[0] == "retry"
+
+    repaired_author = schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)
+    assert [row["label"] for row in repaired_author["workers"]] == ["landscape-mapper"]
+    assert repaired_author["workers"][0]["scheduler_contract"]["blind_refresh"] is False
+    assert prior_finding in repaired_author["workers"][0]["prompt"]
+    repair_author_id = repaired_author["workers"][0]["scheduler_contract"]["dispatch_instance_id"]
+    _write_output(repaired_author["workers"][0], {"version": 2, "agent": "landscape-mapper"})
+
+    blind_reviewers = schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)
+    assert [row["label"] for row in blind_reviewers["workers"]] == \
+        deep_research.DOSSIER_REVIEWER_NAMES
+    for worker in blind_reviewers["workers"]:
+        contract = worker["scheduler_contract"]
+        assert contract["blind_refresh"] is True
+        assert contract["repair_cycle"] == 1
+        assert prior_finding not in worker["prompt"]
+        assert "DOSSIER-MAJOR-1" not in worker["prompt"]
+        assert "TARGETED REPAIR" not in worker["prompt"]
+        author_inputs = [
+            row for row in contract["predecessor_outputs"]
+            if row["agent"] == "landscape-mapper"
+        ]
+        assert len(author_inputs) == 1 and author_inputs[0]["sha256"].startswith("sha256:")
+        _write_output(worker, {"version": 2, "agent": worker["label"]})
+
+    blind_chair = schedule_next_wave(run_dir, "DISCOVER", panel, ts=TS)
+    assert [row["label"] for row in blind_chair["workers"]] == [
+        deep_research.CONVERGENCE_CHAIR]
+    chair_worker = blind_chair["workers"][0]
+    assert chair_worker["scheduler_contract"]["blind_refresh"] is True
+    assert prior_finding not in chair_worker["prompt"]
+    assert "DOSSIER-MAJOR-1" not in chair_worker["prompt"]
+    assert "TARGETED REPAIR" not in chair_worker["prompt"]
+    receipt = json.loads(Path(blind_chair["scheduler_receipt"]).read_text(encoding="utf-8"))
+    tail_ids = [
+        row["dispatch_instance_id"] for row in receipt["authorizations"]
+        if row["agent"] in {
+            "landscape-mapper", *deep_research.DOSSIER_REVIEWER_NAMES,
+            deep_research.CONVERGENCE_CHAIR,
+        }
+    ]
+    assert repair_author_id in tail_ids
+    assert len(tail_ids) == len(set(tail_ids))
 
 
 def test_first_run_worker_after_completed_repair_uses_logical_output_without_repair_feedback(tmp_path):
@@ -657,15 +874,29 @@ def test_no_shared_numeric_default_survives_in_the_scheduler():
 
 
 def test_the_initial_dispatch_ceiling_is_declared_per_mode_by_every_mode():
-    """`max_agent_hops` is the per-mode initial ceiling; no mode may fall back to a shared value."""
+    """`max_agent_hops` is a per-mode initial ceiling where one is declared (director lock 2026-08-09:
+    a mode may set it to null = unbounded — convergence is enforced by verification gates and the
+    saturation meter instead, never by a shared fallback value)."""
     import yaml
 
     registry = yaml.safe_load(
-        (Path(__file__).resolve().parents[1] / "orchestrator" / "mode_registry.yaml")
+        (Path(__file__).resolve().parents[2] / "research_agent_teams" / "orchestrator" / "mode_registry.yaml")
         .read_text(encoding="utf-8"))["modes"]
-    missing = [m for m, spec in registry.items()
-               if not isinstance(((spec or {}).get("budget") or {}).get("max_agent_hops"), int)]
-    assert missing == [], f"these modes have no per-mode dispatch ceiling: {missing}"
-    # And the ceilings genuinely differ per mode — a single value across the board would be a pool.
-    ceilings = {((spec or {}).get("budget") or {})["max_agent_hops"] for spec in registry.values()}
-    assert len(ceilings) > 1, "every mode carrying the same ceiling would be a shared budget in disguise"
+    # Every mode must declare the KEY explicitly (int ceiling or null = unbounded); no mode may omit
+    # it and silently inherit a shared default.
+    undeclared = [m for m, spec in registry.items()
+                  if "max_agent_hops" not in ((spec or {}).get("budget") or {})]
+    assert undeclared == [], f"these modes do not declare max_agent_hops at all: {undeclared}"
+    invalid = [m for m, spec in registry.items()
+               if (v := ((spec or {}).get("budget") or {}).get("max_agent_hops")) is not None
+               and not isinstance(v, int)]
+    assert invalid == [], f"these modes declare a non-int max_agent_hops: {invalid}"
+    # Unbounded modes are an explicit director decision, not an accident — deep_ideation is the
+    # designated unbounded mode (multi-view panel + supervised loops).
+    unbounded = [m for m, spec in registry.items()
+                 if ((spec or {}).get("budget") or {}).get("max_agent_hops") is None]
+    assert unbounded == ["deep_ideation", "deep_research"], f"unexpected unbounded modes: {unbounded}"
+    # And the bounded ceilings genuinely differ per mode — a single value across the board would be a pool.
+    ceilings = {((spec or {}).get("budget") or {})["max_agent_hops"]
+                for spec in registry.values() if ((spec or {}).get("budget") or {}).get("max_agent_hops") is not None}
+    assert len(ceilings) > 1, "every bounded mode carrying the same ceiling would be a shared budget in disguise"

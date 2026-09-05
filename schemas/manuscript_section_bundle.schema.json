@@ -13,7 +13,6 @@
     "authorization_receipt",
     "input_refs",
     "claim_support_refs",
-    "draft_latex",
     "citation_keys",
     "labels",
     "cross_references",
@@ -91,7 +90,18 @@
         ]
       }
     },
-    "draft_latex": {"$ref": "#/$defs/nonemptyString"},
+    "draft_latex": {
+      "$ref": "#/$defs/nonemptyString",
+      "description": "Legacy inline transport. New authoring runs write LaTeX to draft_ref and keep prose out of JSON."
+    },
+    "draft_ref": {
+      "$ref": "#/$defs/reference",
+      "description": "Run-relative LaTeX file written directly by the sole section owner."
+    },
+    "draft_sha256": {
+      "$ref": "#/$defs/sha256",
+      "description": "SHA-256 of the exact UTF-8 bytes at draft_ref."
+    },
     "citation_keys": {
       "type": "array",
       "uniqueItems": true,
@@ -138,6 +148,16 @@
     },
     "content_hash": {"$ref": "#/$defs/sha256"}
   },
+  "oneOf": [
+    {
+      "required": ["draft_ref", "draft_sha256"],
+      "not": {"required": ["draft_latex"]}
+    },
+    {
+      "required": ["draft_latex"],
+      "not": {"anyOf": [{"required": ["draft_ref"]}, {"required": ["draft_sha256"]}]}
+    }
+  ],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "nonemptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},

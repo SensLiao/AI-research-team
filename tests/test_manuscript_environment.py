@@ -25,7 +25,7 @@ import pytest
 from research_agent_teams.tools.latex_build import detect_latex_toolchain
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2] / "research_agent_teams"
 PHASE_EVIDENCE_ROOT = ROOT / ".planning" / "evidence" / "phase-01"
 WINDOWS_EVIDENCE_DIR = PHASE_EVIDENCE_ROOT / "windows"
 LINUX_EVIDENCE_DIR = PHASE_EVIDENCE_ROOT / "linux"

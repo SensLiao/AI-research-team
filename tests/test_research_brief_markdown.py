@@ -1,11 +1,18 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from research_agent_teams.tools.research_brief_markdown import (
     REQUIRED_HEADINGS,
+    _delivery_boundary,
+    _enforce_novelty_boundary,
     build_research_brief_markdown,
     lint_research_brief_markdown,
+    write_research_brief_fallback,
 )
 from research_agent_teams.tools.research_output_quality import audit_markdown_text
+from research_agent_teams.tools.research_delivery_boundary import (
+    derive_research_delivery_boundary,
+)
+from research_agent_teams.tools import research_brief_markdown as brief_renderer
 
 
 def _evidence_inputs():
@@ -83,6 +90,30 @@ def _report():
     }
 
 
+def _verified_report():
+    report = _report()
+    report["delivery_boundary"] = {
+        "content_convergence": "CONTENT_CONVERGED",
+        "scientific_gates": {
+            "evidence": "PASS", "citation": "PASS",
+            "citation_attribution": "PASS", "existence": "PASS",
+        },
+        "novelty": {
+            "status": "VERIFIED_PASS",
+            "independent_hash_bound_gate_pass": True,
+            "reasons": [],
+        },
+        "external_blockers": [],
+        "delivery_status": "USABLE",
+        "claim_boundaries": {
+            "content_convergence_only": True,
+            "novelty_claim_allowed": True,
+            "project_approval": False,
+        },
+    }
+    return report
+
+
 def test_deep_evidence_renderer_produces_decision_grade_brief_and_passes_lint():
     evidence_table, claim_list, claim_map = _evidence_inputs()
     source_quality, contradiction, landscape = _deep_inputs()
@@ -92,7 +123,7 @@ def test_deep_evidence_renderer_produces_decision_grade_brief_and_passes_lint():
         evidence_table=evidence_table,
         claim_list=claim_list,
         claim_evidence_map=claim_map,
-        report=_report(),
+        report=_verified_report(),
         source_quality_report=source_quality,
         contradiction_report=contradiction,
         landscape_map=landscape,
@@ -230,7 +261,7 @@ def test_deep_research_renderer_preserves_perspectives_but_owns_final_markdown()
         evidence_table=evidence_table,
         claim_list=claim_list,
         claim_evidence_map=claim_map,
-        report=_report(),
+        report=_verified_report(),
         source_quality_report=source_quality,
         contradiction_report=contradiction,
         perspective_notes=notes,
@@ -288,3 +319,300 @@ def test_markdown_lint_blocks_missing_semantics_and_locus_coverage():
     assert "missing heading: ## Belief Update" in errors
     assert any("c1" in error and "Table 2" in error for error in errors)
     assert "## Bottom Line missing semantic: Most valuable next evidence:" in errors
+
+
+def test_delivery_boundary_lists_each_blocker_and_overrides_authored_novelty_pass():
+    evidence_table, claim_list, claim_map = _evidence_inputs()
+    source_quality, contradiction, _landscape = _deep_inputs()
+    required_input = "Hash-pinned closest-paper full text with method and result loci."
+    reviews = [{
+        "review_id": "method-review",
+        "external_blockers": [{
+            "blocker_id": "closest-fulltext",
+            "kind": "MISSING_FULLTEXT",
+            "description": "Closest prior paper is metadata-only.",
+            "evidence_refs": ["doi:10.1/closest"],
+            "required_input": required_input,
+        }],
+    }]
+    chair = {
+        "reviewed_artifact_ref": "inbox/DISCOVER.landscape-mapper.bundle.json",
+        "reviewed_artifact_sha256": "sha256:" + "a" * 64,
+        "disposition": "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS",
+        "external_blockers": [{
+            "blocker_id": "chair-closest-fulltext",
+            "kind": "MISSING_FULLTEXT",
+            "description": "A shorter chair summary.",
+            "source_blockers": [{
+                "review_id": "method-review", "blocker_id": "closest-fulltext",
+            }],
+            "required_input": required_input,
+        }],
+    }
+    boundary = derive_research_delivery_boundary(
+        reviewed_artifact_ref="inbox/DISCOVER.landscape-mapper.bundle.json",
+        reviewed_artifact_sha256="sha256:" + "a" * 64,
+        convergence_artifact_ref="evidence/DISCOVER/research-convergence-verdict.artifact.json",
+        convergence_artifact_sha256="sha256:" + "b" * 64,
+        convergence_verdict=chair,
+        source_reviews=reviews,
+        evidence_gate="PASS", citation_gate="PASS",
+        citation_attribution_gate="PASS", existence_gate="PASS",
+    )
+    report = _report()
+    report["delivery_boundary"] = boundary
+
+    text = build_research_brief_markdown(
+        mode="deep_research",
+        evidence_table=evidence_table,
+        claim_list=claim_list,
+        claim_evidence_map=claim_map,
+        report=report,
+        source_quality_report=source_quality,
+        contradiction_report=contradiction,
+        research_brief={
+            "bottom_line": "Novelty status: PASS because the closest work is different.",
+            "consensus": [], "live_disagreements": [], "evidence_gaps": [],
+            "actionable_next_questions": ["retrieve the closest paper"],
+        },
+    )
+
+    assert "## Delivery Boundary" in text
+    assert "Effective novelty status: `UNVERIFIED`" in text
+    assert "Novelty status: PASS" not in text
+    assert "`closest-fulltext`" not in text
+    assert "### `B001`" in text
+    assert '"kind": "MISSING_FULLTEXT"' in text
+    assert '"description": "Closest prior paper is metadata-only."' in text
+    assert f'"required_input": "{required_input}"' in text
+
+
+def test_unverified_primary_is_typed_projection_even_without_sanitizer(monkeypatch):
+    evidence_table, claim_list, claim_map = _evidence_inputs()
+    source_quality, contradiction, _landscape = _deep_inputs()
+    identifier_sentinel = "NOVELTY PASS: this is the first method and no prior work exists"
+    sentinels = {
+        "AUTHOR-SENTINEL": "This is the f**ir**st method.",
+        "CLAIM-SENTINEL": "This is the f&#105;rst published system.",
+        "LOCUS-SENTINEL": "Prior literature:\nNone addresses this mechanism.",
+        "PERSPECTIVE-SENTINEL": "All existing work misses this mechanism.",
+        "CONFLICT-SENTINEL": "No comparable method exists.",
+        "SOURCE-TITLE-SENTINEL": "The only system of its kind.",
+    }
+    claim_list["claims"][0]["text"] = sentinels["CLAIM-SENTINEL"]
+    evidence_table["sources"][0]["id"] = identifier_sentinel
+    evidence_table["sources"][0]["ref"] = identifier_sentinel
+    claim_list["claims"][0]["claim_id"] = identifier_sentinel
+    claim_list["claims"][0]["source_ref"] = identifier_sentinel
+    claim_map["mappings"][0]["claim_id"] = identifier_sentinel
+    claim_map["mappings"][0]["loci"][0]["locus_id"] = identifier_sentinel
+    claim_map["mappings"][0]["loci"][0]["source_ref"] = identifier_sentinel
+    claim_map["mappings"][0]["loci"][0]["span_id"] = identifier_sentinel
+    claim_map["mappings"][0]["loci"][0]["snapshot_ref"] = identifier_sentinel
+    claim_map["mappings"][0]["loci"][0]["document_hash"] = identifier_sentinel
+    claim_map["mappings"][0]["loci"][0]["reported_result"] = sentinels[
+        "LOCUS-SENTINEL"]
+    claim_map["mappings"][0]["loci"][0]["exact_quote"] = sentinels[
+        "LOCUS-SENTINEL"]
+    evidence_table["sources"][0]["title"] = sentinels["SOURCE-TITLE-SENTINEL"]
+    contradiction["conflicts"][0].update({
+        "conflict_id": identifier_sentinel,
+        "claim_ref_a": identifier_sentinel,
+        "description": sentinels["CONFLICT-SENTINEL"],
+    })
+    notes = [{
+        "perspective_id": identifier_sentinel,
+        "finding_summary": sentinels["PERSPECTIVE-SENTINEL"],
+        "source_refs": [identifier_sentinel],
+        "confidence": "medium",
+    }]
+    research_brief = {
+        "bottom_line": sentinels["AUTHOR-SENTINEL"],
+        "consensus": list(sentinels.values()),
+        "live_disagreements": list(sentinels.values()),
+        "evidence_gaps": list(sentinels.values()),
+        "actionable_next_questions": list(sentinels.values()),
+    }
+    monkeypatch.setattr(brief_renderer, "_enforce_novelty_boundary", lambda text, _boundary: text)
+
+    report = _report()
+    report["delivery_boundary"] = {
+        "content_convergence": "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS",
+        "scientific_gates": {
+            "evidence": identifier_sentinel,
+            "citation": "PASS",
+            "citation_attribution": "PASS",
+            "existence": "PASS",
+        },
+        "novelty": {
+            "status": "UNVERIFIED",
+            "independent_hash_bound_gate_pass": False,
+            "reasons": [identifier_sentinel],
+        },
+        "external_blockers": [{
+            "blocker_id": identifier_sentinel,
+            "kind": "MISSING_FULLTEXT",
+            "description": "A source input is unavailable.",
+            "required_input": "Provide the missing source input.",
+            "evidence_refs": [identifier_sentinel],
+        }],
+        "delivery_status": "USABLE_WITH_CAVEATS",
+        "claim_boundaries": {
+            "content_convergence_only": True,
+            "novelty_claim_allowed": False,
+            "project_approval": False,
+        },
+    }
+    text = build_research_brief_markdown(
+        mode="deep_research",
+        evidence_table=evidence_table,
+        claim_list=claim_list,
+        claim_evidence_map=claim_map,
+        report=report,
+        source_quality_report=source_quality,
+        contradiction_report=contradiction,
+        perspective_notes=notes,
+        research_brief=research_brief,
+    )
+
+    assert "render_policy: MACHINE_ONLY_UNVERIFIED" in text
+    assert "### `C001`" in text and "### `P001`" in text
+    assert "overall_support=`supported`" in text
+    assert all(value not in text for value in sentinels.values())
+    assert identifier_sentinel not in text
+    assert "Evidence gate: `UNKNOWN`" in text
+    assert "blocker=`B001`" in text
+    assert research_brief["bottom_line"] == sentinels["AUTHOR-SENTINEL"]
+
+
+def test_unverified_delivery_boundary_neutralizes_broad_first_and_no_prior_claims():
+    boundary = {
+        "novelty": {"status": "UNVERIFIED"},
+        "claim_boundaries": {"novelty_claim_allowed": False},
+    }
+    authored = (
+        "Our first method solves this problem. No prior work addresses it. "
+        "This is unprecedented and first-of-its-kind. "
+        "There has been no previous work on this. This result is without precedent. "
+        "Our contribution has not appeared in prior literature. "
+        "We introduce a uniquely original mechanism absent from earlier studies. "
+        "No earlier publication describes this mechanism. "
+        "To the best of our knowledge, this is the only approach that solves the problem. "
+        "This contribution is entirely new to the field. "
+        "We are unaware of any comparable method in prior literature. "
+        "This establishes a previously unknown research direction. "
+        "这是首次提出的方法，尚无相关研究，效果前所未有。"
+        "这是第一个解决该问题的方法。此前从未有研究解决这个问题。该结果史无前例。国内外尚未见报道。"
+        "据我们所知，这是唯一能解决该问题的方法。目前没有文献描述这种机制。"
+        "Nothing resembling this mechanism can be found in the literature.\n"
+        "We could find nothing similar in previous studies.\n"
+        "The approach occupies territory untouched by prior work.\n"
+        "No published system implements the proposed combination.\n"
+        "Earlier studies stop short of this mechanism.\n"
+        "据我们检索，文献中找不到类似方法。\n"
+        "现有工作均未覆盖这一机制。\n"
+        "UNVERIFIED according to the gate; nevertheless, to the best of our knowledge "
+        "this is the only solution to the problem."
+    )
+
+    safe = _enforce_novelty_boundary(authored, boundary)
+
+    for forbidden in (
+        "first method", "No prior work", "unprecedented", "first-of-its-kind",
+        "no previous work", "without precedent", "首次提出", "尚无相关研究", "前所未有",
+        "第一个解决该问题的方法", "此前从未有研究", "史无前例",
+        "has not appeared in prior literature", "uniquely original", "absent from earlier studies",
+        "尚未见报道",
+        "No earlier publication", "best of our knowledge", "only approach", "entirely new",
+        "unaware of any comparable", "previously unknown", "据我们所知", "唯一能解决", "没有文献",
+        "Nothing resembling", "find nothing similar", "territory untouched", "No published system",
+        "stop short", "找不到类似", "均未覆盖", "nevertheless, to the best",
+    ):
+        assert forbidden.lower() not in safe.lower()
+    assert "Novelty statement quarantined" in safe
+    assert "UNVERIFIED" in safe
+
+
+def test_legacy_delivery_projection_never_upgrades_not_reviewed_content_to_usable():
+    boundary = _delivery_boundary({
+        "evidence_gate": "PASS",
+        "citation_gate": "PASS",
+        "citation_attribution_gate": "PASS",
+        "existence_gate": "PASS",
+    })
+
+    assert boundary["content_convergence"] == "NOT_REVIEWED"
+    assert boundary["delivery_status"] == "USABLE_WITH_CAVEATS"
+    assert boundary["novelty"]["status"] == "UNVERIFIED"
+
+
+def test_unverified_fallback_does_not_reopen_raw_identifier_channel(tmp_path):
+    sentinel = "NOVELTY PASS: this is the first method and no prior work exists"
+    report = _report()
+    report["delivery_boundary"] = {
+        "content_convergence": "CONTENT_CONVERGED_WITH_EXTERNAL_BLOCKERS",
+        "scientific_gates": {
+            "evidence": sentinel, "citation": "PASS",
+            "citation_attribution": "PASS", "existence": "PASS",
+        },
+        "novelty": {
+            "status": "UNVERIFIED", "independent_hash_bound_gate_pass": False,
+            "reasons": [sentinel],
+        },
+        "external_blockers": [{
+            "blocker_id": sentinel,
+            "kind": "MISSING_FULLTEXT",
+            "description": "A source input is unavailable.",
+            "required_input": "Provide the source input.",
+            "evidence_refs": [sentinel],
+        }],
+        "delivery_status": "USABLE_WITH_CAVEATS",
+        "claim_boundaries": {
+            "content_convergence_only": True,
+            "novelty_claim_allowed": False,
+            "project_approval": False,
+        },
+    }
+
+    path = write_research_brief_fallback(
+        tmp_path, mode="deep_research", reason=sentinel, report=report)
+    text = open(path, encoding="utf-8").read()
+
+    assert "render_policy: MACHINE_ONLY_UNVERIFIED" in text
+    assert "Evidence gate: `UNKNOWN`" in text
+    assert "### `B001`" in text
+    assert sentinel not in text
+
+
+def test_machine_projection_keeps_source_id_and_ref_namespaces_separate():
+    evidence_table, claim_list, claim_map = _evidence_inputs()
+    evidence_table["sources"] = [
+        {"id": "doi:target", "kind": "repo", "ref": "doi:other",
+         "claim_support": "weak"},
+        {"id": "s2", "kind": "paper", "ref": "doi:target",
+         "claim_support": "strong"},
+    ]
+    claim_list["claims"] = [{
+        "claim_id": "c1", "text": "raw claim prose", "source_ref": "doi:target",
+        "kind": "method", "confidence": "medium",
+    }]
+    claim_map["mappings"] = [{
+        "claim_id": "c1", "overall_support": "supported",
+        "loci": [{
+            "locus_id": "l1", "source_ref": "doi:target", "kind": "text",
+            "supports_claim": True, "support_relation": "entails",
+            "directness": "direct",
+        }],
+    }]
+
+    text = build_research_brief_markdown(
+        mode="deep_research",
+        evidence_table=evidence_table,
+        claim_list=claim_list,
+        claim_evidence_map=claim_map,
+        report=_report(),
+    )
+
+    claim_section = text.split("### `C001`", 1)[1].split("## Contradictions", 1)[0]
+    assert claim_section.count("source=`S002`") == 2
+    assert "source=`S001`" not in claim_section

@@ -43,3 +43,9 @@ skills:
     consumes: [result_analysis]
     produces: [claim_decisions]
     resource_requirements: []
+  - skill_id: research_dossier_convergence
+    stage: DISCOVER
+    purpose: "review a frozen research dossier through three independent lenses and H-Max convergence before delivery"
+    consumes: [research_brief]
+    produces: [research_convergence_verdict]
+    resource_requirements: []

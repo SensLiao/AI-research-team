@@ -7,7 +7,6 @@ executor receipt and its result files have been independently reverified.
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import math
 import os
@@ -32,7 +31,8 @@ _HEX = re.compile(r"^[0-9a-f]{64}$")
 _CODE = re.compile(r"[^A-Z0-9_]+")
 _NO_BUILD_REF = "audit/no-build-receipt"
 _ORDER = (
-    "CORRUPT_INPUT", "OFFICIAL_HARD_RULE_OVERRIDE", "MISSING_REQUIRED_SECTION",
+    "CORRUPT_INPUT", "OFFICIAL_HARD_RULE_OVERRIDE", "PROVISIONAL_VENUE_PROFILE",
+    "MISSING_REQUIRED_SECTION",
     "DUPLICATE_REQUIRED_SECTION", "UNSUPPORTED_LOAD_BEARING_CLAIM",
     "METADATA_ONLY_EVIDENCE", "CITATION_IDENTITY_MISMATCH",
     "CITATION_ENTAILMENT_CONTRADICTED", "CITATION_AUDIT_NOT_INDEPENDENT",
@@ -202,7 +202,7 @@ def _authority(contract: Mapping[str, Any], requires_pdf: bool, out: _Findings) 
     resolved = contract.get("resolved_tokens")
     tokens = _rows(resolved.get("tokens")) if isinstance(resolved, Mapping) else []
     token = next((row for row in tokens if row.get("token") == "requires_pdf"), None)
-    valid = (
+    official_valid = (
         isinstance(policy, Mapping) and policy.get("classification") == "OFFICIAL_HARD"
         and policy.get("weakenable") is False and isinstance(token, Mapping)
         and token.get("value") is requires_pdf and token.get("classification") == "HARD"
@@ -210,7 +210,26 @@ def _authority(contract: Mapping[str, Any], requires_pdf: bool, out: _Findings) 
         and token.get("source_ref") == policy.get("source_ref")
         and token.get("source_sha256") == policy.get("source_sha256")
     )
-    if not valid:
+    provisional_valid = (
+        isinstance(policy, Mapping)
+        and policy.get("classification") == "ADVISORY"
+        and policy.get("weakenable") is True
+        and isinstance(token, Mapping)
+        and token.get("value") is requires_pdf
+        and token.get("classification") == "ADVISORY"
+        and token.get("resolved_layer") == "venue"
+        and token.get("weakenable") is True
+        and token.get("source_ref") == policy.get("source_ref")
+        and token.get("source_sha256") == policy.get("source_sha256")
+    )
+    if provisional_valid:
+        out.add(
+            "PROVISIONAL_VENUE_PROFILE",
+            "contract/venue/requires-pdf",
+            "SUBMISSION",
+            "The authoring profile is provisional; select a real venue and freeze its official rules before submission.",
+        )
+    elif not official_valid:
         out.add("OFFICIAL_HARD_RULE_OVERRIDE", "contract/venue/requires-pdf", "BOTH")
 
 
@@ -246,6 +265,11 @@ def _sections_and_claims(
     bibliography_obj = contract.get("bibliography")
     bibliography = {str(row.get("source_ref")): row
                     for row in _rows(bibliography_obj.get("entries"))}
+    bibliography_by_key = {
+        str(row.get("citation_key")): row
+        for row in _rows(bibliography_obj.get("entries"))
+        if row.get("citation_key")
+    }
     if not isinstance(bibliography_obj, Mapping):
         bibliography = {}
 
@@ -265,16 +289,34 @@ def _sections_and_claims(
                 continue
             if link.get("metadata_only") is True:
                 out.add("METADATA_ONLY_EVIDENCE", evidence_path, "BOTH")
-            if (
+            direct_span_bound = (
                 source.get("source_kind") != "LOCAL_FULL_TEXT"
                 or source.get("claim_support") != "EXACT_SPAN"
                 or not str(link.get("exact_span") or "").strip()
                 or _hash(link.get("source_sha256")) != _hash(source.get("sha256"))
-            ):
+            ) is False
+            aggregate_chain_bound = bool(
+                link.get("evidence_chain_verified") is True
+                and source.get("source_kind") in {"LOCAL_FULL_TEXT", "LOCAL_NOTE", "OTHER_LOCAL"}
+                and source.get("claim_support") != "NONCITABLE_CONTEXT"
+                and str(link.get("exact_span") or "").strip()
+                and _hash(link.get("source_sha256")) == _hash(source.get("sha256"))
+            )
+            if not (direct_span_bound or aggregate_chain_bound):
                 out.add("UNSUPPORTED_LOAD_BEARING_CLAIM", evidence_path, "BOTH")
             expected_key = str((bibliography.get(evidence_ref) or {}).get("citation_key") or "")
-            if (not expected_key or link.get("citation_key") != expected_key
-                    or link.get("observed_citation_key") != expected_key):
+            observed_key = str(link.get("observed_citation_key") or "")
+            projected_identity_ok = bool(
+                link.get("citation_identity_verified") is True
+                and observed_key == str(link.get("citation_key") or "")
+                and (bibliography_by_key.get(observed_key) or {}).get("identity_status") == "VERIFIED"
+            )
+            legacy_identity_ok = bool(
+                expected_key
+                and link.get("citation_key") == expected_key
+                and observed_key == expected_key
+            )
+            if not (projected_identity_ok or legacy_identity_ok):
                 out.add("CITATION_IDENTITY_MISMATCH", evidence_path, "BOTH")
             if link.get("entailment") != "ENTAILED":
                 out.add("CITATION_ENTAILMENT_CONTRADICTED", evidence_path, "BOTH")
@@ -422,7 +464,7 @@ def _content_checks(
     if isinstance(tex, Mapping) and tex:
         try:
             validate_tex_sources({str(k): str(v) for k, v in tex.items()}, run_root=run_root,
-                                 source_root=run_root / "manuscript")
+                                 source_root=run_root / "source")
         except (ManuscriptTexViolation, ManuscriptPathViolation, TypeError, ValueError, OSError):
             out.add("UNSAFE_TEX_SOURCE", "manuscript/tex-sources", "BOTH")
     for index, advisory in enumerate(_rows(manuscript.get("advisories")), 1):

@@ -19,7 +19,7 @@ from typing import Optional
 import yaml
 
 # Path to the agents directory (resolved relative to this test file)
-AGENTS_DIR = Path(__file__).resolve().parent.parent / "agents"
+AGENTS_DIR = Path(__file__).resolve().parents[2] / "research_agent_teams" / "agents"
 
 SPEC_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 VALID_MODELS = {"opus", "sonnet", "none"}
@@ -188,17 +188,14 @@ class TestNorthStarCoverage:
         )
 
 
-class TestSynthesisWriterModelOpus:
-    """synthesis-writer must declare model: opus (M7 upgrade)."""
+class TestSynthesisWriterParked:
+    """The unconsumed prose renderer is preserved but not an active seat."""
 
-    def test_synthesis_writer_is_opus(self):
-        sw = AGENTS_DIR / "synthesis-writer.md"
-        assert sw.exists(), "synthesis-writer.md not found"
+    def test_synthesis_writer_is_parked(self):
+        sw = AGENTS_DIR / "_parked" / "synthesis-writer.md"
+        assert sw.exists(), "parked synthesis-writer.md not found"
         _, fm_yaml, _ = _read(sw)
-        model = fm_yaml.get("model")
-        assert model == "opus", (
-            f"synthesis-writer.md declares model={model!r}, expected 'opus' (M7 requirement)"
-        )
+        assert fm_yaml.get("name") == "synthesis-writer"
 
 
 class TestInlineTwinAnnotations:

@@ -7,6 +7,10 @@
   "required": ["topic", "markdown", "evidence_refs", "perspective_ids"],
   "additionalProperties": false,
   "properties": {
+    "render_policy": {
+      "enum": ["MACHINE_ONLY_UNVERIFIED", "FULL_VERIFIED"],
+      "description": "Whether the authoritative Markdown is a typed machine projection or a full prose surface unlocked by an independent hash-bound novelty PASS."
+    },
     "topic": {"type": "string", "minLength": 1},
     "markdown": {
       "type": "string",

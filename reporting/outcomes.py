@@ -29,14 +29,14 @@ _RELATIVE_WORDS = ("偏省", "中等", "偏重")
 #: the ROSTER a mode may draw from (larger than what actually gets dispatched) and `max_agent_hops` is
 #: the hard dispatch ceiling; the real number lands between them, and neither is a concurrency count.
 #: So the card says "可上场", never "会派" — a roster read as a promise is an overclaim.
-_SEAT_NOTE = ("> 两个数别读成承诺：「席可上场」是这条路**允许**调用的名单上限，"
+_SEAT_NOTE = ("> 两个数别读成承诺：「agent 可上场」是这条路**允许**调用的名单上限，"
               "「轮」是硬派发上限；真正派出去的在两者之间，也都不是并发数。")
 
 
 def _size_words(view: dict[str, Any]) -> str:
-    words = f"{view['seats']} 席可上场 · 最多派 {view['cost']['agent_hops']} 轮"
+    words = f"{view['seats']} 个 agent 可上场 · 最多派 {view['cost']['agent_hops']} 轮"
     if view.get("council_only"):
-        words += f"（其中 {view['council_only']} 席只在 council 路径上场）"
+        words += f"（其中 {view['council_only']} 个 agent 只在 council 路径上场）"
     return words
 
 
@@ -95,7 +95,7 @@ def render_menu(*, path: Optional[str] = None) -> str:
               "python -m research_agent_teams.workbench outcome <上面那个 id> --project <项目>",
               "```", "",
               "> 想直接说人话也行 —— 说「我想要一个能下注的方向」，我会走 `operate brief` "
-              "先把计划卡摆给你，再动手。", ""]
+              "先把计划摘要摆给你，再动手。", ""]
 
     if not verdict["ok"]:
         lines += ["## ⚠️ 这份菜单本身有问题（数据校验没过）", ""]
@@ -124,12 +124,12 @@ def _section_steps(view: dict[str, Any], project: Optional[str],
     steps = recipes.command_chain(view["id"], variant=view["variant"]["id"], project=project,
                                   request=request)
     out = [f"## 这条路怎么跑（{view['variant']['label']}）", "",
-           "| 第几步 | 干什么 | 可上场席位 | 你能打开的产物 |", "|---|---|---|---|"]
+           "| 第几步 | 干什么 | 可上场 agent | 你能打开的产物 |", "|---|---|---|---|"]
     for step, facts in zip(steps, view["mode_facts"]):
-        out.append(f"| {step['link']} | {words.say(step['mode'])} | {step['seats']} 席 "
+        out.append(f"| {step['link']} | {words.say(step['mode'])} | {step['seats']} 个 agent "
                    f"| `{facts['deliverable']}` |")
-    out += ["", "> 上场的每一席都是**派出去的 sub-agent**：领一个阶段、写一个产物、就返回。"
-            "主线程只负责路由、跑确定性关卡、汇报 —— 它自己不做研究。", _SEAT_NOTE, ""]
+    out += ["", "> 上场的每一个 agent 都是**派出去的 sub-agent**：领一个阶段、写一个产物、就返回。"
+            "主线程只负责路由、跑自动检查、汇报 —— 它自己不做研究。", _SEAT_NOTE, ""]
     for step in steps:
         out += [f"**第 {step['link']} 步 — {words.say(step['mode'])}**", "", "```bash"]
         out += step["commands"]

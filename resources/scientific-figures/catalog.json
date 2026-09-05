@@ -1,0 +1,23 @@
+{
+  "catalog_version": "1.0",
+  "reviewed_at": "2026-09-05",
+  "scope": "Scientific publication figures only; no UI, branding or poster-design workflow.",
+  "implemented_tools": [
+    {"module": "research_agent_teams.tools.scientific_figure", "role": "Offline editable SVG, vector PDF and RGB PNG export with real-byte QA"},
+    {"module": "research_agent_teams.tools.journal_render", "role": "Journal choice, profile checks, automatic planned figures and verified reuse"}
+  ],
+  "skill_references": [
+    {"name": "K-Dense scientific-visualization", "url": "https://github.com/K-Dense-AI/scientific-agent-skills/blob/main/skills/scientific-visualization/SKILL.md", "license": "MIT", "adopted": "Scientific provenance, final physical size, editable exports and real-output review", "execution": "Not installed or executed"},
+    {"name": "K-Dense scientific-schematics", "url": "https://github.com/K-Dense-AI/scientific-agent-skills/blob/main/skills/scientific-schematics/SKILL.md", "license": "MIT", "adopted": "Relationship and label review only", "not_adopted": "External API PNG-only production route, self-score as approval, automatic credential lookup", "execution": "Not installed or executed"},
+    {"name": "sai-tv academic-figures", "url": "https://github.com/sai-tv/academic-figures/blob/master/SKILL.md", "license": "MIT", "adopted": "Native SVG text/groups and geometric composition", "not_adopted": "Universal Nature sizing and mandatory multiple concepts", "execution": "Not installed or executed"},
+    {"name": "PaperFactory scientific-figure", "url": "https://github.com/happystander/codex-PaperFactory/blob/master/skills/scientific-figure/SKILL.md", "license": "GPL-3.0 and repository-stated attribution terms", "adopted": "Method-level idea of a figure purpose, sources and caption", "not_adopted": "No upstream code or templates copied", "execution": "Read-only comparison"}
+  ],
+  "artwork_sources": [
+    {"name": "Bioicons", "url": "https://bioicons.com/", "metadata": "https://github.com/duerrsimon/bioicons", "license": "Per item; mixed licences", "use": "Inspect individual item metadata; selected CC0 assets cached with hashes"},
+    {"name": "Servier Medical Art", "url": "https://smart.servier.com/", "license": "CC BY 4.0", "rules": "https://smart.servier.com/using-smart-images-what-you-can-do/", "use": "Attribution and adaptation notice required; not downloaded by this implementation"},
+    {"name": "SwissBioPics", "url": "https://www.swissbiopics.org/", "license": "CC BY 4.0", "rules": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9216577/", "use": "Cell context reference; do not infer experimental protein localization from illustration"}
+  ],
+  "minimal_dependencies": ["Python", "PyMuPDF", "Pillow", "jsonschema"],
+  "paid_api_required": false,
+  "source_code_policy": "New local implementation; no bulk vendoring of external skill packages. Preserve the current workspace and existing scientific checks."
+}

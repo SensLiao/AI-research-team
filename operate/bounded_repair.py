@@ -104,11 +104,35 @@ def failures_for_stage(run_dir, stage: str) -> int:
     return sum(1 for a in load_state(run_dir)["attempts"] if a.get("stage") == stage)
 
 
-def _effective_budget(budget: dict) -> dict:
-    """The repair cap, with a SAFE default when the mode's budget omits it (never unbounded)."""
+def _effective_budget(budget: dict, run_dir=None) -> dict:
+    """The repair cap, plus an explicit run-local director extension when present."""
     b = dict(budget or {})
     if b.get("max_debug_retries_per_run") is None:
         b["max_debug_retries_per_run"] = DEFAULT_MAX_DEBUG_RETRIES
+    if run_dir is None:
+        return b
+    path = Path(run_dir) / "inbox" / "director-repair-budget-extension.json"
+    if not path.is_file():
+        return b
+    try:
+        extension = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"invalid director repair extension: {exc}") from exc
+    base = b["max_debug_retries_per_run"]
+    if (
+        extension.get("contract_version") != "director-repair-extension/v1"
+        or extension.get("authorized_by") != "director"
+        or extension.get("dimension") != "max_debug_retries_per_run"
+        or extension.get("base_limit") != base
+        or not isinstance(extension.get("extended_limit"), int)
+        or extension["extended_limit"] <= int(base)
+        or not str(extension.get("reason") or "").strip()
+    ):
+        raise ValueError(
+            "director repair extension must bind the current base limit, a larger integer "
+            "limit, director authority, and a non-empty reason"
+        )
+    b["max_debug_retries_per_run"] = extension["extended_limit"]
     return b
 
 
@@ -116,12 +140,24 @@ def build_feedback(stage: str, attempt: int, reason: str, defects=None) -> str:
     """The feedback block the skill appends to the re-dispatched worker's prompt."""
     rows = [row for row in (defects or []) if isinstance(row, dict)]
     if rows:
-        detail = "\n".join(
-            f"- {row.get('defect_id', 'DEFECT')}: "
-            f"{row.get('location', 'unspecified')}: "
-            f"{row.get('summary') or row.get('reason') or 'targeted supplement required'}"
-            for row in rows
-        )
+        lines = []
+        for row in rows:
+            scope = row.get("allowed_json_pointers")
+            target_ref = row.get("target_artifact_ref")
+            target_hash = row.get("target_artifact_sha256")
+            binding = ""
+            if target_ref or target_hash or scope:
+                binding = (
+                    f" [target={target_ref or 'scheduler-bound'} @ "
+                    f"{target_hash or 'scheduler-frozen-hash'}; allowed_json_pointers={scope or []}]"
+                )
+            lines.append(
+                f"- {row.get('defect_id', 'DEFECT')}: "
+                f"{row.get('location', 'unspecified')}: "
+                f"{row.get('summary') or row.get('reason') or 'targeted supplement required'}"
+                f"{binding}"
+            )
+        detail = "\n".join(lines)
     else:
         detail = str(reason)[:12000]
     return (
@@ -143,6 +179,7 @@ def _attempt_record(stage: str, ts: str, exc: GateBlock, quality: Optional[float
         "defects": [],
         "target_agents": [],
         "refresh_agents": [],
+        "blind_refresh_agents": [],
     }
     if quality is not None:
         record["quality"] = quality
@@ -161,6 +198,12 @@ def _attempt_record(stage: str, ts: str, exc: GateBlock, quality: Optional[float
             str(agent)
             for row in exc.defects
             for agent in (row.get("refresh_agents") or [])
+            if str(agent).strip()
+        })
+        record["blind_refresh_agents"] = sorted({
+            str(agent)
+            for row in exc.defects
+            for agent in (row.get("blind_refresh_agents") or [])
             if str(agent).strip()
         })
     return record
@@ -313,7 +356,7 @@ def attempt_with_repair(run_dir, stage: str, budget: dict, ts: str,
             series = [float(s) for s in quality_scores]
         else:
             series = [float(a["quality"]) for a in stage_attempts if a.get("quality") is not None]
-        if violations(_effective_budget(budget), {"debug_retries": retries_consumed}):
+        if violations(_effective_budget(budget, run_dir), {"debug_retries": retries_consumed}):
             # retry budget exhausted -> escalate the ORIGINAL GateBlock to the director
             _record_stop(run_dir, state, stage, ts, "round_cap", str(e), series, e)
             raise

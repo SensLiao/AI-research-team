@@ -59,7 +59,7 @@
     },
     "paper_type": {
       "type": "string",
-      "enum": ["METHOD", "EMPIRICAL", "DATASET", "SYSTEMS", "THEORY", "POSITION_SURVEY"]
+      "enum": ["METHOD", "EMPIRICAL", "DATASET", "SYSTEMS", "THEORY", "POSITION_SURVEY", "METHODOLOGICAL_CRITICAL_REVIEW"]
     },
     "venue_profile": {
       "type": "object",
@@ -100,11 +100,18 @@
               "required": ["classification", "weakenable", "source_ref", "source_sha256"],
               "additionalProperties": false,
               "properties": {
-                "classification": {"const": "OFFICIAL_HARD"},
-                "weakenable": {"const": false},
+                "classification": {"type": "string", "enum": ["OFFICIAL_HARD", "ADVISORY"]},
+                "weakenable": {"type": "boolean"},
                 "source_ref": {"$ref": "#/$defs/reference"},
                 "source_sha256": {"$ref": "#/$defs/sha256"}
-              }
+              },
+              "allOf": [
+                {
+                  "if": {"properties": {"classification": {"const": "OFFICIAL_HARD"}}, "required": ["classification"]},
+                  "then": {"properties": {"weakenable": {"const": false}}},
+                  "else": {"properties": {"weakenable": {"const": true}}}
+                }
+              ]
             }
           }
         }
@@ -150,7 +157,9 @@
             "type": "array",
             "uniqueItems": true,
             "items": {"$ref": "#/$defs/reference"}
-          }
+          },
+          "claim_surface_owner": {"$ref": "#/$defs/identifier"},
+          "canonical_locus": {"$ref": "#/$defs/nonemptyString"}
         },
         "anyOf": [
           {"properties": {"evidence_refs": {"minItems": 1}}},
@@ -206,7 +215,13 @@
             "additionalProperties": false,
             "properties": {
               "term": {"$ref": "#/$defs/nonemptyString"},
-              "definition": {"$ref": "#/$defs/nonemptyString"}
+              "definition": {"$ref": "#/$defs/nonemptyString"},
+              "aliases": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {"$ref": "#/$defs/nonemptyString"},
+                "description": "Forbidden or historical spellings checked against the final LaTeX tree."
+              }
             }
           }
         },
@@ -243,6 +258,24 @@
               "identity_status": {"type": "string", "enum": ["VERIFIED", "UNVERIFIED"]}
             }
           }
+        }
+      }
+    },
+    "revision_requirements": {
+      "type": "array",
+      "description": "External-review issues that must be closed against the final source/PDF hashes. Empty for first drafts.",
+      "items": {
+        "type": "object",
+        "required": ["issue_id", "review_sha256", "review_quote", "lane", "target_section", "acceptance_criterion"],
+        "additionalProperties": false,
+        "properties": {
+          "issue_id": {"$ref": "#/$defs/identifier"},
+          "review_sha256": {"$ref": "#/$defs/sha256"},
+          "review_quote": {"$ref": "#/$defs/nonemptyString"},
+          "lane": {"type": "string", "enum": ["mechanical_recompute", "prose_repair", "evidence_supplement", "registered_decision", "rebuttal_only", "director_decision"]},
+          "target_section": {"$ref": "#/$defs/identifier"},
+          "target_ref": {"$ref": "#/$defs/reference"},
+          "acceptance_criterion": {"$ref": "#/$defs/nonemptyString"}
         }
       }
     },

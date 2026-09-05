@@ -22,6 +22,9 @@ from research_agent_teams.tools.path_boundaries import assert_not_vault_path
 from research_agent_teams.tools import research_plan
 
 _PKG_ROOT = Path(__file__).resolve().parent.parent
+# Test evidence was consolidated into the workspace tests/ home on 2026-08-13 —
+# evidence_refs resolve against the package root first, then against that home.
+_TESTS_HOME = _PKG_ROOT.parent / "tests"
 _MODE_REGISTRY_REF = "orchestrator/mode_registry.yaml"
 _OPERATE_REGISTRY_REF = "operate/modes/__init__.py::REGISTRY"
 _PLAN_CATALOG_REF = "orchestrator/plan_catalog.yaml"
@@ -137,7 +140,17 @@ def _validate_spec_only_product_maturity(
     else:
         for ref in evidence_refs:
             evidence_path = (_PKG_ROOT / ref).resolve()
-            if not evidence_path.is_relative_to(_PKG_ROOT) or not evidence_path.is_file():
+            in_package = evidence_path.is_relative_to(_PKG_ROOT) and evidence_path.is_file()
+            tests_home = (_TESTS_HOME / ref).resolve()
+            in_tests_home = tests_home.is_relative_to(_TESTS_HOME) and tests_home.is_file()
+            # The machine's own tests/ (a public clone carries the suite flat, so a
+            # `machine/<file>` ref resolves by basename); both layouts must validate.
+            own_tests = _PKG_ROOT / "tests"
+            in_own_tests = any(
+                cand.is_relative_to(own_tests) and cand.is_file()
+                for cand in ((own_tests / ref).resolve(), (own_tests / Path(ref).name).resolve())
+            )
+            if not in_package and not in_tests_home and not in_own_tests:
                 errors.append(f"{mode}.product_maturity.evidence_ref missing or outside package: {ref}")
 
     markdown = maturity.get("target_markdown")

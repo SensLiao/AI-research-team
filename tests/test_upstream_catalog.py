@@ -40,6 +40,9 @@ def test_a_query_that_matches_nothing_returns_nothing_rather_than_everything():
 
 
 def test_the_not_capability_boundary_is_on_every_rendered_surface():
+    if not uc.catalog()["present"]:
+        import pytest
+        pytest.skip("no vendored upstream tree on this checkout")
     catalogue = uc.render_catalog(uc.catalog())
     hits = uc.render_hits(uc.find("", limit=3))
     for rendered in (catalogue, hits):

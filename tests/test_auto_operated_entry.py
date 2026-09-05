@@ -31,6 +31,8 @@ from research_agent_teams.tools.research_capability_router import (
         ("设计这个实验", "full_rigor_minimal"),
         ("帮我写论文初稿", "manuscript_authoring"),
         ("审稿", "manuscript_review"),
+        ("回复审稿意见", "manuscript_reconstruction"),
+        ("Audit the manuscript authoring control plane and router tests", "repo_code_audit"),
         ("够投吗", "venue_readiness"),
     ],
 )

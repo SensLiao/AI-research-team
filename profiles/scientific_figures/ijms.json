@@ -1,0 +1,34 @@
+{
+  "journal_id": "ijms",
+  "name": "International Journal of Molecular Sciences (IJMS)",
+  "aliases": ["IJMS", "ijms-2026", "International Journal of Molecular Sciences"],
+  "retrieved_at": "2026-09-05",
+  "verification_status": "OFFICIAL_INDEX_READ_LIVE_INSTRUCTIONS_RATE_LIMITED",
+  "official_rule_sources": [
+    {"url": "https://www.mdpi.com/journal/ijms/instructions", "access": "official indexed text; live request HTTP 429", "scope": "journal-specific author instructions"},
+    {"url": "https://blog.mdpi.com/2026/08/20/ensuring-figure-quality/", "access": "official publisher page", "scope": "publisher-wide recommendation; not an IJMS-specific hard minimum"}
+  ],
+  "official_requirements": {
+    "figure_numbering": "Sequential; near first mention; caption explains panels and symbols.",
+    "color": "RGB, 8 bit per channel is encouraged in the indexed instructions.",
+    "additional_figure_file_resolution": "Minimum 1000 pixels width/height OR resolution 300 dpi or higher in indexed instructions.",
+    "preferred_additional_formats": ["TIFF", "JPEG", "EPS", "PDF"],
+    "table_text_minimum_pt": 8,
+    "uniform_figure_width_mm": null,
+    "uniform_figure_stroke_pt": null,
+    "graphical_abstract": "Separate asset: do not equate its requirements with a main-text figure."
+  },
+  "internal_targets": {
+    "raster_dpi": 600,
+    "min_label_font_pt": 8,
+    "preferred_label_font_pt": [9, 10],
+    "ordinary_stroke_pt": [0.6, 1.2],
+    "width_policy": "Read actual manuscript column/text width; do not impose a global 8/14/17 cm rule.",
+    "working_outputs": ["SVG", "PDF", "PNG"],
+    "background": "white",
+    "font": "One installed, verified sans-serif family; preserve gene/taxon italics.",
+    "evidence_encoding": "Reported effect, proposed/indirect relationship, reaction, transport and context are distinct."
+  },
+  "refresh_policy": "Recheck official instructions for a new final-delivery cycle. If access fails, record the source/date and limitation; never invent a new hard rule or claim live certification.",
+  "template_policy": "Use the supplied official Word template or a verified local TeX skeleton. A safe generic TeX builder does not automatically support the MDPI class."
+}

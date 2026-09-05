@@ -26,7 +26,7 @@ import pytest
 from research_agent_teams.operate import panel_scheduler
 from research_agent_teams.tools import research_capability_router as router
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2] / "research_agent_teams"
 CATALOG = json.loads(router.DEFAULT_OVERLAY_CATALOG.read_text(encoding="utf-8"))
 
 #: The four families the director named. Each must be reachable as real guidance, not a summary line.

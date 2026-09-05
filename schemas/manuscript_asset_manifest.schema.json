@@ -2,45 +2,53 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://research-os/schemas/manuscript_asset_manifest.schema.json",
   "title": "Manuscript Asset Manifest",
-  "description": "Closed provenance and ownership inventory for every visible manuscript figure and table.",
+  "description": "Versioned, provenance-closed inventory for manuscript figures, tables, plots, and licensed excerpts. Version 1 is retained for historical run replay; new renderers emit strict version 2.",
   "type": "object",
-  "required": [
-    "schema_version",
-    "run_id",
-    "manuscript_sha256",
-    "assets",
-    "manifest_sha256"
-  ],
+  "required": ["schema_version", "run_id", "manuscript_sha256", "assets", "manifest_sha256"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {
-      "const": "1.0.0"
-    },
-    "run_id": {
-      "$ref": "#/$defs/nonempty"
-    },
-    "manuscript_sha256": {
-      "$ref": "#/$defs/sha256"
-    },
-    "assets": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/asset"
+    "schema_version": {"type": "string", "enum": ["1.0.0", "2.0.0"]},
+    "run_id": {"$ref": "#/$defs/nonempty"},
+    "manuscript_sha256": {"$ref": "#/$defs/sha256"},
+    "asset_plan_sha256": {"$ref": "#/$defs/sha256"},
+    "render_environment": {"$ref": "#/$defs/render_environment"},
+    "assets": {"type": "array"},
+    "plan_closure": {"$ref": "#/$defs/plan_closure"},
+    "manifest_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"schema_version": {"const": "1.0.0"}}, "required": ["schema_version"]},
+      "then": {
+        "properties": {"assets": {"items": {"$ref": "#/$defs/legacy_asset"}}},
+        "not": {"anyOf": [
+          {"required": ["asset_plan_sha256"]},
+          {"required": ["render_environment"]},
+          {"required": ["plan_closure"]}
+        ]}
       }
     },
-    "manifest_sha256": {
-      "$ref": "#/$defs/sha256"
+    {
+      "if": {"properties": {"schema_version": {"const": "2.0.0"}}, "required": ["schema_version"]},
+      "then": {
+        "required": ["asset_plan_sha256", "plan_closure"],
+        "properties": {"assets": {"minItems": 1, "items": {"$ref": "#/$defs/v2_asset"}}}
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "schema_version": {"const": "2.0.0"},
+          "assets": {"contains": {"properties": {"semantic_type": {"const": "QUANTITATIVE_PLOT"}}, "required": ["semantic_type"]}}
+        },
+        "required": ["schema_version", "assets"]
+      },
+      "then": {"required": ["render_environment"]}
     }
-  },
+  ],
   "$defs": {
-    "nonempty": {
-      "type": "string",
-      "pattern": "\\S"
-    },
-    "sha256": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
-    },
+    "nonempty": {"type": "string", "pattern": "\\S"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "safe_ref": {
       "type": "string",
       "minLength": 1,
@@ -50,362 +58,376 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {
-        "$ref": "#/$defs/nonempty"
-      }
+      "items": {"$ref": "#/$defs/nonempty"}
     },
     "source_input": {
       "type": "object",
-      "required": [
-        "ref",
-        "sha256",
-        "kind",
-        "immutable"
-      ],
+      "required": ["ref", "sha256", "kind", "immutable"],
       "additionalProperties": false,
       "properties": {
-        "ref": {
-          "$ref": "#/$defs/safe_ref"
-        },
-        "sha256": {
-          "$ref": "#/$defs/sha256"
-        },
+        "ref": {"$ref": "#/$defs/safe_ref"},
+        "sha256": {"$ref": "#/$defs/sha256"},
         "kind": {
           "type": "string",
           "enum": [
-            "FROZEN_RESULT",
-            "SOURCE_DATA",
-            "DIRECTOR_ASSET",
-            "EXTERNAL_EVIDENCE"
+            "FROZEN_RESULT", "SOURCE_DATA", "DIRECTOR_ASSET", "EXTERNAL_EVIDENCE",
+            "EXTRACTION", "CLAIM_LEDGER", "RESULT", "PDF_SOURCE", "SEARCH_TRACE"
           ]
         },
-        "immutable": {
-          "const": true
-        }
-      }
-    },
-    "output_fact": {
-      "type": "object",
-      "required": [
-        "path",
-        "sha256",
-        "byte_size",
-        "owner_run_id",
-        "run_owned",
-        "overwrite_policy",
-        "preexisting_target"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "path": {
-          "$ref": "#/$defs/safe_ref"
-        },
-        "sha256": {
-          "$ref": "#/$defs/sha256"
-        },
-        "byte_size": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "owner_run_id": {
-          "$ref": "#/$defs/nonempty"
-        },
-        "run_owned": {
-          "const": true
-        },
-        "overwrite_policy": {
-          "const": "CREATE_NEW"
-        },
-        "preexisting_target": {
-          "const": false
-        }
+        "immutable": {"const": true}
       }
     },
     "caption": {
       "type": "object",
-      "required": [
-        "text",
-        "owner_role"
-      ],
+      "required": ["text", "owner_role"],
       "additionalProperties": false,
       "properties": {
-        "text": {
-          "$ref": "#/$defs/nonempty"
-        },
-        "owner_role": {
-          "$ref": "#/$defs/nonempty"
-        }
+        "text": {"$ref": "#/$defs/nonempty"},
+        "owner_role": {"$ref": "#/$defs/nonempty"}
       }
     },
-    "numeric_source_cell": {
+    "legacy_output": {
       "type": "object",
-      "required": [
-        "result_ref",
-        "cell_ref",
-        "sha256"
-      ],
+      "required": ["path", "sha256", "byte_size", "owner_run_id", "run_owned", "overwrite_policy", "preexisting_target"],
       "additionalProperties": false,
       "properties": {
-        "result_ref": {
-          "$ref": "#/$defs/nonempty"
-        },
-        "cell_ref": {
-          "$ref": "#/$defs/nonempty"
-        },
-        "sha256": {
-          "$ref": "#/$defs/sha256"
-        }
+        "path": {"$ref": "#/$defs/safe_ref"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_size": {"type": "integer", "minimum": 1},
+        "owner_run_id": {"$ref": "#/$defs/nonempty"},
+        "run_owned": {"const": true},
+        "overwrite_policy": {"const": "CREATE_NEW"},
+        "preexisting_target": {"const": false}
       }
     },
-    "render_command": {
+    "legacy_numeric_cell": {
       "type": "object",
-      "required": [
-        "script_ref",
-        "script_sha256",
-        "argv",
-        "environment_sha256",
-        "parameters_sha256",
-        "command_receipt_sha256"
-      ],
+      "required": ["result_ref", "cell_ref", "sha256"],
       "additionalProperties": false,
       "properties": {
-        "script_ref": {
-          "$ref": "#/$defs/safe_ref"
-        },
-        "script_sha256": {
-          "$ref": "#/$defs/sha256"
-        },
-        "argv": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/nonempty"
-          }
-        },
-        "environment_sha256": {
-          "$ref": "#/$defs/sha256"
-        },
-        "parameters_sha256": {
-          "$ref": "#/$defs/sha256"
-        },
-        "command_receipt_sha256": {
-          "$ref": "#/$defs/sha256"
-        }
+        "result_ref": {"$ref": "#/$defs/nonempty"},
+        "cell_ref": {"$ref": "#/$defs/nonempty"},
+        "sha256": {"$ref": "#/$defs/sha256"}
       }
     },
-    "external_source": {
+    "legacy_render_command": {
       "type": "object",
-      "required": [
-        "source_ref",
-        "original_sha256",
-        "acquired_at"
-      ],
+      "required": ["script_ref", "script_sha256", "argv", "environment_sha256", "parameters_sha256", "command_receipt_sha256"],
       "additionalProperties": false,
       "properties": {
-        "source_ref": {
-          "$ref": "#/$defs/safe_ref"
-        },
-        "original_sha256": {
-          "$ref": "#/$defs/sha256"
-        },
-        "acquired_at": {
-          "$ref": "#/$defs/nonempty"
-        }
+        "script_ref": {"$ref": "#/$defs/safe_ref"},
+        "script_sha256": {"$ref": "#/$defs/sha256"},
+        "argv": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nonempty"}},
+        "environment_sha256": {"$ref": "#/$defs/sha256"},
+        "parameters_sha256": {"$ref": "#/$defs/sha256"},
+        "command_receipt_sha256": {"$ref": "#/$defs/sha256"}
       }
     },
-    "provenance": {
+    "legacy_external_source": {
       "type": "object",
-      "required": [
-        "kind",
-        "creator",
-        "created_at"
-      ],
+      "required": ["source_ref", "original_sha256", "acquired_at"],
       "additionalProperties": false,
       "properties": {
-        "kind": {
-          "type": "string",
-          "enum": [
-            "GENERATED",
-            "EXTERNAL"
-          ]
-        },
-        "creator": {
-          "$ref": "#/$defs/nonempty"
-        },
-        "created_at": {
-          "$ref": "#/$defs/nonempty"
-        },
-        "render_command": {
-          "$ref": "#/$defs/render_command"
-        },
-        "external_source": {
-          "$ref": "#/$defs/external_source"
-        }
+        "source_ref": {"$ref": "#/$defs/safe_ref"},
+        "original_sha256": {"$ref": "#/$defs/sha256"},
+        "acquired_at": {"$ref": "#/$defs/nonempty"}
+      }
+    },
+    "legacy_provenance": {
+      "type": "object",
+      "required": ["kind", "creator", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"type": "string", "enum": ["GENERATED", "EXTERNAL"]},
+        "creator": {"$ref": "#/$defs/nonempty"},
+        "created_at": {"$ref": "#/$defs/nonempty"},
+        "render_command": {"$ref": "#/$defs/legacy_render_command"},
+        "external_source": {"$ref": "#/$defs/legacy_external_source"}
       },
       "allOf": [
         {
-          "if": {
-            "required": ["kind"],
-            "properties": {
-              "kind": {
-                "const": "GENERATED"
-              }
-            }
-          },
-          "then": {
-            "required": ["render_command"],
-            "properties": {
-              "external_source": false
-            }
-          }
+          "if": {"properties": {"kind": {"const": "GENERATED"}}, "required": ["kind"]},
+          "then": {"required": ["render_command"], "properties": {"external_source": false}}
         },
         {
-          "if": {
-            "required": ["kind"],
-            "properties": {
-              "kind": {
-                "const": "EXTERNAL"
-              }
-            }
-          },
-          "then": {
-            "required": ["external_source"],
-            "properties": {
-              "render_command": false
-            }
-          }
+          "if": {"properties": {"kind": {"const": "EXTERNAL"}}, "required": ["kind"]},
+          "then": {"required": ["external_source"], "properties": {"render_command": false}}
         }
       ]
     },
-    "permission": {
+    "legacy_permission": {
+      "type": "object",
+      "required": ["status", "license_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"type": "string", "enum": ["OWNED", "LICENSED", "DIRECTOR_APPROVED"]},
+        "license_ref": {"$ref": "#/$defs/nonempty"}
+      }
+    },
+    "legacy_asset": {
       "type": "object",
       "required": [
-        "status",
-        "license_ref"
+        "asset_id", "label", "asset_type", "source_inputs", "output", "caption",
+        "claim_refs", "result_refs", "numeric_source_cells", "provenance", "permission",
+        "accessibility_text", "asset_record_sha256"
       ],
       "additionalProperties": false,
       "properties": {
-        "status": {
-          "type": "string",
-          "enum": [
-            "OWNED",
-            "LICENSED",
-            "DIRECTOR_APPROVED"
-          ]
+        "asset_id": {"$ref": "#/$defs/nonempty"},
+        "label": {"type": "string", "pattern": "^(fig|tab):[A-Za-z0-9][A-Za-z0-9:._-]*$"},
+        "asset_type": {"type": "string", "enum": ["FIGURE", "TABLE"]},
+        "source_inputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source_input"}},
+        "output": {"$ref": "#/$defs/legacy_output"},
+        "caption": {"$ref": "#/$defs/caption"},
+        "claim_refs": {"$ref": "#/$defs/string_ref_list"},
+        "result_refs": {"$ref": "#/$defs/string_ref_list"},
+        "numeric_source_cells": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/legacy_numeric_cell"}},
+        "provenance": {"$ref": "#/$defs/legacy_provenance"},
+        "permission": {"$ref": "#/$defs/legacy_permission"},
+        "accessibility_text": {"$ref": "#/$defs/nonempty"},
+        "asset_record_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"asset_type": {"const": "FIGURE"}}, "required": ["asset_type"]},
+          "then": {"properties": {"label": {"pattern": "^fig:"}}}
         },
-        "license_ref": {
-          "$ref": "#/$defs/nonempty"
+        {
+          "if": {"properties": {"asset_type": {"const": "TABLE"}}, "required": ["asset_type"]},
+          "then": {"properties": {"label": {"pattern": "^tab:"}}}
         }
+      ]
+    },
+    "legacy_manifest": {
+      "type": "object",
+      "required": ["schema_version", "run_id", "manuscript_sha256", "assets", "manifest_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "run_id": {"$ref": "#/$defs/nonempty"},
+        "manuscript_sha256": {"$ref": "#/$defs/sha256"},
+        "assets": {"type": "array", "items": {"$ref": "#/$defs/legacy_asset"}},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"}
       }
     },
-    "asset": {
+    "v2_output": {
+      "type": "object",
+      "required": ["path", "format", "media_type", "sha256", "byte_size", "owner_run_id", "run_owned", "overwrite_policy"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"$ref": "#/$defs/safe_ref"},
+        "format": {"type": "string", "enum": ["SVG", "PNG", "PDF"]},
+        "media_type": {"type": "string", "enum": ["image/svg+xml", "image/png", "application/pdf"]},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_size": {"type": "integer", "minimum": 1},
+        "owner_run_id": {"$ref": "#/$defs/nonempty"},
+        "run_owned": {"const": true},
+        "overwrite_policy": {"const": "CREATE_NEW"}
+      }
+    },
+    "uncertainty": {
+      "type": "object",
+      "required": ["kind", "value", "units"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"type": "string", "enum": ["SD", "SE", "CI95_HALF_WIDTH", "RANGE_HALF_WIDTH", "NOT_APPLICABLE"]},
+        "value": {"type": "number"},
+        "units": {"$ref": "#/$defs/nonempty"}
+      }
+    },
+    "numeric_cell": {
+      "type": "object",
+      "required": ["result_ref", "cell_ref", "value", "units", "uncertainty"],
+      "additionalProperties": false,
+      "properties": {
+        "result_ref": {"$ref": "#/$defs/nonempty"},
+        "cell_ref": {"$ref": "#/$defs/nonempty"},
+        "value": {"type": "number"},
+        "units": {"$ref": "#/$defs/nonempty"},
+        "uncertainty": {"$ref": "#/$defs/uncertainty"}
+      }
+    },
+    "evidence_row": {
+      "type": "object",
+      "required": ["row_id", "study_refs", "extraction_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "row_id": {"$ref": "#/$defs/nonempty"},
+        "study_refs": {"$ref": "#/$defs/string_ref_list"},
+        "extraction_refs": {"$ref": "#/$defs/string_ref_list"}
+      }
+    },
+    "crop": {
+      "type": "object",
+      "required": ["x", "y", "width", "height", "coordinate_space"],
+      "additionalProperties": false,
+      "properties": {
+        "x": {"type": "number", "minimum": 0},
+        "y": {"type": "number", "minimum": 0},
+        "width": {"type": "number", "exclusiveMinimum": 0},
+        "height": {"type": "number", "exclusiveMinimum": 0},
+        "coordinate_space": {"const": "PDF_POINTS"}
+      }
+    },
+    "excerpt": {
+      "type": "object",
+      "required": ["pdf_ref", "pdf_sha256", "page", "crop", "license_ref", "permission_status"],
+      "additionalProperties": false,
+      "properties": {
+        "pdf_ref": {"$ref": "#/$defs/safe_ref"},
+        "pdf_sha256": {"$ref": "#/$defs/sha256"},
+        "page": {"type": "integer", "minimum": 1},
+        "crop": {"$ref": "#/$defs/crop"},
+        "license_ref": {"$ref": "#/$defs/nonempty"},
+        "permission_status": {"type": "string", "enum": ["PENDING", "RESTRICTED", "CLEARED"]},
+        "permission_receipt_ref": {"$ref": "#/$defs/safe_ref"},
+        "permission_receipt_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"permission_status": {"const": "CLEARED"}}, "required": ["permission_status"]},
+          "then": {"required": ["permission_receipt_ref", "permission_receipt_sha256"]}
+        }
+      ]
+    },
+    "v2_permission": {
+      "type": "object",
+      "required": ["status", "license_ref", "public_release_allowed"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"type": "string", "enum": ["OWNED", "PENDING", "RESTRICTED", "CLEARED"]},
+        "license_ref": {"$ref": "#/$defs/nonempty"},
+        "public_release_allowed": {"type": "boolean"},
+        "permission_receipt_ref": {"$ref": "#/$defs/safe_ref"},
+        "permission_receipt_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["OWNED", "CLEARED"]}}, "required": ["status"]},
+          "then": {"properties": {"public_release_allowed": {"const": true}}}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["PENDING", "RESTRICTED"]}}, "required": ["status"]},
+          "then": {"properties": {"public_release_allowed": {"const": false}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "CLEARED"}}, "required": ["status"]},
+          "then": {"required": ["permission_receipt_ref", "permission_receipt_sha256"]}
+        }
+      ]
+    },
+    "render_receipt": {
       "type": "object",
       "required": [
-        "asset_id",
-        "label",
-        "asset_type",
-        "source_inputs",
-        "output",
-        "caption",
-        "claim_refs",
-        "result_refs",
-        "numeric_source_cells",
-        "provenance",
-        "permission",
-        "accessibility_text",
+        "renderer_ref", "renderer_sha256", "shell", "argv", "fixed_parameters",
+        "parameters_sha256", "source_set_sha256", "output_set_sha256", "receipt_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "renderer_ref": {"$ref": "#/$defs/safe_ref"},
+        "renderer_sha256": {"$ref": "#/$defs/sha256"},
+        "shell": {"const": false},
+        "argv": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nonempty"}},
+        "fixed_parameters": {"type": "object"},
+        "parameters_sha256": {"$ref": "#/$defs/sha256"},
+        "source_set_sha256": {"$ref": "#/$defs/sha256"},
+        "output_set_sha256": {"$ref": "#/$defs/sha256"},
+        "receipt_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "v2_asset": {
+      "type": "object",
+      "required": [
+        "asset_id", "label", "semantic_type", "render_template", "caption",
+        "accessibility_text", "claim_refs", "source_inputs", "outputs", "permission",
         "asset_record_sha256"
       ],
       "additionalProperties": false,
       "properties": {
-        "asset_id": {
-          "$ref": "#/$defs/nonempty"
-        },
-        "label": {
+        "asset_id": {"$ref": "#/$defs/nonempty"},
+        "label": {"type": "string", "pattern": "^(fig|tab):[A-Za-z0-9][A-Za-z0-9:._-]*$"},
+        "semantic_type": {
           "type": "string",
-          "pattern": "^(fig|tab):[A-Za-z0-9][A-Za-z0-9:._-]*$"
+          "enum": ["CONCEPTUAL_SCHEMATIC", "EVIDENCE_TABLE", "QUANTITATIVE_PLOT", "EXTERNAL_EXCERPT"]
         },
-        "asset_type": {
+        "render_template": {
           "type": "string",
-          "enum": [
-            "FIGURE",
-            "TABLE"
-          ]
+          "enum": ["PRISMA_FLOW", "HIDDEN_ORACLE_PATHWAY", "ORACLE_LADDER", "PROVENANCE_AXES", "EVIDENCE_HEATMAP", "PDF_EXCERPT", "SCIENTIFIC_ILLUSTRATION"]
         },
-        "source_inputs": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/source_input"
-          }
-        },
-        "output": {
-          "$ref": "#/$defs/output_fact"
-        },
-        "caption": {
-          "$ref": "#/$defs/caption"
-        },
-        "claim_refs": {
-          "$ref": "#/$defs/string_ref_list"
-        },
-        "result_refs": {
-          "$ref": "#/$defs/string_ref_list"
-        },
-        "numeric_source_cells": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/numeric_source_cell"
-          }
-        },
-        "provenance": {
-          "$ref": "#/$defs/provenance"
-        },
-        "permission": {
-          "$ref": "#/$defs/permission"
-        },
-        "accessibility_text": {
-          "$ref": "#/$defs/nonempty"
-        },
-        "asset_record_sha256": {
-          "$ref": "#/$defs/sha256"
-        }
+        "caption": {"$ref": "#/$defs/caption"},
+        "accessibility_text": {"$ref": "#/$defs/nonempty"},
+        "claim_refs": {"$ref": "#/$defs/string_ref_list"},
+        "source_inputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source_input"}},
+        "outputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/v2_output"}},
+        "evidence_rows": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence_row"}},
+        "numeric_cells": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/numeric_cell"}},
+        "excerpt": {"$ref": "#/$defs/excerpt"},
+        "permission": {"$ref": "#/$defs/v2_permission"},
+        "render_receipt": {"$ref": "#/$defs/render_receipt"},
+        "asset_record_sha256": {"$ref": "#/$defs/sha256"}
       },
       "allOf": [
         {
-          "if": {
-            "required": ["asset_type"],
-            "properties": {
-              "asset_type": {
-                "const": "FIGURE"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "label": {
-                "pattern": "^fig:"
-              }
-            }
-          }
+          "if": {"properties": {"semantic_type": {"const": "CONCEPTUAL_SCHEMATIC"}}, "required": ["semantic_type"]},
+          "then": {"properties": {"label": {"pattern": "^fig:"}}, "not": {"anyOf": [{"required": ["evidence_rows"]}, {"required": ["numeric_cells"]}, {"required": ["excerpt"]}]}}
         },
         {
-          "if": {
-            "required": ["asset_type"],
-            "properties": {
-              "asset_type": {
-                "const": "TABLE"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "label": {
-                "pattern": "^tab:"
-              }
-            }
-          }
+          "if": {"properties": {"semantic_type": {"const": "EVIDENCE_TABLE"}}, "required": ["semantic_type"]},
+          "then": {"required": ["evidence_rows"], "not": {"anyOf": [{"required": ["numeric_cells"]}, {"required": ["excerpt"]}]}}
+        },
+        {
+          "if": {"properties": {"semantic_type": {"const": "QUANTITATIVE_PLOT"}}, "required": ["semantic_type"]},
+          "then": {"required": ["numeric_cells", "render_receipt"], "properties": {"label": {"pattern": "^fig:"}}, "not": {"anyOf": [{"required": ["evidence_rows"]}, {"required": ["excerpt"]}]}}
+        },
+        {
+          "if": {"properties": {"semantic_type": {"const": "EXTERNAL_EXCERPT"}}, "required": ["semantic_type"]},
+          "then": {"required": ["excerpt"], "properties": {"label": {"pattern": "^fig:"}, "render_template": {"const": "PDF_EXCERPT"}}, "not": {"anyOf": [{"required": ["evidence_rows"]}, {"required": ["numeric_cells"]}]}}
         }
       ]
+    },
+    "render_environment": {
+      "type": "object",
+      "required": ["python", "pillow", "pymupdf", "font_set_sha256", "environment_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "python": {"$ref": "#/$defs/nonempty"},
+        "pillow": {"$ref": "#/$defs/nonempty"},
+        "pymupdf": {"$ref": "#/$defs/nonempty"},
+        "font_set_sha256": {"$ref": "#/$defs/sha256"},
+        "environment_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "plan_closure": {
+      "type": "object",
+      "required": ["status", "planned_asset_ids", "rendered_asset_ids", "planned_labels", "rendered_labels", "planned_output_refs", "rendered_output_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"const": "CLOSED"},
+        "planned_asset_ids": {"$ref": "#/$defs/string_ref_list"},
+        "rendered_asset_ids": {"$ref": "#/$defs/string_ref_list"},
+        "planned_labels": {"$ref": "#/$defs/string_ref_list"},
+        "rendered_labels": {"$ref": "#/$defs/string_ref_list"},
+        "planned_output_refs": {"$ref": "#/$defs/string_ref_list"},
+        "rendered_output_refs": {"$ref": "#/$defs/string_ref_list"}
+      }
+    },
+    "v2_manifest": {
+      "type": "object",
+      "required": [
+        "schema_version", "run_id", "manuscript_sha256", "asset_plan_sha256",
+        "render_environment", "assets", "plan_closure", "manifest_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"const": "2.0.0"},
+        "run_id": {"$ref": "#/$defs/nonempty"},
+        "manuscript_sha256": {"$ref": "#/$defs/sha256"},
+        "asset_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "render_environment": {"$ref": "#/$defs/render_environment"},
+        "assets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/v2_asset"}},
+        "plan_closure": {"$ref": "#/$defs/plan_closure"},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
     }
   }
 }

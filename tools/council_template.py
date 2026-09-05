@@ -50,24 +50,24 @@ PLACEHOLDER = "<TODO："
 FIELD_WORDS: dict[str, str] = {
     # --- contribution ---
     "contract_version": "契约版本（固定值，不用你填）",
-    "role": "你这一席的角色（固定值，不用你填）",
-    "input_sha256": "冻结工单的哈希（固定值 —— 六席必须完全一致，不一致视为看的不是同一份题）",
-    "status": "你这一席的收尾状态",
-    "perspective_summary": "一句话说清你这一席看到的核心",
-    "observations": "观察条目（这一席的证据清单）",
-    "observations[].observation_id": "条目编号（本席内唯一）",
+    "role": "你这一个 agent 的角色（固定值，不用你填）",
+    "input_sha256": "冻结工单的哈希（固定值 —— 六个 agent 必须完全一致，不一致视为看的不是同一份题）",
+    "status": "你这一个 agent 的收尾状态",
+    "perspective_summary": "一句话说清你这一个 agent 看到的核心",
+    "observations": "观察条目（这一个 agent 的证据清单）",
+    "observations[].observation_id": "条目编号（本 agent 内唯一）",
     "observations[].kind": "条目类型",
     "observations[].statement": "结论本身，一句话",
     "observations[].evidence_status": "证据状态",
     "observations[].source_refs": "证据出处（写成 VERIFIED 就必须至少给一条）",
-    "proposed_mechanisms": "你提的机制（可以为空数组 —— 但空掉就等于这一席没给可实现的东西）",
+    "proposed_mechanisms": "你提的机制（可以为空数组 —— 但空掉就等于这一个 agent 没给可实现的东西）",
     "proposed_mechanisms[].mechanism_id": "机制编号",
     "proposed_mechanisms[].description": "机制在做什么",
     "proposed_mechanisms[].inputs": "输入是什么",
     "proposed_mechanisms[].transformation": "怎么变换",
     "proposed_mechanisms[].expected_signal": "预期能看到什么信号",
     "proposed_mechanisms[].failure_mode": "它会怎么失败",
-    "experiments": "你提的实验（可以为空数组 —— 但空掉就等于这一席没给可证伪的东西）",
+    "experiments": "你提的实验（可以为空数组 —— 但空掉就等于这一个 agent 没给可证伪的东西）",
     "experiments[].experiment_id": "实验编号",
     "experiments[].comparison": "跟什么比",
     "experiments[].held_constant": "必须固定住的变量",
@@ -79,9 +79,9 @@ FIELD_WORDS: dict[str, str] = {
     "work_order.request_id": "请求编号",
     "work_order.north_star": "北极星（这轮不许偏离的方向）",
     "work_order.input_sha256": "工单哈希",
-    "contribution_receipts": "六席贡献的哈希回执（由代码算，不许手填）",
+    "contribution_receipts": "六个 agent 贡献的哈希回执（由代码算，不许手填）",
     "contribution_receipts[].role": "角色",
-    "contribution_receipts[].sha256": "该席贡献的哈希",
+    "contribution_receipts[].sha256": "该 agent 贡献的哈希",
     "compiled_chain": "编译出的三段链",
     "compiled_chain.hypothesis": "假设",
     "compiled_chain.hypothesis.statement": "假设本身",
@@ -105,7 +105,7 @@ FIELD_WORDS: dict[str, str] = {
     "compiled_chain.falsifiable_experiment.stop_condition": "停止条件",
     "conflicts": "角色之间的冲突（保留，不许抹平）",
     "conflicts[].conflict_id": "冲突编号",
-    "conflicts[].roles": "涉及哪几席（至少两席）",
+    "conflicts[].roles": "涉及哪几个 agent（至少两个）",
     "conflicts[].summary": "冲突是什么",
     "conflicts[].resolution_status": "解决状态",
     "conflicts[].resolution": "怎么解决的（未解决可留空）",
@@ -294,9 +294,9 @@ def check_contribution(row: Mapping[str, Any]) -> dict[str, Any]:
     for raw in validate_against(CONTRIBUTION_SCHEMA, dict(row)):
         errors.append(f"不合契约：{raw}")
     if not row.get("proposed_mechanisms"):
-        warnings.append("这一席没提任何机制（schema 允许空，但这一席等于没给可实现的东西）")
+        warnings.append("这一个 agent 没提任何机制（schema 允许空，但这一个 agent 等于没给可实现的东西）")
     if not row.get("experiments"):
-        warnings.append("这一席没提任何实验（schema 允许空，但这一席等于没给可证伪的东西）")
+        warnings.append("这一个 agent 没提任何实验（schema 允许空，但这一个 agent 等于没给可证伪的东西）")
     if str(row.get("status")) == "BLOCKED" and not row.get("blockers"):
         warnings.append("状态写了被卡住，但 blockers 是空的 —— 说不出卡在哪就不算被卡住")
     return {"ok": not errors, "errors": errors, "warnings": warnings}
@@ -323,22 +323,22 @@ def render_role_template(role: str, *, input_sha256: Optional[str] = None,
     """The authoring sheet one council seat gets handed. Plain Chinese, derived from the contract."""
     template = role_template(role, contract=contract)
     chain = " → ".join(template["required_final_chain"])
-    lines = [f"# 席位交稿模板 —— `{role}`", "",
+    lines = [f"# agent 交稿模板 —— `{role}`", "",
              f"> 你要产出的东西叫 `{template['produces']}`，按 `schemas/{template['schema']}` 校验。",
-             f"> 这一席的职责：{template['purpose']}", ""]
+             f"> 这一个 agent 的职责：{template['purpose']}", ""]
     if template["depends_on"]:
         deps = "、".join(f"`{d}`" for d in template["depends_on"])
         lines += [f"- **你要先读**：{deps} 的产出（契约里写死的依赖，不是建议）", ""]
     else:
-        lines += ["- **你不依赖任何其他席位** —— 独立看，别去对齐别人的结论（独立性就是这一席的价值）", ""]
+        lines += ["- **你不依赖任何其他 agent** —— 独立看，别去对齐别人的结论（独立性就是这一个 agent 的价值）", ""]
     lines += ["## 必填的字段（下面每一条都是 schema 真的要求的，不是我编的）", ""]
     lines += _field_lines(template["fields"])
-    lines += ["", "## 这一席**不能**做的事", "",
+    lines += ["", "## 这一个 agent**不能**做的事", "",
               "- 不能声称结果：这条链最终只到设计，`execution_status` 固定 `DESIGN_ONLY`。",
-              "- 不能声称新颖性 —— 查重不是这一席的活。",
+              "- 不能声称新颖性 —— 查重不是这一个 agent 的活。",
               f"- 外部事实拿不到出处就标 `{template['truth_boundary']['unverified_external_fact_status']}`，"
               "不许写成已核实。",
-              f"- 整个议会最后必须闭合成：{chain}。你这一席交不出对应的东西，就写进 `blockers`，"
+              f"- 整个议会最后必须闭合成：{chain}。你这一个 agent 交不出对应的东西，就写进 `blockers`，"
               "不要用一句漂亮话糊过去。", ""]
     if input_sha256:
         lines += ["## 空白骨架（把 `<TODO：…>` 全填掉；留一个都不算交稿）", "", "```json",
@@ -411,14 +411,14 @@ def render_council_report(bundle: Mapping[str, Any],
               f"| **什么结果算它被推翻** | {experiment['falsifier']} |",
               f"| 什么时候停 | {experiment['stop_condition']} |", ""]
 
-    lines += ["## 谁出的力（六席 + 编译）", "",
-              "| 席位 | 这一席看了什么 | 哈希回执 |", "|---|---|---|"]
+    lines += ["## 谁出的力（六个 agent + 编译）", "",
+              "| agent | 这一个 agent 看了什么 | 哈希回执 |", "|---|---|---|"]
     for receipt in bundle["contribution_receipts"]:
         role = str(receipt["role"])
         row = by_role.get(role)
         summary = str(row.get("perspective_summary")) if row else "（本次没提供贡献正文，只有回执）"
         lines.append(f"| `{role}` | {summary} | `{receipt['sha256'][:19]}…` |")
-    lines += ["", "> 六席各写各的，被哈希绑到同一份冻结工单上 —— 谁看的不是同一份题，编译会当场拒。", ""]
+    lines += ["", "> 六个 agent 各写各的，被哈希绑到同一份冻结工单上 —— 谁看的不是同一份题，编译会当场拒。", ""]
 
     resolved = [c for c in conflicts if c["resolution_status"] == "RESOLVED"]
     if resolved:
@@ -436,7 +436,7 @@ def render_council_report(bundle: Mapping[str, Any],
               f"- 执行状态：`{boundary['execution_status']}` —— **没有跑过任何东西**，没有数字。",
               f"- 允许声称结果：`{str(boundary['result_claims_allowed']).lower()}`；"
               f"允许声称新颖性：`{str(boundary['novelty_claim_allowed']).lower()}`。",
-              "- 想让它进库只有一条路：`/promote-to-vault` 人工关卡。议会自己写不进库。", ""]
+              "- 想让它进库只有一条路：`/promote-to-vault` 导演决定点。议会自己写不进库。", ""]
     return "\n".join(lines).rstrip() + "\n"
 
 

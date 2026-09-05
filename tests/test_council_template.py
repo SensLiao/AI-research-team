@@ -249,7 +249,7 @@ def test_a_receipt_only_bundle_says_so_instead_of_inventing_a_summary():
 
 def test_cli_covers_template_check_compile_and_both_renderings(tmp_path, capsys):
     assert council_main(["template", "causal_mechanism_critic"]) == 0
-    assert "席位交稿模板" in capsys.readouterr().out
+    assert "agent 交稿模板" in capsys.readouterr().out
 
     blank_path = tmp_path / "blank.json"
     assert council_main(["template", "domain_reality_auditor", "--input-sha256", INPUT_SHA,

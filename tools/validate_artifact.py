@@ -22,6 +22,11 @@ PROFILE_DIR = Path(__file__).resolve().parent.parent / "profiles"
 # Registry: artifact_type -> payload schema filename. Grows as the system grows.
 PAYLOAD_SCHEMAS = {
     "task_frame": "task_frame.schema.json",
+    # --- 2026-08-20 team upgrade: search health / extraction reliability / review decomposition ---
+    "search_channel_health": "search_channel_health.schema.json",
+    "extraction_reliability_report": "extraction_reliability_report.schema.json",
+    "external_review_decomposition": "external_review_decomposition.schema.json",
+    "claim_check_concurrence": "claim_check_concurrence.schema.json",
     "domain_profile": "domain_profile.schema.json",
     "note": "note.schema.json",
     "alignment_report": "alignment_report.schema.json",
@@ -38,6 +43,7 @@ PAYLOAD_SCHEMAS = {
     "manuscript_quality_report": "manuscript_quality_report.schema.json",
     "manuscript_review_verdict": "manuscript_review_verdict.schema.json",
     "submission_checklist": "submission_checklist.schema.json",
+    "systematic_review_execution_manifest": "systematic_review_execution_manifest.schema.json",
     # --- Phase 1 (V1 agents) artifact types ---
     "evidence_table": "evidence_table.schema.json",            # lit-scout / DISCOVER exit
     "evidence_verdict": "evidence_verdict.schema.json",        # evidence-verifier (hard gate)
@@ -150,6 +156,10 @@ PAYLOAD_SCHEMAS = {
     "research_brief": "research_brief.schema.json",            # operate/modes/deep_research.py (open_deep_research recipe)
     "research_perspective_note": "research_perspective_note.schema.json",  # deep_research perspective worker
     "research_markdown_brief": "research_markdown_brief.schema.json",      # deep_research director-facing Markdown brief
+    "research_dossier_review": "research_dossier_review.schema.json",      # independent dossier lenses
+    "research_convergence_verdict": "research_convergence_verdict.schema.json",  # H-Max content convergence
+    "research_delivery_boundary": "research_delivery_boundary.schema.json",  # deterministic handoff truth boundary
+    "project_state_snapshot": "project_state_snapshot.schema.json",  # hash/time-bound project-state input for dossier implementation review
     "invalidation_record": "invalidation_record.schema.json",  # contradiction-mining structured landing (Graphiti bi-temporal; via promote only)
     # --- Audit waves A-D (2026-06-13; see _design/review/ai-capability-audit-2026-06-12.md §6) ---
     "preregistration": "preregistration.schema.json",          # tools/prereg.py (C3: analysis contract frozen at DESIGN, deviation-checked at ANALYZE)
@@ -168,6 +178,8 @@ PAYLOAD_SCHEMAS = {
     "experiment_sketch": "experiment_sketch.schema.json",      # experiment-planner (IDEATE; minimal testable experiment per surviving idea; lighter than DESIGN protocol)
     "idea_lineage": "idea_lineage.schema.json",                # idea-evolver (IDEATE; per-idea provenance ledger; disposition is mechanical, never a bet)
     "idea_quality_eval": "idea_quality_eval.schema.json",      # idea_quality_eval.py (REPORT; blind pairwise quality harness; decomposed scores, no collapsed total / no bet)
+    "idea_quality_gate": "idea_quality_gate.schema.json",      # quality-controller (IDEATE; deterministic supervisor gate over the merged bundle; defects -> targeted repair on idea-merger)
+    "novelty_verification_gate": "novelty_verification_gate.schema.json",  # quality-controller (IDEATE; deterministic novelty-verification floor; <70% VERIFIED -> targeted repair on novelty-collision-checker)
     # --- Invention-first ideation (2026-08-07; director's innovation cognitive map) ---
     "divergence_trace": "divergence_trace.schema.json",        # divergence-operator-runner (IDEATE; the six divergence operators run BEFORE proposing; measurement only, never a cut)
     "direction_recommendation": "direction_recommendation.schema.json",  # direction-decision-advisor (REPORT; DEEPEN/BROADEN/PIVOT/CONCLUDE with evidence both ways; ADVICE, never a decision)

@@ -102,6 +102,9 @@ def test_deep_ideation_declares_four_wave_sparse_discover_dag(tmp_path):
 
 CONTRADICTION_BUNDLE = {"conflicts": [], "n_claims_checked": 1}
 
+# Multi-view panel contract fixture (2026-08-09): IDEATE.bundle.json is the MERGER's output — every
+# idea carries the full thesis fields the idea-quality gate enforces (research_question,
+# mechanism_hypothesis, causal_chain >=2, difference_from_prior_art, invention_claim for invention tier).
 IDEATE_BUNDLE = {
     "hypotheses": [
         {"hypothesis_id": "IH1", "statement": "A LoRA adapter matches full fine-tune for 3D prompts at equal budget.",
@@ -113,9 +116,32 @@ IDEATE_BUNDLE = {
     "ideas": [
         {"idea_id": "IDEA-1", "summary": "LoRA-vs-full-ft equal-budget ablation for promptable 3D seg.",
          "evidence_ref": ["IH1", "GAP-1"], "from_hypothesis_ref": "IH1",
+         "research_question": "At equal GPU budget, does a LoRA adapter match full fine-tune on promptable 3D segmentation?",
+         "mechanism_hypothesis": "Low-rank adaptation preserves the backbone's promptable priors while full fine-tune drifts them.",
+         "causal_chain": ["LoRA constrains weight delta to low rank -> backbone priors preserved", "preserved priors -> equal-budget Dice parity"],
+         "problem_evidence": ["[[a]]"], "independent_scientific_value": "Budget-equitable adapter comparison is a reusable protocol.",
+         "contribution_tier": "method_invention",
+         "invention_claim": "An equal-GPU-budget LoRA-vs-full-fine-tune protocol with matched compute accounting for promptable 3D segmentation.",
+         "innovation_layers": ["evaluation", "feasibility"], "depth_target": "D2: parity reproduces on >=2 backbones",
+         "conventional_base": "LoRA and full fine-tune are both established", "unusual_connection": "budget-equality as the comparison axis",
+         "mechanism_graph_refs": ["N2"], "intervention_point": "N2 TUNES",
+         "origin_operator": "enabler", "difference_from_prior_art": "adapter-vs-fullft at matched GPU-hours for 3D promptable models",
+         "resource_envelope": "fits_single_a6000", "expected_contributions": ["fair-budget protocol"],
+         "intended_contribution": "matched-compute adapter benchmark", "why_now": "LoRA is standard for 3D segmentation",
          "feasibility": {"compute": "medium", "data": "available", "time": "medium"}},
         {"idea_id": "IDEA-2", "summary": "Build the fair-budget SAM-medical benchmark and re-rank the leaderboard.",
          "evidence_ref": ["IH2", "GAP-2"], "from_hypothesis_ref": "IH2",
+         "research_question": "Does equalizing GPU budget across SAM-medical methods reorder the published leaderboard?",
+         "mechanism_hypothesis": "Unequal training budgets systematically favor heavier methods in published comparisons.",
+         "causal_chain": ["budget equalization -> per-method capacity normalized", "normalized capacity -> rank swaps"],
+         "problem_evidence": ["[[b]]"], "independent_scientific_value": "A budget-fair re-ranking is a measurement contribution.",
+         "contribution_tier": "measurement", "invention_claim": None,
+         "innovation_layers": ["evaluation"], "depth_target": "D2: >=2 rank swaps on equalized budget",
+         "conventional_base": "SAM-medical benchmarks are established", "unusual_connection": "budget as a confound made explicit",
+         "mechanism_graph_refs": ["N3"], "intervention_point": "N3 TUNES",
+         "origin_operator": "constraint", "difference_from_prior_art": "budget-equalized re-ranking of the existing leaderboard",
+         "resource_envelope": "fits_local_cpu", "expected_contributions": ["leaderboard re-ranking"],
+         "intended_contribution": "budget-fair benchmark", "why_now": "published tables omit compute budgets",
          "feasibility": {"compute": "low", "data": "available", "time": "short"}}],
     "tournament": [{"round": 1, "pair_a": "IDEA-1", "pair_b": "IDEA-2", "winner": "IDEA-2",
                     "rationale": "IDEA-2 is lower compute and uses public data vs IDEA-1's ablation."}],
@@ -125,14 +151,14 @@ IDEATE_BUNDLE = {
 COLLISION_BUNDLE = {
     "findings": [{"idea_id": "IDEA-1", "method_combination": "LoRA on promptable 3D seg",
                   "application": "canal segmentation", "domain": "medical imaging",
-                  "queries": ["LoRA promptable 3D segmentation"], "verdict": "unverified", "colliding_papers": [],
-                  "confidence": "medium", "retrieval_status": "unavailable",
-                  "retrieval_note": "offline — vault only"},
+                  "queries": ["LoRA promptable 3D segmentation"], "verdict": "clear", "colliding_papers": [],
+                  "confidence": "medium", "retrieval_status": "available",
+                  "retrieval_note": "no collision found"},
                  {"idea_id": "IDEA-2", "method_combination": "fair-budget benchmark",
                   "application": "SAM medical", "domain": "medical imaging",
-                  "queries": ["fair budget SAM medical benchmark"], "verdict": "unverified", "colliding_papers": [],
-                  "confidence": "medium", "retrieval_status": "unavailable",
-                  "retrieval_note": "offline — vault only"}],
+                  "queries": ["fair budget SAM medical benchmark"], "verdict": "clear", "colliding_papers": [],
+                  "confidence": "medium", "retrieval_status": "available",
+                  "retrieval_note": "no collision found"}],
     "evidence_ref": ["inbox/COLLISION.bundle.json"],
 }
 
@@ -331,7 +357,7 @@ def _schema_all_property_keys(schema_name: str) -> set[str]:
     "does this key exist somewhere in the schema" superset. It does not enforce nesting level; it
     only catches a key invented out of thin air, the class of bug this guard exists for."""
     schema = json.loads(
-        (Path(__file__).resolve().parents[1] / "schemas" / schema_name).read_text(encoding="utf-8"))
+        (Path(__file__).resolve().parents[2] / "research_agent_teams" / "schemas" / schema_name).read_text(encoding="utf-8"))
 
     def _walk(node) -> set[str]:
         found: set[str] = set()

@@ -213,7 +213,7 @@ def test_effective_models_default_has_no_haiku_and_keeps_gates_opus():
 
 def test_effective_models_max_quality_upgrades_every_reasoner_to_opus():
     eff = effective_models("max_quality")
-    deterministic = {"permission-scope-guard", "artifact-contract-enforcer", "budget-and-stop-controller"}
+    deterministic = {"permission-scope-guard", "artifact-contract-enforcer", "budget-and-stop-controller", "manuscript-integrator"}
     for name, model in eff.items():
         if name in deterministic:
             assert model == NO_MODEL, name

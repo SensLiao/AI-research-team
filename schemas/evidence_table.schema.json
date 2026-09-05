@@ -27,7 +27,20 @@
           "year": {"type": ["integer", "null"], "default": null},
           "ref": {"type": "string", "minLength": 1, "description": "[[slug]]+sha, DOI, arXiv id, or URL — a resolvable reference, never inlined content"},
           "claim_support": {"type": "string", "enum": ["strong", "moderate", "weak", "none"], "default": "none"},
-          "notes": {"type": "string"}
+          "acquisition_channel": {
+            "type": "string",
+            "enum": ["ARXIV", "OPENALEX", "CROSSREF", "SEMANTIC_SCHOLAR", "PUBMED", "IEEE_XPLORE_MANUAL", "LIBRARY", "AUTHOR_COPY", "LOCAL_EXISTING", "OTHER_MANUAL"]
+          },
+          "search_receipt_ref": {"type": "string", "minLength": 1},
+          "version_read": {"type": "string", "minLength": 1},
+          "access_scope": {"type": "string", "enum": ["FULL_TEXT", "ABSTRACT_ONLY", "METADATA_ONLY", "NOT_ASSESSABLE"]},
+          "supplement_scope": {"type": "string", "enum": ["READ", "NOT_AVAILABLE", "NOT_APPLICABLE", "UNDECLARED_IN_MAIN_TEXT", "UNDECLARED_INCLUDING_SUPPLEMENT"]},
+          "figure_scope": {"type": "string", "enum": ["RENDERED_AND_READ", "TEXT_ONLY", "NOT_AVAILABLE", "NOT_APPLICABLE"]},
+          "code_scope": {"type": "string", "enum": ["SNAPSHOT_AUDITED", "LINK_ONLY", "NOT_AVAILABLE", "NOT_APPLICABLE"]},
+          "local_snapshot_ref": {"type": "string", "minLength": 1},
+          "local_snapshot_sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+          "notes": {"type": "string"},
+          "oracle_ladder_hint": {"type": "string", "description": "Trust-control provenance hint (director lock 2026-08-16): O0-O5 ladder rung or 'undisclosed'; advisory, never a scientific verdict"}
         }
       }
     },

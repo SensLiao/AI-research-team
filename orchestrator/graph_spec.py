@@ -119,6 +119,12 @@ def validate_mode_registry(registry: Optional[dict] = None, roster: Optional[Set
                         errors.append(f"{mode}.director_gate_stages stage {stage} is not driven")
                 if len(set(gate_stages)) != len(gate_stages):
                     errors.append(f"{mode}.director_gate_stages must not contain duplicates")
-        if "max_agent_hops" not in (spec.get("budget") or {}):
-            errors.append(f"{mode}.budget missing max_agent_hops")
+        # max_agent_hops is OPTIONAL (director lock 2026-08-09: budget ceilings removed).
+        # Absent or None = unbounded agent hops; convergence is enforced by verification
+        # gates and the saturation meter, not by a hop cap. budget_tracker treats None as
+        # unbounded natively, so no downstream change is needed.
+        budget = spec.get("budget") or {}
+        if "max_agent_hops" in budget and budget["max_agent_hops"] is not None:
+            if not isinstance(budget["max_agent_hops"], int) or budget["max_agent_hops"] <= 0:
+                errors.append(f"{mode}.budget.max_agent_hops must be a positive int or null (unbounded)")
     return errors

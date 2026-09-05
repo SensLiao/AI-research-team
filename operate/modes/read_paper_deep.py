@@ -317,6 +317,10 @@ REQUEST: {request}
 {_prior_inputs(run_dir, prior_agents)}
 Write ONLY JSON to `{out}`. The JSON must have exactly one top-level key: `{key}`.
 Never invent source refs, figures, tables, claims, or numbers. Leave unknown fields honest.
+Preserve the exact report identity and `version_read`, acquisition/access scope, whether supplements were
+actually read, whether load-bearing figures were rendered and inspected, and whether code was audited from
+a frozen repository snapshot. Every number/statement distinguishes SOURCE_REPORTED from RE_DERIVED or
+REVIEWER_COUNT; derived values carry formula and input loci and are never attributed as paper-reported.
 """
 
     bodies = {
@@ -357,9 +361,15 @@ Do not include floating claims. Every claim must trace to the same source_ref.
 Task: link every claim to concrete loci you actually read.
 Output shape: {"claim_evidence_map": {attribution_contract_version:"claim-span/v1",
 mappings:[{claim_id,overall_support,loci,claim_risk}]}}.
-Every locus needs source_ref, location, kind, reported_result, supports_claim, support_relation,
-directness, span_id, snapshot_ref, document_hash, parser_version, exact_quote, and an exact
-char_start/char_end, machine-readable table_cell_ref, or figure_region_ref. Reopen the local
+Every locus needs locus_id (unique per map, e.g. "CE-C1-L1"), source_ref, location, kind,
+reported_result, supports_claim, support_relation, directness, span_id, snapshot_ref, document_hash,
+parser_version, exact_quote, and an exact char_start/char_end, machine-readable table_cell_ref, or
+figure_region_ref. Closed enums (machine-readable; any other value BLOCKS the run):
+  overall_support ∈ {"supported","partial","contradicted","not-found"} — never a support_relation word;
+  kind ∈ {"table","figure","text","code","dataset","appendix","other"} — never a source-channel label;
+  directness ∈ {"direct","indirect","proxy","assumed"};
+  claim_risk is an OPTIONAL OBJECT {"level":"high|medium|low","note":"<why>"} — never a bare string.
+Reopen the local
 snapshot and use the supplied citation manifest; never estimate an offset or hash.
 If `inbox/fulltext-qa.json` has page contexts, add `page`, `locator_confidence`, and `extraction_ref`
 for every core supporting locus. A local-PDF PASS must be page-anchored.

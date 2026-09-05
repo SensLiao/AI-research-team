@@ -1,6 +1,7 @@
 """citation_existence — three-state checker, cache semantics, offline-safe verdict (absorption wave 1)."""
 from __future__ import annotations
 
+import hashlib
 import json
 
 from research_agent_teams.operate.artifacts import envelope
@@ -48,6 +49,9 @@ S2_JUNK = json.dumps({"data": [{
 def test_classify_ref_forms():
     assert classify_ref("10.1234/AbC") == {"kind": "doi", "value": "10.1234/abc"}
     assert classify_ref("doi:10.1000/X") == {"kind": "doi", "value": "10.1000/x"}
+    assert classify_ref("doi:10.48550/arXiv.2304.05542") == {
+        "kind": "arxiv", "value": "2304.05542"
+    }
     assert classify_ref("arXiv:2403.12345v2") == {"kind": "arxiv", "value": "2403.12345"}
     assert classify_ref("2403.12345") == {"kind": "arxiv", "value": "2403.12345"}
     assert classify_ref("[[kirchhoff-2024-skeleton-recall]]")["kind"] == "slug"
@@ -61,6 +65,118 @@ def test_slug_and_url_are_skipped_without_network():
     s = check_reference("[[some-page]]", TS, transport=boom)
     u = check_reference("https://example.org/page", TS, transport=boom)
     assert s["state"] == STATE_SKIPPED and u["state"] == STATE_SKIPPED
+
+
+def test_hash_bound_local_files_verify_inside_run_or_workspace_without_network(tmp_path):
+    workspace = tmp_path / "workspace"
+    run_dir = workspace / "research_agent_teams" / "runs" / "p" / "run-1"
+    run_file = run_dir / "inbox" / "source.json"
+    workspace_file = workspace / "research_agent_teams" / "evidence" / "ledger.json"
+    run_file.parent.mkdir(parents=True)
+    workspace_file.parent.mkdir(parents=True)
+    run_file.write_bytes(b"run evidence")
+    workspace_file.write_bytes(b"workspace evidence")
+
+    refs = [
+        "inbox/source.json+sha:" + hashlib.sha256(run_file.read_bytes()).hexdigest(),
+        "research_agent_teams/evidence/ledger.json+sha:"
+        + hashlib.sha256(workspace_file.read_bytes()).hexdigest(),
+    ]
+
+    def boom(url, headers):
+        raise AssertionError("local refs must never be sent to scholarly APIs")
+
+    verdict = build_existence_verdict(
+        refs, TS, transport=boom, local_roots=(run_dir, workspace)
+    )
+    assert verdict["verdict"] == "PASS"
+    assert verdict["n_verified"] == 2
+    assert all("local hash-bound file verified" in row["detail"]
+               for row in verdict["checked"])
+    assert validate_artifact(
+        envelope("citation_existence_verdict", "citation-existence-checker", verdict, TS)
+    ) == []
+
+
+def test_hash_bound_local_missing_file_blocks_without_network(tmp_path):
+    run_dir = tmp_path / "workspace" / "run"
+    run_dir.mkdir(parents=True)
+
+    def boom(url, headers):
+        raise AssertionError("local refs must never be sent to scholarly APIs")
+
+    verdict = build_existence_verdict(
+        ["inbox/missing.json+sha:" + "a" * 64],
+        TS,
+        transport=boom,
+        local_roots=(run_dir, tmp_path / "workspace"),
+    )
+    assert verdict["verdict"] == "BLOCK"
+    assert verdict["n_not_found"] == 1
+    assert "local evidence file does not exist" in verdict["violations"][0]
+
+
+def test_run_relative_local_ref_cannot_escape_into_workspace(tmp_path):
+    workspace = tmp_path / "workspace"
+    run_dir = workspace / "runs" / "run-1"
+    outside_run = workspace / "runs" / "outside.json"
+    run_dir.mkdir(parents=True)
+    outside_run.write_bytes(b"outside run")
+    ref = (
+        "inbox/../../outside.json+sha:"
+        + hashlib.sha256(outside_run.read_bytes()).hexdigest()
+    )
+
+    def boom(url, headers):
+        raise AssertionError("local refs must never be sent to scholarly APIs")
+
+    verdict = build_existence_verdict(
+        [ref], TS, transport=boom, local_roots=(run_dir, workspace)
+    )
+    assert verdict["verdict"] == "BLOCK"
+    assert "escapes the authorized" in verdict["violations"][0]
+
+
+def test_hash_bound_local_hash_mismatch_blocks_and_is_not_cached(tmp_path):
+    run_dir = tmp_path / "run"
+    source = run_dir / "inbox" / "source.json"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"actual bytes")
+    cache = ExistenceCache()
+    ref = "inbox/source.json+sha:" + "0" * 64
+
+    def boom(url, headers):
+        raise AssertionError("local refs must never be sent to scholarly APIs")
+
+    first = build_existence_verdict(
+        [ref], TS, transport=boom, cache=cache, local_roots=(run_dir,)
+    )
+    assert first["verdict"] == "BLOCK"
+    assert "local evidence hash mismatch" in first["violations"][0]
+
+    source.write_bytes(b"")
+    empty_digest_ref = "inbox/source.json+sha:" + hashlib.sha256(b"").hexdigest()
+    second = build_existence_verdict(
+        [empty_digest_ref], TS, transport=boom, cache=cache, local_roots=(run_dir,)
+    )
+    assert second["verdict"] == "PASS"
+    assert not second["checked"][0]["detail"].startswith("(cached")
+    cache.close()
+
+
+def test_external_doi_still_uses_scholarly_lookup_when_local_roots_supplied(tmp_path):
+    calls = []
+
+    def transport(url, headers):
+        calls.append(url)
+        return CROSSREF_ONE
+
+    result = check_reference(
+        "10.5555/xyz", TS, transport=transport, local_roots=(tmp_path,)
+    )
+    assert result["state"] == STATE_VERIFIED
+    assert result["kind"] == "doi"
+    assert calls and "api.crossref.org" in calls[0]
 
 
 def test_doi_verified_not_found_and_lookup_error():

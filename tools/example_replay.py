@@ -176,11 +176,11 @@ def _stage_compile(project: Path) -> dict[str, Any]:
                          "重新编译结果与记录完全一致" if identical
                          else f"重新编译结果与记录不一致（{'、'.join(mismatched)}）—— "
                               "要么贡献被改过，要么编译逻辑变了"))
-    checks.append(_check("六席的哈希回执就是这六份贡献正文算出来的", receipts_match,
+    checks.append(_check("六个 agent 的哈希回执就是这六份贡献正文算出来的", receipts_match,
                          f"{len(recorded['contribution_receipts'])} 条回执逐条重算一致"
                          if receipts_match else "回执与贡献正文不符"))
     frozen = {row.get("input_sha256") for row in contributions}
-    checks.append(_check("六席看的是同一份冻结工单", len(frozen) == 1,
+    checks.append(_check("六个 agent 看的是同一份冻结工单", len(frozen) == 1,
                          f"input_sha256 只有 1 个取值：{next(iter(frozen))[:19]}…"
                          if len(frozen) == 1 else f"出现 {len(frozen)} 个不同取值：{frozen}"))
     return {"stage": "③ 议会编译可复现", "checks": checks}

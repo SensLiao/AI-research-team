@@ -10,6 +10,7 @@ report is allowed to read differently as long as it stays true.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -298,16 +299,18 @@ def _entry_docs() -> list[Path]:
 
 
 def test_entry_documents_name_every_one_button_mode():
-    """A capability the director cannot see might as well not exist."""
+    """Every capability is discoverable, while each entry points to the live registry."""
     from research_agent_teams.operate.modes import REGISTRY
 
     docs = _entry_docs()
     if not docs:
         pytest.skip("entry documents are not part of this checkout")
-    for doc in docs:
-        text = doc.read_text(encoding="utf-8")
-        missing = sorted(m for m in REGISTRY if m not in text)
-        assert not missing, f"{doc.name} hides these one-button modes from the director: {missing}"
+    texts = {doc: doc.read_text(encoding="utf-8") for doc in docs}
+    combined = "\n".join(texts.values())
+    missing = sorted(m for m in REGISTRY if m not in combined)
+    assert not missing, f"entry surfaces hide these one-button modes from the director: {missing}"
+    for doc, text in texts.items():
+        assert "REGISTRY" in text, f"{doc.name} does not point to the live mode registry"
 
 
 def test_entry_documents_do_not_quote_a_stale_mode_count():
@@ -324,8 +327,52 @@ def test_entry_documents_do_not_quote_a_stale_mode_count():
         text = doc.read_text(encoding="utf-8")
         for word, value in wrong.items():
             if value != real:
-                assert word not in text, (
+                assert re.search(rf"\b{word}\b", text) is None, (
                     f"{doc.name} claims {word} wired modes; the registry has {real}")
+
+
+def test_command_palette_defers_mode_truth_to_the_live_registry():
+    root = _repo_root()
+    registry_path = root / "research_agent_teams/workspace/registries/command_registry.yaml"
+    data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+    row = next(item for item in data["commands"] if item["command"] == "run-mode")
+    description = row["description"]
+    assert "operate/modes/REGISTRY" in description
+    assert re.search(r"\b\d+\s+modes?\b", description, flags=re.I) is None
+
+
+def test_repair_entrypoints_distinguish_retry_cap_from_explicit_block():
+    root = _repo_root()
+    if not (root / ".agents" / "skills").is_dir():
+        pytest.skip("workspace entry docs are not part of this checkout")
+    rels = (
+        ".agents/skills/source-command-run-mode/SKILL.md",
+        ".agents/skills/source-command-run-stage/SKILL.md",
+        ".claude/commands/run-mode.md",
+        ".claude/commands/run-stage.md",
+    )
+    for rel in rels:
+        text = (root / rel).read_text(encoding="utf-8")
+        assert "NEEDS_SUPPLEMENT/running" in text, rel
+        assert "explicit" in text and "BLOCK" in text, rel
+
+
+def test_all_human_decision_codex_gates_disable_implicit_invocation():
+    root = _repo_root()
+    if not (root / ".agents" / "skills").is_dir():
+        pytest.skip("workspace entry docs are not part of this checkout")
+    names = (
+        "source-command-idea-bet",
+        "source-command-project-delete",
+        "source-command-promote-to-vault",
+        "source-command-venue-pick",
+        "source-command-venue-decide",
+        "source-command-aers-reference-approve",
+    )
+    for name in names:
+        path = root / ".agents/skills" / name / "agents/openai.yaml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert data["policy"]["allow_implicit_invocation"] is False, name
 
 
 def test_every_one_button_mode_is_reachable_from_some_intent():

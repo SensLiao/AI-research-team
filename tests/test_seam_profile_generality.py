@@ -30,7 +30,7 @@ from research_agent_teams.tools.runstore import classify_status
 from research_agent_teams.tools.sanity_checker import build_report as sanity_build
 from research_agent_teams.tools.variable_control_checker import build_report as vc_build
 # reuse the proven harness helpers (envelope / stage-dir / write / approve / GateBlock)
-from research_agent_teams.tests.test_m2_spine_slice import (
+from .test_m2_spine_slice import (
     GateBlock,
     TS,
     _approve,
@@ -40,7 +40,7 @@ from research_agent_teams.tests.test_m2_spine_slice import (
 )
 
 NLP_PROFILE = "nlp-text-classification"
-_PROFILE_PATH = (Path(__file__).resolve().parent.parent / "profiles"
+_PROFILE_PATH = (Path(__file__).resolve().parents[2] / "research_agent_teams" / "profiles"
                  / "nlp-text-classification.profile.yaml")
 
 

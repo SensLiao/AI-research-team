@@ -1,0 +1,30 @@
+[
+  {
+    "id": "dicot_seedling",
+    "path": "assets/dicot_seedling.svg",
+    "sha256": "6db203817ff9df0b5a7ed1d7ac2f4724b5c98dd75d269fbf074093919ed3d8dc",
+    "creator": "Gina-Vong",
+    "source_url": "https://github.com/duerrsimon/bioicons/blob/main/static/icons/cc-0/Plants_Algae/Gina-Vong/DicotSeedling.svg",
+    "download_url": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-0/Plants_Algae/Gina-Vong/DicotSeedling.svg",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "license_evidence": "Public Bioicons repository asset classified under static/icons/cc-0; original bytes retained.",
+    "retrieved_at": "2026-09-05",
+    "modifications": "Selected vector geometry may be scaled and recolored; never used as an experimental observation.",
+    "cached_ref": "icons/dicot_seedling.svg"
+  },
+  {
+    "id": "phospholipid",
+    "path": "assets/phospholipid.svg",
+    "sha256": "c634a7c477737c1f70736a303203a17847a31c9320fddcfcb622c3dd1442e848",
+    "creator": "Cléber-Gomes",
+    "source_url": "https://github.com/duerrsimon/bioicons/blob/main/static/icons/cc-0/Cell_membrane/Cl%C3%A9ber-Gomes/Phospholipid.svg",
+    "download_url": "https://raw.githubusercontent.com/duerrsimon/bioicons/main/static/icons/cc-0/Cell_membrane/Cl%C3%A9ber-Gomes/Phospholipid.svg",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "license_evidence": "Public Bioicons repository asset classified under static/icons/cc-0; original bytes retained.",
+    "retrieved_at": "2026-09-05",
+    "modifications": "Selected vector geometry may be scaled and recolored; never used as an experimental observation.",
+    "cached_ref": "icons/phospholipid.svg"
+  }
+]

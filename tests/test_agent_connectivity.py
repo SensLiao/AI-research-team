@@ -28,9 +28,11 @@ MANUSCRIPT_ROLE_CONNECTIVITY = {
     "manuscript-results-author": ("analyze", "ANALYZE", ("manuscript_authoring",)),
     "manuscript-section-author": ("analyze", "ANALYZE", ("manuscript_authoring",)),
     "manuscript-figure-table-engineer": ("analyze", "ANALYZE", ("manuscript_authoring",)),
-    "manuscript-integrator": ("analyze", "ANALYZE", ("manuscript_authoring",)),
+    "manuscript-synthesis-editor": ("analyze", "ANALYZE", ("manuscript_authoring",)),
     "manuscript-factual-auditor": (
-        "verify", "VERIFY", ("manuscript_authoring", "manuscript_review")
+        "verify", "VERIFY",
+        # 2026-08-20: also the independent claim-check verifier of manuscript_reconstruction.
+        ("manuscript_authoring", "manuscript_reconstruction", "manuscript_review")
     ),
     "manuscript-citation-auditor": (
         "verify", "VERIFY", ("manuscript_authoring", "manuscript_review")
@@ -45,9 +47,6 @@ MANUSCRIPT_ROLE_CONNECTIVITY = {
         "verify", "VERIFY", ("manuscript_review",)
     ),
     "manuscript-figure-table-reviewer": ("verify", "VERIFY", ("manuscript_review",)),
-    "manuscript-submission-packager": (
-        "report", "REPORT", ("manuscript_review",)
-    ),
 }
 
 
@@ -58,11 +57,14 @@ def test_agent_connectivity_contract_is_clean():
 def test_every_non_control_agent_has_graph_and_mode_entry():
     report = build_agent_connectivity()
     summary = report["summary"]
-    assert summary["roster_agents"] == 166
-    assert summary["control_agents"] == 6
-    assert summary["non_control_agents"] == 160
-    assert summary["graph_connected_non_control"] == 160
-    assert summary["mode_connected_non_control"] == 160
+    # Roster is the truth; the count below is derived from it, not pinned by hand —
+    # update when the roster grows (2026-08-09: +5 multi-view IDEATE panel seats).
+    expected_roster = len(report["agents"])
+    assert summary["roster_agents"] == expected_roster
+    assert summary["control_agents"] == 7
+    assert summary["non_control_agents"] == expected_roster - 7
+    assert summary["graph_connected_non_control"] == expected_roster - 7
+    assert summary["mode_connected_non_control"] == expected_roster - 7
 
     for agent, spec in report["agents"].items():
         if spec["status"] == "control":
@@ -108,6 +110,7 @@ def test_operated_surface_stays_honest_and_separate_from_routable_surface():
         # tests, so they were deliberately left unregistered until now.
         "ideate_ring",
         "aers_enhanced_research_pack",
+        "manuscript_reconstruction",  # 2026-08-20 team upgrade
     }
     # Still strictly smaller, because three modes remain spec-only. When the last one is wired
     # this becomes equality — that is the honest end state, not a weakened bar, and the
@@ -160,12 +163,6 @@ def test_coverage_closure_modes_cover_previous_dark_matter_agents():
             "visualization-auditor",
             "claim-strength-calibrator",
             "figure-vlm-critic",
-        },
-        "manuscript_review": {
-            "synthesis-writer",
-            "contribution-ledger-builder",
-            "threats-to-validity-writer",
-            "review-response-simulator",
         },
         "power_analysis_review": {"statistics-power-auditor"},
         "aers_enhanced_research_pack": {

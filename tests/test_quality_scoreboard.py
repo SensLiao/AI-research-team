@@ -85,9 +85,10 @@ def test_quality_scoreboard_schema_and_status(tmp_path):
     assert scoreboard["summary"]["external_skill_execution"] is False
     # The catalog is registry-derived. Wave 2 (2026-08-04) took the operated surface from twelve
     # to twenty-one; the 2026-08-07 backlog close (ideate_ring, aers_enhanced_research_pack) took
-    # it to twenty-three. This stays a hard number on purpose, so wiring a mode without wiring the
+    # it to twenty-three; manuscript_reconstruction closes the external-review route at twenty-four.
+    # This stays a hard number on purpose, so wiring a mode without wiring the
     # rest of its panel (menu, intent, drill-down, output contract) cannot pass unnoticed.
-    assert scoreboard["capability"]["operated_modes"] == 23
+    assert scoreboard["capability"]["operated_modes"] == 24
     assert scoreboard["runs"]["run_count"] == 1
     assert scoreboard["business_outputs"]["completed_run_count"] == 0
 
@@ -173,7 +174,7 @@ def test_every_one_button_mode_pins_a_product_contract():
 
     from research_agent_teams.operate.modes import REGISTRY
 
-    registry_path = (Path(__file__).resolve().parents[1]
+    registry_path = (Path(__file__).resolve().parents[2] / "research_agent_teams"
                      / "orchestrator" / "mode_registry.yaml")
     modes = (_yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}).get("modes") or {}
     unpinned = sorted(m for m in REGISTRY

@@ -9,8 +9,12 @@ agents:
     - permission-scope-guard
     - budget-and-stop-controller
     - conflict-resolver
+    - manuscript-integrator
   discover:
     - lit-scout
+    # 2026-08-20 team upgrade (director-authorised): retrieval-health gate, corpus-level
+    # extraction reproducibility, and the external-review decomposer for manuscript_reconstruction.
+    - external-review-decomposer
     - direction-grounding-scout
     - model-dataset-scout
     - evidence-verifier
@@ -28,6 +32,10 @@ agents:
     - staleness-auditor
     - citation-integrity-auditor
     - landscape-mapper
+    - research-dossier-method-reviewer
+    - research-dossier-implementation-reviewer
+    - research-dossier-evidence-reviewer
+    - research-convergence-chair
     - evidence-saturation-judge
     - aers-sop-curator
     - literature-search-strategist
@@ -62,6 +70,11 @@ agents:
     - gap-quality-auditor
   ideate:
     - hypothesis-generator
+    - proposer-mechanism
+    - proposer-tension
+    - proposer-analogy
+    - proposer-corpus
+    - idea-merger
     - idea-tournament-ranker
     - idea-evolver
     - feasibility-reranker
@@ -139,7 +152,7 @@ agents:
     - manuscript-results-author
     - manuscript-section-author
     - manuscript-figure-table-engineer
-    - manuscript-integrator
+    - manuscript-synthesis-editor
   verify:
     - verify-synthesizer
     - review-configurator
@@ -148,10 +161,6 @@ agents:
     - adversarial-reviewer
     - scientific-critic
     - review-synthesizer
-    - synthesis-writer
-    - contribution-ledger-builder
-    - threats-to-validity-writer
-    - review-response-simulator
     - venue-review-configurator
     - venue-selector
     - venue-reviewer-persona
@@ -174,6 +183,5 @@ agents:
     - quality-controller
     - integrity-refusal-recommender
     - manuscript-polish-editor
-    - manuscript-submission-packager
     - hypothesis-compiler
     - direction-decision-advisor
